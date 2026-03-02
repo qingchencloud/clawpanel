@@ -148,6 +148,25 @@ fn get_local_version() -> Option<String> {
             }
         }
     }
+    // Windows: 直接读 npm 全局目录下的 package.json，避免 spawn 进程
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            // 先查汉化版，再查官方版
+            for pkg in &["@qingchencloud/openclaw-zh", "openclaw"] {
+                let pkg_json = PathBuf::from(&appdata)
+                    .join("npm").join("node_modules").join(pkg).join("package.json");
+                if let Ok(content) = fs::read_to_string(&pkg_json) {
+                    if let Some(ver) = serde_json::from_str::<Value>(&content)
+                        .ok()
+                        .and_then(|v| v.get("version")?.as_str().map(String::from))
+                    {
+                        return Some(ver);
+                    }
+                }
+            }
+        }
+    }
     // 所有平台通用 fallback: CLI 输出
     let output = openclaw_command().arg("--version").output().ok()?;
     let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -157,7 +176,7 @@ fn get_local_version() -> Option<String> {
 /// 从 npm registry 获取最新版本号，超时 5 秒
 async fn get_latest_version_for(source: &str) -> Option<String> {
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(2))
         .build()
         .ok()?;
     let pkg = npm_package_name(source).replace('/', "%2F").replace('@', "%40");

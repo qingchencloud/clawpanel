@@ -164,7 +164,7 @@ function renderInstallSection() {
 function bindEvents(page, nodeOk) {
   // 进入面板
   page.querySelector('#btn-enter')?.addEventListener('click', () => {
-    window.location.reload()
+    window.location.hash = '/dashboard'
   })
 
   // 一键安装

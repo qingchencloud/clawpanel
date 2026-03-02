@@ -231,7 +231,10 @@ function renderOverview(page, services, clawapp, tunnel, mcpConfig, backups, con
 
 function renderLogs(page, logs) {
   const logsEl = page.querySelector('#recent-logs')
-  if (!logs) { logsEl.textContent = '暂无日志'; return }
+  if (!logs) {
+    logsEl.innerHTML = '<div style="color:var(--text-tertiary);padding:12px">暂无日志</div>'
+    return
+  }
   const lines = logs.trim().split('\n')
   logsEl.innerHTML = lines.map(l => `<div class="log-line">${escapeHtml(l)}</div>`).join('')
   logsEl.scrollTop = logsEl.scrollHeight

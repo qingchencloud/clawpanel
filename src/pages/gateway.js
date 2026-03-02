@@ -41,10 +41,13 @@ export async function render() {
 }
 
 async function loadConfig(page, state) {
+  const el = page.querySelector('#gateway-config')
+  el.innerHTML = '<div class="loading-text">加载中...</div>'
   try {
     state.config = await api.readOpenclawConfig()
     renderConfig(page, state)
   } catch (e) {
+    el.innerHTML = '<div style="color:var(--error);padding:20px">加载配置失败: ' + e + '</div>'
     toast('加载配置失败: ' + e, 'error')
   }
 }

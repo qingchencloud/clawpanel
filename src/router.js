@@ -45,13 +45,8 @@ async function loadRoute() {
     _currentCleanup = null
   }
 
-  // 退出动画：如果有旧页面，播放退出动画后再替换
-  const oldPage = _contentEl.querySelector('.page, .page-loader, .chat-page')
-  if (oldPage) {
-    oldPage.classList.add('page-exit')
-    await new Promise(r => setTimeout(r, 100))
-    if (thisLoad !== _loadId) return
-  }
+  // 立即移除旧页面（不等退出动画，消除切换卡顿）
+  _contentEl.innerHTML = ''
 
   // 已缓存的模块：跳过 spinner，直接渲染
   let mod = _moduleCache[hash]

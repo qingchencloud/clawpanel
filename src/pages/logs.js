@@ -75,7 +75,7 @@ export function cleanup() {
 
 async function loadLog(page, logName) {
   const el = page.querySelector('#log-content')
-  el.innerHTML = '<div style="color:var(--text-tertiary)">加载中...</div>'
+  el.innerHTML = '<div class="loading-text">加载中...</div>'
   try {
     const content = await api.readLogTail(logName, 200)
     if (!content || !content.trim()) {
@@ -88,13 +88,14 @@ async function loadLog(page, logName) {
       el.scrollTop = el.scrollHeight
     }
   } catch (e) {
+    el.innerHTML = '<div style="color:var(--error);padding:12px">加载日志失败: ' + e + '</div>'
     toast('加载日志失败: ' + e, 'error')
   }
 }
 
 async function searchLog(page, logName, query) {
   const el = page.querySelector('#log-content')
-  el.innerHTML = '<div style="color:var(--text-tertiary)">搜索中...</div>'
+  el.innerHTML = '<div class="loading-text">搜索中...</div>'
   try {
     const results = await api.searchLog(logName, query)
     if (!results || !results.length) {
@@ -103,6 +104,7 @@ async function searchLog(page, logName, query) {
     }
     el.innerHTML = results.map(l => `<div class="log-line">${highlightMatch(escapeHtml(l), query)}</div>`).join('')
   } catch (e) {
+    el.innerHTML = '<div style="color:var(--error);padding:12px">搜索失败: ' + e + '</div>'
     toast('搜索失败: ' + e, 'error')
   }
 }

@@ -35,10 +35,12 @@ export async function render() {
 }
 
 async function loadAgents(page, state) {
+  const container = page.querySelector('#agents-list')
   try {
     state.agents = await api.listAgents()
     renderAgents(page, state)
   } catch (e) {
+    container.innerHTML = '<div style="color:var(--error);padding:20px">加载失败: ' + e + '</div>'
     toast('加载 Agent 列表失败: ' + e, 'error')
   }
 }

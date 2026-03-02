@@ -151,6 +151,7 @@ async function loadFiles(page, state) {
     }
     renderFileTree(page, state, files)
   } catch (e) {
+    tree.innerHTML = '<div style="color:var(--error);padding:12px">加载失败: ' + e + '</div>'
     toast('加载文件列表失败: ' + e, 'error')
   }
 }

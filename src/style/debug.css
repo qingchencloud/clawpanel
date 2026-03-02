@@ -1,0 +1,58 @@
+/**
+ * 调试页面样式
+ */
+
+.debug-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+}
+
+.debug-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.debug-table td:first-child {
+  color: var(--text-secondary);
+  width: 200px;
+  font-weight: 500;
+}
+
+.debug-table td:last-child {
+  color: var(--text-primary);
+  font-family: monospace;
+}
+
+.debug-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* 状态概览卡片 */
+.config-section {
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.config-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+/* 成功/警告背景色 */
+:root {
+  --success-bg: rgba(34, 197, 94, 0.1);
+  --warning-bg: rgba(251, 191, 36, 0.1);
+  --error-bg: rgba(239, 68, 68, 0.1);
+}
+
+[data-theme="dark"] {
+  --success-bg: rgba(34, 197, 94, 0.15);
+  --warning-bg: rgba(251, 191, 36, 0.15);
+  --error-bg: rgba(239, 68, 68, 0.15);
+}

@@ -39,6 +39,7 @@ const NAV_ITEMS_FULL = [
     section: '',
     items: [
       { route: '/about', label: '关于', icon: 'about' },
+      { route: '/chat-debug', label: '系统诊断', icon: 'debug' },
     ]
   }
 ]
@@ -60,6 +61,7 @@ const NAV_ITEMS_SETUP = [
     section: '',
     items: [
       { route: '/about', label: '关于', icon: 'about' },
+      { route: '/chat-debug', label: '系统诊断', icon: 'debug' },
     ]
   }
 ]
@@ -76,6 +78,7 @@ const ICONS = {
   memory: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>',
   extensions: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>',
   about: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+  debug: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/><circle cx="12" cy="12" r="3"/></svg>',
 }
 
 let _delegated = false

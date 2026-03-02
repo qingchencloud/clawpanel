@@ -141,30 +141,32 @@ pub fn get_cftunnel_status() -> Result<Value, String> {
     let bin = cftunnel_bin();
     let mut result = serde_json::Map::new();
 
-    // 检查是否安装
-    let version_out = Command::new(&bin).arg("version").output();
-    match version_out {
-        Ok(out) => {
-            let ver = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            result.insert("installed".into(), Value::Bool(true));
-            result.insert("version".into(), Value::String(ver));
-        }
-        Err(_) => {
-            result.insert("installed".into(), Value::Bool(false));
-            return Ok(Value::Object(result));
-        }
+    // 快速路径：如果是 fallback 名称且不在已知路径，直接返回未安装
+    #[cfg(target_os = "windows")]
+    if bin == "cftunnel.exe" {
+        result.insert("installed".into(), Value::Bool(false));
+        return Ok(Value::Object(result));
+    }
+    #[cfg(not(target_os = "windows"))]
+    if bin == "cftunnel" {
+        result.insert("installed".into(), Value::Bool(false));
+        return Ok(Value::Object(result));
     }
 
-    // 获取状态
+    // 二进制存在即已安装，跳过 cftunnel version 调用
+    result.insert("installed".into(), Value::Bool(true));
+
+    // 获取状态（单次 CLI 调用）
     if let Ok(out) = Command::new(&bin).arg("status").output() {
         let text = String::from_utf8_lossy(&out.stdout);
         let status = parse_cftunnel_status(&text);
+        // 从 status 输出中提取版本号（如果有）
         for (k, v) in status {
             result.insert(k, v);
         }
     }
 
-    // 补充检测：如果 cftunnel status 报已停止，但进程实际在跑，以实际为准
+    // 仅当 status 报未运行时才做进程检测补充
     let reported_running = result.get("running").and_then(|v| v.as_bool()).unwrap_or(false);
     if !reported_running {
         if let Some((pid, running)) = check_cftunnel_process() {
@@ -229,7 +231,7 @@ pub fn get_clawapp_status() -> Result<Value, String> {
     // 跨平台方式：尝试连接端口检测是否在运行
     let running = std::net::TcpStream::connect_timeout(
         &"127.0.0.1:3210".parse().unwrap(),
-        std::time::Duration::from_millis(500),
+        std::time::Duration::from_millis(150),
     ).is_ok();
 
     result.insert("running".into(), Value::Bool(running));
@@ -248,27 +250,9 @@ pub fn get_clawapp_status() -> Result<Value, String> {
         }
     }
 
-    // Windows: 用 netstat 获取 PID
+    // Windows: TCP 探测已足够，不再 spawn netstat 取 PID
     #[cfg(target_os = "windows")]
-    if running {
-        let mut cmd = Command::new("netstat");
-        cmd.args(["-ano"]);
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-        if let Ok(out) = cmd.output()
-        {
-            let text = String::from_utf8_lossy(&out.stdout);
-            for line in text.lines() {
-                if line.contains(":3210") && line.contains("LISTENING") {
-                    if let Some(pid_str) = line.split_whitespace().last() {
-                        if let Ok(pid) = pid_str.parse::<u64>() {
-                            result.insert("pid".into(), Value::Number(pid.into()));
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-    }
+    {}
 
     result.insert("port".into(), Value::Number(3210.into()));
     result.insert("url".into(), Value::String("http://localhost:3210".into()));

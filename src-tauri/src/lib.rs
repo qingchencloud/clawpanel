@@ -3,7 +3,7 @@ mod models;
 mod tray;
 mod utils;
 
-use commands::{agent, config, device, extensions, logs, memory, service};
+use commands::{agent, config, device, extensions, logs, memory, pairing, service};
 
 pub fn run() {
     tauri::Builder::default()
@@ -36,6 +36,9 @@ pub fn run() {
             config::set_npm_registry,
             // 设备密钥 + Gateway 握手
             device::create_connect_frame,
+            // 设备配对
+            pairing::auto_pair_device,
+            pairing::check_pairing_status,
             // 服务
             service::get_services_status,
             service::start_service,

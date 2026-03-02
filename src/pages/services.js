@@ -101,6 +101,7 @@ const REGISTRIES = [
 
 async function loadRegistry(page) {
   const bar = page.querySelector('#registry-bar')
+  bar.innerHTML = '<div class="loading-text">加载中...</div>'
   try {
     const current = await api.getNpmRegistry()
     const isPreset = REGISTRIES.some(r => r.value === current)
@@ -130,6 +131,7 @@ async function loadRegistry(page) {
 
 async function loadServices(page) {
   const container = page.querySelector('#services-list')
+  container.innerHTML = '<div class="loading-text">加载中...</div>'
   try {
     const services = await api.getServicesStatus()
     renderServices(container, services)
@@ -198,6 +200,7 @@ function renderServices(container, services) {
 
 async function loadBackups(page) {
   const list = page.querySelector('#backup-list')
+  list.innerHTML = '<div class="loading-text">加载中...</div>'
   try {
     const backups = await api.listBackups()
     renderBackups(list, backups)

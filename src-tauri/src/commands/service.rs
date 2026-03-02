@@ -211,20 +211,18 @@ mod platform {
 
 #[cfg(target_os = "windows")]
 mod platform {
-    use crate::utils::openclaw_command;
-
     /// Windows 不需要 UID
     pub fn current_uid() -> Result<u32, String> {
         Ok(0)
     }
 
-    /// 检测 openclaw CLI 是否已安装
+    /// 检测 openclaw CLI 是否已安装（文件系统检测，避免 spawn 进程）
     pub fn is_cli_installed() -> bool {
-        openclaw_command()
-            .arg("--version")
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            let cmd_path = std::path::Path::new(&appdata).join("npm").join("openclaw.cmd");
+            if cmd_path.exists() { return true; }
+        }
+        false
     }
 
     /// Windows 上始终返回 Gateway 标签（不管 CLI 是否安装）
@@ -236,7 +234,7 @@ mod platform {
     pub fn check_service_status(_uid: u32, _label: &str) -> (bool, Option<u32>) {
         match std::net::TcpStream::connect_timeout(
             &"127.0.0.1:18789".parse().unwrap(),
-            std::time::Duration::from_millis(500),
+            std::time::Duration::from_millis(150),
         ) {
             Ok(_) => (true, None),
             Err(_) => (false, None),

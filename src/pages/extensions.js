@@ -52,6 +52,7 @@ async function loadAll(page) {
 
 async function loadCftunnel(page) {
   const el = page.querySelector('#cftunnel-content')
+  el.innerHTML = '<div class="loading-text">加载中...</div>'
   try {
     const status = await api.getCftunnelStatus()
     renderCftunnel(el, status)
@@ -145,6 +146,7 @@ function renderRoutes(routes) {
 
 async function loadClawapp(page) {
   const el = page.querySelector('#clawapp-content')
+  el.innerHTML = '<div class="loading-text">加载中...</div>'
   try {
     const status = await api.getClawappStatus()
     renderClawapp(el, status)

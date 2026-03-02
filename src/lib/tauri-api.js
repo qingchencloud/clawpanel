@@ -10,12 +10,74 @@ const _invokeReady = isTauri
   ? import('@tauri-apps/api/core').then(m => m.invoke)
   : null
 
+// 简单缓存：避免页面切换时重复请求后端
+const _cache = new Map()
+const CACHE_TTL = 15000 // 15秒
+
+// 网络请求日志（用于调试）
+const _requestLogs = []
+const MAX_LOGS = 100
+
+function logRequest(cmd, args, duration, cached = false) {
+  const log = {
+    timestamp: Date.now(),
+    time: new Date().toLocaleTimeString('zh-CN', { hour12: false, fractionalSecondDigits: 3 }),
+    cmd,
+    args: JSON.stringify(args),
+    duration: duration ? `${duration}ms` : '-',
+    cached
+  }
+  _requestLogs.push(log)
+  if (_requestLogs.length > MAX_LOGS) {
+    _requestLogs.shift()
+  }
+}
+
+// 导出日志供调试页面使用
+export function getRequestLogs() {
+  return _requestLogs.slice()
+}
+
+export function clearRequestLogs() {
+  _requestLogs.length = 0
+}
+
+function cachedInvoke(cmd, args = {}, ttl = CACHE_TTL) {
+  const key = cmd + JSON.stringify(args)
+  const cached = _cache.get(key)
+  if (cached && Date.now() - cached.ts < ttl) {
+    logRequest(cmd, args, 0, true)
+    return Promise.resolve(cached.val)
+  }
+  const start = Date.now()
+  return invoke(cmd, args).then(val => {
+    const duration = Date.now() - start
+    logRequest(cmd, args, duration, false)
+    _cache.set(key, { val, ts: Date.now() })
+    return val
+  })
+}
+
+// 清除指定命令的缓存（写操作后调用）
+function invalidate(...cmds) {
+  for (const [k] of _cache) {
+    if (cmds.some(c => k.startsWith(c))) _cache.delete(k)
+  }
+}
+
 async function invoke(cmd, args = {}) {
+  const start = Date.now()
   if (_invokeReady) {
     const tauriInvoke = await _invokeReady
-    return tauriInvoke(cmd, args)
+    const result = await tauriInvoke(cmd, args)
+    const duration = Date.now() - start
+    logRequest(cmd, args, duration, false)
+    return result
   }
-  return mockInvoke(cmd, args)
+  const result = mockInvoke(cmd, args)
+  const duration = Date.now() - start
+  logRequest(cmd, args, duration, false)
+  return result
 }
 
 // Mock 数据，方便纯浏览器开发调试
@@ -136,64 +198,68 @@ function mockInvoke(cmd, args) {
 
 // 导出 API
 export const api = {
-  // 服务管理
-  getServicesStatus: () => invoke('get_services_status'),
-  startService: (label) => invoke('start_service', { label }),
-  stopService: (label) => invoke('stop_service', { label }),
-  restartService: (label) => invoke('restart_service', { label }),
+  // 服务管理（状态用短缓存，操作不缓存）
+  getServicesStatus: () => cachedInvoke('get_services_status', {}, 3000),
+  startService: (label) => { invalidate('get_services_status'); return invoke('start_service', { label }) },
+  stopService: (label) => { invalidate('get_services_status'); return invoke('stop_service', { label }) },
+  restartService: (label) => { invalidate('get_services_status'); return invoke('restart_service', { label }) },
 
-  // 配置
-  getVersionInfo: () => invoke('get_version_info'),
-  readOpenclawConfig: () => invoke('read_openclaw_config'),
-  writeOpenclawConfig: (config) => invoke('write_openclaw_config', { config }),
-  readMcpConfig: () => invoke('read_mcp_config'),
-  writeMcpConfig: (config) => invoke('write_mcp_config', { config }),
+  // 配置（读缓存，写清缓存）
+  getVersionInfo: () => cachedInvoke('get_version_info', {}, 30000),
+  readOpenclawConfig: () => cachedInvoke('read_openclaw_config'),
+  writeOpenclawConfig: (config) => { invalidate('read_openclaw_config'); return invoke('write_openclaw_config', { config }) },
+  readMcpConfig: () => cachedInvoke('read_mcp_config'),
+  writeMcpConfig: (config) => { invalidate('read_mcp_config'); return invoke('write_mcp_config', { config }) },
   reloadGateway: () => invoke('reload_gateway'),
   upgradeOpenclaw: (source = 'chinese') => invoke('upgrade_openclaw', { source }),
   installGateway: () => invoke('install_gateway'),
   uninstallGateway: () => invoke('uninstall_gateway'),
-  getNpmRegistry: () => invoke('get_npm_registry'),
-  setNpmRegistry: (registry) => invoke('set_npm_registry', { registry }),
+  getNpmRegistry: () => cachedInvoke('get_npm_registry', {}, 30000),
+  setNpmRegistry: (registry) => { invalidate('get_npm_registry'); return invoke('set_npm_registry', { registry }) },
   testModel: (baseUrl, apiKey, modelId) => invoke('test_model', { baseUrl, apiKey, modelId }),
   listRemoteModels: (baseUrl, apiKey) => invoke('list_remote_models', { baseUrl, apiKey }),
 
   // Agent 管理
-  listAgents: () => invoke('list_agents'),
-  addAgent: (name, model, workspace) => invoke('add_agent', { name, model, workspace: workspace || null }),
-  deleteAgent: (id) => invoke('delete_agent', { id }),
-  updateAgentIdentity: (id, name, emoji) => invoke('update_agent_identity', { id, name, emoji }),
+  listAgents: () => cachedInvoke('list_agents'),
+  addAgent: (name, model, workspace) => { invalidate('list_agents'); return invoke('add_agent', { name, model, workspace: workspace || null }) },
+  deleteAgent: (id) => { invalidate('list_agents'); return invoke('delete_agent', { id }) },
+  updateAgentIdentity: (id, name, emoji) => { invalidate('list_agents'); return invoke('update_agent_identity', { id, name, emoji }) },
   backupAgent: (id) => invoke('backup_agent', { id }),
 
-  // 日志
-  readLogTail: (logName, lines = 100) => invoke('read_log_tail', { logName, lines }),
+  // 日志（短缓存）
+  readLogTail: (logName, lines = 100) => cachedInvoke('read_log_tail', { logName, lines }, 5000),
   searchLog: (logName, query, maxResults = 50) => invoke('search_log', { logName, query, maxResults }),
 
   // 记忆文件
-  listMemoryFiles: (category, agentId) => invoke('list_memory_files', { category, agent_id: agentId || null }),
-  readMemoryFile: (path, agentId) => invoke('read_memory_file', { path, agent_id: agentId || null }),
-  writeMemoryFile: (path, content, category, agentId) => invoke('write_memory_file', { path, content, category: category || 'memory', agent_id: agentId || null }),
-  deleteMemoryFile: (path, agentId) => invoke('delete_memory_file', { path, agent_id: agentId || null }),
+  listMemoryFiles: (category, agentId) => cachedInvoke('list_memory_files', { category, agent_id: agentId || null }),
+  readMemoryFile: (path, agentId) => cachedInvoke('read_memory_file', { path, agent_id: agentId || null }, 5000),
+  writeMemoryFile: (path, content, category, agentId) => { invalidate('list_memory_files', 'read_memory_file'); return invoke('write_memory_file', { path, content, category: category || 'memory', agent_id: agentId || null }) },
+  deleteMemoryFile: (path, agentId) => { invalidate('list_memory_files'); return invoke('delete_memory_file', { path, agent_id: agentId || null }) },
   exportMemoryZip: (category, agentId) => invoke('export_memory_zip', { category, agent_id: agentId || null }),
 
   // 安装/部署
-  checkInstallation: () => invoke('check_installation'),
-  checkNode: () => invoke('check_node'),
-  getDeployConfig: () => invoke('get_deploy_config'),
+  checkInstallation: () => cachedInvoke('check_installation', {}, 60000),
+  checkNode: () => cachedInvoke('check_node', {}, 60000),
+  getDeployConfig: () => cachedInvoke('get_deploy_config'),
   writeEnvFile: (path, config) => invoke('write_env_file', { path, config }),
 
   // 备份管理
-  listBackups: () => invoke('list_backups'),
-  createBackup: () => invoke('create_backup'),
+  listBackups: () => cachedInvoke('list_backups'),
+  createBackup: () => { invalidate('list_backups'); return invoke('create_backup') },
   restoreBackup: (name) => invoke('restore_backup', { name }),
-  deleteBackup: (name) => invoke('delete_backup', { name }),
+  deleteBackup: (name) => { invalidate('list_backups'); return invoke('delete_backup', { name }) },
 
   // 扩展工具
-  getCftunnelStatus: () => invoke('get_cftunnel_status'),
-  cftunnelAction: (action) => invoke('cftunnel_action', { action }),
-  getCftunnelLogs: (lines = 20) => invoke('get_cftunnel_logs', { lines }),
-  getClawappStatus: () => invoke('get_clawapp_status'),
+  getCftunnelStatus: () => cachedInvoke('get_cftunnel_status', {}, 10000),
+  cftunnelAction: (action) => { invalidate('get_cftunnel_status'); return invoke('cftunnel_action', { action }) },
+  getCftunnelLogs: (lines = 20) => cachedInvoke('get_cftunnel_logs', { lines }, 5000),
+  getClawappStatus: () => cachedInvoke('get_clawapp_status', {}, 5000),
   installCftunnel: () => invoke('install_cftunnel'),
 
   // 设备密钥 + Gateway 握手
   createConnectFrame: (nonce, gatewayToken) => invoke('create_connect_frame', { nonce, gatewayToken }),
+
+  // 设备配对
+  autoPairDevice: () => invoke('auto_pair_device'),
+  checkPairingStatus: () => invoke('check_pairing_status'),
 }

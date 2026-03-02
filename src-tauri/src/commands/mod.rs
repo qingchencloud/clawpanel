@@ -6,6 +6,7 @@ pub mod device;
 pub mod extensions;
 pub mod logs;
 pub mod memory;
+pub mod pairing;
 pub mod service;
 
 /// 获取 OpenClaw 配置目录 (~/.openclaw/)

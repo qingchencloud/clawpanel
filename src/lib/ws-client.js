@@ -162,7 +162,16 @@ export class WsClient {
       this._handshaking = false
       if (!msg.ok || msg.error) {
         const errMsg = msg.error?.message || 'Gateway 握手失败'
-        console.error('[ws] connect 失败:', errMsg)
+        const errCode = msg.error?.code
+        console.error('[ws] connect 失败:', errMsg, errCode)
+
+        // 如果是配对错误，尝试自动配对
+        if (errCode === 'NOT_PAIRED' || errCode === 'PAIRING_REQUIRED') {
+          console.log('[ws] 检测到未配对，尝试自动配对...')
+          this._autoPairAndReconnect()
+          return
+        }
+
         this._setConnected(false, 'error', errMsg)
         this._readyCallbacks.forEach(fn => {
           try { fn(null, null, { error: true, message: errMsg }) } catch {}
@@ -191,6 +200,25 @@ export class WsClient {
       this._eventListeners.forEach(fn => {
         try { fn(msg) } catch (e) { console.error('[ws] handler error:', e) }
       })
+    }
+  }
+
+  async _autoPairAndReconnect() {
+    try {
+      console.log('[ws] 检测到未配对，执行自动配对...')
+      const result = await api.autoPairDevice()
+      console.log('[ws] 配对结果:', result)
+
+      // 配对成功后直接重连，不需要重启 Gateway
+      console.log('[ws] 配对成功，2秒后重新连接...')
+      setTimeout(() => {
+        if (!this._intentionalClose) {
+          this.reconnect()
+        }
+      }, 2000)
+    } catch (e) {
+      console.error('[ws] 自动配对失败:', e)
+      this._setConnected(false, 'error', `配对失败: ${e}`)
     }
   }
 

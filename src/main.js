@@ -5,6 +5,7 @@ import { registerRoute, initRouter, navigate, setDefaultRoute } from './router.j
 import { renderSidebar } from './components/sidebar.js'
 import { initTheme } from './lib/theme.js'
 import { detectOpenclawStatus, isOpenclawReady, isGatewayRunning, onGatewayChange, startGatewayPoll } from './lib/app-state.js'
+import { wsClient } from './lib/ws-client.js'
 import { api } from './lib/tauri-api.js'
 
 // 样式
@@ -15,6 +16,7 @@ import './style/components.css'
 import './style/pages.css'
 import './style/chat.css'
 import './style/agents.css'
+import './style/debug.css'
 
 // 初始化主题
 initTheme()
@@ -23,40 +25,69 @@ const sidebar = document.getElementById('sidebar')
 const content = document.getElementById('content')
 
 async function boot() {
-  await detectOpenclawStatus()
-
-  if (isOpenclawReady()) {
-    // 正常模式：注册所有页面
-    registerRoute('/dashboard', () => import('./pages/dashboard.js'))
-    registerRoute('/chat', () => import('./pages/chat.js'))
-    registerRoute('/services', () => import('./pages/services.js'))
-    registerRoute('/logs', () => import('./pages/logs.js'))
-    registerRoute('/models', () => import('./pages/models.js'))
-    registerRoute('/agents', () => import('./pages/agents.js'))
-    registerRoute('/gateway', () => import('./pages/gateway.js'))
-    registerRoute('/memory', () => import('./pages/memory.js'))
-    registerRoute('/extensions', () => import('./pages/extensions.js'))
-    registerRoute('/about', () => import('./pages/about.js'))
-  } else {
-    // 未安装模式：只注册 setup、extensions、about
-    setDefaultRoute('/setup')
-    registerRoute('/setup', () => import('./pages/setup.js'))
-    registerRoute('/extensions', () => import('./pages/extensions.js'))
-    registerRoute('/about', () => import('./pages/about.js'))
-  }
+  // 先注册所有路由，立即渲染 UI（不等后端检测）
+  registerRoute('/dashboard', () => import('./pages/dashboard.js'))
+  registerRoute('/chat', () => import('./pages/chat.js'))
+  registerRoute('/chat-debug', () => import('./pages/chat-debug.js'))
+  registerRoute('/services', () => import('./pages/services.js'))
+  registerRoute('/logs', () => import('./pages/logs.js'))
+  registerRoute('/models', () => import('./pages/models.js'))
+  registerRoute('/agents', () => import('./pages/agents.js'))
+  registerRoute('/gateway', () => import('./pages/gateway.js'))
+  registerRoute('/memory', () => import('./pages/memory.js'))
+  registerRoute('/extensions', () => import('./pages/extensions.js'))
+  registerRoute('/about', () => import('./pages/about.js'))
+  registerRoute('/setup', () => import('./pages/setup.js'))
 
   renderSidebar(sidebar)
   initRouter(content)
 
-  // 未安装时强制跳转到 setup
-  if (!isOpenclawReady()) {
-    navigate('/setup')
-    return
-  }
+  // 后台检测状态，检测完再决定是否跳转 setup
+  detectOpenclawStatus().then(() => {
+    // 重新渲染侧边栏（检测完成后 isOpenclawReady 状态已更新）
+    renderSidebar(sidebar)
+    if (!isOpenclawReady()) {
+      setDefaultRoute('/setup')
+      navigate('/setup')
+    } else {
+      if (window.location.hash === '#/setup') navigate('/dashboard')
+      setupGatewayBanner()
+      startGatewayPoll()
 
-  // Gateway 未启动引导横幅
-  setupGatewayBanner()
-  startGatewayPoll()
+      // 自动连接 WebSocket（如果 Gateway 正在运行）
+      if (isGatewayRunning()) {
+        autoConnectWebSocket()
+      }
+
+      // 监听 Gateway 状态变化，自动连接/断开 WebSocket
+      onGatewayChange((running) => {
+        if (running) {
+          autoConnectWebSocket()
+        } else {
+          wsClient.close()
+        }
+      })
+    }
+  })
+}
+
+async function autoConnectWebSocket() {
+  try {
+    console.log('[main] 自动连接 WebSocket...')
+    const config = await api.readOpenclawConfig()
+    const port = config?.gateway?.port || 18789
+    const token = config?.gateway?.auth?.token || ''
+
+    if (!token) {
+      console.warn('[main] Gateway token 未设置，跳过 WebSocket 连接')
+      return
+    }
+
+    wsClient.connect(`ws://127.0.0.1:${port}/ws`, token)
+    console.log('[main] WebSocket 连接已启动')
+  } catch (e) {
+    console.error('[main] 自动连接 WebSocket 失败:', e)
+  }
 }
 
 function setupGatewayBanner() {
