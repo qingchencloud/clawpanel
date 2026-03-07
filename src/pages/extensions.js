@@ -5,14 +5,13 @@
 import { api } from '../lib/tauri-api.js'
 import { toast } from '../components/toast.js'
 
-// HTML 转义，防止 XSS
 function escapeHtml(str) {
   if (!str) return ''
   return String(str)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
+    .replace(/\"/g, '&quot;')
 }
 
 export async function render() {
@@ -47,8 +46,6 @@ async function loadAll(page) {
     loadClawapp(page),
   ])
 }
-
-// ===== cftunnel =====
 
 async function loadCftunnel(page) {
   const el = page.querySelector('#cftunnel-content')
@@ -141,8 +138,6 @@ function renderRoutes(routes) {
   `
 }
 
-// ===== ClawApp =====
-
 async function loadClawapp(page) {
   const el = page.querySelector('#clawapp-content')
   try {
@@ -190,8 +185,6 @@ function renderClawapp(el, s) {
     </div>
   `
 }
-
-// ===== 事件绑定 =====
 
 function bindEvents(page) {
   page.addEventListener('click', async (e) => {
@@ -242,7 +235,6 @@ async function handleCftunnelAction(page, action) {
 async function handleCftunnelLogs(page) {
   const area = page.querySelector('#cftunnel-logs-area')
   if (!area) return
-  // 切换显示
   if (area.innerHTML) {
     area.innerHTML = ''
     return
@@ -266,8 +258,6 @@ async function handleCftunnelLogs(page) {
 async function handleInstallCftunnel(page) {
   const area = page.querySelector('#install-progress-area')
   if (!area) return
-
-  // 显示进度条
   area.innerHTML = `
     <div style="margin-top:var(--space-lg)">
       <div class="upgrade-progress-wrap">
@@ -279,11 +269,9 @@ async function handleInstallCftunnel(page) {
       <div class="upgrade-log-box" id="install-log-box"></div>
     </div>
   `
-
   const progressFill = area.querySelector('#install-progress-fill')
   const progressText = area.querySelector('#install-progress-text')
   const logBox = area.querySelector('#install-log-box')
-
   let unlistenLog, unlistenProgress
   try {
     if (window.__TAURI_INTERNALS__) {
@@ -298,18 +286,14 @@ async function handleInstallCftunnel(page) {
           progressFill.style.width = progress + '%'
           progressText.textContent = `安装中... ${progress}%`
         })
-      } catch { /* Web 模式无 Tauri event */ }
+      } catch {}
     } else {
       logBox.textContent += 'Web 模式：安装日志不可用，请等待完成...\n'
     }
-
     await api.installCftunnel()
-
     progressFill.classList.add('done')
     progressText.textContent = '✅ 安装完成'
     toast('cftunnel 安装成功', 'success')
-
-    // 3 秒后刷新状态
     setTimeout(() => loadCftunnel(page), 3000)
   } catch (e) {
     progressFill.classList.add('error')
@@ -325,7 +309,6 @@ async function handleInstallCftunnel(page) {
 async function handleInstallClawapp(page) {
   const area = page.querySelector('#install-clawapp-progress-area')
   if (!area) return
-
   area.innerHTML = `
     <div style="margin-top:var(--space-lg)">
       <div class="upgrade-progress-wrap">
@@ -337,11 +320,9 @@ async function handleInstallClawapp(page) {
       <div class="upgrade-log-box" id="install-clawapp-log-box"></div>
     </div>
   `
-
   const progressFill = area.querySelector('#install-clawapp-progress-fill')
   const progressText = area.querySelector('#install-clawapp-progress-text')
   const logBox = area.querySelector('#install-clawapp-log-box')
-
   let unlistenLog, unlistenProgress
   try {
     if (window.__TAURI_INTERNALS__) {
@@ -356,17 +337,14 @@ async function handleInstallClawapp(page) {
           progressFill.style.width = progress + '%'
           progressText.textContent = `安装中... ${progress}%`
         })
-      } catch { /* Web 模式无 Tauri event */ }
+      } catch {}
     } else {
       logBox.textContent += 'Web 模式：安装日志不可用，请等待完成...\n'
     }
-
     await api.installClawapp()
-
     progressFill.classList.add('done')
     progressText.textContent = '✅ 安装完成'
     toast('ClawApp 安装成功', 'success')
-
     setTimeout(() => loadClawapp(page), 3000)
   } catch (e) {
     progressFill.classList.add('error')

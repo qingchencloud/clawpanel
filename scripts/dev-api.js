@@ -690,19 +690,24 @@ const handlers = {
   clawhub_search({ query }) {
     const q = String(query || '').trim()
     if (!q) return []
-    const out = execSync(`npx -y clawhub search ${JSON.stringify(q)} --limit 12`, { encoding: 'utf8', timeout: 30000 })
-    return out.split('\n')
-      .map(line => line.trim())
-      .filter(line => line && !line.startsWith('-'))
-      .map(line => {
-        const parts = line.split(/\s{2,}/).filter(Boolean)
-        return {
-          slug: parts[0] || '',
-          displayName: parts[1] || parts[0] || '',
-          summary: '',
-          source: 'clawhub'
-        }
-      })
+    try {
+      const out = execSync(`npx -y clawhub search ${JSON.stringify(q)} --limit 12`, { encoding: 'utf8', timeout: 30000 })
+      return out.split('\n')
+        .map(line => line.trim())
+        .filter(line => line && !line.startsWith('-'))
+        .map(line => {
+          const parts = line.split(/\s{2,}/).filter(Boolean)
+          return {
+            slug: parts[0] || '',
+            displayName: parts[1] || parts[0] || '',
+            summary: '',
+            source: 'clawhub'
+          }
+        })
+    } catch (e) {
+      console.warn('[dev-api] clawhub search failed:', e.message)
+      return []
+    }
   },
 
   clawhub_list_installed() {
@@ -728,15 +733,23 @@ const handlers = {
   },
 
   clawhub_inspect({ slug }) {
-    const out = execSync(`npx -y clawhub inspect ${JSON.stringify(slug)} --json`, { encoding: 'utf8', timeout: 30000 })
-    return JSON.parse(out)
+    try {
+      const out = execSync(`npx -y clawhub inspect ${JSON.stringify(slug)} --json`, { encoding: 'utf8', timeout: 30000 })
+      return JSON.parse(out)
+    } catch (e) {
+      throw new Error(`clawhub inspect 失败: ${e.message}`)
+    }
   },
 
   clawhub_install({ slug }) {
     const skillsDir = path.join(OPENCLAW_DIR, 'skills')
     if (!fs.existsSync(skillsDir)) fs.mkdirSync(skillsDir, { recursive: true })
-    const out = execSync(`npx -y clawhub install ${JSON.stringify(slug)} --workdir .openclaw --dir skills`, { cwd: homedir(), encoding: 'utf8', timeout: 120000 })
-    return { success: true, slug, output: out.trim() }
+    try {
+      const out = execSync(`npx -y clawhub install ${JSON.stringify(slug)} --workdir .openclaw --dir skills`, { cwd: homedir(), encoding: 'utf8', timeout: 120000 })
+      return { success: true, slug, output: out.trim() }
+    } catch (e) {
+      throw new Error(`clawhub install 失败: ${e.message}`)
+    }
   },
 
   // 扩展工具

@@ -117,7 +117,7 @@ docker run -d --name clawpanel --restart unless-stopped \
 - **聊天** — 流式响应、Markdown 渲染、会话管理、Agent 选择、快捷指令
 - **日志查看** — 多日志源实时查看与关键词搜索
 - **记忆管理** — 记忆文件查看/编辑、分类管理、ZIP 导出、Agent 切换
-- **扩展工具** — cftunnel 内网穿透管理、ClawApp 状态监控
+- **扩展工具** — cftunnel 内网穿透管理、ClawApp 状态监控、ClawHub Skills 搜索与一键安装
 - **关于** — 版本信息、社群入口、相关项目链接、一键升级
 
 ## 功能截图

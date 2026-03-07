@@ -5,6 +5,17 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 新增 (Features)
+
+- 扩展工具页新增 **ClawHub Skills** 区块，支持搜索、查看详情、查看已安装列表与一键安装
+- 新增 ClawHub 相关 Tauri / dev API 命令：`clawhub_search`、`clawhub_list_installed`、`clawhub_inspect`、`clawhub_install`
+
+### 优化 (Improvements)
+
+- ClawHub 安装失败时恢复按钮状态，并对限流错误给出更明确提示
+
 ## [0.4.8] - 2026-03-06
 
 ### 修复 (Bug Fixes)
