@@ -43,6 +43,11 @@ pub fn run() {
             config::write_panel_config,
             config::get_npm_registry,
             config::set_npm_registry,
+            config::get_fallbacks_history_path,
+            config::load_fallbacks_history,
+            config::save_fallbacks_history,
+            config::clear_fallbacks_history,
+            config::set_fallbacks_config,
             // 设备密钥 + Gateway 握手
             device::create_connect_frame,
             // 设备配对

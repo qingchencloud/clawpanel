@@ -280,6 +280,16 @@ export const api = {
   uninstallGateway: () => invoke('uninstall_gateway'),
   getNpmRegistry: () => cachedInvoke('get_npm_registry', {}, 30000),
   setNpmRegistry: (registry) => { invalidate('get_npm_registry'); return invoke('set_npm_registry', { registry }) },
+  
+  // Fallbacks 历史记录
+  getFallbacksHistoryPath: () => invoke('get_fallbacks_history_path'),
+  loadFallbacksHistory: () => invoke('load_fallbacks_history'),
+  saveFallbacksHistory: (history) => invoke('save_fallbacks_history', { history }),
+  clearFallbacksHistory: () => invoke('clear_fallbacks_history'),
+  
+  // 使用 openclaw CLI 安全地设置 fallbacks 配置
+  setFallbacksConfig: (fallbacks) => invoke('set_fallbacks_config', { fallbacks }),
+  
   testModel: (baseUrl, apiKey, modelId) => invoke('test_model', { baseUrl, apiKey, modelId }),
   listRemoteModels: (baseUrl, apiKey) => invoke('list_remote_models', { baseUrl, apiKey }),
 

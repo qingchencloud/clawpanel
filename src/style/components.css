@@ -413,3 +413,190 @@ mark {
 .toggle-switch input:checked + .toggle-slider::before {
   transform: translateX(20px);
 }
+
+/* === Fallbacks 编辑器 === */
+.fallbacks-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.fallbacks-panel {
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  max-height: 65vh;
+}
+
+.fallbacks-panel-header {
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.fallbacks-panel-header h3 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.fallbacks-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.fallbacks-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fallbacks-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.fallbacks-item:hover {
+  border-color: var(--border-focus);
+  background: var(--bg-card-hover);
+}
+
+.fallbacks-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.fallbacks-item-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fallbacks-item-provider {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.fallbacks-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fallbacks-priority {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--primary);
+  padding: 2px 6px;
+  background: rgba(99, 102, 241, 0.1);
+  border-radius: 4px;
+}
+
+.fallbacks-selected-item {
+  cursor: grab;
+}
+
+.fallbacks-selected-item:active {
+  cursor: grabbing;
+}
+
+.fallbacks-selected-item.selected {
+  border-color: var(--primary);
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.fallbacks-selected-item.dragging {
+  opacity: 0.5;
+}
+
+.fallbacks-selected-item.drag-over {
+  border-color: var(--primary);
+  border-style: dashed;
+}
+
+.fallbacks-drag-handle {
+  font-size: 16px;
+  color: var(--text-tertiary);
+  margin-right: 8px;
+  cursor: grab;
+  user-select: none;
+}
+
+.fallbacks-drag-handle:active {
+  cursor: grabbing;
+}
+
+.fallbacks-empty {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.fallbacks-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.fallbacks-history-item {
+  padding: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+}
+
+.fallbacks-history-time {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-bottom: 8px;
+}
+
+.fallbacks-history-content {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.fallbacks-history-content div {
+  margin-bottom: 4px;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .fallbacks-layout {
+    grid-template-columns: 1fr;
+  }
+  
+  .fallbacks-panel {
+    max-height: 300px;
+  }
+}
+
+/* === Fallbacks 编辑器特定样式 === */
+.fallbacks-editor {
+  max-width: 1200px !important;
+  max-height: 90vh !important;
+  width: 95vw;
+}

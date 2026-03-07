@@ -1356,3 +1356,84 @@ pub fn set_npm_registry(registry: String) -> Result<(), String> {
     let path = super::openclaw_dir().join("npm-registry.txt");
     fs::write(&path, registry.trim()).map_err(|e| format!("保存失败: {e}"))
 }
+
+// === Fallbacks 历史记录 ===
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+struct FallbacksHistoryRecord {
+    timestamp: i64,
+    fallbacks: Vec<String>,
+    primary: String,
+}
+
+#[tauri::command]
+pub fn get_fallbacks_history_path() -> Result<String, String> {
+    let path = super::openclaw_dir().join("fallbacks-history.json");
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn load_fallbacks_history() -> Result<Value, String> {
+    let path = super::openclaw_dir().join("fallbacks-history.json");
+    if !path.exists() {
+        return Ok(serde_json::json!([]));
+    }
+    
+    let content = fs::read_to_string(&path).map_err(|e| format!("读取历史记录失败: {e}"))?;
+    let history: Vec<FallbacksHistoryRecord> = serde_json::from_str(&content)
+        .map_err(|e| format!("解析历史记录失败: {e}"))?;
+    
+    serde_json::to_value(history).map_err(|e| format!("序列化失败: {e}"))
+}
+
+#[tauri::command]
+pub fn save_fallbacks_history(history: Value) -> Result<(), String> {
+    let dir = super::openclaw_dir();
+    if !dir.exists() {
+        fs::create_dir_all(&dir).map_err(|e| format!("创建目录失败: {e}"))?;
+    }
+    
+    let path = dir.join("fallbacks-history.json");
+    let json = serde_json::to_string_pretty(&history)
+        .map_err(|e| format!("序列化历史记录失败: {e}"))?;
+    fs::write(&path, json).map_err(|e| format!("保存历史记录失败: {e}"))
+}
+
+#[tauri::command]
+pub fn clear_fallbacks_history() -> Result<(), String> {
+    let path = super::openclaw_dir().join("fallbacks-history.json");
+    if path.exists() {
+        fs::remove_file(&path).map_err(|e| format!("删除历史记录失败: {e}"))?;
+    }
+    Ok(())
+}
+
+/// 使用 openclaw CLI 安全地设置 fallbacks 配置
+#[tauri::command]
+pub async fn set_fallbacks_config(fallbacks: Vec<String>) -> Result<(), String> {
+    use crate::utils::openclaw_command_async;
+    
+    // 将 fallbacks 数组转换为 JSON 字符串
+    let fallbacks_json = serde_json::to_string(&fallbacks)
+        .map_err(|e| format!("序列化 fallbacks 失败: {e}"))?;
+    
+    // 使用 openclaw config set 命令安全地设置配置
+    let output = openclaw_command_async()
+        .args(["config", "set", "agents.defaults.model.fallbacks", &fallbacks_json])
+        .output()
+        .await
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                "OpenClaw CLI 未找到，请确认已安装并重启 ClawPanel。".to_string()
+            } else {
+                format!("执行 openclaw config set 失败: {e}")
+            }
+        })?;
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("设置 fallbacks 配置失败: {stderr}"));
+    }
+    
+    Ok(())
+}

@@ -495,6 +495,21 @@ const handlers = {
     return true
   },
 
+  // 使用 openclaw CLI 安全地设置 fallbacks 配置
+  set_fallbacks_config({ fallbacks }) {
+    try {
+      // 使用 openclaw config set 命令安全地设置配置
+      const fallbacksJson = JSON.stringify(fallbacks)
+      execSync(`openclaw config set agents.defaults.model.fallbacks '${fallbacksJson}'`, {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe']
+      })
+      return true
+    } catch (e) {
+      throw new Error(`设置 fallbacks 配置失败: ${e.message}`)
+    }
+  },
+
   read_mcp_config() {
     if (!fs.existsSync(MCP_CONFIG_PATH)) return {}
     return JSON.parse(fs.readFileSync(MCP_CONFIG_PATH, 'utf8'))

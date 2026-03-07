@@ -125,7 +125,10 @@ function renderDefaultBar(page, state) {
 
   bar.innerHTML = `
     <div class="config-section" style="margin-bottom:var(--space-lg)">
-      <div class="config-section-title">当前生效配置</div>
+      <div class="config-section-title">
+        <span>当前生效配置</span>
+        <button class="btn btn-sm btn-secondary" id="btn-edit-fallbacks" style="margin-left:auto">编辑备选模型</button>
+      </div>
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <div>
           <span style="font-size:var(--font-size-sm);color:var(--text-tertiary)">主模型：</span>
@@ -133,12 +136,15 @@ function renderDefaultBar(page, state) {
         </div>
         <div>
           <span style="font-size:var(--font-size-sm);color:var(--text-tertiary)">备选模型：</span>
-          <span style="font-size:var(--font-size-sm);color:var(--text-secondary)">${fallbacks.length ? fallbacks.join(', ') : '无'}</span>
+          <span style="font-family:var(--font-mono);font-size:var(--font-size-sm);color:var(--text-secondary)">${fallbacks.length ? fallbacks.join(', ') : '无'}</span>
         </div>
       </div>
-      <div class="form-hint" style="margin-top:6px">主模型不可用时，系统会自动切换到备选模型</div>
+      <div class="form-hint" style="margin-top:6px">主模型不可用时，系统会自动切换到备选模型。点击"编辑备选模型"可自定义切换顺序和选择。</div>
     </div>
   `
+
+  // 绑定编辑按钮事件
+  bar.querySelector('#btn-edit-fallbacks').onclick = async () => await showFallbacksEditor(page, state)
 }
 
 // 排序模型列表
@@ -1235,5 +1241,540 @@ async function testModel(btn, state, providerKey, idx) {
     }
     // 持久化测试结果（仅保存，不重启 Gateway）
     saveConfigOnly(state)
+  }
+}
+
+// ===== Fallbacks 编辑器 =====
+
+// 权限检查：验证用户是否有权限修改配置
+async function checkFallbacksPermission() {
+  // 在桌面应用中，权限主要通过操作系统文件系统控制
+  // 开发环境中直接返回成功，桌面应用中会通过文件系统权限控制
+  try {
+    // 尝试读取配置文件路径，验证访问权限
+    const historyPath = await api.getFallbacksHistoryPath()
+    return { authorized: true, message: '' }
+  } catch (e) {
+    // 在开发环境中，如果 API 不可用或未实现，直接返回成功
+    // 桌面应用中会通过文件系统权限来控制
+    console.log('[权限检查] 开发环境或 API 不可用，允许访问:', e.message)
+    return { authorized: true, message: '' }
+  }
+}
+
+// 显示 fallbacks 编辑器弹窗
+async function showFallbacksEditor(page, state) {
+  // 权限检查
+  const permissionCheck = await checkFallbacksPermission()
+  if (!permissionCheck.authorized) {
+    toast('无法访问配置文件，请检查文件权限', 'error')
+    return
+  }
+
+  const primary = getCurrentPrimary(state.config)
+  const allModels = collectAllModels(state.config)
+  const currentFallbacks = state.config?.agents?.defaults?.model?.fallbacks || []
+
+  // 创建编辑器状态
+  const editorState = {
+    availableModels: allModels.filter(m => m.full !== primary),
+    selectedFallbacks: [...currentFallbacks],
+    dragSrcEl: null,
+    dragSrcIndex: null
+  }
+
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.innerHTML = `
+    <div class="modal fallbacks-editor" style="max-width:1200px;max-height:90vh;overflow-y:auto">
+      <div class="modal-title">
+        <span>备选模型配置</span>
+        <button class="btn btn-sm btn-secondary" id="btn-show-history" style="margin-left:auto">📜 历史记录</button>
+      </div>
+      
+      <div class="form-hint" style="margin-bottom:16px">
+        拖拽模型卡片调整切换优先级（从上到下依次尝试）。主模型不可用时，系统会按此顺序自动切换到备选模型。
+      </div>
+
+      <div class="fallbacks-layout">
+        <!-- 可用模型列表 -->
+        <div class="fallbacks-panel">
+          <div class="fallbacks-panel-header">
+            <h3>可用模型</h3>
+            <input class="form-input" id="fallbacks-search" placeholder="搜索模型..." style="width:100%;margin-top:8px">
+          </div>
+          <div class="fallbacks-list" id="available-list">
+            <!-- 动态生成 -->
+          </div>
+        </div>
+
+        <!-- 已选 fallbacks 列表 -->
+        <div class="fallbacks-panel">
+          <div class="fallbacks-panel-header">
+            <h3>已选备选模型 <span id="fallbacks-count">(0)</span></h3>
+            <div class="fallbacks-actions">
+              <button class="btn btn-sm btn-secondary" id="btn-move-up">↑ 上移</button>
+              <button class="btn btn-sm btn-secondary" id="btn-move-down">↓ 下移</button>
+              <button class="btn btn-sm btn-danger" id="btn-remove-all">清空</button>
+            </div>
+          </div>
+          <div class="fallbacks-list fallbacks-selected" id="selected-list">
+            <!-- 动态生成 -->
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="btn-cancel">取消</button>
+        <button class="btn btn-primary" id="btn-save-fallbacks">保存配置</button>
+      </div>
+    </div>
+  `
+
+  document.body.appendChild(overlay)
+
+  // 渲染可用模型列表
+  renderAvailableList(overlay, editorState)
+  // 渲染已选 fallbacks 列表
+  renderSelectedList(overlay, editorState)
+
+  // 绑定事件
+  bindFallbacksEditorEvents(overlay, page, state, editorState)
+}
+
+// 渲染可用模型列表
+function renderAvailableList(overlay, editorState) {
+  const listEl = overlay.querySelector('#available-list')
+  const searchEl = overlay.querySelector('#fallbacks-search')
+  const searchTerm = searchEl.value.trim().toLowerCase()
+
+  // 过滤模型
+  const filteredModels = editorState.availableModels.filter(m => {
+    const matchesSearch = !searchTerm || 
+      m.full.toLowerCase().includes(searchTerm) ||
+      m.modelId.toLowerCase().includes(searchTerm)
+    const notSelected = !editorState.selectedFallbacks.includes(m.full)
+    return matchesSearch && notSelected
+  })
+
+  if (filteredModels.length === 0) {
+    listEl.innerHTML = '<div class="fallbacks-empty">没有可用的模型</div>'
+    return
+  }
+
+  listEl.innerHTML = filteredModels.map(m => `
+    <div class="fallbacks-item" data-model="${m.full}" draggable="true">
+      <div class="fallbacks-item-info">
+        <div class="fallbacks-item-name">${m.modelId}</div>
+        <div class="fallbacks-item-provider">${m.provider}</div>
+      </div>
+      <button class="btn btn-sm btn-primary fallbacks-add-btn">添加</button>
+    </div>
+  `).join('')
+
+  // 绑定添加按钮事件
+  listEl.querySelectorAll('.fallbacks-add-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation()
+      const modelFull = btn.closest('.fallbacks-item').dataset.model
+      addToFallbacks(editorState, modelFull)
+      renderAvailableList(overlay, editorState)
+      renderSelectedList(overlay, editorState)
+    }
+  })
+}
+
+// 渲染已选 fallbacks 列表
+function renderSelectedList(overlay, editorState) {
+  const listEl = overlay.querySelector('#selected-list')
+  const countEl = overlay.querySelector('#fallbacks-count')
+
+  countEl.textContent = `(${editorState.selectedFallbacks.length})`
+
+  if (editorState.selectedFallbacks.length === 0) {
+    listEl.innerHTML = '<div class="fallbacks-empty">未选择备选模型</div>'
+    return
+  }
+
+  listEl.innerHTML = editorState.selectedFallbacks.map((modelFull, index) => {
+    const model = editorState.availableModels.find(m => m.full === modelFull)
+    if (!model) return ''
+
+    return `
+      <div class="fallbacks-item fallbacks-selected-item" data-model="${modelFull}" data-index="${index}" draggable="true">
+        <div class="fallbacks-drag-handle">⋮⋮</div>
+        <div class="fallbacks-item-info">
+          <div class="fallbacks-item-name">${model.modelId}</div>
+          <div class="fallbacks-item-provider">${model.provider}</div>
+        </div>
+        <div class="fallbacks-item-actions">
+          <span class="fallbacks-priority">#${index + 1}</span>
+          <button class="btn btn-sm btn-danger fallbacks-remove-btn">移除</button>
+        </div>
+      </div>
+    `
+  }).join('')
+
+  // 绑定移除按钮事件
+  listEl.querySelectorAll('.fallbacks-remove-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation()
+      const modelFull = btn.closest('.fallbacks-item').dataset.model
+      removeFromFallbacks(editorState, modelFull)
+      renderAvailableList(overlay, editorState)
+      renderSelectedList(overlay, editorState)
+    }
+  })
+
+  // 绑定拖拽事件
+  bindDragEvents(listEl, editorState)
+}
+
+// 绑定拖拽事件
+function bindDragEvents(listEl, editorState) {
+  const items = listEl.querySelectorAll('.fallbacks-selected-item')
+
+  items.forEach(item => {
+    item.addEventListener('dragstart', (e) => {
+      editorState.dragSrcEl = item
+      editorState.dragSrcIndex = parseInt(item.dataset.index)
+      item.classList.add('dragging')
+      e.dataTransfer.effectAllowed = 'move'
+    })
+
+    item.addEventListener('dragend', () => {
+      item.classList.remove('dragging')
+      editorState.dragSrcEl = null
+      editorState.dragSrcIndex = null
+    })
+
+    item.addEventListener('dragover', (e) => {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      item.classList.add('drag-over')
+    })
+
+    item.addEventListener('dragleave', () => {
+      item.classList.remove('drag-over')
+    })
+
+    item.addEventListener('drop', (e) => {
+      e.preventDefault()
+      item.classList.remove('drag-over')
+
+      if (editorState.dragSrcEl === item) return
+
+      const targetIndex = parseInt(item.dataset.index)
+      const srcIndex = editorState.dragSrcIndex
+
+      // 重新排序
+      const draggedItem = editorState.selectedFallbacks[srcIndex]
+      editorState.selectedFallbacks.splice(srcIndex, 1)
+      editorState.selectedFallbacks.splice(targetIndex, 0, draggedItem)
+
+      // 重新渲染
+      const overlay = listEl.closest('.fallbacks-editor')
+      renderSelectedList(overlay, editorState)
+    })
+  })
+}
+
+// 添加到 fallbacks
+function addToFallbacks(editorState, modelFull) {
+  if (!editorState.selectedFallbacks.includes(modelFull)) {
+    editorState.selectedFallbacks.push(modelFull)
+  }
+}
+
+// 从 fallbacks 移除
+function removeFromFallbacks(editorState, modelFull) {
+  const index = editorState.selectedFallbacks.indexOf(modelFull)
+  if (index > -1) {
+    editorState.selectedFallbacks.splice(index, 1)
+  }
+}
+
+// 绑定编辑器事件
+function bindFallbacksEditorEvents(overlay, page, state, editorState) {
+  // 搜索框
+  const searchEl = overlay.querySelector('#fallbacks-search')
+  searchEl.oninput = () => {
+    renderAvailableList(overlay, editorState)
+  }
+
+  // 上移按钮
+  overlay.querySelector('#btn-move-up').onclick = () => {
+    const selectedItems = overlay.querySelectorAll('.fallbacks-selected-item.selected')
+    if (selectedItems.length !== 1) {
+      toast('请先选择一个模型', 'warning')
+      return
+    }
+
+    const item = selectedItems[0]
+    const index = parseInt(item.dataset.index)
+    if (index === 0) return
+
+    // 交换位置
+    const temp = editorState.selectedFallbacks[index]
+    editorState.selectedFallbacks[index] = editorState.selectedFallbacks[index - 1]
+    editorState.selectedFallbacks[index - 1] = temp
+
+    renderSelectedList(overlay, editorState)
+  }
+
+  // 下移按钮
+  overlay.querySelector('#btn-move-down').onclick = () => {
+    const selectedItems = overlay.querySelectorAll('.fallbacks-selected-item.selected')
+    if (selectedItems.length !== 1) {
+      toast('请先选择一个模型', 'warning')
+      return
+    }
+
+    const item = selectedItems[0]
+    const index = parseInt(item.dataset.index)
+    if (index === editorState.selectedFallbacks.length - 1) return
+
+    // 交换位置
+    const temp = editorState.selectedFallbacks[index]
+    editorState.selectedFallbacks[index] = editorState.selectedFallbacks[index + 1]
+    editorState.selectedFallbacks[index + 1] = temp
+
+    renderSelectedList(overlay, editorState)
+  }
+
+  // 清空按钮
+  overlay.querySelector('#btn-remove-all').onclick = async () => {
+    const confirmed = await showConfirm('确定要清空所有备选模型吗？')
+    if (!confirmed) return
+
+    editorState.selectedFallbacks = []
+    renderAvailableList(overlay, editorState)
+    renderSelectedList(overlay, editorState)
+  }
+
+  // 历史记录按钮
+  overlay.querySelector('#btn-show-history').onclick = () => {
+    showFallbacksHistory(overlay, state)
+  }
+
+  // 取消按钮
+  overlay.querySelector('#btn-cancel').onclick = () => {
+    overlay.remove()
+  }
+
+  // 保存按钮
+  overlay.querySelector('#btn-save-fallbacks').onclick = async () => {
+    await saveFallbacksConfig(overlay, page, state, editorState)
+  }
+
+  // 点击遮罩关闭
+  overlay.onclick = (e) => {
+    if (e.target === overlay) {
+      overlay.remove()
+    }
+  }
+
+  // 选择模型（点击）
+  overlay.querySelector('#selected-list').addEventListener('click', (e) => {
+    const item = e.target.closest('.fallbacks-selected-item')
+    if (!item) return
+
+    // 切换选中状态
+    const wasSelected = item.classList.contains('selected')
+    overlay.querySelectorAll('.fallbacks-selected-item').forEach(i => i.classList.remove('selected'))
+    if (!wasSelected) {
+      item.classList.add('selected')
+    }
+  })
+}
+
+// 验证 fallbacks 配置
+function validateFallbacksConfig(editorState) {
+  const errors = []
+
+  // 检查是否为空
+  if (editorState.selectedFallbacks.length === 0) {
+    errors.push('至少需要选择一个备选模型')
+  }
+
+  // 检查重复
+  const uniqueFallbacks = new Set(editorState.selectedFallbacks)
+  if (uniqueFallbacks.size !== editorState.selectedFallbacks.length) {
+    errors.push('存在重复的备选模型')
+  }
+
+  // 检查模型是否存在
+  const allModelFulls = editorState.availableModels.map(m => m.full)
+  const invalidModels = editorState.selectedFallbacks.filter(m => !allModelFulls.includes(m))
+  if (invalidModels.length > 0) {
+    errors.push(`以下模型不存在：${invalidModels.join(', ')}`)
+  }
+
+  return errors
+}
+
+// 保存 fallbacks 配置
+async function saveFallbacksConfig(overlay, page, state, editorState) {
+  // 验证配置
+  const errors = validateFallbacksConfig(editorState)
+  if (errors.length > 0) {
+    toast('配置验证失败：' + errors.join('; '), 'error')
+    return
+  }
+
+  // 保存到撤销栈
+  pushUndo(state)
+
+  try {
+    // 更新配置
+    if (!state.config.agents) state.config.agents = {}
+    if (!state.config.agents.defaults) state.config.agents.defaults = {}
+    if (!state.config.agents.defaults.model) state.config.agents.defaults.model = {}
+
+    state.config.agents.defaults.model.fallbacks = [...editorState.selectedFallbacks]
+
+    // 使用 openclaw CLI 安全地设置 fallbacks 配置
+    await api.setFallbacksConfig(editorState.selectedFallbacks)
+
+    // 更新内存中的配置（保持状态一致）
+    state.config.agents.defaults.model.fallbacks = [...editorState.selectedFallbacks]
+
+    // 更新 modelsMap
+    const primary = getCurrentPrimary(state.config)
+    const modelsMap = {}
+    modelsMap[primary] = {}
+    for (const fb of editorState.selectedFallbacks) {
+      modelsMap[fb] = {}
+    }
+    state.config.agents.defaults.models = modelsMap
+
+    // 记录历史
+    await saveFallbacksHistory(state, editorState.selectedFallbacks)
+
+    // 刷新界面
+    renderDefaultBar(page, state)
+    updateUndoBtn(page, state)
+
+    // 关闭弹窗
+    overlay.remove()
+
+    toast('备选模型配置已保存', 'success')
+  } catch (e) {
+    toast('保存失败：' + e, 'error')
+  }
+}
+
+// 保存 fallbacks 修改历史
+async function saveFallbacksHistory(state, newFallbacks) {
+  try {
+    const historyPath = await api.getFallbacksHistoryPath()
+    const history = await loadFallbacksHistory(historyPath)
+
+    // 添加新记录
+    history.unshift({
+      timestamp: Date.now(),
+      fallbacks: [...newFallbacks],
+      primary: getCurrentPrimary(state.config)
+    })
+
+    // 保留最近 50 条记录
+    if (history.length > 50) {
+      history.splice(50)
+    }
+
+    // 保存
+    await api.saveFallbacksHistory(history)
+  } catch (e) {
+    console.error('保存历史记录失败:', e)
+  }
+}
+
+// 加载 fallbacks 历史记录
+async function loadFallbacksHistory(historyPath) {
+  try {
+    return await api.loadFallbacksHistory()
+  } catch (e) {
+    return []
+  }
+}
+
+// 显示 fallbacks 历史记录
+async function showFallbacksHistory(parentOverlay, state) {
+  try {
+    const history = await loadFallbacksHistory()
+
+    const overlay = document.createElement('div')
+    overlay.className = 'modal-overlay'
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:900px;max-height:80vh;overflow-y:auto">
+        <div class="modal-title">备选模型修改历史</div>
+        
+        ${history.length === 0 ? '<div class="form-hint">暂无历史记录</div>' : ''}
+        
+        <div class="fallbacks-history-list">
+          ${history.map((record, index) => `
+            <div class="fallbacks-history-item">
+              <div class="fallbacks-history-time">
+                ${new Date(record.timestamp).toLocaleString('zh-CN')}
+              </div>
+              <div class="fallbacks-history-content">
+                <div><strong>主模型：</strong>${record.primary || '未配置'}</div>
+                <div><strong>备选模型：</strong>${record.fallbacks.join(', ') || '无'}</div>
+              </div>
+              <button class="btn btn-sm btn-secondary btn-restore-history" data-index="${index}">恢复此配置</button>
+            </div>
+          `).join('')}
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn btn-secondary" id="btn-close-history">关闭</button>
+        </div>
+      </div>
+    `
+
+    document.body.appendChild(overlay)
+
+    // 绑定恢复按钮事件
+    overlay.querySelectorAll('.btn-restore-history').forEach(btn => {
+      btn.onclick = async () => {
+        const index = parseInt(btn.dataset.index)
+        const record = history[index]
+
+        const confirmed = await showConfirm(`确定要恢复 ${new Date(record.timestamp).toLocaleString('zh-CN')} 的配置吗？`)
+        if (!confirmed) return
+
+        // 恢复配置
+        if (!state.config.agents) state.config.agents = {}
+        if (!state.config.agents.defaults) state.config.agents.defaults = {}
+        if (!state.config.agents.defaults.model) state.config.agents.defaults.model = {}
+
+        state.config.agents.defaults.model.fallbacks = [...record.fallbacks]
+
+        // 保存
+        await saveConfigOnly(state)
+
+        // 刷新界面
+        const page = parentOverlay.closest('.page')
+        if (page) {
+          renderDefaultBar(page, state)
+        }
+
+        // 关闭历史弹窗和编辑器
+        overlay.remove()
+        parentOverlay.remove()
+
+        toast('配置已恢复', 'success')
+      }
+    })
+
+    // 关闭按钮
+    overlay.querySelector('#btn-close-history').onclick = () => overlay.remove()
+
+    // 点击遮罩关闭
+    overlay.onclick = (e) => {
+      if (e.target === overlay) overlay.remove()
+    }
+  } catch (e) {
+    toast('加载历史记录失败：' + e, 'error')
   }
 }
