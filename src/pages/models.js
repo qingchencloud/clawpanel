@@ -5,11 +5,12 @@
 import { api } from '../lib/tauri-api.js'
 import { toast } from '../components/toast.js'
 import { showModal, showConfirm } from '../components/modal.js'
+import { icon, statusIcon } from '../lib/icons.js'
 
 // API 接口类型选项
 const API_TYPES = [
   { value: 'openai-completions', label: 'OpenAI 兼容 (最常用)' },
-  { value: 'anthropic', label: 'Anthropic 原生' },
+  { value: 'anthropic-messages', label: 'Anthropic 原生' },
   { value: 'openai-responses', label: 'OpenAI Responses' },
   { value: 'google-gemini', label: 'Google Gemini' },
 ]
@@ -17,10 +18,32 @@ const API_TYPES = [
 // 服务商快捷预设
 const PROVIDER_PRESETS = [
   { key: 'openai', label: 'OpenAI 官方', baseUrl: 'https://api.openai.com/v1', api: 'openai-completions' },
-  { key: 'anthropic', label: 'Anthropic 官方', baseUrl: 'https://api.anthropic.com', api: 'anthropic' },
+  { key: 'anthropic', label: 'Anthropic 官方', baseUrl: 'https://api.anthropic.com', api: 'anthropic-messages' },
   { key: 'deepseek', label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', api: 'openai-completions' },
   { key: 'google', label: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta', api: 'google-gemini' },
 ]
+
+// gpt.qt.cool 推广配置
+const QTCOOL = {
+  baseUrl: 'https://gpt.qt.cool/v1',
+  defaultKey: 'sk-0JDu7hyc51ZKD4iNebpFu07EUEhXmVVc',
+  site: 'https://gpt.qt.cool/',
+  usageUrl: 'https://gpt.qt.cool/user?key=',
+  providerKey: 'qtcool',
+  api: 'openai-completions',
+  models: [
+    { id: 'gpt-5.4', name: 'GPT-5.4', contextWindow: 128000 },
+    { id: 'gpt-5.3-codex', name: 'GPT-5.3 Codex', contextWindow: 128000, reasoning: true },
+    { id: 'gpt-5.2-codex', name: 'GPT-5.2 Codex', contextWindow: 128000, reasoning: true },
+    { id: 'gpt-5.2', name: 'GPT-5.2', contextWindow: 128000 },
+    { id: 'gpt-5.1-codex-max', name: 'GPT-5.1 Codex Max', contextWindow: 128000, reasoning: true },
+    { id: 'gpt-5.1-codex-mini', name: 'GPT-5.1 Codex Mini', contextWindow: 128000, reasoning: true },
+    { id: 'gpt-5.1-codex', name: 'GPT-5.1 Codex', contextWindow: 128000, reasoning: true },
+    { id: 'gpt-5.1', name: 'GPT-5.1', contextWindow: 128000 },
+    { id: 'gpt-5-codex', name: 'GPT-5 Codex', contextWindow: 128000, reasoning: true },
+    { id: 'gpt-5', name: 'GPT-5', contextWindow: 128000 },
+  ]
+}
 
 // 常用模型预设（按服务商分组）
 const MODEL_PRESETS = {
@@ -59,6 +82,30 @@ export async function render() {
     <div class="form-hint" style="margin-bottom:var(--space-md)">
       服务商是模型的来源（如 OpenAI、DeepSeek 等）。每个服务商下可添加多个模型。
       标记为「主模型」的将优先使用，其余作为备选自动切换。配置修改后自动保存。
+    </div>
+    <div id="qtcool-promo" style="margin-bottom:var(--space-lg);border-radius:12px;background:linear-gradient(135deg,#0f0c29 0%,#302b63 50%,#24243e 100%);color:#fff;position:relative;overflow:hidden;box-shadow:0 4px 24px rgba(48,43,99,0.25)">
+      <div style="position:absolute;top:-50px;right:-50px;width:200px;height:200px;border-radius:50%;background:radial-gradient(circle,rgba(99,102,241,0.12) 0%,transparent 70%);pointer-events:none"></div>
+      <div style="position:absolute;bottom:-30px;left:20px;width:120px;height:120px;border-radius:50%;background:radial-gradient(circle,rgba(168,85,247,0.08) 0%,transparent 70%);pointer-events:none"></div>
+      <div style="padding:20px 24px 16px;display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px">
+        <div style="flex:1;min-width:240px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span style="font-size:20px">${icon('gift', 22)}</span>
+            <span style="font-weight:700;font-size:16px;letter-spacing:0.3px">ClawPanel 公益 AI 接口计划</span>
+          </div>
+          <div style="font-size:13px;color:rgba(255,255,255,0.65);line-height:1.7">
+            Token 费用？我们帮你出了。调用成本由项目组内部承担，GPT-5 全系列模型开箱即用。<br>
+            无需注册、无需付费、支持 OpenAI 兼容接口 — 点击即享。
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;align-items:flex-end">
+          <button class="btn btn-sm" id="btn-qtcool-oneclick" style="background:linear-gradient(135deg,#6366f1,#a855f7);color:#fff;font-weight:600;border:none;padding:8px 22px;font-size:13px;white-space:nowrap;border-radius:8px;box-shadow:0 2px 12px rgba(99,102,241,0.4);cursor:pointer;transition:transform 0.15s">${icon('zap', 14)} 一键添加全部模型</button>
+          <div style="display:flex;gap:14px;font-size:11px">
+            <a href="https://gpt.qt.cool/checkin" target="_blank" style="color:rgba(168,133,247,0.9);text-decoration:none">${icon('target', 12)} 签到领密钥</a>
+            <a href="${QTCOOL.usageUrl}${QTCOOL.defaultKey}" target="_blank" style="color:rgba(168,133,247,0.9);text-decoration:none">${icon('bar-chart', 12)} 用量查询</a>
+            <a href="https://claw.qt.cool/" target="_blank" style="color:rgba(168,133,247,0.9);text-decoration:none">${icon('home', 12)} 官网</a>
+          </div>
+        </div>
+      </div>
     </div>
     <div id="default-model-bar"></div>
     <div style="margin-bottom:var(--space-md)">
@@ -695,6 +742,71 @@ function applyDefaultModel(state) {
 function bindTopActions(page, state) {
   page.querySelector('#btn-add-provider').onclick = () => addProvider(page, state)
   page.querySelector('#btn-undo').onclick = () => undo(page, state)
+
+  // gpt.qt.cool 一键添加（动态获取模型列表）
+  page.querySelector('#btn-qtcool-oneclick').onclick = async () => {
+    if (!state.config) { toast('配置未加载完成，请稍候', 'warning'); return }
+
+    const btn = page.querySelector('#btn-qtcool-oneclick')
+    btn.textContent = '获取模型列表...'
+    btn.disabled = true
+
+    // 动态获取模型列表，失败则用静态 fallback
+    let models = QTCOOL.models
+    try {
+      const resp = await fetch(QTCOOL.baseUrl + '/models', {
+        headers: { 'Authorization': 'Bearer ' + QTCOOL.defaultKey },
+        signal: AbortSignal.timeout(8000)
+      })
+      if (resp.ok) {
+        const data = await resp.json()
+        if (data.data && data.data.length) {
+          models = data.data.map(m => ({
+            id: m.id, name: m.id, contextWindow: 128000,
+            reasoning: m.id.includes('codex')
+          })).sort((a, b) => b.id.localeCompare(a.id))
+        }
+      }
+    } catch { /* use fallback */ }
+
+    btn.innerHTML = `${icon('zap', 14)} 一键添加全部模型`
+    btn.disabled = false
+
+    pushUndo(state)
+    if (!state.config.models) state.config.models = {}
+    if (!state.config.models.providers) state.config.models.providers = {}
+
+    const existing = state.config.models.providers[QTCOOL.providerKey]
+    if (existing) {
+      const existingIds = new Set((existing.models || []).map(m => typeof m === 'string' ? m : m.id))
+      let added = 0
+      for (const m of models) {
+        if (!existingIds.has(m.id)) {
+          existing.models.push({ ...m })
+          added++
+        }
+      }
+      toast(added ? `已添加 ${added} 个新模型到 qtcool` : 'qtcool 模型已是最新', added ? 'success' : 'info')
+    } else {
+      state.config.models.providers[QTCOOL.providerKey] = {
+        baseUrl: QTCOOL.baseUrl,
+        apiKey: QTCOOL.defaultKey,
+        api: QTCOOL.api,
+        models: models.map(m => ({ ...m })),
+      }
+      if (!getCurrentPrimary(state.config)) {
+        if (!state.config.agents) state.config.agents = {}
+        if (!state.config.agents.defaults) state.config.agents.defaults = {}
+        if (!state.config.agents.defaults.model) state.config.agents.defaults.model = {}
+        state.config.agents.defaults.model.primary = QTCOOL.providerKey + '/' + models[0].id
+      }
+      toast('已添加 gpt.qt.cool（' + models.length + ' 个模型）', 'success')
+    }
+    renderProviders(page, state)
+    renderDefaultBar(page, state)
+    updateUndoBtn(page, state)
+    autoSave(state)
+  }
 }
 
 // 添加服务商（带预设快捷选择）
@@ -1073,7 +1185,7 @@ async function handleBatchTest(section, state, providerKey) {
       renderDefaultBar(page, state)
     }
     // 进度 toast
-    const status = model?.testStatus === 'ok' ? '✓' : '✗'
+    const status = model?.testStatus === 'ok' ? '\u2713' : '\u2717'
     const latStr = model?.latency != null ? ` ${(model.latency / 1000).toFixed(1)}s` : ''
     toast(`${status} ${modelId}${latStr} (${ok + fail}/${ids.length})`, model?.testStatus === 'ok' ? 'success' : 'error')
   }

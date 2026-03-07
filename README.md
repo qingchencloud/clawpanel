@@ -127,77 +127,77 @@ docker run -d --name clawpanel --restart unless-stopped \
 </p>
 
 <p align="center">
-  <img src="docs/00.png" width="800" alt="AI 助手">
+  <img src="docs/01.png" width="800" alt="AI 助手">
 </p>
 <p align="center"><em>🤖 AI 助手 — 8 大技能卡片，一键触发配置检查、Gateway 诊断、环境检测、一键排障等常用操作</em></p>
 
 <p align="center">
-  <img src="docs/11.png" width="800" alt="AI 助手工具调用实战">
+  <img src="docs/00.png" width="800" alt="仪表盘">
 </p>
-<p align="center"><em>🔧 AI 实战 — 自动调用工具：获取系统信息 → 列出目录 → 读取配置 → 生成健康检查报告，全程可视化</em></p>
+<p align="center"><em>仪表盘 — Gateway / 隧道 / 服务实时状态，版本信息、Agent 数量、模型池一屏掌握</em></p>
 
 <p align="center">
-  <img src="docs/12.png" width="800" alt="AI 助手设置">
+  <img src="docs/02.png" width="800" alt="AI 助手设置 — 公益 AI 接口">
 </p>
-<p align="center"><em>⚙️ AI 设置 — 独立模型配置，支持任意 OpenAI 兼容 API，无需安装 OpenClaw 也能使用 AI 助手</em></p>
+<p align="center"><em>⚙️ AI 设置 — 独立模型配置 + 公益 AI 接口一键接入，GPT-5 全系列免费可用</em></p>
 
 <p align="center">
-  <img src="docs/13.png" width="800" alt="AI 图片识别">
+  <img src="docs/05.png" width="800" alt="AI 助手人设 — Agent 灵魂">
 </p>
-<p align="center"><em>🖼️ 图片识别 — 粘贴截图或拖拽图片，AI 自动识别分析内容，多模态图文混排对话</em></p>
+<p align="center"><em>� 借尸还魂 — 从 OpenClaw Agent 加载灵魂（SOUL / IDENTITY / USER / AGENTS / TOOLS），继承人格与记忆</em></p>
 
 <p align="center">
-  <img src="docs/01.png" width="800" alt="仪表盘">
+  <img src="docs/07.png" width="800" alt="实时聊天">
 </p>
-<p align="center"><em>仪表盘 — 系统运行概览，服务状态一目了然</em></p>
+<p align="center"><em>实时聊天 — WebSocket 流式对话，多 Provider 模型自动聚合，支持多模态</em></p>
 
 <p align="center">
-  <img src="docs/02.png" width="800" alt="实时聊天">
+  <img src="docs/09.png" width="800" alt="模型配置">
 </p>
-<p align="center"><em>实时聊天 — WebSocket 流式对话，支持 Markdown 渲染与多会话管理</em></p>
+<p align="center"><em>模型配置 — 多服务商统一管理，公益接口一键添加全部模型，主模型+备选自动切换</em></p>
 
 <p align="center">
-  <img src="docs/05.png" width="800" alt="模型配置">
+  <img src="docs/13.png" width="800" alt="记忆文件">
 </p>
-<p align="center"><em>模型配置 — 多服务商管理，主模型+备选自动切换</em></p>
-
-<p align="center">
-  <img src="docs/08.png" width="800" alt="记忆文件">
-</p>
-<p align="center"><em>记忆文件 — 在线编辑 Agent 核心配置与工作记忆</em></p>
+<p align="center"><em>记忆文件 — 工作记忆、记忆归档、核心文件在线编辑，多 Agent 记忆隔离</em></p>
 
 <details>
 <summary><strong>查看更多截图</strong></summary>
 
 <p align="center">
-  <img src="docs/06.png" width="800" alt="Agent 管理">
+  <img src="docs/10.png" width="800" alt="Agent 管理">
 </p>
-<p align="center"><em>Agent 管理 — 多 Agent 创建、身份配置与工作区管理</em></p>
+<p align="center"><em>Agent 管理 — 多 Agent 创建、身份配置与独立工作区管理</em></p>
 
 <p align="center">
-  <img src="docs/07.png" width="800" alt="Gateway 配置">
+  <img src="docs/11.png" width="800" alt="Gateway 安全认证">
 </p>
-<p align="center"><em>Gateway 配置 — 端口、访问权限、认证方式可视化配置</em></p>
+<p align="center"><em>Gateway — Token / 密码双认证，Agent 工具权限三档管控，会话可见性控制</em></p>
 
 <p align="center">
   <img src="docs/03.png" width="800" alt="服务管理">
 </p>
-<p align="center"><em>服务管理 — 启停控制、版本检测、一键升级、配置备份</em></p>
+<p align="center"><em>服务管理 — 启停控制、版本检测、一键升级、npm 源切换、配置备份</em></p>
 
 <p align="center">
-  <img src="docs/04.png" width="800" alt="日志查看">
+  <img src="docs/12.png" width="800" alt="安全设置">
 </p>
-<p align="center"><em>日志查看 — 多日志源实时查看与关键词搜索</em></p>
+<p align="center"><em>安全设置 — 访问密码保护与无视风险模式</em></p>
 
 <p align="center">
-  <img src="docs/09.png" width="800" alt="扩展工具">
+  <img src="docs/14.png" width="800" alt="扩展工具">
 </p>
-<p align="center"><em>扩展工具 — cftunnel 内网穿透、ClawApp 移动客户端管理</em></p>
+<p align="center"><em>扩展工具 — cftunnel 内网穿透、ClawApp 移动客户端一键安装</em></p>
 
 <p align="center">
-  <img src="docs/10.png" width="800" alt="系统诊断">
+  <img src="docs/15.png" width="800" alt="系统诊断">
 </p>
-<p align="center"><em>系统诊断 — 全面健康检测与一键修复</em></p>
+<p align="center"><em>系统诊断 — 全面健康检测、WebSocket 测试、一键修复配对</em></p>
+
+<p align="center">
+  <img src="docs/16.png" width="800" alt="关于">
+</p>
+<p align="center"><em>关于 — 版本信息、社群入口（QQ / 微信 / 抖音）、相关项目链接</em></p>
 
 </details>
 

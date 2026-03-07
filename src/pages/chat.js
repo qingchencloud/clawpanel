@@ -9,6 +9,7 @@ import { renderMarkdown } from '../lib/markdown.js'
 import { saveMessage, saveMessages, getLocalMessages, isStorageAvailable } from '../lib/message-db.js'
 import { toast } from '../components/toast.js'
 import { showModal, showConfirm } from '../components/modal.js'
+import { icon as svgIcon } from '../lib/icons.js'
 
 const RENDER_THROTTLE = 30
 const STORAGE_SESSION_KEY = 'clawpanel-last-session'
@@ -134,9 +135,39 @@ export async function render() {
 
   bindEvents(page)
   bindConnectOverlay(page)
+
+  // 首次使用引导提示
+  showPageGuide(_messagesEl)
+
   // 非阻塞：先返回 DOM，后台连接 Gateway
   connectGateway()
   return page
+}
+
+const GUIDE_KEY = 'clawpanel-guide-chat-dismissed'
+
+function showPageGuide(container) {
+  if (localStorage.getItem(GUIDE_KEY)) return
+  const guide = document.createElement('div')
+  guide.className = 'chat-page-guide'
+  guide.innerHTML = `
+    <div class="chat-guide-inner">
+      <div class="chat-guide-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="28" height="28"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+      </div>
+      <div class="chat-guide-content">
+        <b>你正在使用「实时聊天」</b>
+        <p>此页面通过 <b>Gateway</b> 连接 OpenClaw 的 AI Agent，对话由你部署的 OpenClaw 服务处理。</p>
+        <p style="opacity:0.7;font-size:11px">如需使用 ClawPanel 内置 AI 助手（独立于 OpenClaw），请前往左侧菜单「AI 助手」页面。</p>
+      </div>
+      <button class="chat-guide-close" title="知道了">&times;</button>
+    </div>
+  `
+  guide.querySelector('.chat-guide-close').onclick = () => {
+    localStorage.setItem(GUIDE_KEY, '1')
+    guide.remove()
+  }
+  container.insertBefore(guide, container.firstChild)
 }
 
 // ── 事件绑定 ──
@@ -1101,7 +1132,7 @@ function appendUserMessage(text, attachments = [], msgTime) {
       } else if (att.fileName || att.name) {
         const card = document.createElement('div')
         card.className = 'msg-file-card'
-        card.innerHTML = `<span class="msg-file-icon">📎</span><span class="msg-file-name">${att.fileName || att.name}</span>`
+        card.innerHTML = `<span class="msg-file-icon">${svgIcon('paperclip', 16)}</span><span class="msg-file-name">${att.fileName || att.name}</span>`
         mediaContainer.appendChild(card)
       }
     })
@@ -1212,10 +1243,10 @@ function appendFilesToEl(el, files) {
     const card = document.createElement('div')
     card.className = 'msg-file-card'
     const ext = (f.name || '').split('.').pop().toLowerCase()
-    const iconMap = { pdf: '📄', doc: '📝', docx: '📝', txt: '📃', md: '📃', json: '📋', csv: '📊', zip: '📦', rar: '📦' }
-    const icon = iconMap[ext] || '📎'
+    const fileIconMap = { pdf: 'file', doc: 'file-text', docx: 'file-text', txt: 'file-plain', md: 'file-plain', json: 'clipboard', csv: 'bar-chart', zip: 'package', rar: 'package' }
+    const fileIcon = svgIcon(fileIconMap[ext] || 'paperclip', 16)
     const size = f.size ? formatFileSize(f.size) : ''
-    card.innerHTML = `<span class="msg-file-icon">${icon}</span><div class="msg-file-info"><span class="msg-file-name">${f.name || '文件'}</span>${size ? `<span class="msg-file-size">${size}</span>` : ''}</div>`
+    card.innerHTML = `<span class="msg-file-icon">${fileIcon}</span><div class="msg-file-info"><span class="msg-file-name">${f.name || '文件'}</span>${size ? `<span class="msg-file-size">${size}</span>` : ''}</div>`
     if (f.url) {
       card.style.cursor = 'pointer'
       card.onclick = () => window.open(f.url, '_blank')

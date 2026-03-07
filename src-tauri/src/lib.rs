@@ -39,6 +39,8 @@ pub fn run() {
             config::uninstall_gateway,
             config::patch_model_vision,
             config::check_panel_update,
+            config::read_panel_config,
+            config::write_panel_config,
             config::get_npm_registry,
             config::set_npm_registry,
             // 设备密钥 + Gateway 握手
@@ -87,6 +89,8 @@ pub fn run() {
             assistant::assistant_system_info,
             assistant::assistant_list_processes,
             assistant::assistant_check_port,
+            assistant::assistant_web_search,
+            assistant::assistant_fetch_url,
             // 数据目录 & 图片存储
             assistant::assistant_ensure_data_dir,
             assistant::assistant_save_image,

@@ -584,13 +584,13 @@ echo "安装完成"
     let mut child = {
         let install_script = r#"
 $ErrorActionPreference = 'Stop'
-$binDir = Join-Path $env:USERPROFILE 'bin'
-if (-not (Test-Path $binDir)) { New-Item -ItemType Directory -Path $binDir -Force | Out-Null }
-Write-Output '下载 cftunnel...'
-$url = 'https://github.com/qingchencloud/cftunnel/releases/latest/download/cftunnel-windows-amd64.exe'
-$dest = Join-Path $binDir 'cftunnel.exe'
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
+Write-Output '通过官方安装脚本安装 cftunnel...'
+$tmp = Join-Path $env:TEMP 'install-cftunnel.ps1'
+Write-Output '下载安装脚本到临时文件...'
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/qingchencloud/cftunnel/main/install.ps1' -OutFile $tmp -UseBasicParsing
+Write-Output '执行安装脚本...'
+& $tmp
+Remove-Item $tmp -ErrorAction SilentlyContinue
 Write-Output '安装完成'
 "#;
         // 使用完整路径调用 PowerShell，避免 MSYS2/Git Bash 环境下找不到
@@ -654,7 +654,7 @@ Write-Output '安装完成'
     Ok("安装成功".into())
 }
 
-/// 一键安装 ClawApp（通过 npm）
+/// 一键安装 ClawApp（通过官方安装脚本）
 #[tauri::command]
 pub async fn install_clawapp(app: tauri::AppHandle) -> Result<String, String> {
     use std::io::{BufRead, BufReader};
@@ -664,25 +664,58 @@ pub async fn install_clawapp(app: tauri::AppHandle) -> Result<String, String> {
     let _ = app.emit("install-log", "开始安装 ClawApp...");
     let _ = app.emit("install-progress", 10);
 
-    let _ = app.emit("install-log", "通过 npm 安装 clawapp...");
+    let _ = app.emit("install-log", "下载安装脚本...");
     let _ = app.emit("install-progress", 30);
 
-    #[cfg(target_os = "windows")]
+    #[cfg(not(target_os = "windows"))]
     let mut child = {
-        let mut cmd = Command::new("cmd");
-        cmd.args(["/c", "npm", "install", "-g", "clawapp"]);
-        cmd.creation_flags(0x08000000);
-        cmd.stdout(Stdio::piped())
+        let install_script = r#"
+#!/bin/bash
+set -e
+echo "通过官方安装脚本安装 ClawApp..."
+curl -fsSL https://raw.githubusercontent.com/qingchencloud/clawapp/main/install.sh | bash
+echo "安装完成"
+"#;
+        Command::new("bash")
+            .arg("-c")
+            .arg(install_script)
+            .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| format!("启动安装进程失败: {e}"))?
     };
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "windows")]
     let mut child = {
-        Command::new("npm")
-            .args(["install", "-g", "clawapp"])
-            .stdout(Stdio::piped())
+        let install_script = r#"
+$ErrorActionPreference = 'Stop'
+Write-Output '通过官方安装脚本安装 ClawApp...'
+$tmp = Join-Path $env:TEMP 'install-clawapp.ps1'
+Write-Output '下载安装脚本到临时文件...'
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/qingchencloud/clawapp/main/install.ps1' -OutFile $tmp -UseBasicParsing
+Write-Output '执行安装脚本...'
+& $tmp -Auto
+Remove-Item $tmp -ErrorAction SilentlyContinue
+Write-Output '安装完成'
+"#;
+        let ps_path = std::env::var("SystemRoot")
+            .map(|root| {
+                format!(
+                    "{}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+                    root
+                )
+            })
+            .unwrap_or_else(|_| "powershell.exe".to_string());
+        let mut cmd = Command::new(&ps_path);
+        cmd.args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            install_script,
+        ]);
+        cmd.creation_flags(0x08000000);
+        cmd.stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| format!("启动安装进程失败: {e}"))?

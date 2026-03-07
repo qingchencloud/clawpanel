@@ -5,6 +5,7 @@
 import { api, getRequestLogs, clearRequestLogs } from '../lib/tauri-api.js'
 import { wsClient } from '../lib/ws-client.js'
 import { isOpenclawReady, isGatewayRunning } from '../lib/app-state.js'
+import { icon, statusIcon } from '../lib/icons.js'
 
 export async function render() {
   const page = document.createElement('div')
@@ -112,7 +113,7 @@ function renderDebugInfo(el, info) {
   // 总体状态概览
   const allOk = info.appState.openclawReady && info.appState.gatewayRunning && info.wsClient.gatewayReady
   html += `<div class="config-section" style="background:${allOk ? 'var(--success-bg)' : 'var(--warning-bg)'};border-left:3px solid ${allOk ? 'var(--success)' : 'var(--warning)'}">
-    <div style="font-size:16px;font-weight:600;margin-bottom:8px">${allOk ? '✅ 系统正常' : '⚠️ 发现问题'}</div>
+    <div style="font-size:16px;font-weight:600;margin-bottom:8px">${allOk ? `${statusIcon('ok')} 系统正常` : `${statusIcon('warn')} 发现问题`}</div>
     <div style="color:var(--text-secondary);font-size:13px">${allOk ? '所有核心功能运行正常' : '部分功能异常，请查看下方详情'}</div>
   </div>`
 
@@ -120,8 +121,8 @@ function renderDebugInfo(el, info) {
   html += `<div class="config-section">
     <div class="config-section-title">应用状态</div>
     <table class="debug-table">
-      <tr><td>OpenClaw 就绪</td><td>${info.appState.openclawReady ? '✅' : '❌'}</td></tr>
-      <tr><td>Gateway 运行中</td><td>${info.appState.gatewayRunning ? '✅' : '❌'}</td></tr>
+      <tr><td>OpenClaw 就绪</td><td>${info.appState.openclawReady ? statusIcon('ok') : statusIcon('err')}</td></tr>
+      <tr><td>Gateway 运行中</td><td>${info.appState.gatewayRunning ? statusIcon('ok') : statusIcon('err')}</td></tr>
     </table>
   </div>`
 
@@ -129,8 +130,8 @@ function renderDebugInfo(el, info) {
   html += `<div class="config-section">
     <div class="config-section-title">WebSocket 连接</div>
     <table class="debug-table">
-      <tr><td>连接状态</td><td>${info.wsClient.connected ? '✅ 已连接' : '❌ 未连接'}</td></tr>
-      <tr><td>握手状态</td><td>${info.wsClient.gatewayReady ? '✅ 已完成' : '❌ 未完成'}</td></tr>
+      <tr><td>连接状态</td><td>${info.wsClient.connected ? `${statusIcon('ok')} 已连接` : `${statusIcon('err')} 未连接`}</td></tr>
+      <tr><td>握手状态</td><td>${info.wsClient.gatewayReady ? `${statusIcon('ok')} 已完成` : `${statusIcon('err')} 未完成`}</td></tr>
       <tr><td>会话密钥</td><td>${info.wsClient.sessionKey || '(空)'}</td></tr>
     </table>
   </div>`
@@ -139,10 +140,10 @@ function renderDebugInfo(el, info) {
   html += `<div class="config-section">
     <div class="config-section-title">Node.js 环境</div>`
   if (info.nodeError) {
-    html += `<div style="color:var(--error)">❌ ${escapeHtml(info.nodeError)}</div>`
+    html += `<div style="color:var(--error)">${statusIcon('err')} ${escapeHtml(info.nodeError)}</div>`
   } else if (info.node) {
     html += `<table class="debug-table">
-      <tr><td>安装状态</td><td>${info.node.installed ? '✅ 已安装' : '❌ 未安装'}</td></tr>
+      <tr><td>安装状态</td><td>${info.node.installed ? `${statusIcon('ok')} 已安装` : `${statusIcon('err')} 未安装`}</td></tr>
       <tr><td>版本</td><td>${info.node.version || '(未知)'}</td></tr>
     </table>`
   }
@@ -152,12 +153,12 @@ function renderDebugInfo(el, info) {
   html += `<div class="config-section">
     <div class="config-section-title">版本信息</div>`
   if (info.versionError) {
-    html += `<div style="color:var(--error)">❌ ${escapeHtml(info.versionError)}</div>`
+    html += `<div style="color:var(--error)">${statusIcon('err')} ${escapeHtml(info.versionError)}</div>`
   } else if (info.version) {
     html += `<table class="debug-table">
       <tr><td>当前版本</td><td>${info.version.current || '(未知)'}</td></tr>
       <tr><td>最新版本</td><td>${info.version.latest || '(未检测)'}</td></tr>
-      <tr><td>更新可用</td><td>${info.version.update_available ? '⚠️ 有新版本' : '✅ 已是最新'}</td></tr>
+      <tr><td>更新可用</td><td>${info.version.update_available ? `${statusIcon('warn')} 有新版本` : `${statusIcon('ok')} 已是最新`}</td></tr>
     </table>`
   }
   html += `</div>`
@@ -166,13 +167,13 @@ function renderDebugInfo(el, info) {
   html += `<div class="config-section">
     <div class="config-section-title">配置文件</div>`
   if (info.configError) {
-    html += `<div style="color:var(--error)">❌ ${escapeHtml(info.configError)}</div>`
+    html += `<div style="color:var(--error)">${statusIcon('err')} ${escapeHtml(info.configError)}</div>`
   } else if (info.config) {
     const gw = info.config.gateway || {}
     html += `<table class="debug-table">
       <tr><td>gateway.port</td><td>${gw.port || '(未设置)'}</td></tr>
-      <tr><td>gateway.auth.token</td><td>${gw.auth?.token ? '✅ 已设置' : '⚠️ 未设置'}</td></tr>
-      <tr><td>gateway.enabled</td><td>${gw.enabled !== false ? '✅' : '❌'}</td></tr>
+      <tr><td>gateway.auth.token</td><td>${gw.auth?.token ? `${statusIcon('ok')} 已设置` : `${statusIcon('warn')} 未设置`}</td></tr>
+      <tr><td>gateway.enabled</td><td>${gw.enabled !== false ? statusIcon('ok') : statusIcon('err')}</td></tr>
       <tr><td>gateway.mode</td><td>${gw.mode || 'local'}</td></tr>
     </table>`
   }
@@ -182,12 +183,12 @@ function renderDebugInfo(el, info) {
   html += `<div class="config-section">
     <div class="config-section-title">服务状态</div>`
   if (info.servicesError) {
-    html += `<div style="color:var(--error)">❌ ${escapeHtml(info.servicesError)}</div>`
+    html += `<div style="color:var(--error)">${statusIcon('err')} ${escapeHtml(info.servicesError)}</div>`
   } else if (info.services?.length > 0) {
     const svc = info.services[0]
     html += `<table class="debug-table">
-      <tr><td>CLI 安装</td><td>${svc.cli_installed !== false ? '✅ 已安装' : '❌ 未安装'}</td></tr>
-      <tr><td>运行状态</td><td>${svc.running ? '✅ 运行中' : '❌ 已停止'}</td></tr>
+      <tr><td>CLI 安装</td><td>${svc.cli_installed !== false ? `${statusIcon('ok')} 已安装` : `${statusIcon('err')} 未安装`}</td></tr>
+      <tr><td>运行状态</td><td>${svc.running ? `${statusIcon('ok')} 运行中` : `${statusIcon('err')} 已停止`}</td></tr>
       <tr><td>进程 PID</td><td>${svc.pid || '(无)'}</td></tr>
       <tr><td>服务标签</td><td>${svc.label || '(未知)'}</td></tr>
     </table>`
@@ -198,10 +199,10 @@ function renderDebugInfo(el, info) {
   html += `<div class="config-section">
     <div class="config-section-title">设备密钥 & 握手签名</div>`
   if (info.connectFrameError) {
-    html += `<div style="color:var(--error)">❌ ${escapeHtml(info.connectFrameError)}</div>`
+    html += `<div style="color:var(--error)">${statusIcon('err')} ${escapeHtml(info.connectFrameError)}</div>`
   } else if (info.connectFrame) {
     const device = info.connectFrame.params?.device
-    html += `<div style="color:var(--success);margin-bottom:8px">✅ 设备密钥生成成功</div>
+    html += `<div style="color:var(--success);margin-bottom:8px">${statusIcon('ok')} 设备密钥生成成功</div>
     <table class="debug-table">
       <tr><td>设备 ID</td><td style="font-size:10px;word-break:break-all">${device?.id || '(无)'}</td></tr>
       <tr><td>公钥</td><td style="font-size:10px;word-break:break-all">${device?.publicKey ? device.publicKey.substring(0, 32) + '...' : '(无)'}</td></tr>
@@ -220,31 +221,31 @@ function renderDebugInfo(el, info) {
     <ul style="margin:0;padding-left:20px;color:var(--text-secondary);font-size:13px">`
 
   if (!info.node?.installed) {
-    html += `<li style="color:var(--error);margin-bottom:6px">❌ Node.js 未安装，请先安装 Node.js（<a href="https://nodejs.org/" target="_blank" rel="noopener">下载地址</a>）</li>`
+    html += `<li style="color:var(--error);margin-bottom:6px">${statusIcon('err')} Node.js 未安装，请先安装 Node.js（<a href="https://nodejs.org/" target="_blank" rel="noopener">下载地址</a>）</li>`
   }
   if (info.configError) {
-    html += `<li style="color:var(--error);margin-bottom:6px">❌ 配置文件不存在或损坏，请前往"初始设置"页面完成配置</li>`
+    html += `<li style="color:var(--error);margin-bottom:6px">${statusIcon('err')} 配置文件不存在或损坏，请前往"初始设置"页面完成配置</li>`
   }
   if (info.servicesError || !info.services?.length || info.services[0]?.cli_installed === false) {
-    html += `<li style="color:var(--error);margin-bottom:6px">❌ OpenClaw CLI 未安装，请前往"初始设置"页面安装</li>`
+    html += `<li style="color:var(--error);margin-bottom:6px">${statusIcon('err')} OpenClaw CLI 未安装，请前往"初始设置"页面安装</li>`
   }
   if (info.services?.length > 0 && !info.services[0]?.running) {
-    html += `<li style="color:var(--warning);margin-bottom:6px">⚠️ Gateway 未启动，请前往"服务管理"页面启动服务</li>`
+    html += `<li style="color:var(--warning);margin-bottom:6px">${statusIcon('warn')} Gateway 未启动，请前往"服务管理"页面启动服务</li>`
   }
   if (info.config && !info.config.gateway?.auth?.token) {
-    html += `<li style="color:var(--warning);margin-bottom:6px">⚠️ Gateway token 未设置（本地开发可选，生产环境建议设置）</li>`
+    html += `<li style="color:var(--warning);margin-bottom:6px">${statusIcon('warn')} Gateway token 未设置（本地开发可选，生产环境建议设置）</li>`
   }
   if (info.connectFrameError) {
-    html += `<li style="color:var(--error);margin-bottom:6px">❌ 设备密钥生成失败，请检查 Rust 后端日志</li>`
+    html += `<li style="color:var(--error);margin-bottom:6px">${statusIcon('err')} 设备密钥生成失败，请检查 Rust 后端日志</li>`
   }
   if (!info.wsClient.connected && info.services?.length > 0 && info.services[0]?.running) {
-    html += `<li style="color:var(--warning);margin-bottom:6px">⚠️ Gateway 运行中但 WebSocket 未连接，常见原因：<strong>origin not allowed</strong>（Tauri origin 未在白名单）或端口 ${info.config?.gateway?.port || 18789} 被占用。点击“一键修复配对”可自动修复 origin 问题</li>`
+    html += `<li style="color:var(--warning);margin-bottom:6px">${statusIcon('warn')} Gateway 运行中但 WebSocket 未连接，常见原因：<strong>origin not allowed</strong>（Tauri origin 未在白名单）或端口 ${info.config?.gateway?.port || 18789} 被占用。点击“一键修复配对”可自动修复 origin 问题</li>`
   }
   if (info.wsClient.connected && !info.wsClient.gatewayReady) {
-    html += `<li style="color:var(--warning);margin-bottom:6px">⚠️ WebSocket 已连接但握手未完成，请检查 token 是否正确</li>`
+    html += `<li style="color:var(--warning);margin-bottom:6px">${statusIcon('warn')} WebSocket 已连接但握手未完成，请检查 token 是否正确</li>`
   }
   if (allOk) {
-    html += `<li style="color:var(--success);margin-bottom:6px">✅ 所有检测项正常，系统运行良好</li>`
+    html += `<li style="color:var(--success);margin-bottom:6px">${statusIcon('ok')} 所有检测项正常，系统运行良好</li>`
   }
 
   html += `</ul></div>`
@@ -277,10 +278,10 @@ function testWebSocket(page) {
 
   clearBtn.onclick = () => {
     testLogs = []
-    contentEl.textContent = ''
+    contentEl.innerHTML = ''
   }
 
-  addLog('🔍 开始 WebSocket 连接测试...')
+  addLog(`${icon('search', 14)} 开始 WebSocket 连接测试...`)
 
   // 关闭旧连接
   if (testWs) {
@@ -292,88 +293,91 @@ function testWebSocket(page) {
   api.readOpenclawConfig().then(config => {
     const port = config?.gateway?.port || 18789
     const token = config?.gateway?.auth?.token || ''
-    const url = `ws://127.0.0.1:${port}/ws?token=${encodeURIComponent(token)}`
+    const wsHost = window.__TAURI_INTERNALS__ ? `127.0.0.1:${port}` : location.host
+    const url = `ws://${wsHost}/ws?token=${encodeURIComponent(token)}`
 
-    addLog(`📡 连接地址: ${url}`)
-    addLog(`🔑 Token: ${token ? token.substring(0, 20) + '...' : '(空)'}`)
-    addLog(`⏳ 正在连接...`)
+    addLog(`${icon('radio', 14)} 连接地址: ${url}`)
+    addLog(`${icon('key', 14)} Token: ${token ? token.substring(0, 20) + '...' : '(空)'}`)
+    addLog(`${icon('clock', 14)} 正在连接...`)
 
     try {
       testWs = new WebSocket(url)
 
       testWs.onopen = () => {
-        addLog('✅ WebSocket 连接成功')
-        addLog('⏳ 等待 Gateway 发送 connect.challenge...')
+        addLog(`${statusIcon('ok', 14)} WebSocket 连接成功`)
+        addLog(`${icon('clock', 14)} 等待 Gateway 发送 connect.challenge...`)
       }
 
       testWs.onmessage = (evt) => {
         try {
           const msg = JSON.parse(evt.data)
-          addLog(`📥 收到消息: ${JSON.stringify(msg, null, 2)}`)
+          addLog(`${icon('inbox', 14)} 收到消息: ${escapeHtml(JSON.stringify(msg, null, 2))}`)
 
           // 如果收到 challenge，尝试发送 connect frame
           if (msg.type === 'event' && msg.event === 'connect.challenge') {
             const nonce = msg.payload?.nonce || ''
-            addLog(`🔐 收到 challenge, nonce: ${nonce}`)
-            addLog(`⏳ 生成 connect frame...`)
+            addLog(`${icon('lock', 14)} 收到 challenge, nonce: ${nonce}`)
+            addLog(`${icon('clock', 14)} 生成 connect frame...`)
 
             api.createConnectFrame(nonce, token).then(frame => {
-              addLog(`✅ Connect frame 生成成功`)
-              addLog(`📤 发送 connect frame: ${JSON.stringify(frame, null, 2)}`)
+              addLog(`${statusIcon('ok', 14)} Connect frame 生成成功`)
+              addLog(`${icon('send', 14)} 发送 connect frame: ${escapeHtml(JSON.stringify(frame, null, 2))}`)
               testWs.send(JSON.stringify(frame))
             }).catch(e => {
-              addLog(`❌ 生成 connect frame 失败: ${e}`)
+              addLog(`${statusIcon('err', 14)} 生成 connect frame 失败: ${e}`)
             })
           }
 
           // 如果收到 connect 响应
           if (msg.type === 'res' && msg.id?.startsWith('connect-')) {
             if (msg.ok) {
-              addLog(`✅ 握手成功！`)
-              addLog(`📊 Snapshot: ${JSON.stringify(msg.payload, null, 2)}`)
+              addLog(`${statusIcon('ok', 14)} 握手成功！`)
+              addLog(`${icon('bar-chart', 14)} Snapshot: ${escapeHtml(JSON.stringify(msg.payload, null, 2))}`)
               const sessionKey = msg.payload?.snapshot?.sessionDefaults?.mainSessionKey
               if (sessionKey) {
-                addLog(`🔑 Session Key: ${sessionKey}`)
+                addLog(`${icon('key', 14)} Session Key: ${sessionKey}`)
               }
             } else {
-              addLog(`❌ 握手失败: ${msg.error?.message || msg.error?.code || '未知错误'}`)
+              addLog(`${statusIcon('err', 14)} 握手失败: ${msg.error?.message || msg.error?.code || '未知错误'}`)
             }
           }
         } catch (e) {
-          addLog(`⚠️ 解析消息失败: ${e}`)
-          addLog(`📥 原始数据: ${evt.data}`)
+          addLog(`${statusIcon('warn', 14)} 解析消息失败: ${e}`)
+          addLog(`${icon('inbox', 14)} 原始数据: ${escapeHtml(evt.data)}`)
         }
       }
 
       testWs.onerror = (e) => {
-        addLog(`❌ WebSocket 错误: ${e.type}`)
+        addLog(`${statusIcon('err', 14)} WebSocket 错误: ${e.type}`)
       }
 
       testWs.onclose = (e) => {
-        addLog(`🔌 连接关闭 - Code: ${e.code}, Reason: ${e.reason || '(空)'}`)
+        addLog(`${icon('plug', 14)} 连接关闭 - Code: ${e.code}, Reason: ${e.reason || '(空)'}`)
         if (e.code === 1008) {
-          addLog(`❌ origin not allowed (1008) - Gateway 拒绝了当前应用的 origin`)
-          addLog(`💡 解决方法：点击“一键修复配对”，将自动将 tauri://localhost 加入白名单并重启 Gateway`)
+          addLog(`${statusIcon('err', 14)} origin not allowed (1008) - Gateway 拒绝了当前应用的 origin`)
+          addLog(`${icon('lightbulb', 14)} 解决方法：点击“一键修复配对”，将自动将 tauri://localhost 加入白名单并重启 Gateway`)
         } else if (e.code === 4001) {
-          addLog(`❌ 认证失败 (4001) - Token 可能不正确`)
+          addLog(`${statusIcon('err', 14)} 认证失败 (4001) - Token 可能不正确`)
         } else if (e.code === 1006) {
-          addLog(`⚠️ 异常关闭 (1006) - 可能是网络问题或 Gateway 主动断开`)
+          addLog(`${statusIcon('warn', 14)} 异常关闭 (1006) - 可能是网络问题或 Gateway 主动断开`)
         }
         testWs = null
       }
 
     } catch (e) {
-      addLog(`❌ 创建 WebSocket 失败: ${e}`)
+      addLog(`${statusIcon('err', 14)} 创建 WebSocket 失败: ${e}`)
     }
   }).catch(e => {
-    addLog(`❌ 读取配置失败: ${e}`)
+    addLog(`${statusIcon('err', 14)} 读取配置失败: ${e}`)
   })
 
   function addLog(msg) {
     const timestamp = new Date().toLocaleTimeString('zh-CN', { hour12: false })
-    const line = `[${timestamp}] ${msg}`
-    testLogs.push(line)
-    contentEl.textContent = testLogs.join('\n')
+    const div = document.createElement('div')
+    div.style.cssText = 'display:flex;gap:4px;align-items:flex-start;padding:1px 0;white-space:pre-wrap;word-break:break-all'
+    div.innerHTML = `<span style="color:var(--text-tertiary);flex-shrink:0">[${timestamp}]</span> ${msg}`
+    testLogs.push(div.textContent)
+    contentEl.appendChild(div)
     contentEl.scrollTop = contentEl.scrollHeight
   }
 }
@@ -439,7 +443,7 @@ function renderNetworkLog(contentEl) {
   // 倒序显示（最新的在上面）
   for (let i = logs.length - 1; i >= 0; i--) {
     const log = logs[i]
-    const cachedIcon = log.cached ? '✅' : '-'
+    const cachedIcon = log.cached ? statusIcon('ok', 12) : '-'
     const durationColor = log.cached ? 'var(--text-tertiary)' :
                           (parseInt(log.duration) > 1000 ? 'var(--error)' :
                           (parseInt(log.duration) > 500 ? 'var(--warning)' : 'var(--text-primary)'))
@@ -479,100 +483,102 @@ async function fixPairing(page) {
   }
 
   try {
-    addLog('🔧 开始修复配对问题...')
+    addLog(`${icon('wrench', 14)} 开始修复配对问题...`)
 
     // 1. 写入 paired.json + controlUi.allowedOrigins
-    addLog('📝 正在写入设备配对信息 + Gateway origin 白名单...')
+    addLog(`${icon('edit', 14)} 正在写入设备配对信息 + Gateway origin 白名单...`)
     const result = await api.autoPairDevice()
-    addLog(`✅ ${result}`)
-    addLog('✅ 已将 tauri://localhost 加入 gateway.controlUi.allowedOrigins')
+    addLog(`${statusIcon('ok', 14)} ${result}`)
+    addLog(`${statusIcon('ok', 14)} 已将 tauri://localhost 加入 gateway.controlUi.allowedOrigins`)
 
     // 2. 重启 Gateway
-    addLog('🔄 重启 Gateway 服务...')
+    addLog(`${icon('zap', 14)} 重启 Gateway 服务...`)
     await api.restartService('ai.openclaw.gateway')
-    addLog('✅ Gateway 重启命令已发送')
+    addLog(`${statusIcon('ok', 14)} Gateway 重启命令已发送`)
 
     // 3. 等待 Gateway 启动
-    addLog('⏳ 等待 Gateway 启动（8秒）...')
+    addLog(`${icon('clock', 14)} 等待 Gateway 启动（8秒）...`)
     await new Promise(resolve => setTimeout(resolve, 8000))
 
     // 4. 检查 Gateway 状态
-    addLog('🔍 检查 Gateway 状态...')
+    addLog(`${icon('search', 14)} 检查 Gateway 状态...`)
     const services = await api.getServicesStatus()
     const running = services?.[0]?.running
 
     if (running) {
-      addLog('✅ Gateway 已启动')
+      addLog(`${statusIcon('ok', 14)} Gateway 已启动`)
     } else {
-      addLog('⚠️ Gateway 可能还在启动中，请稍后手动测试')
+      addLog(`${statusIcon('warn', 14)} Gateway 可能还在启动中，请稍后手动测试`)
     }
 
     // 5. 测试 WebSocket 连接
-    addLog('🔌 测试 WebSocket 连接...')
+    addLog(`${icon('plug', 14)} 测试 WebSocket 连接...`)
     const config = await api.readOpenclawConfig()
     const port = config?.gateway?.port || 18789
     const token = config?.gateway?.auth?.token || ''
-    const url = `ws://127.0.0.1:${port}/ws?token=${encodeURIComponent(token)}`
+    const wsHost = window.__TAURI_INTERNALS__ ? `127.0.0.1:${port}` : location.host
+    const url = `ws://${wsHost}/ws?token=${encodeURIComponent(token)}`
 
     const ws = new WebSocket(url)
 
     ws.onopen = () => {
-      addLog('✅ WebSocket 连接成功')
+      addLog(`${statusIcon('ok', 14)} WebSocket 连接成功`)
     }
 
     ws.onmessage = (evt) => {
       try {
         const msg = JSON.parse(evt.data)
         if (msg.type === 'event' && msg.event === 'connect.challenge') {
-          addLog('✅ 收到 connect.challenge')
+          addLog(`${statusIcon('ok', 14)} 收到 connect.challenge`)
           const nonce = msg.payload?.nonce || ''
 
           api.createConnectFrame(nonce, token).then(frame => {
             ws.send(JSON.stringify(frame))
-            addLog('📤 已发送 connect frame')
+            addLog(`${icon('send', 14)} 已发送 connect frame`)
           })
         }
 
         if (msg.type === 'res' && msg.id?.startsWith('connect-')) {
           if (msg.ok) {
-            addLog('🎉 握手成功！配对问题已修复！')
-            addLog('💡 正在重新建立主应用 WebSocket 连接...')
+            addLog(`${statusIcon('ok', 14)} 握手成功！配对问题已修复！`)
+            addLog(`${icon('lightbulb', 14)} 正在重新建立主应用 WebSocket 连接...`)
             ws.close(1000)
             // 触发主应用的 wsClient 重连，让主界面正常工作
             wsClient.reconnect()
             setTimeout(() => loadDebugInfo(page), 2000)
           } else {
             const errMsg = msg.error?.message || msg.error?.code || '未知错误'
-            addLog(`❌ 握手失败: ${errMsg}`)
+            addLog(`${statusIcon('err', 14)} 握手失败: ${errMsg}`)
             if (errMsg.includes('origin not allowed')) {
-              addLog('💡 原因：Gateway 拒绝了当前应用的 origin，需要重启 Gateway 再试')
+              addLog(`${icon('lightbulb', 14)} 原因：Gateway 拒绝了当前应用的 origin，需要重启 Gateway 再试`)
             } else {
-              addLog('💡 建议：请手动前往“服务管理”页面重启 Gateway')
+              addLog(`${icon('lightbulb', 14)} 建议：请手动前往“服务管理”页面重启 Gateway`)
             }
           }
         }
       } catch (e) {
-        addLog(`⚠️ 解析消息失败: ${e}`)
+        addLog(`${statusIcon('warn', 14)} 解析消息失败: ${e}`)
       }
     }
 
     ws.onerror = () => {
-      addLog('❌ WebSocket 连接失败，请确认 Gateway 已在运行')
+      addLog(`${statusIcon('err', 14)} WebSocket 连接失败，请确认 Gateway 已在运行`)
     }
 
     ws.onclose = (e) => {
       if (e.code === 1008) {
-        addLog(`⚠️ 连接被拒绝 (1008) - Gateway 拒绝了当前 origin`)
-        addLog('💡 该问题应已被本次修复流程处理，请再次点击“一键修复配对”')
+        addLog(`${statusIcon('warn', 14)} 连接被拒绝 (1008) - Gateway 拒绝了当前 origin`)
+        addLog(`${icon('lightbulb', 14)} 该问题应已被本次修复流程处理，请再次点击“一键修复配对”`)
       } else if (e.code !== 1000) {
-        addLog(`⚠️ 连接关闭 - Code: ${e.code}`)
+        addLog(`${statusIcon('warn', 14)} 连接关闭 - Code: ${e.code}`)
       }
     }
 
   } catch (e) {
-    addLog(`❌ 修复失败: ${e}`)
-    addLog('💡 建议：请手动前往"服务管理"页面重启 Gateway')
+    addLog(`${statusIcon('err', 14)} 修复失败: ${e}`)
+    addLog(`${icon('lightbulb', 14)} 建议：请手动前往"服务管理"页面重启 Gateway`)
   } finally {
     if (fixBtn) { fixBtn.disabled = false; fixBtn.textContent = '一键修复配对' }
   }
 }
+

@@ -4,6 +4,7 @@
  */
 import { api } from '../lib/tauri-api.js'
 import { toast } from '../components/toast.js'
+import { statusIcon } from '../lib/icons.js'
 
 function escapeHtml(str) {
   if (!str) return ''
@@ -292,14 +293,22 @@ async function handleInstallCftunnel(page) {
     }
     await api.installCftunnel()
     progressFill.classList.add('done')
-    progressText.textContent = '✅ 安装完成'
+    progressText.innerHTML = `${statusIcon('ok', 14)} 安装完成`
     toast('cftunnel 安装成功', 'success')
     setTimeout(() => loadCftunnel(page), 3000)
   } catch (e) {
     progressFill.classList.add('error')
-    progressText.textContent = '❌ 安装失败'
+    progressText.innerHTML = `${statusIcon('err', 14)} 安装失败`
     logBox.textContent += '\n错误: ' + e
     toast('安装失败: ' + e, 'error')
+    if (window.__openAIDrawerWithError) {
+      window.__openAIDrawerWithError({
+        title: '安装 cftunnel 失败',
+        error: logBox.textContent,
+        scene: '安装 cftunnel 内网穿透工具',
+        hint: String(e),
+      })
+    }
   } finally {
     unlistenLog?.()
     unlistenProgress?.()
@@ -343,14 +352,22 @@ async function handleInstallClawapp(page) {
     }
     await api.installClawapp()
     progressFill.classList.add('done')
-    progressText.textContent = '✅ 安装完成'
+    progressText.innerHTML = `${statusIcon('ok', 14)} 安装完成`
     toast('ClawApp 安装成功', 'success')
     setTimeout(() => loadClawapp(page), 3000)
   } catch (e) {
     progressFill.classList.add('error')
-    progressText.textContent = '❌ 安装失败'
+    progressText.innerHTML = `${statusIcon('err', 14)} 安装失败`
     logBox.textContent += '\n错误: ' + e
     toast('安装失败: ' + e, 'error')
+    if (window.__openAIDrawerWithError) {
+      window.__openAIDrawerWithError({
+        title: '安装 ClawApp 失败',
+        error: logBox.textContent,
+        scene: '安装 ClawApp 手机客户端',
+        hint: String(e),
+      })
+    }
   } finally {
     unlistenLog?.()
     unlistenProgress?.()

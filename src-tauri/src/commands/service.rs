@@ -265,16 +265,37 @@ mod platform {
 #[cfg(target_os = "windows")]
 mod platform {
     use std::os::windows::process::CommandExt;
+    use std::sync::Mutex;
     use tokio::process::Command as TokioCommand;
+
+    /// 缓存 is_cli_installed 结果，避免每 15 秒 polling 都 spawn cmd.exe
+    static CLI_CACHE: Mutex<Option<(bool, std::time::Instant)>> = Mutex::new(None);
+    const CLI_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(60);
 
     /// Windows 不需要 UID
     pub fn current_uid() -> Result<u32, String> {
         Ok(0)
     }
 
-    /// 检测 openclaw CLI 是否已安装
+    /// 检测 openclaw CLI 是否已安装（带 60s 缓存，避免频繁 spawn 进程）
     pub fn is_cli_installed() -> bool {
-        // 方式1: 检查常见文件路径
+        // 检查缓存
+        if let Ok(guard) = CLI_CACHE.lock() {
+            if let Some((val, ts)) = *guard {
+                if ts.elapsed() < CLI_CACHE_TTL {
+                    return val;
+                }
+            }
+        }
+        let result = check_cli_installed_inner();
+        if let Ok(mut guard) = CLI_CACHE.lock() {
+            *guard = Some((result, std::time::Instant::now()));
+        }
+        result
+    }
+
+    fn check_cli_installed_inner() -> bool {
+        // 方式1: 检查常见文件路径（零进程，最快）
         if let Ok(appdata) = std::env::var("APPDATA") {
             let cmd_path = std::path::Path::new(&appdata)
                 .join("npm")

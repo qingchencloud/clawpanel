@@ -6,6 +6,7 @@ import { api } from '../lib/tauri-api.js'
 import { toast } from '../components/toast.js'
 import { showUpgradeModal } from '../components/modal.js'
 import { setUpgrading } from '../lib/app-state.js'
+import { icon, statusIcon } from '../lib/icons.js'
 
 export async function render() {
   const page = document.createElement('div')
@@ -135,8 +136,23 @@ async function loadData(page) {
           modal.setDone(typeof msg === 'string' ? msg : (msg?.message || '升级完成'))
           loadData(page)
         } catch (e) {
-          modal.appendLog(String(e))
-          modal.setError('升级失败')
+          const errStr = String(e)
+          modal.appendLog(errStr)
+          const { diagnoseInstallError } = await import('../lib/error-diagnosis.js')
+          const fullLog = modal.getLogText() + '\n' + errStr
+          const diagnosis = diagnoseInstallError(fullLog)
+          modal.setError(diagnosis.title)
+          if (diagnosis.hint) modal.appendLog('')
+          if (diagnosis.hint) modal.appendHtmlLog(`${statusIcon('info', 14)} ${diagnosis.hint}`)
+          if (diagnosis.command) modal.appendHtmlLog(`${icon('clipboard', 14)} ${diagnosis.command}`)
+          if (window.__openAIDrawerWithError) {
+            window.__openAIDrawerWithError({
+              title: diagnosis.title,
+              error: fullLog,
+              scene: '升级 OpenClaw',
+              hint: diagnosis.hint,
+            })
+          }
         } finally {
           setUpgrading(false)
           unlistenLog?.()
@@ -173,11 +189,16 @@ function renderCommunity(page) {
         <img src="/images/OpenClawWx.png" alt="微信交流群" style="width:140px;height:140px;border-radius:var(--radius-md);border:1px solid var(--border-primary)">
         <div style="font-size:var(--font-size-sm);margin-top:8px;color:var(--text-secondary)">微信交流群</div>
       </div>
+      <div style="text-align:center">
+        <img src="https://qt.cool/c/OpenClawDY/qr.png" alt="抖音交流群" style="width:140px;height:140px;border-radius:var(--radius-md);border:1px solid var(--border-primary);object-fit:contain;background:#fff">
+        <div style="font-size:var(--font-size-sm);margin-top:8px;color:var(--text-secondary)">抖音交流群</div>
+      </div>
       <div style="flex:1;min-width:200px;display:flex;flex-direction:column;gap:8px;padding-top:4px">
         <div style="font-size:var(--font-size-sm);color:var(--text-secondary)">扫码或点击链接加入交流群，反馈问题、获取帮助</div>
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
           <a class="btn btn-primary btn-sm" href="https://qt.cool/c/OpenClaw" target="_blank" rel="noopener">加入 QQ 群</a>
           <a class="btn btn-primary btn-sm" href="https://qt.cool/c/OpenClawWx" target="_blank" rel="noopener">加入微信群</a>
+          <a class="btn btn-primary btn-sm" href="https://qt.cool/c/OpenClawDY" target="_blank" rel="noopener">加入抖音群</a>
           <a class="btn btn-secondary btn-sm" href="https://yb.tencent.com/gp/i/LsvIw7mdR7Lb" target="_blank" rel="noopener">元宝派社群</a>
         </div>
         <div style="font-size:var(--font-size-xs);color:var(--text-tertiary);margin-top:8px">
@@ -193,6 +214,11 @@ const PROJECTS = [
     name: 'OpenClaw',
     desc: 'AI Agent 框架，支持多模型协作、工具调用、记忆管理',
     url: 'https://github.com/openclaw/openclaw',
+  },
+  {
+    name: 'OpenClaw-zh',
+    desc: 'AI Agent 框架，支持多模型协作、工具调用、记忆管理-中文优化版',
+    url: 'https://github.com/1186258278/OpenClawChineseTranslation',
   },
   {
     name: 'ClawApp',

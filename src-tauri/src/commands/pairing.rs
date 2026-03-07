@@ -115,8 +115,14 @@ fn patch_gateway_origins() {
         return;
     };
 
-    // 放行全部 origin，确保 Tauri 正式/开发模式、Web 模式都能连接
-    let origins = serde_json::json!(["*"]);
+    // 仅允许 Tauri 应用 + 本地开发服务器的 origin
+    let origins = serde_json::json!([
+        "tauri://localhost",
+        "https://tauri.localhost",
+        "http://tauri.localhost",
+        "http://localhost:1420",
+        "http://127.0.0.1:1420"
+    ]);
 
     if let Some(obj) = config.as_object_mut() {
         let gateway = obj

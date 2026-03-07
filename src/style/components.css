@@ -140,6 +140,12 @@
   font-size: var(--font-size-xs);
 }
 
+.btn-xs {
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: var(--radius-sm);
+}
+
 /* 表单 */
 .form-group {
   margin-bottom: var(--space-lg);
@@ -275,7 +281,15 @@ mark {
   padding: var(--space-xl);
   min-width: 360px;
   max-width: 500px;
+  max-height: calc(100vh - 60px);
+  display: flex;
+  flex-direction: column;
   box-shadow: var(--shadow-lg);
+}
+.modal-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .modal-title {
@@ -328,4 +342,88 @@ mark {
 @keyframes fadeInLoader {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* === 登录覆盖层 === */
+#login-overlay {
+  position: fixed; inset: 0; z-index: 99998;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-primary, #f8f9fb);
+  transition: opacity 0.4s ease;
+}
+#login-overlay.hide { opacity: 0; pointer-events: none; }
+.login-card {
+  width: 360px; max-width: 90vw; padding: 40px 32px;
+  background: var(--bg-card, #fff);
+  border: 1px solid var(--border, #e4e4e7);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+  text-align: center;
+}
+.login-card .login-logo {
+  width: 48px; height: 48px; margin: 0 auto 16px;
+  color: var(--primary, #6366f1);
+}
+.login-card .login-title {
+  font-size: 20px; font-weight: 600; margin-bottom: 4px;
+  color: var(--text-primary, #18181b);
+}
+.login-card .login-desc {
+  font-size: 13px; color: var(--text-secondary, #71717a);
+  margin-bottom: 24px;
+}
+.login-card .login-input {
+  width: 100%; padding: 10px 14px; font-size: 14px;
+  border: 1px solid var(--border, #e4e4e7);
+  border-radius: 8px; outline: none;
+  background: var(--bg-secondary, #f4f4f5);
+  color: var(--text-primary, #18181b);
+  transition: border-color 0.2s;
+}
+.login-card .login-input:focus {
+  border-color: var(--primary, #6366f1);
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
+}
+.login-card .login-btn {
+  width: 100%; margin-top: 16px; padding: 10px 0;
+  font-size: 14px; font-weight: 500;
+  border: none; border-radius: 8px; cursor: pointer;
+  background: var(--primary, #6366f1);
+  color: #fff; transition: opacity 0.2s;
+}
+.login-card .login-btn:hover { opacity: 0.9; }
+.login-card .login-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.login-card .login-error {
+  margin-top: 12px; font-size: 13px;
+  color: var(--error, #ef4444);
+  min-height: 20px;
+}
+
+/* === Toggle 开关 === */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px; height: 24px;
+  flex-shrink: 0;
+}
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute; inset: 0;
+  cursor: pointer; border-radius: 24px;
+  background: var(--border-primary, #d4d4d8);
+  transition: background 0.25s;
+}
+.toggle-slider::before {
+  content: '';
+  position: absolute; left: 2px; top: 2px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+  transition: transform 0.25s;
+}
+.toggle-switch input:checked + .toggle-slider {
+  background: var(--error, #ef4444);
+}
+.toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(20px);
 }

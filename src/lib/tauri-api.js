@@ -113,6 +113,10 @@ async function webInvoke(cmd, args) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(args),
   })
+  if (resp.status === 401 && window.__clawpanel_show_login) {
+    window.__clawpanel_show_login()
+    throw new Error('需要登录')
+  }
   if (!resp.ok) {
     const data = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }))
     throw new Error(data.error || `HTTP ${resp.status}`)
@@ -269,6 +273,8 @@ function mockInvoke(cmd, args) {
     assistant_system_info: () => `OS: ${navigator.platform.includes('Win') ? 'windows' : navigator.platform.includes('Mac') ? 'macos' : 'linux'}\nArch: x86_64\nHome: ${navigator.platform.includes('Win') ? 'C:\\Users\\user' : '/Users/user'}\nHostname: mock-host\nShell: ${navigator.platform.includes('Win') ? 'powershell / cmd' : 'zsh'}\nPath separator: ${navigator.platform.includes('Win') ? '\\\\' : '/'}`,
     assistant_list_processes: ({ filter }) => filter ? `Id ProcessName\n-- -----------\n1234 ${filter}\n5678 ${filter}-helper` : 'Id ProcessName\n-- -----------\n1 System\n1234 node\n5678 openclaw',
     assistant_check_port: ({ port }) => port === 18789 ? `端口 ${port} 已被占用（正在监听）\n占用进程: node` : `端口 ${port} 未被占用（空闲）`,
+    assistant_web_search: ({ query }) => `搜索「${query}」找到 3 条结果：\n\n1. **${query} - 文档**\n   https://example.com/docs\n   这是关于 ${query} 的文档页面\n\n2. **${query} 常见问题**\n   https://example.com/faq\n   常见问题解答\n\n3. **${query} GitHub**\n   https://github.com/example\n   开源仓库`,
+    assistant_fetch_url: ({ url }) => `# ${url}\n\n这是从 ${url} 抓取的网页内容（mock）。\n\n## 主要内容\n\n示例文本...`,
     // 数据目录 & 图片存储
     assistant_ensure_data_dir: () => (navigator.platform.includes('Win') ? 'C:\\Users\\user\\.openclaw\\clawpanel' : '/Users/user/.openclaw/clawpanel'),
     assistant_save_image: ({ id }) => `/mock/images/${id}.jpg`,
@@ -322,6 +328,10 @@ export const api = {
   deleteMemoryFile: (path, agentId) => { invalidate('list_memory_files'); return invoke('delete_memory_file', { path, agentId: agentId || null }) },
   exportMemoryZip: (category, agentId) => invoke('export_memory_zip', { category, agentId: agentId || null }),
 
+  // 面板配置 (clawpanel.json)
+  readPanelConfig: () => invoke('read_panel_config'),
+  writePanelConfig: (config) => invoke('write_panel_config', { config }),
+
   // 安装/部署
   checkInstallation: () => cachedInvoke('check_installation', {}, 60000),
   initOpenclawConfig: () => { invalidate('check_installation'); return invoke('init_openclaw_config') },
@@ -368,6 +378,8 @@ export const api = {
   assistantSystemInfo: () => invoke('assistant_system_info'),
   assistantListProcesses: (filter) => invoke('assistant_list_processes', { filter: filter || null }),
   assistantCheckPort: (port) => invoke('assistant_check_port', { port }),
+  assistantWebSearch: (query, maxResults) => invoke('assistant_web_search', { query, max_results: maxResults || 5 }),
+  assistantFetchUrl: (url) => invoke('assistant_fetch_url', { url }),
 
   // 数据目录 & 图片存储
   ensureDataDir: () => invoke('assistant_ensure_data_dir'),

@@ -18,7 +18,7 @@
   <meta property="og:image" content="https://claw.qt.cool/00.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="675">
-  <meta property="og:image:alt" content="ClawPanel AI 助手截图">
+  <meta property="og:image:alt" content="ClawPanel 仪表盘">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="ClawPanel - OpenClaw AI Agent 可视化管理面板">
   <meta name="twitter:description" content="基于 Tauri v2 的跨平台桌面应用。多模型配置、实时 AI 聊天、Agent 管理、内网穿透，一站式管理你的 AI 智能体。">
@@ -34,7 +34,7 @@
     "description": "OpenClaw AI Agent 可视化管理面板，基于 Tauri v2 的跨平台桌面应用。支持仪表盘监控、多模型配置、实时 AI 聊天、记忆管理、Agent 管理、网关配置、内网穿透等功能。",
     "url": "https://claw.qt.cool/",
     "downloadUrl": "https://github.com/qingchencloud/clawpanel/releases/latest",
-    "softwareVersion": "0.5.4",
+    "softwareVersion": "0.6.0",
     "author": {
       "@type": "Organization",
       "name": "晴辰云 QingchenCloud",
@@ -69,9 +69,9 @@
 
     /* ══════════════ Reset & Base ══════════════ */
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-    html { scroll-behavior: smooth; }
+    html { scroll-behavior: auto; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, sans-serif; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; overflow-x: hidden; line-height: 1.6; transition: background 0.3s, color 0.3s; }
-    a { color: inherit; text-decoration: none; } img { max-width: 100%; height: auto; display: block; }
+    a { color: inherit; text-decoration: none; } img { max-width: 100%; height: auto; display: block; } .screenshot-frame img, .gallery-card img, .hero-image-wrap img, .arch-gif-wrap img { aspect-ratio: 16/10; object-fit: cover; background: var(--bg-s); }
     button { font: inherit; cursor: pointer; border: none; background: none; } ul { list-style: none; }
     .mono { font-family: 'SF Mono', 'Fira Code', Consolas, monospace; }
 
@@ -206,13 +206,13 @@
     .screenshot-frame img { width: 100%; display: block; }
 
     /* ══════════════ Gallery ══════════════ */
-    .gallery-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; margin-bottom: 24px; }
+    .gallery-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; margin-bottom: 24px; }
     .gallery-card { border-radius: 12px; overflow: hidden; border: 1px solid var(--border); box-shadow: var(--card-shadow); transition: transform 0.4s cubic-bezier(0.16,1,0.3,1), box-shadow 0.4s, border-color 0.4s; cursor: zoom-in; position: relative; }
     .gallery-card:hover { transform: translateY(-4px) scale(1.02); box-shadow: 0 12px 40px -8px rgba(99,102,241,0.2); border-color: var(--border-h); }
     .gallery-card img { width: 100%; display: block; }
     .gallery-label { position: absolute; bottom: 0; left: 0; right: 0; padding: 8px 12px; background: linear-gradient(transparent, rgba(0,0,0,0.65)); color: #fff; font-size: 13px; font-weight: 600; opacity: 0; transition: opacity 0.3s; }
     .gallery-card:hover .gallery-label { opacity: 1; }
-    .info-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; }
+    .info-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; }
     .info-card { border-radius: 16px; border: 1px solid var(--border); background: var(--bg-card); backdrop-filter: blur(8px); padding: 20px; }
     .info-card .ic { font-size: 18px; margin-bottom: 8px; }
     .info-card h4 { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
@@ -452,6 +452,7 @@
         <a href="#deploy" class="nav-link">部署</a>
         <a href="#docs" class="nav-link">文档</a>
         <a href="#community" class="nav-link">社区</a>
+        <a href="#ai-plan" class="nav-link">活动</a>
         <a href="#download" class="nav-link">下载</a>
         <a href="https://github.com/qingchencloud/clawpanel" target="_blank" rel="noopener" class="nav-link">GitHub</a>
         <button id="theme-toggle" class="theme-btn" aria-label="切换主题">
@@ -477,6 +478,7 @@
         <a href="#deploy" class="mobile-menu-link mobile-link">部署</a>
         <a href="#docs" class="mobile-menu-link mobile-link">文档</a>
         <a href="#community" class="mobile-menu-link mobile-link">社区</a>
+        <a href="#ai-plan" class="mobile-menu-link mobile-link">活动</a>
         <a href="https://github.com/qingchencloud/clawpanel" target="_blank" rel="noopener" class="mobile-menu-link">GitHub ↗</a>
       </div>
     </div>
@@ -506,7 +508,7 @@
         </a>
       </div>
       <div class="reveal hero-image-wrap" data-delay="300">
-        <img src="./00.png" alt="ClawPanel AI 助手" onclick="openLightbox(this.src)" loading="eager">
+        <img src="./01.png" alt="ClawPanel AI 助手 — 8 大技能卡片" onclick="openLightbox(this.src)" loading="eager">
         <div class="hero-glow"></div>
       </div>
     </div>
@@ -562,149 +564,132 @@
         <p class="reveal section-desc">一个面板，管理 OpenClaw 的方方面面</p>
       </div>
 
-      <!-- 🔥 AI 助手（工具调用） -->
+      <!-- 仪表盘 -->
       <div class="showcase-row">
-        <div class="reveal screenshot-frame img-first" onclick="openLightbox('./00.png')"><img src="./00.png" alt="AI 助手 — 8 大技能卡片" loading="lazy"></div>
+        <div class="reveal screenshot-frame img-first" onclick="openLightbox('./00.png')"><img src="./00.png" alt="ClawPanel 仪表盘" loading="lazy"></div>
         <div>
-          <div class="reveal showcase-tag" style="color:#f43f5e;background:rgba(244,63,94,0.1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/><path d="M18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z"/></svg> 🔥 核心亮点</div>
-          <h3 class="reveal showcase-title">内置 AI 助手 — 帮你管理 OpenClaw</h3>
-          <p class="reveal showcase-desc">不只是聊天——AI 助手能<strong>一键安装 OpenClaw</strong>、自动读取配置、浏览目录、执行命令，帮你诊断问题、修复错误。8 大技能卡片一键触发，新手也能轻松管理。</p>
+          <div class="reveal showcase-tag" style="color:#f43f5e;background:rgba(244,63,94,0.1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> 全景概览</div>
+          <h3 class="reveal showcase-title">仪表盘 — 运行状态一目了然</h3>
+          <p class="reveal showcase-desc">Gateway 运行状态、版本信息、Agent 数量、模型池总览，搭配内网穿透状态、基础服务监控和实时日志流。一屏掌握 OpenClaw 所有运行指标。</p>
           <ul class="reveal showcase-list">
-            <li><span class="check">✓</span> 一键安装 &amp; 升级 OpenClaw</li>
-            <li><span class="check">✓</span> 终端执行 &amp; 文件读写 &amp; 目录浏览</li>
-            <li><span class="check">✓</span> 4 种模式（聊天/规划/执行/无限）</li>
-            <li><span class="check">✓</span> 危险操作二次确认，安全可控</li>
-            <li><span class="check">✓</span> 独立模型配置，兼容任意 OpenAI 格式 API</li>
+            <li><span class="check">✓</span> Gateway / 隧道 / 服务实时状态卡片</li>
+            <li><span class="check">✓</span> 配置版本标识 &amp; 最近备份时间</li>
+            <li><span class="check">✓</span> 并行推理队列 &amp; 工作区文件隔离</li>
+            <li><span class="check">✓</span> 重启 / 检查更新 / 创建备份快捷操作</li>
           </ul>
         </div>
       </div>
 
-      <!-- AI 助手实战：工具调用 -->
+      <!-- AI 助手设置 — 模型配置 + 公益 AI 接口 -->
       <div class="showcase-row">
         <div>
-          <div class="reveal showcase-tag" style="color:#f43f5e;background:rgba(244,63,94,0.1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg> AI 实战</div>
-          <h3 class="reveal showcase-title">AI 自动调用工具诊断问题</h3>
-          <p class="reveal showcase-desc">点击「检查配置」技能卡片，AI 自动执行：获取系统信息 → 列出目录 → 读取 openclaw.json → 读取 models.json → 生成健康检查报告。全程可视化，每步工具调用的参数和结果一目了然。</p>
+          <div class="reveal showcase-tag" style="color:#f43f5e;background:rgba(244,63,94,0.1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/><path d="M18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z"/></svg> 开箱即用</div>
+          <h3 class="reveal showcase-title">公益 AI 接口 — 零成本开始</h3>
+          <p class="reveal showcase-desc">内置<strong>公益 AI 接口计划</strong>，GPT-5 全系列模型免费使用，Token 费用由项目组内部承担。选择模型、一键接入，无需注册、无需付费。也支持接入任意 OpenAI 兼容 API。</p>
           <ul class="reveal showcase-list">
-            <li><span class="check">✓</span> 实时工具调用可视化（参数 + 结果 + 状态）</li>
-            <li><span class="check">✓</span> AI 自动编排多步骤诊断流程</li>
-            <li><span class="check">✓</span> 生成结构化健康检查报告</li>
-            <li><span class="check">✓</span> 发现问题自动给出修复建议</li>
+            <li><span class="check">✓</span> 公益接口一键接入，零门槛</li>
+            <li><span class="check">✓</span> GPT-5 全系列模型可选</li>
+            <li><span class="check">✓</span> 兼容 Chat Completions &amp; Responses API</li>
+            <li><span class="check">✓</span> 独立配置，无需安装 OpenClaw</li>
           </ul>
         </div>
-        <div class="reveal screenshot-frame" onclick="openLightbox('./11.png')"><img src="./11.png" alt="AI 助手工具调用实战" loading="lazy"></div>
+        <div class="reveal screenshot-frame" onclick="openLightbox('./02.png')"><img src="./02.png" alt="AI 助手设置 — 公益 AI 接口一键接入" loading="lazy"></div>
       </div>
 
-      <!-- AI 助手设置 -->
+      <!-- AI 助手人设 — Agent 灵魂 -->
       <div class="showcase-row">
-        <div class="reveal screenshot-frame img-first" onclick="openLightbox('./12.png')"><img src="./12.png" alt="AI 助手设置" loading="lazy"></div>
+        <div class="reveal screenshot-frame img-first" onclick="openLightbox('./05.png')"><img src="./05.png" alt="AI 助手人设 — Agent 灵魂加载" loading="lazy"></div>
         <div>
-          <div class="reveal showcase-tag" style="color:#f43f5e;background:rgba(244,63,94,0.1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg> 灵活配置</div>
-          <h3 class="reveal showcase-title">独立模型配置，开箱即用</h3>
-          <p class="reveal showcase-desc">AI 助手使用独立的模型配置，不依赖 OpenClaw Gateway。填入任意兼容 OpenAI 格式的 API（DeepSeek、Kimi、通义千问等），即可开始使用。自动兼容 Chat Completions 和 Responses 两种 API 格式。</p>
+          <div class="reveal showcase-tag" style="color:#f43f5e;background:rgba(244,63,94,0.1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> 借尸还魂</div>
+          <h3 class="reveal showcase-title">继承 Agent 人格与记忆</h3>
+          <p class="reveal showcase-desc">从 OpenClaw Agent 加载完整灵魂——SOUL.md（人格）、IDENTITY.md（身份）、USER.md（用户偏好）、AGENTS.md（行为规则）、TOOLS.md（工具）一键注入。让 AI 助手拥有你 Agent 的全部能力。</p>
           <ul class="reveal showcase-list">
-            <li><span class="check">✓</span> 支持所有 OpenAI 兼容 API</li>
-            <li><span class="check">✓</span> 模型配置、工具权限、助手人设三合一</li>
-            <li><span class="check">✓</span> 一键测试连通性 &amp; 自动拉取模型列表</li>
-            <li><span class="check">✓</span> 无需安装 OpenClaw 也能使用 AI 助手</li>
+            <li><span class="check">✓</span> 一键加载 Agent 灵魂（5/6 核心文件）</li>
+            <li><span class="check">✓</span> 多 Agent 灵魂自由切换</li>
+            <li><span class="check">✓</span> 保留 ClawPanel 工具调用能力</li>
+            <li><span class="check">✓</span> 工具权限细粒度控制</li>
           </ul>
         </div>
-      </div>
-
-      <!-- AI 图片识别 -->
-      <div class="showcase-row">
-        <div>
-          <div class="reveal showcase-tag" style="color:#f43f5e;background:rgba(244,63,94,0.1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg> 多模态</div>
-          <h3 class="reveal showcase-title">图片识别 — AI 一眼看懂</h3>
-          <p class="reveal showcase-desc">直接粘贴截图或拖拽图片到对话框，AI 自动识别图片内容并给出详细分析。支持截图、照片、文档图片等多种格式，真正的多模态交互体验。</p>
-          <ul class="reveal showcase-list">
-            <li><span class="check">✓</span> Ctrl+V 粘贴截图直接发送</li>
-            <li><span class="check">✓</span> 拖拽图片文件到对话框</li>
-            <li><span class="check">✓</span> AI 自动识别并分析图片内容</li>
-            <li><span class="check">✓</span> 图文混排 · 多模态对话</li>
-          </ul>
-        </div>
-        <div class="reveal screenshot-frame" onclick="openLightbox('./13.png')"><img src="./13.png" alt="AI 图片识别" loading="lazy"></div>
       </div>
 
       <!-- 实时聊天 -->
       <div class="showcase-row">
         <div>
           <div class="reveal showcase-tag c-indigo" style="background:var(--accent-10)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> 核心功能</div>
-          <h3 class="reveal showcase-title">实时 AI 对话</h3>
-          <p class="reveal showcase-desc">WebSocket 直连 Gateway，流式响应实时显示。支持图片附件、多模态交互、Markdown 渲染、会话管理与快捷指令。</p>
+          <h3 class="reveal showcase-title">实时聊天 — 多模型流式对话</h3>
+          <p class="reveal showcase-desc">WebSocket 直连 Gateway，流式响应逐字显示。自动列出所有已配置模型（含公益接口），支持图片附件、Markdown 渲染和快捷指令。</p>
           <ul class="reveal showcase-list">
-            <li><span class="check">✓</span> 流式传输，逐字显示</li>
+            <li><span class="check">✓</span> 多 Provider 模型自动聚合</li>
             <li><span class="check">✓</span> 多会话管理与历史记录</li>
-            <li><span class="check">✓</span> 图片拖拽上传 &amp; 灯箱预览</li>
+            <li><span class="check">✓</span> 图片拖拽 &amp; 多模态对话</li>
             <li><span class="check">✓</span> / 快捷指令系统</li>
           </ul>
         </div>
-        <div class="reveal screenshot-frame" onclick="openLightbox('./02.png')"><img src="./02.png" alt="实时聊天" loading="lazy"></div>
+        <div class="reveal screenshot-frame" onclick="openLightbox('./07.png')"><img src="./07.png" alt="实时聊天" loading="lazy"></div>
       </div>
 
       <!-- 模型配置 -->
       <div class="showcase-row">
+        <div class="reveal screenshot-frame img-first" onclick="openLightbox('./09.png')"><img src="./09.png" alt="模型配置" loading="lazy"></div>
         <div>
           <div class="reveal showcase-tag" style="color:#a855f7;background:rgba(168,85,247,0.1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg> 配置中心</div>
-          <h3 class="reveal showcase-title">多模型灵活调配</h3>
-          <p class="reveal showcase-desc">支持 OpenAI、DeepSeek、Kimi 等多家服务商。可视化管理模型列表，一键设为主模型，自动备选切换。</p>
+          <h3 class="reveal showcase-title">多服务商统一管理</h3>
+          <p class="reveal showcase-desc">OpenAI、公益接口、DeepSeek、Kimi 等多家服务商统一管理。内置公益 AI 接口一键添加全部模型。可视化主模型 + 备选自动切换，批量测试连通性。</p>
           <ul class="reveal showcase-list">
-            <li><span class="check">✓</span> 多 Provider 统一管理</li>
-            <li><span class="check">✓</span> 批量连通性测试</li>
+            <li><span class="check">✓</span> 公益接口一键添加全部模型</li>
+            <li><span class="check">✓</span> 批量连通性测试 &amp; 延迟检测</li>
             <li><span class="check">✓</span> 主模型 + 备选自动切换</li>
             <li><span class="check">✓</span> 拖拽排序 &amp; 实时保存</li>
           </ul>
         </div>
-        <div class="reveal screenshot-frame" onclick="openLightbox('./05.png')"><img src="./05.png" alt="模型配置" loading="lazy"></div>
       </div>
 
       <!-- 记忆文件 -->
       <div class="showcase-row">
-        <div class="reveal screenshot-frame img-first" onclick="openLightbox('./08.png')"><img src="./08.png" alt="记忆文件" loading="lazy"></div>
         <div>
           <div class="reveal showcase-tag" style="color:#22d3ee;background:rgba(34,211,238,0.1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg> 数据管理</div>
           <h3 class="reveal showcase-title">让 Agent 拥有记忆</h3>
-          <p class="reveal showcase-desc">在线编辑 Agent 核心配置文件（AGENTS.md、SOUL.md 等），管理工作记忆和记忆归档。支持 ZIP 一键打包导出。</p>
+          <p class="reveal showcase-desc">在线编辑 Agent 工作记忆、浏览记忆归档、管理核心配置文件（SOUL.md、AGENTS.md 等）。支持 ZIP 一键打包导出，多 Agent 记忆完全隔离。</p>
           <ul class="reveal showcase-list">
-            <li><span class="check">✓</span> 核心文件在线编辑</li>
-            <li><span class="check">✓</span> 工作记忆 &amp; 记忆归档</li>
+            <li><span class="check">✓</span> 工作记忆 &amp; 记忆归档 &amp; 核心文件</li>
+            <li><span class="check">✓</span> 在线编辑 &amp; 实时预览</li>
             <li><span class="check">✓</span> 多 Agent 记忆隔离</li>
             <li><span class="check">✓</span> ZIP 打包下载</li>
           </ul>
         </div>
+        <div class="reveal screenshot-frame" onclick="openLightbox('./13.png')"><img src="./13.png" alt="记忆文件" loading="lazy"></div>
       </div>
 
-      <!-- Gateway -->
+      <!-- Gateway 安全认证 -->
       <div class="showcase-row">
+        <div class="reveal screenshot-frame img-first" onclick="openLightbox('./11.png')"><img src="./11.png" alt="Gateway 安全认证与工具权限" loading="lazy"></div>
         <div>
-          <div class="reveal showcase-tag" style="color:#10b981;background:rgba(16,185,129,0.1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg> 网关管控</div>
-          <h3 class="reveal showcase-title">安全访问，可视化配置</h3>
-          <p class="reveal showcase-desc">Gateway 端口、绑定范围、运行模式、Token / 密码认证方式，卡片式选项直观配置，即改即生效。</p>
+          <div class="reveal showcase-tag" style="color:#10b981;background:rgba(16,185,129,0.1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> 安全防护</div>
+          <h3 class="reveal showcase-title">安全认证 + 工具权限管控</h3>
+          <p class="reveal showcase-desc">Token 密钥 / 密码认证双模式，卡片式直观选择。Agent 工具调用权限三档可调（完整 / 受限 / 禁用），会话可见性细粒度控制。安全与灵活兼得。</p>
           <ul class="reveal showcase-list">
-            <li><span class="check">✓</span> 本地 / 局域网模式切换</li>
             <li><span class="check">✓</span> Token &amp; 密码双认证模式</li>
-            <li><span class="check">✓</span> Tailscale Funnel 支持</li>
-            <li><span class="check">✓</span> 高级选项按需展开</li>
+            <li><span class="check">✓</span> Agent 工具权限三档管控</li>
+            <li><span class="check">✓</span> 会话可见性控制</li>
+            <li><span class="check">✓</span> 改完自动重启生效</li>
           </ul>
         </div>
-        <div class="reveal screenshot-frame" onclick="openLightbox('./07.png')"><img src="./07.png" alt="Gateway 配置" loading="lazy"></div>
       </div>
 
       <!-- Agent 管理 -->
       <div class="showcase-row">
-        <div class="reveal screenshot-frame img-first" onclick="openLightbox('./06.png')"><img src="./06.png" alt="Agent 管理" loading="lazy"></div>
         <div>
           <div class="reveal showcase-tag" style="color:#f97316;background:rgba(249,115,22,0.1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="10" x="3" y="11" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" x2="8" y1="16" y2="16"/><line x1="16" x2="16" y1="16" y2="16"/></svg> 智能体</div>
           <h3 class="reveal showcase-title">多 Agent 协作管理</h3>
-          <p class="reveal showcase-desc">创建和管理多个 AI Agent，配置各自的身份、模型和独立工作区。支持备份、编辑与一键切换。</p>
+          <p class="reveal showcase-desc">创建和管理多个 AI Agent，各自配置名称、模型和独立工作区。支持备份、编辑与默认 Agent 快速切换。</p>
           <ul class="reveal showcase-list">
             <li><span class="check">✓</span> 多 Agent 独立工作区</li>
             <li><span class="check">✓</span> 身份与模型单独配置</li>
-            <li><span class="check">✓</span> Agent 配置备份</li>
+            <li><span class="check">✓</span> Agent 配置备份 &amp; 编辑</li>
             <li><span class="check">✓</span> 默认 Agent 快速切换</li>
           </ul>
         </div>
+        <div class="reveal screenshot-frame" onclick="openLightbox('./10.png')"><img src="./10.png" alt="Agent 管理" loading="lazy"></div>
       </div>
     </div>
   </section>
@@ -719,15 +704,19 @@
       </div>
       <div class="gallery-grid">
         <div class="reveal gallery-card" onclick="openLightbox('./03.png')"><img src="./03.png" alt="服务管理" loading="lazy"><div class="gallery-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:-2px"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg> 服务管理</div></div>
-        <div class="reveal gallery-card" onclick="openLightbox('./04.png')"><img src="./04.png" alt="日志查看" loading="lazy"><div class="gallery-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:-2px"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M15 2H9a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1z"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg> 日志查看</div></div>
-        <div class="reveal gallery-card" onclick="openLightbox('./09.png')"><img src="./09.png" alt="扩展工具" loading="lazy"><div class="gallery-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:-2px"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg> 扩展工具</div></div>
-        <div class="reveal gallery-card" onclick="openLightbox('./10.png')"><img src="./10.png" alt="系统诊断" loading="lazy"><div class="gallery-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:-2px"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg> 系统诊断</div></div>
+        <div class="reveal gallery-card" onclick="openLightbox('./06.png')"><img src="./06.png" alt="知识库" loading="lazy"><div class="gallery-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:-2px"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg> 知识库</div></div>
+        <div class="reveal gallery-card" onclick="openLightbox('./12.png')"><img src="./12.png" alt="安全设置" loading="lazy"><div class="gallery-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:-2px"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> 安全设置</div></div>
+        <div class="reveal gallery-card" onclick="openLightbox('./14.png')"><img src="./14.png" alt="扩展工具" loading="lazy"><div class="gallery-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:-2px"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg> 扩展工具</div></div>
+        <div class="reveal gallery-card" onclick="openLightbox('./15.png')"><img src="./15.png" alt="系统诊断" loading="lazy"><div class="gallery-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:-2px"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg> 系统诊断</div></div>
+        <div class="reveal gallery-card" onclick="openLightbox('./16.png')"><img src="./16.png" alt="关于" loading="lazy"><div class="gallery-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:-2px"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg> 关于</div></div>
       </div>
       <div class="info-grid">
-        <div class="reveal info-card"><div class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></div><h4>服务管理</h4><p>启停控制、版本检测、一键升级、配置备份与恢复</p></div>
-        <div class="reveal info-card"><div class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M15 2H9a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1z"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg></div><h4>日志查看</h4><p>多日志源实时查看、关键字搜索、自动滚动跟踪</p></div>
-        <div class="reveal info-card"><div class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg></div><h4>扩展工具</h4><p>cftunnel 内网穿透、ClawApp 移动客户端管理</p></div>
-        <div class="reveal info-card"><div class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div><h4>系统诊断</h4><p>全面健康检测、WebSocket 测试、一键修复配对</p></div>
+        <div class="reveal info-card"><div class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></div><h4>服务管理</h4><p>启停控制、版本检测、一键升级、npm 源切换、配置备份与恢复</p></div>
+        <div class="reveal info-card"><div class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg></div><h4>知识库</h4><p>自定义知识注入 AI 助手，Markdown 格式，对话时自动激活</p></div>
+        <div class="reveal info-card"><div class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>安全设置</h4><p>访问密码保护、无视风险模式切换、面板访问安全管控</p></div>
+        <div class="reveal info-card"><div class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg></div><h4>扩展工具</h4><p>cftunnel 内网穿透、ClawApp 移动客户端一键安装</p></div>
+        <div class="reveal info-card"><div class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div><h4>系统诊断</h4><p>全面健康检测、WebSocket 测试、网络日志、一键修复配对</p></div>
+        <div class="reveal info-card"><div class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></div><h4>关于</h4><p>版本信息、社群入口（QQ / 微信 / 抖音）、相关项目链接</p></div>
       </div>
     </div>
   </section>
@@ -983,7 +972,7 @@
     <div class="orb orb-2" style="top:auto;bottom:-100px"></div>
     <div class="container-sm" style="position:relative;z-index:10">
       <div class="section-header">
-        <div class="reveal download-version"><span class="pulse"></span> v0.5.4 最新版</div>
+        <div class="reveal download-version"><span class="pulse"></span> v0.6.0 最新版</div>
         <h2 class="reveal section-title"><span class="gradient-text">下载安装</span></h2>
         <p class="reveal section-desc">选择你的操作系统，一键下载安装</p>
       </div>
@@ -993,11 +982,11 @@
           <h3>macOS</h3>
           <p class="dl-desc">支持 Apple Silicon 和 Intel 芯片</p>
           <div class="dl-links">
-            <a class="dl-link" href="https://github.com/qingchencloud/clawpanel/releases/latest/download/ClawPanel_0.5.4_aarch64.dmg" target="_blank" rel="noopener">
+            <a class="dl-link" href="https://github.com/qingchencloud/clawpanel/releases/latest/download/ClawPanel_0.6.0_aarch64.dmg" target="_blank" rel="noopener">
               Apple Silicon (M1/M2/M3/M4)
               <span class="dl-format">.dmg</span>
             </a>
-            <a class="dl-link" href="https://github.com/qingchencloud/clawpanel/releases/latest/download/ClawPanel_0.5.4_x64.dmg" target="_blank" rel="noopener">
+            <a class="dl-link" href="https://github.com/qingchencloud/clawpanel/releases/latest/download/ClawPanel_0.6.0_x64.dmg" target="_blank" rel="noopener">
               Intel 芯片
               <span class="dl-format">.dmg</span>
             </a>
@@ -1008,11 +997,11 @@
           <h3>Windows</h3>
           <p class="dl-desc">支持 Windows 10 及以上版本</p>
           <div class="dl-links">
-            <a class="dl-link" href="https://github.com/qingchencloud/clawpanel/releases/latest/download/ClawPanel_0.5.4_x64-setup.exe" target="_blank" rel="noopener">
+            <a class="dl-link" href="https://github.com/qingchencloud/clawpanel/releases/latest/download/ClawPanel_0.6.0_x64-setup.exe" target="_blank" rel="noopener">
               安装程序
               <span class="dl-format">.exe</span>
             </a>
-            <a class="dl-link" href="https://github.com/qingchencloud/clawpanel/releases/latest/download/ClawPanel_0.5.4_x64_en-US.msi" target="_blank" rel="noopener">
+            <a class="dl-link" href="https://github.com/qingchencloud/clawpanel/releases/latest/download/ClawPanel_0.6.0_x64_en-US.msi" target="_blank" rel="noopener">
               MSI 安装包
               <span class="dl-format">.msi</span>
             </a>
@@ -1023,11 +1012,11 @@
           <h3>Linux</h3>
           <p class="dl-desc">支持主流 Linux 发行版</p>
           <div class="dl-links">
-            <a class="dl-link" href="https://github.com/qingchencloud/clawpanel/releases/latest/download/ClawPanel_0.5.4_amd64.AppImage" target="_blank" rel="noopener">
+            <a class="dl-link" href="https://github.com/qingchencloud/clawpanel/releases/latest/download/ClawPanel_0.6.0_amd64.AppImage" target="_blank" rel="noopener">
               通用版
               <span class="dl-format">.AppImage</span>
             </a>
-            <a class="dl-link" href="https://github.com/qingchencloud/clawpanel/releases/latest/download/ClawPanel_0.5.4_amd64.deb" target="_blank" rel="noopener">
+            <a class="dl-link" href="https://github.com/qingchencloud/clawpanel/releases/latest/download/ClawPanel_0.6.0_amd64.deb" target="_blank" rel="noopener">
               Debian / Ubuntu
               <span class="dl-format">.deb</span>
             </a>
@@ -1049,7 +1038,7 @@
         <h2 class="reveal section-title"><span class="gradient-text">社区交流</span></h2>
         <p class="reveal section-desc">加入社区，交流使用心得、反馈问题、获取最新动态</p>
       </div>
-      <div class="community-grid">
+      <div class="community-grid" style="grid-template-columns:repeat(3,1fr)">
         <div class="reveal community-card">
           <img class="community-qr" src="./qr-qq.png" alt="QQ 群二维码">
           <h3>QQ 交流群</h3>
@@ -1061,6 +1050,12 @@
           <h3>微信交流群</h3>
           <p class="desc">加入微信群，获取最新版本通知和使用技巧分享</p>
           <a href="https://qt.cool/c/OpenClawWx" target="_blank" rel="noopener" class="btn btn-sm btn-outline">加入微信群</a>
+        </div>
+        <div class="reveal community-card">
+          <img class="community-qr" src="https://qt.cool/c/OpenClawDY/qr.png" alt="抖音群二维码" style="object-fit:contain;background:#fff">
+          <h3>抖音交流群</h3>
+          <p class="desc">关注抖音账号，观看教程视频和最新动态</p>
+          <a href="https://qt.cool/c/OpenClawDY" target="_blank" rel="noopener" class="btn btn-sm btn-outline">加入抖音群</a>
         </div>
       </div>
       <div class="community-extra">
@@ -1080,6 +1075,50 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
           反馈 Issue
         </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════ 公益 AI 接口计划 ══════════════ -->
+  <section id="ai-plan" class="section" style="padding-top:64px;padding-bottom:64px">
+    <div class="grid-bg"></div>
+    <div class="container" style="position:relative;z-index:10">
+      <div class="section-header">
+        <h2 class="reveal section-title"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:-6px;margin-right:4px;color:var(--accent)"><path d="M20 12v10H4V12"/><path d="M2 7h20v5H2z"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg> <span class="gradient-text">公益 AI 接口计划</span></h2>
+        <p class="reveal section-desc">Token 费用？我们帮你出了。</p>
+      </div>
+      <div class="reveal" style="max-width:800px;margin:0 auto;border-radius:20px;background:linear-gradient(135deg,#0f0c29 0%,#302b63 50%,#24243e 100%);color:#fff;position:relative;overflow:hidden;box-shadow:0 8px 40px rgba(48,43,99,0.3)">
+        <div style="position:absolute;top:-60px;right:-60px;width:200px;height:200px;border-radius:50%;background:radial-gradient(circle,rgba(99,102,241,0.15) 0%,transparent 70%);pointer-events:none"></div>
+        <div style="position:absolute;bottom:-40px;left:-40px;width:150px;height:150px;border-radius:50%;background:radial-gradient(circle,rgba(168,85,247,0.1) 0%,transparent 70%);pointer-events:none"></div>
+        <div style="padding:40px 48px;position:relative">
+          <div style="font-size:15px;color:rgba(255,255,255,0.8);line-height:1.9;margin-bottom:24px">
+            <p style="margin-bottom:12px">ClawPanel 公益 AI 接口测试计划已开放。<strong style="color:#a78bfa">调用成本由项目组内部承担</strong>，用户无需注册、无需付费。</p>
+            <p style="margin-bottom:12px">支持 GPT-5 全系列模型，兼容 OpenAI <code style="background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px;font-size:13px">/v1/chat/completions</code> 和 <code style="background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px;font-size:13px">/v1/responses</code> 接口。</p>
+            <p>在 ClawPanel 内置助手设置中，选择模型 → 点击「测试」→「一键接入」即可开始使用。如需独立密钥，可前往活动站签到领取。</p>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px">
+            <div style="background:rgba(255,255,255,0.06);border-radius:12px;padding:16px;text-align:center;border:1px solid rgba(255,255,255,0.08)">
+              <div style="margin-bottom:6px"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg></div>
+              <div style="font-weight:700;font-size:14px;margin-bottom:4px">GPT-5 全系列</div>
+              <div style="font-size:12px;color:rgba(255,255,255,0.5)">10+ 模型开箱即用</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.06);border-radius:12px;padding:16px;text-align:center;border:1px solid rgba(255,255,255,0.08)">
+              <div style="margin-bottom:6px"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></svg></div>
+              <div style="font-weight:700;font-size:14px;margin-bottom:4px">费用全包</div>
+              <div style="font-size:12px;color:rgba(255,255,255,0.5)">Token 成本项目组承担</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.06);border-radius:12px;padding:16px;text-align:center;border:1px solid rgba(255,255,255,0.08)">
+              <div style="margin-bottom:6px"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg></div>
+              <div style="font-weight:700;font-size:14px;margin-bottom:4px">独立密钥</div>
+              <div style="font-size:12px;color:rgba(255,255,255,0.5)">签到即可免费领取</div>
+            </div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center">
+            <a href="https://gpt.qt.cool/checkin" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:8px;padding:10px 24px;border-radius:12px;background:linear-gradient(135deg,#6366f1,#a855f7);color:#fff;font-weight:600;font-size:14px;text-decoration:none;box-shadow:0 4px 16px rgba(99,102,241,0.4);transition:transform 0.2s"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12l2 2 4-4"/></svg> 签到领密钥</a>
+            <a href="https://gpt.qt.cool/user" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:8px;padding:10px 24px;border-radius:12px;border:1px solid rgba(255,255,255,0.2);color:#fff;font-size:14px;font-weight:500;text-decoration:none;transition:all 0.2s"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg> 用量查询</a>
+            <a href="https://gpt.qt.cool/" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:8px;padding:10px 24px;border-radius:12px;border:1px solid rgba(255,255,255,0.2);color:#fff;font-size:14px;font-weight:500;text-decoration:none;transition:all 0.2s"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> GPT-AI 网关</a>
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -1107,7 +1146,7 @@
     <div class="footer-inner">
       <div class="footer-logo">
         <img src="./logo.png" alt="Logo">
-        <span>ClawPanel &copy; 2025</span>
+        <span>ClawPanel &copy; 2026</span>
       </div>
       <div class="footer-links">
         <a href="https://github.com/qingchencloud/clawpanel" class="footer-link">GitHub</a>
@@ -1374,19 +1413,45 @@
       if (e.key === 'Escape') closeDoc();
     });
 
-    /* ── Fix anchor position on load ── */
+    /* ── Robust Anchor Scroll (handles lazy-loaded image layout shift) ── */
+    function smoothScrollTo(target) {
+      if (!target) return;
+      var lastTop = -1;
+      function doScroll() {
+        var top = target.getBoundingClientRect().top + window.scrollY - 120;
+        window.scrollTo({ top: top, behavior: 'smooth' });
+        return top;
+      }
+      lastTop = doScroll();
+      // Re-check position after images may have loaded and shifted layout
+      var retries = [300, 600, 1200];
+      retries.forEach(function(delay) {
+        setTimeout(function() {
+          var newTop = target.getBoundingClientRect().top + window.scrollY - 120;
+          if (Math.abs(newTop - window.scrollY) > 30) {
+            doScroll();
+          }
+        }, delay);
+      });
+    }
+    // Intercept all anchor link clicks
+    document.querySelectorAll('a[href^="#"]').forEach(function(link) {
+      link.addEventListener('click', function(e) {
+        var hash = this.getAttribute('href');
+        if (!hash || hash === '#') return;
+        e.preventDefault();
+        var target = document.querySelector(hash);
+        if (target) {
+          smoothScrollTo(target);
+          history.pushState(null, '', hash);
+        }
+      });
+    });
+    // Fix anchor position on initial page load with hash
     window.addEventListener('load', function() {
       if (window.location.hash) {
-        var hash = window.location.hash;
-        setTimeout(function() {
-          var target = document.querySelector(hash);
-          if (target) {
-            window.scrollTo({
-              top: target.offsetTop - 120,
-              behavior: 'smooth'
-            });
-          }
-        }, 300);
+        var target = document.querySelector(window.location.hash);
+        if (target) setTimeout(function() { smoothScrollTo(target); }, 100);
       }
     });
   </script>

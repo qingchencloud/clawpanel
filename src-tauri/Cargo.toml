@@ -1,6 +1,6 @@
 [package]
 name = "clawpanel"
-version = "0.5.1"
+version = "0.6.0"
 edition = "2021"
 description = "ClawPanel - OpenClaw 可视化管理面板"
 authors = ["qingchencloud"]
@@ -28,4 +28,6 @@ ed25519-dalek = { version = "2", features = ["rand_core"] }
 sha2 = "0.10"
 rand = "0.8"
 base64 = "0.22"
+urlencoding = "2"
+regex = "1"
 tokio = { version = "1", features = ["process", "time"] }

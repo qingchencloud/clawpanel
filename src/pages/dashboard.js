@@ -4,6 +4,7 @@
 import { api } from '../lib/tauri-api.js'
 import { toast } from '../components/toast.js'
 import { onGatewayChange } from '../lib/app-state.js'
+import { navigate } from '../router.js'
 
 let _unsubGw = null
 
@@ -35,6 +36,9 @@ export async function render() {
       <div class="log-viewer" id="recent-logs" style="max-height:300px"></div>
     </div>
   `
+
+  // 绑定事件（只绑一次）
+  bindActions(page)
 
   // 异步加载数据
   loadDashboardData(page)
@@ -94,7 +98,6 @@ async function loadDashboardData(page) {
   }
 
   renderStatCards(page, services, version, [], config, null)
-  bindActions(page)
 
   // 第二波：Agent、隧道、MCP、ClawApp、备份 → 更新卡片 + 渲染总览
   const [agentsRes, tunnelRes, mcpRes, clawappRes, backupsRes] = await secondaryP
@@ -195,8 +198,14 @@ function renderOverview(page, services, clawapp, tunnel, mcpConfig, backups, con
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
             Gateway 核心网关
           </div>
-          <div class="overview-value" style="color: ${gw?.running ? 'var(--success)' : 'var(--error)'}">
-            ${gw?.running ? '运行中' : '已停止'}
+          <div class="overview-actions">
+            <span class="overview-status" style="color: ${gw?.running ? 'var(--success)' : 'var(--error)'}">
+              ${gw?.running ? '运行中' : '已停止'}
+            </span>
+            ${gw?.running
+              ? '<button class="btn btn-danger btn-xs" data-action="stop-gw">停止</button><button class="btn btn-secondary btn-xs" data-action="restart-gw">重启</button>'
+              : '<button class="btn btn-primary btn-xs" data-action="start-gw">启动</button>'
+            }
           </div>
         </div>
         <div class="overview-item">
@@ -204,8 +213,16 @@ function renderOverview(page, services, clawapp, tunnel, mcpConfig, backups, con
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
             ClawApp 守护进程
           </div>
-          <div class="overview-value" style="color: ${clawapp?.running ? 'var(--success)' : 'var(--error)'}">
-            ${clawapp?.running ? '端口 ' + clawapp.port : '未启动'}
+          <div class="overview-actions">
+            <span class="overview-status" style="color: ${clawapp?.running ? 'var(--success)' : 'var(--error)'}">
+              ${clawapp?.running ? '端口 ' + clawapp.port : '未启动'}
+            </span>
+            ${clawapp?.installed
+              ? (clawapp?.running
+                ? `<a class="btn btn-primary btn-xs" href="${clawapp.url || 'http://localhost:3210'}" target="_blank" rel="noopener">打开</a>`
+                : '<button class="btn btn-secondary btn-xs" data-action="goto-extensions">前往管理</button>')
+              : '<button class="btn btn-secondary btn-xs" data-action="goto-extensions">去安装</button>'
+            }
           </div>
         </div>
         <div class="overview-item">
@@ -285,6 +302,44 @@ function bindActions(page) {
   const btnRestart = page.querySelector('#btn-restart-gw')
   const btnUpdate = page.querySelector('#btn-check-update')
   const btnCreateBackup = page.querySelector('#btn-create-backup')
+
+  // 概览区域的 Gateway 启动/停止/重启 + ClawApp 导航
+  page.addEventListener('click', async (e) => {
+    const actionBtn = e.target.closest('[data-action]')
+    if (!actionBtn) return
+    const action = actionBtn.dataset.action
+
+    if (action === 'start-gw') {
+      actionBtn.disabled = true; actionBtn.textContent = '启动中...'
+      try {
+        await api.startService('ai.openclaw.gateway')
+        toast('Gateway 启动指令已发送', 'success')
+        setTimeout(() => loadDashboardData(page), 2000)
+      } catch (err) { toast('启动失败: ' + err, 'error') }
+      finally { actionBtn.disabled = false; actionBtn.textContent = '启动' }
+    }
+    if (action === 'stop-gw') {
+      actionBtn.disabled = true; actionBtn.textContent = '停止中...'
+      try {
+        await api.stopService('ai.openclaw.gateway')
+        toast('Gateway 已停止', 'success')
+        setTimeout(() => loadDashboardData(page), 1500)
+      } catch (err) { toast('停止失败: ' + err, 'error') }
+      finally { actionBtn.disabled = false; actionBtn.textContent = '停止' }
+    }
+    if (action === 'restart-gw') {
+      actionBtn.disabled = true; actionBtn.textContent = '重启中...'
+      try {
+        await api.restartService('ai.openclaw.gateway')
+        toast('Gateway 重启指令已发送', 'success')
+        setTimeout(() => loadDashboardData(page), 3000)
+      } catch (err) { toast('重启失败: ' + err, 'error') }
+      finally { actionBtn.disabled = false; actionBtn.textContent = '重启' }
+    }
+    if (action === 'goto-extensions') {
+      navigate('/extensions')
+    }
+  })
 
   btnRestart?.addEventListener('click', async () => {
     btnRestart.disabled = true

@@ -61,6 +61,26 @@
   border-top: 1px solid var(--border-secondary);
 }
 
+.sidebar-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px 2px;
+  font-size: 11px;
+}
+.sidebar-link {
+  color: var(--text-tertiary);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.sidebar-link:hover {
+  color: var(--primary);
+}
+.sidebar-version {
+  color: var(--text-tertiary);
+  opacity: 0.7;
+}
+
 .nav-section {
   margin-bottom: var(--space-md);
 }

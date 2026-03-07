@@ -119,7 +119,7 @@ pub fn create_connect_frame(nonce: String, gateway_token: String) -> Result<Valu
             "maxProtocol": 3,
             "client": {
                 "id": "openclaw-control-ui",
-                "version": "1.0.0",
+                "version": env!("CARGO_PKG_VERSION"),
                 "platform": platform,
                 "deviceFamily": device_family,
                 "mode": "ui"
@@ -136,7 +136,7 @@ pub fn create_connect_frame(nonce: String, gateway_token: String) -> Result<Valu
                 "signature": sig_b64,
             },
             "locale": "zh-CN",
-            "userAgent": "ClawPanel/1.0.0",
+            "userAgent": format!("ClawPanel/{}", env!("CARGO_PKG_VERSION")),
         }
     });
 

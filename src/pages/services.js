@@ -7,6 +7,7 @@ import { toast } from '../components/toast.js'
 import { showConfirm, showUpgradeModal } from '../components/modal.js'
 import { isMacPlatform, setUpgrading, setUserStopped, resetAutoRestart } from '../lib/app-state.js'
 import { diagnoseInstallError } from '../lib/error-diagnosis.js'
+import { icon, statusIcon } from '../lib/icons.js'
 
 // HTML 转义，防止 XSS
 function escapeHtml(str) {
@@ -424,11 +425,20 @@ async function doUpgradeWithModal(source, page) {
   } catch (e) {
     const errStr = String(e)
     modal.appendLog(errStr)
-    const diagnosis = diagnoseInstallError(errStr)
+    const fullLog = modal.getLogText() + '\n' + errStr
+    const diagnosis = diagnoseInstallError(fullLog)
     modal.setError(diagnosis.title)
     if (diagnosis.hint) modal.appendLog('')
-    if (diagnosis.hint) modal.appendLog('ℹ️ ' + diagnosis.hint)
-    if (diagnosis.command) modal.appendLog('💻 ' + diagnosis.command)
+    if (diagnosis.hint) modal.appendHtmlLog(`${statusIcon('info', 14)} ${diagnosis.hint}`)
+    if (diagnosis.command) modal.appendHtmlLog(`${icon('clipboard', 14)} ${diagnosis.command}`)
+    if (window.__openAIDrawerWithError) {
+      window.__openAIDrawerWithError({
+        title: diagnosis.title,
+        error: fullLog,
+        scene: '升级 OpenClaw',
+        hint: diagnosis.hint,
+      })
+    }
   } finally {
     setUpgrading(false)
     unlistenLog?.()

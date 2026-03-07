@@ -50,6 +50,17 @@
   color: var(--text-tertiary);
 }
 
+.overview-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.overview-status {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  margin-right: 4px;
+}
+
 .overview-value {
   display: flex;
   align-items: center;

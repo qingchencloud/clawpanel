@@ -163,6 +163,7 @@ export function showUpgradeModal() {
   const text = overlay.querySelector('.upgrade-progress-text')
   const logBox = overlay.querySelector('.upgrade-log-box')
   const closeBtn = overlay.querySelector('[data-action="close"]')
+  const _logLines = []
 
   closeBtn.onclick = () => overlay.remove()
   overlay.addEventListener('keydown', (e) => {
@@ -171,11 +172,20 @@ export function showUpgradeModal() {
 
   return {
     appendLog(line) {
+      _logLines.push(line)
       const div = document.createElement('div')
       div.textContent = line
       logBox.appendChild(div)
       logBox.scrollTop = logBox.scrollHeight
     },
+    appendHtmlLog(line) {
+      _logLines.push(line)
+      const div = document.createElement('div')
+      div.innerHTML = line
+      logBox.appendChild(div)
+      logBox.scrollTop = logBox.scrollHeight
+    },
+    getLogText() { return _logLines.join('\n') },
     setProgress(pct) {
       fill.style.width = pct + '%'
       if (pct >= 100) text.textContent = '完成'

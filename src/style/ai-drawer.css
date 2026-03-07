@@ -1,0 +1,156 @@
+/* ── 全局 AI 助手浮动按钮 ── */
+
+.ai-fab {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9000;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+  transition: transform 0.2s, box-shadow 0.2s;
+  touch-action: none; /* 拖动时禁止浏览器默认手势 */
+  user-select: none;
+}
+.ai-fab:hover {
+  transform: scale(1.08);
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45);
+}
+.ai-fab.dragging {
+  opacity: 0.85;
+  transform: scale(1.12);
+  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.5);
+  cursor: grabbing;
+}
+.ai-fab svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none; /* 防止 SVG 吃掉 pointer 事件 */
+}
+
+/* FAB 红点：有待处理的错误上下文 */
+.ai-fab.has-error::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--error, #ef4444);
+  border: 2px solid #fff;
+  animation: fab-pulse 1.5s ease-in-out infinite;
+}
+@keyframes fab-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.2); opacity: 0.8; }
+}
+
+/* ── 错误上下文 Banner（助手页面内） ── */
+.ast-error-banner {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  background: var(--error-muted, rgba(239, 68, 68, 0.08));
+  border: 1px solid var(--error-border, rgba(239, 68, 68, 0.25));
+  border-radius: var(--radius-lg, 12px);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  position: relative;
+}
+.ast-error-banner-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ast-error-banner-icon {
+  flex-shrink: 0;
+  color: var(--error, #ef4444);
+  font-size: 16px;
+}
+.ast-error-banner-title {
+  flex: 1;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.ast-error-banner-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.ast-error-banner-actions button {
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.ast-error-banner .btn-analyze {
+  background: var(--error, #ef4444);
+  color: #fff;
+  border-color: var(--error, #ef4444);
+}
+.ast-error-banner .btn-analyze:hover {
+  opacity: 0.9;
+}
+.ast-error-banner .btn-dismiss {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+.ast-error-banner .btn-dismiss:hover {
+  background: var(--bg-secondary);
+}
+.ast-error-banner-hint {
+  margin-top: 6px;
+  color: var(--text-tertiary);
+}
+.ast-error-banner-detail {
+  margin-top: 8px;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+.ast-error-banner-detail.expanded {
+  max-height: 300px;
+}
+.ast-error-banner-detail pre {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 280px;
+  overflow-y: auto;
+  color: var(--text-secondary);
+}
+.ast-error-toggle {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+  margin-top: 4px;
+  text-decoration: underline;
+}
+.ast-error-toggle:hover {
+  color: var(--text-primary);
+}

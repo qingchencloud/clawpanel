@@ -11,16 +11,17 @@ git status
 
 2. 确认 CI 全部通过（main 分支绿灯）
 
-3. 更新 `CHANGELOG.md`，在顶部加入本次版本的变更记录
-
-4. 更新 `src-tauri/tauri.conf.json` 中的 `version` 字段，与即将发布的版本号保持一致：
-```json
-{ "version": "1.2.3" }
+3. 更新版本号（一条命令自动同步 package.json → tauri.conf.json → Cargo.toml → docs/index.html）：
+// turbo
+```bash
+npm run version:set 1.2.3
 ```
+
+4. 更新 `CHANGELOG.md`，在顶部加入本次版本的变更记录
 
 5. 提交版本更新：
 ```bash
-git add CHANGELOG.md src-tauri/tauri.conf.json
+git add -A
 git commit -m "chore: release v1.2.3"
 git push origin main
 ```

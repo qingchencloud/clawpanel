@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 pub mod agent;
 pub mod assistant;
@@ -15,12 +16,19 @@ pub fn openclaw_dir() -> PathBuf {
     dirs::home_dir().unwrap_or_default().join(".openclaw")
 }
 
+/// 缓存 enhanced_path 结果，避免每次调用都扫描文件系统
+static ENHANCED_PATH_CACHE: OnceLock<String> = OnceLock::new();
+
 /// Tauri 应用启动时 PATH 可能不完整：
 /// - macOS 从 Finder 启动时 PATH 只有 /usr/bin:/bin:/usr/sbin:/sbin
 /// - Windows 上安装 Node.js 到非默认路径、或安装后未重启进程
 ///
 /// 补充 Node.js / npm 常见安装路径
 pub fn enhanced_path() -> String {
+    ENHANCED_PATH_CACHE.get_or_init(build_enhanced_path).clone()
+}
+
+fn build_enhanced_path() -> String {
     let current = std::env::var("PATH").unwrap_or_default();
     let home = dirs::home_dir().unwrap_or_default();
 
@@ -45,7 +53,12 @@ pub fn enhanced_path() -> String {
             format!("{}/.volta/bin", home.display()),
             format!("{}/.nodenv/shims", home.display()),
             format!("{}/n/bin", home.display()),
+            format!("{}/.npm-global/bin", home.display()),
         ];
+        // NPM_CONFIG_PREFIX: 用户通过 npm config set prefix 自定义的全局安装路径
+        if let Ok(prefix) = std::env::var("NPM_CONFIG_PREFIX") {
+            extra.push(format!("{}/bin", prefix));
+        }
         // 扫描 nvm 实际安装的版本目录（兼容无 current 符号链接的情况）
         let nvm_versions = home.join(".nvm/versions/node");
         if nvm_versions.is_dir() {
@@ -96,7 +109,12 @@ pub fn enhanced_path() -> String {
             format!("{}/.volta/bin", home.display()),
             format!("{}/.nodenv/shims", home.display()),
             format!("{}/n/bin", home.display()),
+            format!("{}/.npm-global/bin", home.display()),
         ];
+        // NPM_CONFIG_PREFIX: 用户通过 npm config set prefix 自定义的全局安装路径
+        if let Ok(prefix) = std::env::var("NPM_CONFIG_PREFIX") {
+            extra.push(format!("{}/bin", prefix));
+        }
         // NVM_DIR 环境变量（用户可能自定义了 nvm 安装目录）
         let nvm_dir = std::env::var("NVM_DIR")
             .ok()

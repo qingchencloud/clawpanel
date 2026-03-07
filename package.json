@@ -1,6 +1,6 @@
 {
   "name": "clawpanel",
-  "version": "0.5.4",
+  "version": "0.6.0",
   "private": true,
   "description": "ClawPanel - OpenClaw 可视化管理面板，基于 Tauri v2 的跨平台桌面应用",
   "type": "module",
@@ -25,7 +25,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "version:sync": "node scripts/sync-version.js",
+    "version:set": "node scripts/sync-version.js"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.5.0",
