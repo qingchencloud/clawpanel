@@ -903,6 +903,101 @@ const handlers = {
     return true
   },
 
+  clawhub_trending() {
+    const fallback = [
+      { slug: 'agent-browser', displayName: 'Agent Browser', summary: '浏览器自动化 CLI，支持点击、输入、抓取和截图。', author: 'TheSethRose', downloadsText: '73.9k', url: 'https://clawhub.ai/TheSethRose/agent-browser', source: 'clawhub' },
+      { slug: 'github', displayName: 'Github', summary: '通过 gh CLI 与 GitHub issues、PR、CI 交互。', author: 'steipete', downloadsText: '72.5k', url: 'https://clawhub.ai/steipete/github', source: 'clawhub' },
+      { slug: 'weather', displayName: 'Weather', summary: '获取当前天气和预报，无需 API Key。', author: 'steipete', downloadsText: '61.9k', url: 'https://clawhub.ai/steipete/weather', source: 'clawhub' },
+      { slug: 'find-skills', displayName: 'Find Skills', summary: '帮助用户发现并安装合适的 skills。', author: 'JimLiuxinghai', downloadsText: '99.3k', url: 'https://clawhub.ai/JimLiuxinghai/find-skills', source: 'clawhub' },
+      { slug: 'summarize', displayName: 'Summarize', summary: '总结网页、PDF、图片、音频等内容。', author: 'steipete', downloadsText: '82.7k', url: 'https://clawhub.ai/steipete/summarize', source: 'clawhub' },
+      { slug: 'brave-search', displayName: 'Brave Search', summary: '轻量网页搜索和内容提取。', author: 'steipete', downloadsText: '29.4k', url: 'https://clawhub.ai/steipete/brave-search', source: 'clawhub' },
+    ]
+    try {
+      const out = execSync('npx -y clawhub explore --sort downloads --limit 12 --json', { encoding: 'utf8', timeout: 30000 })
+      const data = JSON.parse(out)
+      const items = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : [])
+      const normalized = items
+        .map(item => ({
+          slug: String(item?.slug || '').trim(),
+          displayName: String(item?.displayName || item?.name || item?.slug || '').trim(),
+          summary: String(item?.summary || item?.description || '').trim(),
+          author: String(item?.author?.handle || item?.author || '').trim(),
+          downloadsText: String(item?.stats?.downloadsText || item?.downloadsText || item?.downloads || '').trim(),
+          url: String(item?.url || item?.canonicalUrl || '').trim(),
+          source: 'clawhub'
+        }))
+        .filter(item => item.slug)
+      return normalized.length ? normalized : fallback
+    } catch {
+      return fallback
+    }
+  },
+
+  clawhub_search({ query }) {
+    const q = String(query || '').trim()
+    if (!q) return []
+    try {
+      const out = execSync(`npx -y clawhub search ${JSON.stringify(q)} --limit 12`, { encoding: 'utf8', timeout: 30000 })
+      return out.split('\n')
+        .map(line => line.trim())
+        .filter(line => line && !line.startsWith('-'))
+        .map(line => {
+          const parts = line.split(/\s{2,}/).filter(Boolean)
+          return {
+            slug: parts[0] || '',
+            displayName: parts[1] || parts[0] || '',
+            summary: '',
+            source: 'clawhub'
+          }
+        })
+    } catch (e) {
+      console.warn('[dev-api] clawhub search failed:', e.message)
+      return []
+    }
+  },
+
+  clawhub_list_installed() {
+    const skillsDir = path.join(OPENCLAW_DIR, 'skills')
+    if (!fs.existsSync(skillsDir)) fs.mkdirSync(skillsDir, { recursive: true })
+    try {
+      const out = execSync('npx -y clawhub list', { cwd: homedir(), encoding: 'utf8', timeout: 30000 })
+      const fromCli = out.split('\n')
+        .map(line => line.trim())
+        .filter(line => line && line !== 'No installed skills.')
+        .map(line => ({ slug: line.split(/\s+/)[0], installed: true }))
+      if (fromCli.length) return fromCli
+    } catch {}
+
+    // 兜底：直接扫描 ~/.openclaw/skills 目录，避免 CLI 输出格式变化导致空列表
+    try {
+      return fs.readdirSync(skillsDir, { withFileTypes: true })
+        .filter(entry => entry.isDirectory() || entry.isSymbolicLink())
+        .map(entry => ({ slug: entry.name, installed: true }))
+    } catch {
+      return []
+    }
+  },
+
+  clawhub_inspect({ slug }) {
+    try {
+      const out = execSync(`npx -y clawhub inspect ${JSON.stringify(slug)} --json`, { encoding: 'utf8', timeout: 30000 })
+      return JSON.parse(out)
+    } catch (e) {
+      throw new Error(`clawhub inspect 失败: ${e.message}`)
+    }
+  },
+
+  clawhub_install({ slug }) {
+    const skillsDir = path.join(OPENCLAW_DIR, 'skills')
+    if (!fs.existsSync(skillsDir)) fs.mkdirSync(skillsDir, { recursive: true })
+    try {
+      const out = execSync(`npx -y clawhub install ${JSON.stringify(slug)} --workdir .openclaw --dir skills`, { cwd: homedir(), encoding: 'utf8', timeout: 120000 })
+      return { success: true, slug, output: out.trim() }
+    } catch (e) {
+      throw new Error(`clawhub install 失败: ${e.message}`)
+    }
+  },
+
   // 扩展工具
   get_cftunnel_status() {
     // 优先使用 cftunnel CLI（跨平台）

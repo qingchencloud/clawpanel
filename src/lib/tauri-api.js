@@ -215,6 +215,30 @@ function mockInvoke(cmd, args) {
     upgrade_openclaw: () => '升级成功，当前版本: 2026.2.26-zh.3 (mock)',
     install_gateway: () => 'Gateway 服务已安装 (mock)',
     uninstall_gateway: () => 'Gateway 服务已卸载 (mock)',
+    clawhub_trending: () => [
+      { slug: 'find-skills', displayName: 'Find Skills', summary: '帮助用户发现并安装合适的 skills。', author: 'JimLiuxinghai', downloadsText: '99.3k', url: 'https://clawhub.ai/JimLiuxinghai/find-skills', source: 'clawhub' },
+      { slug: 'agent-browser', displayName: 'Agent Browser', summary: '浏览器自动化 CLI，支持点击、输入、抓取和截图。', author: 'TheSethRose', downloadsText: '73.9k', url: 'https://clawhub.ai/TheSethRose/agent-browser', source: 'clawhub' },
+      { slug: 'github', displayName: 'Github', summary: '通过 gh CLI 与 GitHub issues、PR、CI 交互。', author: 'steipete', downloadsText: '72.5k', url: 'https://clawhub.ai/steipete/github', source: 'clawhub' },
+      { slug: 'weather', displayName: 'Weather', summary: '获取当前天气和预报，无需 API Key。', author: 'steipete', downloadsText: '61.9k', url: 'https://clawhub.ai/steipete/weather', source: 'clawhub' }
+    ],
+    clawhub_search: ({ query }) => [
+      { slug: 'weather', displayName: 'Weather', summary: 'Get current weather and forecasts.', source: 'clawhub' },
+      { slug: 'find-skills', displayName: 'Find Skills', summary: 'Discover and install skills.', source: 'clawhub' },
+    ].filter(x => !query || x.slug.includes(query) || x.displayName.toLowerCase().includes(String(query).toLowerCase())),
+    clawhub_list_installed: () => [
+      { slug: 'find-skills', installed: true },
+    ],
+    clawhub_inspect: ({ slug }) => ({
+      skill: {
+        slug,
+        displayName: slug === 'weather' ? 'Weather' : 'Find Skills',
+        summary: slug === 'weather' ? 'Get current weather and forecasts.' : 'Discover and install skills.',
+        stats: { downloads: 1000, installsCurrent: 100, stars: 20 }
+      },
+      owner: { handle: slug === 'weather' ? 'steipete' : 'JimLiuxinghai' },
+      latestVersion: { version: '1.0.0' }
+    }),
+    clawhub_install: ({ slug }) => ({ success: true, slug, output: `Installed ${slug}` }),
     get_npm_registry: () => 'https://registry.npmmirror.com',
     set_npm_registry: () => true,
     test_model: ({ modelId }) => `模型 ${modelId} 连通正常 (mock)`,
@@ -333,6 +357,11 @@ export const api = {
   getClawappStatus: () => cachedInvoke('get_clawapp_status', {}, 5000),
   installCftunnel: () => invoke('install_cftunnel'),
   installClawapp: () => invoke('install_clawapp'),
+  clawhubTrending: () => cachedInvoke('clawhub_trending', {}, 300000),
+  clawhubSearch: (query) => invoke('clawhub_search', { query }),
+  clawhubListInstalled: () => cachedInvoke('clawhub_list_installed', {}, 5000),
+  clawhubInspect: (slug) => invoke('clawhub_inspect', { slug }),
+  clawhubInstall: (slug) => { invalidate('clawhub_list_installed'); return invoke('clawhub_install', { slug }) },
 
   // 设备密钥 + Gateway 握手
   createConnectFrame: (nonce, gatewayToken) => invoke('create_connect_frame', { nonce, gatewayToken }),

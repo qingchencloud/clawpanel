@@ -69,6 +69,11 @@ pub fn run() {
             extensions::get_clawapp_status,
             extensions::install_cftunnel,
             extensions::install_clawapp,
+            extensions::clawhub_trending,
+            extensions::clawhub_search,
+            extensions::clawhub_list_installed,
+            extensions::clawhub_inspect,
+            extensions::clawhub_install,
             // Agent 管理
             agent::list_agents,
             agent::add_agent,

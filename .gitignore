@@ -46,3 +46,4 @@ docs/promo-video.mp4
 
 # Rust 开发工具
 src-tauri/.cargo/
+.alma-snapshots

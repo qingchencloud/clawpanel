@@ -36,6 +36,7 @@ const NAV_ITEMS_FULL = [
     section: '扩展',
     items: [
       { route: '/extensions', label: '扩展工具', icon: 'extensions' },
+      { route: '/skills', label: 'Skills', icon: 'extensions' },
     ]
   },
   {
@@ -59,6 +60,7 @@ const NAV_ITEMS_SETUP = [
     section: '扩展',
     items: [
       { route: '/extensions', label: '扩展工具', icon: 'extensions' },
+      { route: '/skills', label: 'Skills', icon: 'extensions' },
     ]
   },
   {

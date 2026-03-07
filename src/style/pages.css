@@ -225,6 +225,271 @@
   border-bottom: 1px solid var(--border-secondary);
 }
 
+/* ClawHub Skills */
+.clawhub-toolbar {
+  display: flex;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-lg);
+}
+
+.clawhub-search-input {
+  flex: 1;
+  min-width: 260px;
+}
+
+.clawhub-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-lg);
+}
+
+.clawhub-panel {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  padding: var(--space-md);
+}
+
+.clawhub-panel-title {
+  font-weight: 600;
+  margin-bottom: var(--space-md);
+}
+
+.clawhub-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.skills-scroll-area {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+
+.skills-trending-scroll {
+  max-height: 560px;
+  padding-right: 4px;
+}
+
+.skills-installed-scroll {
+  max-height: 420px;
+  padding-right: 4px;
+}
+
+.skills-search-scroll {
+  max-height: 480px;
+  padding-right: 4px;
+}
+
+.clawhub-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+}
+
+.clawhub-item-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.clawhub-item-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.clawhub-item-meta {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  margin-bottom: 4px;
+}
+
+.clawhub-item-desc {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.clawhub-item-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-shrink: 0;
+}
+
+.clawhub-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.clawhub-badge.installed {
+  background: rgba(34, 197, 94, 0.14);
+  color: #16a34a;
+}
+
+.clawhub-empty {
+  color: var(--text-tertiary);
+  padding: var(--space-md);
+}
+
+.clawhub-detail-card {
+  margin-top: var(--space-lg);
+  padding: var(--space-lg);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+}
+
+.clawhub-detail-title {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.clawhub-detail-meta,
+.clawhub-detail-desc,
+.clawhub-detail-stats {
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.clawhub-detail-stats {
+  display: flex;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  margin-top: var(--space-sm);
+  font-size: var(--font-size-sm);
+}
+
+.skills-hero-panel {
+  position: relative;
+  overflow: hidden;
+}
+
+.skills-hero-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-md);
+}
+
+.skill-hero-card {
+  position: relative;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+  background:
+    radial-gradient(circle at top right, rgba(99, 102, 241, 0.12), transparent 32%),
+    linear-gradient(180deg, rgba(255,255,255,0.02), transparent),
+    var(--bg-card);
+  box-shadow: 0 12px 30px rgba(0,0,0,0.12);
+}
+
+.skill-hero-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.skill-hero-title {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.skill-hero-meta {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+
+.skill-hero-badges {
+  display: flex;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.clawhub-badge.hot {
+  background: rgba(99, 102, 241, 0.14);
+  color: #6366f1;
+}
+
+.skill-hero-desc {
+  color: var(--text-secondary);
+  line-height: 1.6;
+  min-height: 48px;
+}
+
+.skill-hero-actions {
+  margin-top: var(--space-lg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.skill-hero-installed {
+  font-size: var(--font-size-sm);
+  color: var(--text-tertiary);
+}
+
+.skills-tips-panel {
+  background: linear-gradient(180deg, rgba(99, 102, 241, 0.06), transparent), var(--bg-secondary);
+}
+
+.skills-tip-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.skills-tip-item {
+  color: var(--text-secondary);
+  line-height: 1.7;
+  padding: var(--space-sm) 0;
+  border-bottom: 1px dashed var(--border-secondary);
+}
+
+.skills-tip-item:last-child {
+  border-bottom: none;
+}
+
+.skills-loading-panel,
+.skills-load-error {
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  padding: var(--space-md);
+}
+
+@media (max-width: 900px) {
+  .clawhub-grid,
+  .skills-hero-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .skills-trending-scroll,
+  .skills-installed-scroll,
+  .skills-search-scroll {
+    max-height: none;
+    padding-right: 0;
+  }
+}
+
 /* 记忆文件管理 */
 .memory-layout {
   display: grid;
