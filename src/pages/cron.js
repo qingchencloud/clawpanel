@@ -121,7 +121,7 @@ async function fetchJobs(page, state) {
     if (!Array.isArray(jobs)) jobs = []
 
     state.jobs = jobs.map(j => ({
-      id: j.name || j.id,
+      id: j.id,
       name: j.name || j.id || '未命名',
       description: j.description || '',
       message: j.payload?.message || j.payload?.text || '',
