@@ -1973,9 +1973,7 @@ pub async fn auto_install_git(app: tauri::AppHandle) -> Result<String, String> {
             let _ = app.emit("upgrade-log", "Git 安装成功！");
             return Ok("Git 已通过 winget 安装".to_string());
         }
-        Err(
-            "winget 安装 Git 失败，请手动下载安装: https://git-scm.com/downloads".to_string(),
-        )
+        Err("winget 安装 Git 失败，请手动下载安装: https://git-scm.com/downloads".to_string())
     }
 
     #[cfg(target_os = "macos")]
