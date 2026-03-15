@@ -47,6 +47,10 @@ jobs:
       - name: 安装前端依赖
         run: npm ci
 
+      # Node 单元测试
+      - name: Node 单元测试
+        run: npm test
+
       # 安装 Rust 工具链 (stable)
       - name: 安装 Rust 工具链
         uses: dtolnay/rust-toolchain@stable

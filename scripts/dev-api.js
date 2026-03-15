@@ -12,6 +12,7 @@ import { fileURLToPath } from 'url'
 import net from 'net'
 import http from 'http'
 import crypto from 'crypto'
+import { extractFirstJson } from '../src/lib/json-extract.js'
 const DOCKER_TASK_TIMEOUT_MS = 10 * 60 * 1000
 
 const __dev_dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -3007,7 +3008,9 @@ const handlers = {
     // 尝试真实 CLI
     try {
       const out = execSync('npx -y openclaw skills list --json --verbose', { encoding: 'utf8', timeout: 30000 })
-      return JSON.parse(out)
+      const parsed = extractFirstJson(out)
+      if (!parsed) throw new Error('解析失败: 输出中未找到有效 JSON')
+      return parsed
     } catch {
       // CLI 不可用时返回 mock 数据
       return {
@@ -3026,7 +3029,9 @@ const handlers = {
   skills_info({ name }) {
     try {
       const out = execSync(`npx -y openclaw skills info ${JSON.stringify(name)} --json`, { encoding: 'utf8', timeout: 30000 })
-      return JSON.parse(out)
+      const parsed = extractFirstJson(out)
+      if (!parsed) throw new Error('解析失败: 输出中未找到有效 JSON')
+      return parsed
     } catch (e) {
       throw new Error('查看详情失败: ' + (e.message || e))
     }
@@ -3034,7 +3039,9 @@ const handlers = {
   skills_check() {
     try {
       const out = execSync('npx -y openclaw skills check --json', { encoding: 'utf8', timeout: 30000 })
-      return JSON.parse(out)
+      const parsed = extractFirstJson(out)
+      if (!parsed) throw new Error('解析失败: 输出中未找到有效 JSON')
+      return parsed
     } catch {
       return { summary: { total: 0, eligible: 0, disabled: 0, blocked: 0, missingRequirements: 0 }, eligible: [], disabled: [], blocked: [], missingRequirements: [] }
     }
