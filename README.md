@@ -7,6 +7,10 @@
 </p>
 
 <p align="center">
+  <strong>🇨🇳 中文</strong> | <a href="README.en.md">🇺🇸 English</a>
+</p>
+
+<p align="center">
   <a href="https://github.com/qingchencloud/clawpanel/releases/latest">
     <img src="https://img.shields.io/github/v/release/qingchencloud/clawpanel?style=flat-square&color=6366f1" alt="Release">
   </a>
@@ -14,7 +18,7 @@
     <img src="https://img.shields.io/github/downloads/qingchencloud/clawpanel/total?style=flat-square&color=8b5cf6" alt="Downloads">
   </a>
   <a href="https://github.com/qingchencloud/clawpanel/blob/main/LICENSE">
-    <img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License">
+    <img src="https://img.shields.io/badge/license-AGPL--3.0-blue.svg?style=flat-square" alt="License">
   </a>
   <a href="https://github.com/qingchencloud/clawpanel/actions/workflows/ci.yml">
     <img src="https://img.shields.io/github/actions/workflow/status/qingchencloud/clawpanel/ci.yml?style=flat-square&label=CI" alt="CI">
@@ -723,4 +727,6 @@ sudo systemctl restart clawpanel  # 或 pm2 restart clawpanel
 
 ## 许可证
 
-[MIT License](LICENSE)
+本项目采用 [AGPL-3.0](LICENSE) 开源协议。企业如需闭源商用，可联系获取商业授权。
+
+© 2026 武汉晴辰天下网络科技有限公司 | [claw.qt.cool](https://claw.qt.cool)

@@ -5,6 +5,26 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.9.3] - 2026-03-16
+
+### 修复 (Fixes)
+
+- **仪表盘版本显示"未知"** — 修复 coreP Promise 解构顺序错误（config 和 version 互换），导致版本卡片无法正确读取版本信息
+- **Agent 管理"暂无 Agent"** — OpenClaw 的 main agent 是隐式的（不在 agents.list 中），list_agents 现在始终自动插入 main agent
+- **Agent 模型显示 [object Object]** — 正确解析 model 对象的 primary 字段，兼容字符串和对象两种格式
+- **定时任务触发/编辑/删除失败** — cron.run/update/remove RPC 参数从 id 修正为 jobId，匹配 Gateway schema
+- **聊天会话列表消失** — 恢复 chat header 中的 sidebar toggle 按钮（PR#88 将按钮移入 sidebar 内导致折叠后无法展开）
+- **Gateway 启动失败 Unknown config keys** — stripUiFields 现在清理根层级的 ClawPanel 内部字段（version info），防止污染 openclaw.json
+- **Docker 安装超时** — npm 镜像源不再 fallback 到海外 registry.npmjs.org，优先使用国内 npmmirror
+- **SkillHub CLI 检测误报"请先安装"** — 检测参数从 --version 修正为 --cli-version
+- **消息渠道配置被仪表盘覆盖** — 仪表盘自愈逻辑用缓存 config 覆盖文件导致 channels 丢失，现在先读取最新配置再 patch
+
+### 改进 (Improvements)
+
+- **ARM 设备性能优化** — in-flight 请求去重防止进程堆积、后端 serverCached 缓存、Gateway 轮询降频（15s→30s）、get_status_summary 改为直接读文件不走 CLI
+- **R2 CDN 安装加速** — 新增 Cloudflare R2 预装归档下载（dl.qrj.ai），Windows 安装从 3-10 分钟降至 1-2 分钟
+- **模型添加体验优化** — 快捷添加改为模型选择弹窗，用户可自主勾选需要的模型
+
 ## [0.9.2] - 2026-03-16
 
 ### 新功能 (Features)

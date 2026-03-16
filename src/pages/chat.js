@@ -83,16 +83,21 @@ export async function render() {
     <div class="chat-sidebar" id="chat-sidebar">
       <div class="chat-sidebar-header">
         <span>会话列表</span>
-        <button class="chat-sidebar-btn" id="btn-new-session" title="新建会话">
+        <div class="chat-sidebar-header-actions">
+          <button class="chat-sidebar-btn" id="btn-toggle-sidebar" title="会话列表">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+          <button class="chat-sidebar-btn" id="btn-new-session" title="新建会话">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         </button>
+        </div>
       </div>
       <div class="chat-session-list" id="chat-session-list"></div>
     </div>
     <div class="chat-main">
       <div class="chat-header">
         <div class="chat-status">
-          <button class="chat-toggle-sidebar" id="btn-toggle-sidebar" title="会话列表">
+          <button class="chat-toggle-sidebar" id="btn-toggle-sidebar-main" title="会话列表">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
           </button>
           <span class="status-dot" id="chat-status-dot"></span>
@@ -236,13 +241,15 @@ function bindEvents(page) {
     else sendMessage()
   })
 
-  page.querySelector('#btn-toggle-sidebar').addEventListener('click', () => {
+  const toggleSidebar = () => {
     const sidebar = page.querySelector('#chat-sidebar')
     if (!sidebar) return
     const nextOpen = !sidebar.classList.contains('open')
     sidebar.classList.toggle('open', nextOpen)
     setSidebarOpen(nextOpen)
-  })
+  }
+  page.querySelector('#btn-toggle-sidebar')?.addEventListener('click', toggleSidebar)
+  page.querySelector('#btn-toggle-sidebar-main')?.addEventListener('click', toggleSidebar)
   page.querySelector('#btn-new-session').addEventListener('click', () => showNewSessionDialog())
   page.querySelector('#btn-cmd').addEventListener('click', () => toggleCmdPanel())
   page.querySelector('#btn-reset-session').addEventListener('click', () => resetCurrentSession())

@@ -143,14 +143,14 @@ pub async fn skills_skillhub_check() -> Result<Value, String> {
     #[cfg(target_os = "windows")]
     let mut cmd = {
         let mut c = tokio::process::Command::new("cmd");
-        c.args(["/c", "skillhub", "--version"]);
+        c.args(["/c", "skillhub", "--cli-version"]);
         c.creation_flags(0x08000000);
         c
     };
     #[cfg(not(target_os = "windows"))]
     let mut cmd = {
         let mut c = tokio::process::Command::new("skillhub");
-        c.arg("--version");
+        c.arg("--cli-version");
         c
     };
     super::apply_system_env_tokio(&mut cmd);

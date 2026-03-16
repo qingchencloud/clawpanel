@@ -1,9 +1,9 @@
 {
-  "version": "0.9.2",
-  "minAppVersion": "0.9.2",
-  "hash": "sha256:ac232ccd1035d727234fe94476d2ab5faff8f65be3bae858df07994958f2d058",
-  "url": "https://github.com/qingchencloud/clawpanel/releases/download/v0.9.2/web-0.9.2.zip",
-  "size": 1985885,
+  "version": "0.9.3",
+  "minAppVersion": "0.9.3",
+  "hash": "sha256:8e0fde22325afcdce6161c5bcd31b31b2bdd88cba5cf24204ad0eae005f3d375",
+  "url": "https://github.com/qingchencloud/clawpanel/releases/download/v0.9.3/web-0.9.3.zip",
+  "size": 1986441,
   "changelog": "",
-  "releasedAt": "2026-03-15T20:37:46Z"
+  "releasedAt": "2026-03-16T15:56:13Z"
 }

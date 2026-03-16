@@ -50,6 +50,13 @@
   font-weight: 600;
   color: var(--text-secondary);
   border-bottom: 1px solid var(--border);
+  gap: 8px;
+}
+
+.chat-sidebar-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .chat-sidebar-btn {

@@ -485,20 +485,27 @@ mod platform {
 
         // 先尝试 plist 文件是否存在
         if !std::path::Path::new(&path).exists() {
-            // plist 不存在，直接用 CLI 启动
             return start_gateway_direct();
         }
 
-        let bootstrap_out = Command::new("launchctl")
-            .args(["bootstrap", &domain_target, &path])
+        // Issue #91: 先检查服务是否已注册，避免重复 bootstrap 触发 macOS "后台项已添加" 通知
+        let already_registered = Command::new("launchctl")
+            .args(["print", &service_target])
             .output()
-            .map_err(|e| format!("bootstrap 失败: {e}"))?;
+            .map(|out| out.status.success())
+            .unwrap_or(false);
 
-        if !bootstrap_out.status.success() {
-            let stderr = String::from_utf8_lossy(&bootstrap_out.stderr);
-            if !stderr.contains("already bootstrapped") && !stderr.trim().is_empty() {
-                // launchctl 失败（如 plist 二进制路径过期），回退到直接启动
-                return start_gateway_direct();
+        if !already_registered {
+            let bootstrap_out = Command::new("launchctl")
+                .args(["bootstrap", &domain_target, &path])
+                .output()
+                .map_err(|e| format!("bootstrap 失败: {e}"))?;
+
+            if !bootstrap_out.status.success() {
+                let stderr = String::from_utf8_lossy(&bootstrap_out.stderr);
+                if !stderr.contains("already bootstrapped") && !stderr.trim().is_empty() {
+                    return start_gateway_direct();
+                }
             }
         }
 

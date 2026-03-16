@@ -128,6 +128,157 @@ function loadVersionPolicy() {
   }
 }
 
+function r2Config() {
+  const policy = loadVersionPolicy()
+  return policy?.r2 || { enabled: false }
+}
+
+function r2PlatformKey() {
+  const arch = process.arch // x64, arm64, etc.
+  const plat = process.platform // linux, darwin, win32
+  if (plat === 'win32' && arch === 'x64') return 'win-x64'
+  if (plat === 'darwin' && arch === 'arm64') return 'darwin-arm64'
+  if (plat === 'darwin' && arch === 'x64') return 'darwin-x64'
+  if (plat === 'linux' && arch === 'x64') return 'linux-x64'
+  if (plat === 'linux' && arch === 'arm64') return 'linux-arm64'
+  return 'unknown'
+}
+
+async function _tryR2Install(version, source, logs) {
+  const r2 = r2Config()
+  if (!r2.enabled || !r2.baseUrl) return false
+  const platform = r2PlatformKey()
+
+  logs.push('尝试从 CDN 加速下载...')
+  const manifestUrl = `${r2.baseUrl}/latest.json`
+  const resp = await globalThis.fetch(manifestUrl, { signal: AbortSignal.timeout(10000) })
+  if (!resp.ok) throw new Error(`CDN 清单不可用 (HTTP ${resp.status})`)
+  const manifest = await resp.json()
+
+  const sourceKey = source === 'official' ? 'official' : 'chinese'
+  const sourceObj = manifest?.[sourceKey]
+  if (!sourceObj) throw new Error(`CDN 无 ${sourceKey} 配置`)
+
+  const cdnVersion = sourceObj.version || version
+  if (version !== 'latest' && !versionsMatch(cdnVersion, version)) {
+    throw new Error(`CDN 版本 ${cdnVersion} 与请求版本 ${version} 不匹配`)
+  }
+
+  // 优先平台特定预装归档（直接解压，零网络依赖），其次通用 tarball（需要 npm install）
+  const asset = (platform !== 'unknown') ? sourceObj.assets?.[platform] : null
+  const tarball = sourceObj.tarball
+  const useAsset = !!asset?.url
+  const useTarball = !useAsset && !!tarball?.url
+
+  if (!useAsset && !useTarball) {
+    throw new Error(`CDN 无 ${sourceKey} 可用归档（平台: ${platform}）`)
+  }
+
+  const archiveUrl = useAsset ? asset.url : tarball.url
+  const expectedSha = useAsset ? (asset.sha256 || '') : (tarball.sha256 || '')
+  const expectedSize = useAsset ? (asset.size || 0) : (tarball.size || 0)
+  const sizeMb = expectedSize ? `${(expectedSize / 1048576).toFixed(0)}MB` : '未知大小'
+  const mode = useAsset ? `${platform} 预装归档` : '通用 tarball'
+  logs.push(`CDN 下载: ${cdnVersion} (${mode}, ${sizeMb})`)
+
+  // 下载到临时文件
+  const tmpPath = path.join(os.tmpdir(), `openclaw-cdn.tgz`)
+  const dlResp = await globalThis.fetch(archiveUrl, { signal: AbortSignal.timeout(300000) })
+  if (!dlResp.ok) throw new Error(`CDN 下载失败 (HTTP ${dlResp.status})`)
+  const buffer = Buffer.from(await dlResp.arrayBuffer())
+  fs.writeFileSync(tmpPath, buffer)
+
+  // SHA256 校验
+  if (expectedSha) {
+    const crypto = require('crypto')
+    const hash = crypto.createHash('sha256').update(buffer).digest('hex')
+    if (hash !== expectedSha) {
+      fs.unlinkSync(tmpPath)
+      throw new Error(`SHA256 校验失败: 期望 ${expectedSha}, 实际 ${hash}`)
+    }
+    logs.push('SHA256 校验通过 ✓')
+  }
+
+  if (useTarball) {
+    // 通用 tarball 模式：npm install -g ./file.tgz（全平台通用，npm 自动处理原生模块）
+    logs.push('通用 tarball 模式，执行 npm install...')
+    const npmBin = isWindows ? 'npm.cmd' : 'npm'
+    try {
+      execSync(`${npmBin} install -g "${tmpPath}" --force 2>&1`, { timeout: 120000, windowsHide: true })
+      logs.push('npm install 完成 ✓')
+    } catch (e) {
+      try { fs.unlinkSync(tmpPath) } catch {}
+      throw new Error('npm install -g tarball 失败: ' + (e.stderr?.toString() || e.message).slice(-300))
+    }
+  } else {
+    // 平台特定归档模式：直接解压到 npm 全局 node_modules
+    let modulesDir
+    if (isWindows) {
+      modulesDir = path.join(process.env.APPDATA || '', 'npm', 'node_modules')
+    } else if (isMac) {
+      modulesDir = fs.existsSync('/opt/homebrew/lib/node_modules')
+        ? '/opt/homebrew/lib/node_modules'
+        : '/usr/local/lib/node_modules'
+    } else {
+      try {
+        const prefix = execSync('npm config get prefix', { encoding: 'utf8', timeout: 5000 }).trim()
+        modulesDir = path.join(prefix, 'lib', 'node_modules')
+      } catch {
+        modulesDir = '/usr/local/lib/node_modules'
+      }
+    }
+    if (!fs.existsSync(modulesDir)) fs.mkdirSync(modulesDir, { recursive: true })
+
+    const qcDir = path.join(modulesDir, '@qingchencloud')
+    if (fs.existsSync(qcDir)) fs.rmSync(qcDir, { recursive: true, force: true })
+
+    logs.push(`解压到 ${modulesDir}`)
+    execSync(`tar -xzf "${tmpPath}" -C "${modulesDir}"`, { timeout: 60000, windowsHide: true })
+
+    // 归档内目录可能是 qingchencloud/（Windows tar 不支持 @ 前缀），需要重命名
+    const noAtDir = path.join(modulesDir, 'qingchencloud')
+    if (fs.existsSync(noAtDir) && !fs.existsSync(qcDir)) {
+      fs.renameSync(noAtDir, qcDir)
+      logs.push('目录已修正: qingchencloud → @qingchencloud')
+    }
+
+    // 创建 bin 链接
+    let binDir
+    if (isWindows) {
+      binDir = path.join(process.env.APPDATA || '', 'npm')
+    } else if (isMac) {
+      binDir = fs.existsSync('/opt/homebrew/bin') ? '/opt/homebrew/bin' : '/usr/local/bin'
+    } else {
+      try {
+        const prefix = execSync('npm config get prefix', { encoding: 'utf8', timeout: 5000 }).trim()
+        binDir = path.join(prefix, 'bin')
+      } catch {
+        binDir = '/usr/local/bin'
+      }
+    }
+    const openclawJs = path.join(modulesDir, '@qingchencloud', 'openclaw-zh', 'bin', 'openclaw.js')
+    if (fs.existsSync(openclawJs)) {
+      if (isWindows) {
+        const cmdContent = `@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\nSETLOCAL\r\nCALL :find_dp0\r\n\r\nIF EXIST "%dp0%\\node.exe" (\r\n  SET "_prog=%dp0%\\node.exe"\r\n) ELSE (\r\n  SET "_prog=node"\r\n  SET PATHEXT=%PATHEXT:;.JS;=;%\r\n)\r\n\r\nendLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "${openclawJs}" %*\r\n`
+        fs.writeFileSync(path.join(binDir, 'openclaw.cmd'), cmdContent)
+      } else {
+        const linkPath = path.join(binDir, 'openclaw')
+        try { fs.unlinkSync(linkPath) } catch {}
+        fs.symlinkSync(openclawJs, linkPath)
+        try { fs.chmodSync(openclawJs, 0o755) } catch {}
+        try { fs.chmodSync(linkPath, 0o755) } catch {}
+      }
+      logs.push('bin 链接已创建 ✓')
+    }
+  }
+
+  // 清理临时文件
+  try { fs.unlinkSync(tmpPath) } catch {}
+
+  logs.push(`✅ CDN 加速安装完成，当前版本: ${cdnVersion}`)
+  return true
+}
+
 function recommendedVersionFor(source = 'chinese') {
   const policy = loadVersionPolicy()
   return policy?.panels?.[PANEL_VERSION]?.[source]?.recommended
@@ -153,8 +304,9 @@ function getConfiguredNpmRegistry() {
 function pickRegistryForPackage(pkg) {
   const configured = getConfiguredNpmRegistry()
   if (pkg.includes('openclaw-zh')) {
-    if (configured.includes('npmmirror.com') || configured.includes('npmjs.org')) return configured
-    return 'https://registry.npmjs.org'
+    // 汉化版优先用配置的源（通常是 npmmirror.com），不再默认 fallback 到海外 npmjs.org
+    // Docker 容器内网络受限时，海外源会 ETIMEDOUT
+    return configured
   }
   return configured
 }
@@ -414,17 +566,29 @@ function getUid() {
 }
 
 function stripUiFields(config) {
+  // 清理根层级 ClawPanel 内部字段（version info 等），避免污染 openclaw.json
+  // Issue #89: 这些字段被写入 openclaw.json 后导致 Gateway 无法启动（Unknown config keys）
+  const uiRootKeys = [
+    'current', 'latest', 'recommended', 'update_available',
+    'latest_update_available', 'is_recommended', 'ahead_of_recommended',
+    'panel_version', 'source',
+  ]
+  for (const key of uiRootKeys) {
+    delete config[key]
+  }
+  // 清理模型测试相关的临时字段
   const providers = config?.models?.providers
-  if (!providers) return config
-  for (const p of Object.values(providers)) {
-    if (!Array.isArray(p.models)) continue
-    for (const m of p.models) {
-      if (typeof m !== 'object') continue
-      delete m.lastTestAt
-      delete m.latency
-      delete m.testStatus
-      delete m.testError
-      if (!m.name && m.id) m.name = m.id
+  if (providers) {
+    for (const p of Object.values(providers)) {
+      if (!Array.isArray(p.models)) continue
+      for (const m of p.models) {
+        if (typeof m !== 'object') continue
+        delete m.lastTestAt
+        delete m.latency
+        delete m.testStatus
+        delete m.testError
+        if (!m.name && m.id) m.name = m.id
+      }
     }
   }
   return config
@@ -1210,6 +1374,32 @@ function _normalizeBaseUrl(raw) {
   return base
 }
 
+// === 后端内存缓存（ARM 设备性能优化）===
+// 防止短时间内重复 spawn CLI 进程，显著降低 CPU 占用
+const _serverCache = new Map()
+function serverCached(key, ttlMs, fn) {
+  const entry = _serverCache.get(key)
+  if (entry && Date.now() - entry.ts < ttlMs) return entry.val
+  // in-flight 去重：同一 key 正在执行中，复用 Promise
+  if (entry && entry.pending) return entry.pending
+  const result = fn()
+  if (result && typeof result.then === 'function') {
+    // async
+    const pending = result.then(val => {
+      _serverCache.set(key, { val, ts: Date.now() })
+      return val
+    }).catch(err => {
+      _serverCache.delete(key)
+      throw err
+    })
+    _serverCache.set(key, { ...(entry || {}), pending })
+    return pending
+  }
+  // sync
+  _serverCache.set(key, { val: result, ts: Date.now() })
+  return result
+}
+
 // === API Handlers ===
 
 const handlers = {
@@ -1240,33 +1430,35 @@ const handlers = {
     return true
   },
 
-  // 服务管理
-  async get_services_status() {
-    const label = 'ai.openclaw.gateway'
-    let { running, pid } = isMac ? macCheckService(label) : isLinux ? linuxCheckGateway() : await winCheckGateway()
+  // 服务管理（10s 服务端缓存 + in-flight 去重，ARM 设备关键优化）
+  get_services_status() {
+    return serverCached('svc_status', 10000, async () => {
+      const label = 'ai.openclaw.gateway'
+      let { running, pid } = isMac ? macCheckService(label) : isLinux ? linuxCheckGateway() : await winCheckGateway()
 
-    // 通用兜底：进程检测说没运行，但端口实际在监听 → Gateway 已在运行
-    if (!running) {
-      const port = readGatewayPort()
-      const portOpen = await new Promise(resolve => {
-        const sock = net.createConnection(port, '127.0.0.1', () => { sock.destroy(); resolve(true) })
-        sock.on('error', () => resolve(false))
-        sock.setTimeout(2000, () => { sock.destroy(); resolve(false) })
-      })
-      if (portOpen) { running = true }
-    }
+      // 通用兜底：进程检测说没运行，但端口实际在监听 → Gateway 已在运行
+      if (!running) {
+        const port = readGatewayPort()
+        const portOpen = await new Promise(resolve => {
+          const sock = net.createConnection(port, '127.0.0.1', () => { sock.destroy(); resolve(true) })
+          sock.on('error', () => resolve(false))
+          sock.setTimeout(2000, () => { sock.destroy(); resolve(false) })
+        })
+        if (portOpen) { running = true }
+      }
 
-    let cliInstalled = false
-    if (isMac) {
-      cliInstalled = fs.existsSync('/opt/homebrew/bin/openclaw') || fs.existsSync('/usr/local/bin/openclaw')
-    } else if (isWindows) {
-      try { cliInstalled = fs.existsSync(path.join(process.env.APPDATA || '', 'npm', 'openclaw.cmd')) }
-      catch { cliInstalled = false }
-    } else {
-      cliInstalled = !!findOpenclawBin()
-    }
+      let cliInstalled = false
+      if (isMac) {
+        cliInstalled = fs.existsSync('/opt/homebrew/bin/openclaw') || fs.existsSync('/usr/local/bin/openclaw')
+      } else if (isWindows) {
+        try { cliInstalled = fs.existsSync(path.join(process.env.APPDATA || '', 'npm', 'openclaw.cmd')) }
+        catch { cliInstalled = false }
+      } else {
+        cliInstalled = !!findOpenclawBin()
+      }
 
-    return [{ label, running, pid, description: 'OpenClaw Gateway', cli_installed: cliInstalled }]
+      return [{ label, running, pid, description: 'OpenClaw Gateway', cli_installed: cliInstalled }]
+    })
   },
 
   start_service({ label }) {
@@ -2607,25 +2799,57 @@ const handlers = {
     }
   },
 
-  // 运行时状态摘要（openclaw status --json）
+  // 运行时状态摘要（轻量实现：直接读 openclaw.json + 端口检测，不 spawn CLI 进程）
+  // ARM 设备上 `openclaw status --json` 是最大 CPU 消耗源（每次 spawn ~380M Node.js 进程）
   get_status_summary() {
-    try {
-      const raw = execSync('openclaw status --json 2>&1', { windowsHide: true, timeout: 10000 }).toString()
-      // 提取第一个 JSON 对象
-      const idx = raw.indexOf('{')
-      if (idx >= 0) {
-        try { return JSON.parse(raw.slice(idx)) } catch {}
-        // 流式解析：找到匹配的 } 结束
-        let depth = 0
-        for (let i = idx; i < raw.length; i++) {
-          if (raw[i] === '{') depth++
-          else if (raw[i] === '}') { depth--; if (depth === 0) { try { return JSON.parse(raw.slice(idx, i + 1)) } catch { break } } }
+    return serverCached('status_summary', 60000, () => {
+      try {
+        if (!fs.existsSync(CONFIG_PATH)) return { error: 'openclaw.json 不存在' }
+        const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
+        const channels = cfg.channels || {}
+        const channelSummary = Object.entries(channels).map(([id, val]) =>
+          `${id}: ${val?.enabled !== false ? 'configured' : 'disabled'}`
+        )
+        const agents = cfg.agents?.list || []
+        const defaultModel = cfg.agents?.defaults?.model?.primary || ''
+        const version = (() => {
+          // 尝试读取本地安装的 package.json 获取版本号（不 spawn CLI）
+          try {
+            for (const pkgName of ['@qingchencloud/openclaw-zh', 'openclaw']) {
+              const candidates = isMac
+                ? ['/opt/homebrew/lib/node_modules', '/usr/local/lib/node_modules']
+                : isWindows
+                  ? [path.join(process.env.APPDATA || '', 'npm', 'node_modules')]
+                  : ['/usr/local/lib/node_modules']
+              for (const base of candidates) {
+                const pkgJson = path.join(base, pkgName, 'package.json')
+                if (fs.existsSync(pkgJson)) {
+                  return JSON.parse(fs.readFileSync(pkgJson, 'utf8')).version || null
+                }
+              }
+            }
+          } catch {}
+          return null
+        })()
+        return {
+          runtimeVersion: version,
+          heartbeat: {
+            defaultAgentId: 'main',
+            agents: [
+              { agentId: 'main', enabled: true },
+              ...agents.map(a => ({ agentId: a.id || a, enabled: true }))
+            ]
+          },
+          channelSummary,
+          sessions: {
+            defaults: { model: defaultModel }
+          },
+          source: 'file-read'
         }
+      } catch (e) {
+        return { error: e.message || String(e) }
       }
-      return { error: '解析失败' }
-    } catch (e) {
-      return { error: e.message || String(e) }
-    }
+    })
   },
 
   // 版本信息
@@ -2956,7 +3180,7 @@ const handlers = {
     throw new Error('查询版本失败: ' + (lastError?.message || lastError || 'unknown error'))
   },
 
-  upgrade_openclaw({ source = 'chinese', version } = {}) {
+  async upgrade_openclaw({ source = 'chinese', version } = {}) {
     const currentSource = detectInstalledSource()
     const pkg = npmPackageName(source)
     const recommended = recommendedVersionFor(source)
@@ -2965,12 +3189,23 @@ const handlers = {
     const needUninstallOld = currentSource !== source
     const npmBin = isWindows ? 'npm.cmd' : 'npm'
     const registry = pickRegistryForPackage(pkg)
-    const gitConfigured = configureGitHttpsRules()
-    const gitEnv = buildGitInstallEnv()
     const logs = []
+
+    // ── R2 CDN 加速：优先尝试从 CDN 下载预装归档 ──
+    if (source !== 'official') {
+      try {
+        const r2Result = await _tryR2Install(ver, source, logs)
+        if (r2Result) return logs.join('\n')
+      } catch (e) {
+        logs.push(`CDN 加速不可用（${e.message}），降级到 npm 安装...`)
+      }
+    }
+
     if (!version && recommended) {
       logs.push(`ClawPanel ${PANEL_VERSION} 默认绑定 OpenClaw 稳定版: ${recommended}`)
     }
+    const gitConfigured = configureGitHttpsRules()
+    const gitEnv = buildGitInstallEnv()
     logs.push(`Git HTTPS 规则已就绪 (${gitConfigured}/${GIT_HTTPS_REWRITES.length})`)
     const runInstall = (targetRegistry) => execSync(
       `${npmBin} install -g ${pkg}@${ver} --force --registry ${targetRegistry} --verbose 2>&1`,
@@ -3117,7 +3352,7 @@ const handlers = {
   },
   skills_skillhub_check() {
     try {
-      const out = execSync('skillhub --version', { encoding: 'utf8', timeout: 5000 })
+      const out = execSync('skillhub --cli-version', { encoding: 'utf8', timeout: 5000 })
       return { installed: true, version: out.trim() }
     } catch {
       return { installed: false }

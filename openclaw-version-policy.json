@@ -1,4 +1,8 @@
 {
+  "r2": {
+    "baseUrl": "https://dl.qrj.ai/openclaw-zh",
+    "enabled": true
+  },
   "default": {
     "official": {
       "recommended": "2026.3.13"
@@ -25,6 +29,14 @@
       }
     },
     "0.9.2": {
+      "official": {
+        "recommended": "2026.3.13"
+      },
+      "chinese": {
+        "recommended": "2026.3.13-zh.1"
+      }
+    },
+    "0.9.3": {
       "official": {
         "recommended": "2026.3.13"
       },

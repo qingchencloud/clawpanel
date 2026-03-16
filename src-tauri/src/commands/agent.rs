@@ -1,5 +1,5 @@
+/// Agent 管理命令 — 列表/改名直接读写 openclaw.json；创建/删除走 CLI（需要创建 workspace 等文件）
 use crate::utils::openclaw_command_async;
-/// Agent 管理命令 — 调用 openclaw CLI 实现增删改查
 use serde_json::Value;
 use std::fs;
 use std::io::Write;
@@ -36,7 +36,23 @@ pub async fn list_agents() -> Result<Value, String> {
                 .to_string()
         });
 
-    let enriched: Vec<Value> = agents_list
+    // main agent 是隐式的（不在 agents.list 中），始终插入
+    let has_main = agents_list
+        .iter()
+        .any(|a| a.get("id").and_then(|v| v.as_str()) == Some("main"));
+    let all_agents = if has_main {
+        agents_list
+    } else {
+        let mut v = vec![serde_json::json!({
+            "id": "main",
+            "isDefault": true,
+            "workspace": default_workspace.clone(),
+        })];
+        v.extend(agents_list);
+        v
+    };
+
+    let enriched: Vec<Value> = all_agents
         .into_iter()
         .map(|mut agent| {
             let id = agent
@@ -86,7 +102,7 @@ pub async fn list_agents() -> Result<Value, String> {
     Ok(Value::Array(enriched))
 }
 
-/// 创建新 agent
+/// 创建新 agent（走 CLI，自动创建 workspace/sessions 等文件）
 #[tauri::command]
 pub async fn add_agent(
     name: String,
@@ -108,7 +124,6 @@ pub async fn add_agent(
         "--non-interactive".to_string(),
         "--workspace".to_string(),
         ws.to_string_lossy().to_string(),
-        "--json".to_string(),
     ];
 
     if !model.is_empty() {
@@ -133,34 +148,48 @@ pub async fn add_agent(
         return Err(format!("创建 Agent 失败: {stderr}"));
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    serde_json::from_str(&stdout).unwrap_or(Value::String("ok".into()));
-    // 返回最新列表
     list_agents().await
 }
 
-/// 删除 agent
+/// 删除 agent（直接操作 openclaw.json + 删除 agent 目录，不走 CLI）
 #[tauri::command]
 pub async fn delete_agent(id: String) -> Result<String, String> {
     if id == "main" {
         return Err("不能删除默认 Agent".into());
     }
 
-    let output = openclaw_command_async()
-        .args(["agents", "delete", &id])
-        .output()
-        .await
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                "OpenClaw CLI 未找到，请确认已安装并重启 ClawPanel。".to_string()
-            } else {
-                format!("执行失败: {e}")
-            }
-        })?;
+    // 1. 从 openclaw.json 的 agents.list 中移除
+    let config_path = super::openclaw_dir().join("openclaw.json");
+    if config_path.exists() {
+        let content = fs::read_to_string(&config_path).map_err(|e| format!("读取配置失败: {e}"))?;
+        let mut config: Value =
+            serde_json::from_str(&content).map_err(|e| format!("解析 JSON 失败: {e}"))?;
+        if let Some(list) = config
+            .get_mut("agents")
+            .and_then(|a| a.get_mut("list"))
+            .and_then(|l| l.as_array_mut())
+        {
+            list.retain(|a| a.get("id").and_then(|v| v.as_str()) != Some(&id));
+        }
+        // 同时清理 agents.profiles 中的配置
+        if let Some(profiles) = config
+            .get_mut("agents")
+            .and_then(|a| a.get_mut("profiles"))
+            .and_then(|p| p.as_object_mut())
+        {
+            profiles.remove(&id);
+        }
+        // 备份 + 写回
+        let bak = super::openclaw_dir().join("openclaw.json.bak");
+        let _ = fs::copy(&config_path, &bak);
+        let json = serde_json::to_string_pretty(&config).map_err(|e| format!("序列化失败: {e}"))?;
+        fs::write(&config_path, &json).map_err(|e| format!("写入失败: {e}"))?;
+    }
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("删除 Agent 失败: {stderr}"));
+    // 2. 删除 agent 目录（workspace + sessions 等）
+    let agent_dir = super::openclaw_dir().join("agents").join(&id);
+    if agent_dir.exists() {
+        let _ = fs::remove_dir_all(&agent_dir);
     }
 
     Ok("已删除".into())
