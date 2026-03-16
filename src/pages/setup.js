@@ -65,6 +65,7 @@ async function runDetect(page) {
     && clawRes.value[0]?.cli_installed !== false
   let config = configRes.status === 'fulfilled' ? configRes.value : { installed: false }
   const version = versionRes.status === 'fulfilled' ? versionRes.value : null
+  const panelCfg = await api.readPanelConfig().catch(() => ({}))
 
   // CLI 已装但配置缺失 → 自动创建默认配置
   if (cliOk && !config.installed) {
@@ -89,6 +90,11 @@ async function runDetect(page) {
   }
 
   renderSteps(page, { node, git, cliOk, config, version })
+
+  if (panelCfg.forceSetup === true && node.installed && config.installed) {
+    const nextCfg = { ...panelCfg, forceSetup: false }
+    api.writePanelConfig(nextCfg).catch(() => {})
+  }
 }
 
 function stepIcon(ok) {

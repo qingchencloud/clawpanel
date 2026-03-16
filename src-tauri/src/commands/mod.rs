@@ -26,7 +26,32 @@ pub mod update;
 
 /// 获取 OpenClaw 配置目录 (~/.openclaw/)
 pub fn openclaw_dir() -> PathBuf {
-    dirs::home_dir().unwrap_or_default().join(".openclaw")
+    #[cfg(target_os = "windows")]
+    {
+        let mut candidates: Vec<PathBuf> = Vec::new();
+        if let Some(home) = dirs::home_dir() {
+            candidates.push(home.join(".openclaw"));
+        }
+        if let Ok(profile) = std::env::var("USERPROFILE") {
+            candidates.push(PathBuf::from(profile).join(".openclaw"));
+        }
+        if let (Ok(drive), Ok(path)) = (std::env::var("HOMEDRIVE"), std::env::var("HOMEPATH")) {
+            candidates.push(PathBuf::from(format!("{}{}", drive, path)).join(".openclaw"));
+        }
+        for dir in &candidates {
+            if dir.join("openclaw.json").exists() || dir.join("clawpanel.json").exists() {
+                return dir.to_path_buf();
+            }
+        }
+        candidates
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| PathBuf::from(".openclaw"))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        dirs::home_dir().unwrap_or_default().join(".openclaw")
+    }
 }
 
 /// 获取 OpenClaw 配置文件路径（仅使用 openclaw.json）
