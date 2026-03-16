@@ -182,6 +182,7 @@ const GUIDE_KEY = 'clawpanel-guide-chat-dismissed'
 
 function showPageGuide(container) {
   if (localStorage.getItem(GUIDE_KEY)) return
+  if (!container || container.querySelector('.chat-page-guide')) return
   const guide = document.createElement('div')
   guide.className = 'chat-page-guide'
   guide.innerHTML = `
