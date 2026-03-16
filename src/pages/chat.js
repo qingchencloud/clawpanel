@@ -66,6 +66,8 @@ let _streamSafetyTimer = null, _unsubEvent = null, _unsubReady = null, _unsubSta
 let _seenRunIds = new Set()
 let _pageActive = false
 const _toolEventTimes = new Map()
+const _toolEventData = new Map()
+const _toolRunIndex = new Map()
 let _errorTimer = null, _lastErrorMsg = null
 let _attachments = []
 let _hasEverConnected = false
@@ -913,7 +915,19 @@ function handleEvent(msg) {
 
   if (event === 'agent' && payload?.stream === 'tool' && payload?.data?.toolCallId) {
     const ts = payload.ts
-    if (ts) _toolEventTimes.set(payload.data.toolCallId, ts)
+    const toolCallId = payload.data.toolCallId
+    if (ts) _toolEventTimes.set(toolCallId, ts)
+    const current = _toolEventData.get(toolCallId) || {}
+    if (payload.data?.args && current.input == null) current.input = payload.data.args
+    if (payload.data?.meta && current.output == null) current.output = payload.data.meta
+    if (typeof payload.data?.isError === 'boolean' && current.status == null) current.status = payload.data.isError ? 'error' : 'ok'
+    if (current.time == null) current.time = ts || null
+    _toolEventData.set(toolCallId, current)
+    if (payload.runId) {
+      const list = _toolRunIndex.get(payload.runId) || []
+      if (!list.includes(toolCallId)) list.push(toolCallId)
+      _toolRunIndex.set(payload.runId, list)
+    }
   }
 
   if (event === 'chat') handleChatEvent(payload)
@@ -988,7 +1002,11 @@ function handleChatEvent(payload) {
     const finalVideos = c?.videos || []
     const finalAudios = c?.audios || []
     const finalFiles = c?.files || []
-    const finalTools = c?.tools || []
+    let finalTools = c?.tools || []
+    if (!finalTools.length && runId) {
+      const ids = _toolRunIndex.get(runId) || []
+      finalTools = ids.map(id => mergeToolEventData({ id, name: '工具' })).filter(Boolean)
+    }
     if (finalImages.length) _currentAiImages = finalImages
     if (finalVideos.length) _currentAiVideos = finalVideos
     if (finalAudios.length) _currentAiAudios = finalAudios
@@ -1109,6 +1127,18 @@ function handleChatEvent(payload) {
   }
 }
 
+function mergeToolEventData(entry) {
+  const id = entry?.id || entry?.tool_call_id
+  if (!id) return entry
+  const extra = _toolEventData.get(id)
+  if (!extra) return entry
+  if (entry.input == null && extra.input != null) entry.input = extra.input
+  if (entry.output == null && extra.output != null) entry.output = extra.output
+  if (entry.status == null && extra.status != null) entry.status = extra.status
+  if (entry.time == null) entry.time = extra.time || _toolEventTimes.get(id) || null
+  return entry
+}
+
 function upsertTool(tools, entry) {
   if (!entry) return
   const id = entry.id || entry.tool_call_id
@@ -1117,11 +1147,12 @@ function upsertTool(tools, entry) {
   if (!target && entry.name) target = tools.find(t => t.name === entry.name && !t.output)
   if (target) {
     if (entry.input != null && target.input == null) target.input = entry.input
-    if (entry.output != null) target.output = entry.output
-    if (entry.status) target.status = entry.status
+    if (entry.output != null && target.output == null) target.output = entry.output
+    if (entry.status && target.status == null) target.status = entry.status
+    if (entry.time && target.time == null) target.time = entry.time
     return
   }
-  tools.push(entry)
+  tools.push(mergeToolEventData(entry))
 }
 
 function collectToolsFromMessage(message, tools) {
