@@ -24,7 +24,7 @@ git status -sb
 git commit --allow-empty -m "chore: checkpoint before toast dark style"
 ```
 
-Note: This checkpoint is required by policy; final functional commit occurs after build.
+Note: This checkpoint is mandatory by policy before any modification. The final functional commit still occurs after build to honor Build First, Commit Later for real changes.
 
 - [ ] **Step 1: Add dark theme override**
 
@@ -43,7 +43,7 @@ Expected: Build succeeds without errors.
 
 ```powershell
 git add src/style/components.css
-git commit -m "fix: improve toast dark mode"`
+git commit -m "fix: improve toast dark mode"
 ```
 
 - [ ] **Step 4: Push（PowerShell）**
