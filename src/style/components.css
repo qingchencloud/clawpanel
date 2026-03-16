@@ -199,6 +199,10 @@
 .toast.info { color: var(--info); }
 .toast.warning { color: var(--warning); }
 
+[data-theme="dark"] .toast {
+  background: var(--bg-secondary);
+}
+
 @keyframes slideIn {
   from { opacity: 0; transform: translateX(20px); }
   to { opacity: 1; transform: translateX(0); }
