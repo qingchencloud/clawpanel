@@ -872,8 +872,12 @@
 }
 .msg-tool-body {
   margin-top: 8px;
-  display: grid;
+  display: none;
   gap: 8px;
+}
+
+.msg-tool-item[open] > .msg-tool-body {
+  display: grid;
 }
 .msg-tool-block {
   background: var(--bg-primary);
