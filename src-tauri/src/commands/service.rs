@@ -165,9 +165,7 @@ pub(crate) fn guardian_resume(reason: &str) {
 }
 
 fn gateway_config_exists() -> bool {
-    crate::commands::openclaw_dir()
-        .join("openclaw.json")
-        .exists()
+    crate::commands::openclaw_config_path().exists()
 }
 
 async fn gateway_service_status() -> Result<Option<ServiceStatus>, String> {
@@ -719,9 +717,9 @@ mod platform {
         vec!["ai.openclaw.gateway".to_string()]
     }
 
-    /// 从 openclaw.json 读取 gateway 端口，fallback 到 18789
+    /// 从配置文件读取 gateway 端口，fallback 到 18789
     fn read_gateway_port() -> u16 {
-        let config_path = crate::commands::openclaw_dir().join("openclaw.json");
+        let config_path = crate::commands::openclaw_config_path();
         if let Ok(content) = std::fs::read_to_string(&config_path) {
             if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
                 if let Some(port) = val
@@ -1002,9 +1000,9 @@ mod platform {
         vec!["ai.openclaw.gateway".to_string()]
     }
 
-    /// 从 openclaw.json 读取 gateway 端口，fallback 到 18789
+    /// 从配置文件读取 gateway 端口，fallback 到 18789
     fn read_gateway_port() -> u16 {
-        let config_path = crate::commands::openclaw_dir().join("openclaw.json");
+        let config_path = crate::commands::openclaw_config_path();
         if let Ok(content) = std::fs::read_to_string(&config_path) {
             if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
                 if let Some(port) = val

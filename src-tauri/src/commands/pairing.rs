@@ -104,7 +104,7 @@ pub fn auto_pair_device() -> Result<String, String> {
 /// 将 Tauri 应用的 origin 写入 gateway.controlUi.allowedOrigins
 /// 避免 Gateway 因 origin not allowed 拒绝 WebSocket 握手
 fn patch_gateway_origins() {
-    let config_path = crate::commands::openclaw_dir().join("openclaw.json");
+    let config_path = crate::commands::openclaw_config_path();
     if !config_path.exists() {
         return;
     }

@@ -16,7 +16,13 @@ const DOCKER_TASK_TIMEOUT_MS = 10 * 60 * 1000
 
 const __dev_dirname = path.dirname(fileURLToPath(import.meta.url))
 const OPENCLAW_DIR = path.join(homedir(), '.openclaw')
-const CONFIG_PATH = path.join(OPENCLAW_DIR, 'openclaw.json')
+const CONFIG_PATH_DEFAULT = path.join(OPENCLAW_DIR, 'config.json')
+const CONFIG_PATH_LEGACY = path.join(OPENCLAW_DIR, 'openclaw.json')
+function resolveConfigPath() {
+  if (fs.existsSync(CONFIG_PATH_DEFAULT)) return CONFIG_PATH_DEFAULT
+  if (fs.existsSync(CONFIG_PATH_LEGACY)) return CONFIG_PATH_LEGACY
+  return CONFIG_PATH_DEFAULT
+}
 const MCP_CONFIG_PATH = path.join(OPENCLAW_DIR, 'mcp.json')
 const LOGS_DIR = path.join(OPENCLAW_DIR, 'logs')
 const BACKUPS_DIR = path.join(OPENCLAW_DIR, 'backups')
@@ -551,8 +557,9 @@ function wsReadLoop(socket, onMessage, timeoutMs = DOCKER_TASK_TIMEOUT_MS) {
 }
 
 function patchGatewayOrigins() {
-  if (!fs.existsSync(CONFIG_PATH)) return false
-  const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
+  const configPath = resolveConfigPath()
+  if (!fs.existsSync(configPath)) return false
+  const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
   const origins = [
     'tauri://localhost',
     'https://tauri.localhost',
@@ -571,8 +578,8 @@ function patchGatewayOrigins() {
   if (!config.gateway) config.gateway = {}
   if (!config.gateway.controlUi) config.gateway.controlUi = {}
   config.gateway.controlUi.allowedOrigins = merged
-  fs.copyFileSync(CONFIG_PATH, CONFIG_PATH + '.bak')
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2))
+  fs.copyFileSync(configPath, configPath + '.bak')
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
   return true
 }
 
@@ -768,7 +775,8 @@ async function winCheckGateway() {
 
 function readGatewayPort() {
   try {
-    const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
+    const configPath = resolveConfigPath()
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
     return config?.gateway?.port || 18789
   } catch {
     return 18789
@@ -1207,16 +1215,18 @@ function _normalizeBaseUrl(raw) {
 const handlers = {
   // 配置读写
   read_openclaw_config() {
-    if (!fs.existsSync(CONFIG_PATH)) throw new Error('openclaw.json 不存在，请先安装 OpenClaw')
-    const content = fs.readFileSync(CONFIG_PATH, 'utf8')
+    const configPath = resolveConfigPath()
+    if (!fs.existsSync(configPath)) throw new Error('配置文件不存在，请先安装 OpenClaw')
+    const content = fs.readFileSync(configPath, 'utf8')
     return JSON.parse(content)
   },
 
   write_openclaw_config({ config }) {
-    const bak = CONFIG_PATH + '.bak'
-    if (fs.existsSync(CONFIG_PATH)) fs.copyFileSync(CONFIG_PATH, bak)
+    const configPath = resolveConfigPath()
+    const bak = configPath + '.bak'
+    if (fs.existsSync(configPath)) fs.copyFileSync(configPath, bak)
     const cleaned = stripUiFields(config)
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(cleaned, null, 2))
+    fs.writeFileSync(configPath, JSON.stringify(cleaned, null, 2))
     return true
   },
 
@@ -1324,8 +1334,9 @@ const handlers = {
   // === 消息渠道管理 ===
 
   list_configured_platforms() {
-    if (!fs.existsSync(CONFIG_PATH)) return []
-    const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
+    const configPath = resolveConfigPath()
+    if (!fs.existsSync(configPath)) return []
+    const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'))
     const channels = cfg.channels || {}
     return Object.entries(channels).map(([id, val]) => ({
       id,
@@ -1334,8 +1345,9 @@ const handlers = {
   },
 
   read_platform_config({ platform }) {
-    if (!fs.existsSync(CONFIG_PATH)) return { exists: false }
-    const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
+    const configPath = resolveConfigPath()
+    if (!fs.existsSync(configPath)) return { exists: false }
+    const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'))
     const saved = cfg.channels?.[platform]
     if (!saved) return { exists: false }
     const form = {}
@@ -1364,8 +1376,9 @@ const handlers = {
   },
 
   save_messaging_platform({ platform, form, accountId }) {
-    if (!fs.existsSync(CONFIG_PATH)) throw new Error('openclaw.json 不存在')
-    const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
+    const configPath = resolveConfigPath()
+    if (!fs.existsSync(configPath)) throw new Error('配置文件不存在')
+    const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'))
     if (!cfg.channels) cfg.channels = {}
     const entry = { enabled: true }
     if (platform === 'qqbot') {
@@ -1390,31 +1403,33 @@ const handlers = {
         if (!cfg.channels.feishu) cfg.channels.feishu = { enabled: true }
         if (!cfg.channels.feishu.accounts) cfg.channels.feishu.accounts = {}
         cfg.channels.feishu.accounts[accountId] = entry
-        fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2))
+        fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2))
         return { ok: true }
       }
     } else {
       Object.assign(entry, form)
     }
     cfg.channels[platform] = entry
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2))
+    fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2))
     return { ok: true }
   },
 
   remove_messaging_platform({ platform }) {
-    if (!fs.existsSync(CONFIG_PATH)) throw new Error('openclaw.json 不存在')
-    const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
+    const configPath = resolveConfigPath()
+    if (!fs.existsSync(configPath)) throw new Error('配置文件不存在')
+    const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'))
     if (cfg.channels) delete cfg.channels[platform]
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2))
+    fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2))
     return { ok: true }
   },
 
   toggle_messaging_platform({ platform, enabled }) {
-    if (!fs.existsSync(CONFIG_PATH)) throw new Error('openclaw.json 不存在')
-    const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
+    const configPath = resolveConfigPath()
+    if (!fs.existsSync(configPath)) throw new Error('配置文件不存在')
+    const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'))
     if (!cfg.channels?.[platform]) throw new Error(`平台 ${platform} 未配置`)
     cfg.channels[platform].enabled = enabled
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2))
+    fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2))
     return { ok: true }
   },
 
@@ -1501,7 +1516,8 @@ const handlers = {
       const output = (result.stdout || '') + (result.stderr || '')
       if (output.includes(pid) && output.includes('built-in')) builtin = true
     } catch {}
-    const cfg = fs.existsSync(CONFIG_PATH) ? JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')) : {}
+    const configPath = resolveConfigPath()
+    const cfg = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {}
     const allowArr = cfg.plugins?.allow || []
     const allowed = allowArr.includes(pid)
     const enabled = !!cfg.plugins?.entries?.[pid]?.enabled
@@ -2210,10 +2226,11 @@ const handlers = {
       await new Promise(r => setTimeout(r, 300))
     }
 
-    // 1. 同步 openclaw.json（模型 + API Key 配置）
+    // 1. 同步配置文件（模型 + API Key 配置）
     try {
-      if (fs.existsSync(CONFIG_PATH)) {
-        const localConfig = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
+      const configPath = resolveConfigPath()
+      if (fs.existsSync(configPath)) {
+        const localConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'))
         // 只同步 OpenClaw 认识的字段，避免 Unrecognized key 导致 Gateway 崩溃
         const syncConfig = {}
         if (localConfig.meta) syncConfig.meta = localConfig.meta // 保持原始 meta，不加自定义字段
@@ -2239,9 +2256,9 @@ const handlers = {
         }
 
         const configB64 = b64(JSON.stringify(syncConfig, null, 2))
-        await cExec(`mkdir -p /root/.openclaw && echo '${configB64}' | base64 -d > /root/.openclaw/openclaw.json`)
+        await cExec(`mkdir -p /root/.openclaw && echo '${configB64}' | base64 -d > /root/.openclaw/config.json`)
         results.config = true
-        results.files.push('openclaw.json')
+        results.files.push('config.json')
         console.log(`[init-worker] 配置已同步 → ${containerId.slice(0, 12)}`)
       }
     } catch (e) {
@@ -2543,7 +2560,8 @@ const handlers = {
   // 安装检测
   check_installation() {
     const inDocker = fs.existsSync('/.dockerenv')
-    return { installed: fs.existsSync(CONFIG_PATH), path: OPENCLAW_DIR, platform: isMac ? 'macos' : process.platform, inDocker }
+    const configPath = resolveConfigPath()
+    return { installed: fs.existsSync(configPath), path: configPath, dir: OPENCLAW_DIR, platform: isMac ? 'macos' : process.platform, inDocker }
   },
 
   check_git() {
@@ -2854,7 +2872,8 @@ const handlers = {
     const now = new Date()
     const pad = n => String(n).padStart(2, '0')
     const name = `openclaw-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.json`
-    fs.copyFileSync(CONFIG_PATH, path.join(BACKUPS_DIR, name))
+    const configPath = resolveConfigPath()
+    fs.copyFileSync(configPath, path.join(BACKUPS_DIR, name))
     return { name, size: fs.statSync(path.join(BACKUPS_DIR, name)).size }
   },
 
@@ -2862,8 +2881,9 @@ const handlers = {
     if (name.includes('..') || name.includes('/') || name.includes('\\')) throw new Error('非法文件名')
     const src = path.join(BACKUPS_DIR, name)
     if (!fs.existsSync(src)) throw new Error('备份不存在')
-    if (fs.existsSync(CONFIG_PATH)) handlers.create_backup()
-    fs.copyFileSync(src, CONFIG_PATH)
+    const configPath = resolveConfigPath()
+    if (fs.existsSync(configPath)) handlers.create_backup()
+    fs.copyFileSync(src, configPath)
     return true
   },
 
@@ -2876,8 +2896,9 @@ const handlers = {
 
   // Vision 补丁
   patch_model_vision() {
-    if (!fs.existsSync(CONFIG_PATH)) return false
-    const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
+    const configPath = resolveConfigPath()
+    if (!fs.existsSync(configPath)) return false
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
     let changed = false
     const providers = config?.models?.providers
     if (providers) {
@@ -2892,8 +2913,8 @@ const handlers = {
       }
     }
     if (changed) {
-      fs.copyFileSync(CONFIG_PATH, CONFIG_PATH + '.bak')
-      fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2))
+      fs.copyFileSync(configPath, configPath + '.bak')
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
     }
     return changed
   },
@@ -2997,9 +3018,10 @@ const handlers = {
     return 'Gateway 服务已卸载'
   },
 
-  // 自动初始化配置文件（CLI 已装但 openclaw.json 不存在时）
+  // 自动初始化配置文件（CLI 已装但配置不存在时）
   init_openclaw_config() {
-    if (fs.existsSync(CONFIG_PATH)) return { created: false, message: '配置文件已存在' }
+    const configPath = resolveConfigPath()
+    if (fs.existsSync(configPath)) return { created: false, message: '配置文件已存在' }
     if (!fs.existsSync(OPENCLAW_DIR)) fs.mkdirSync(OPENCLAW_DIR, { recursive: true })
     const lastTouchedVersion = recommendedVersionFor('chinese') || '2026.1.1'
     const defaultConfig = {
@@ -3014,13 +3036,14 @@ const handlers = {
       },
       tools: { profile: "full", sessions: { visibility: "all" } }
     }
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(defaultConfig, null, 2))
+    fs.writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2))
     return { created: true, message: '配置文件已创建' }
   },
 
   get_deploy_config() {
     try {
-      const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
+      const configPath = resolveConfigPath()
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
       const gw = config.gateway || {}
       return { gatewayUrl: `http://127.0.0.1:${gw.port || 18789}`, authToken: gw.auth?.token || '', version: null }
     } catch {
@@ -3527,6 +3550,13 @@ const handlers = {
     return { ok: true, status: 200, elapsed_ms: 0, proxy: proxyUrl, target: url || 'N/A (Web模式不支持代理测试)' }
   },
 
+  // Cloudflared（Web 模式不支持）
+  cloudflared_get_status() { return { installed: false, running: false, url: null, error: 'web mode not supported' } },
+  cloudflared_install() { throw new Error('web mode not supported') },
+  cloudflared_login() { throw new Error('web mode not supported') },
+  cloudflared_start() { throw new Error('web mode not supported') },
+  cloudflared_stop() { return { installed: false, running: false, url: null } },
+
   // === Agent 管理（Web 模式） ===
 
   add_agent({ name, model, workspace }) {
@@ -3550,29 +3580,31 @@ const handlers = {
 
   update_agent_identity({ id, name, emoji }) {
     if (!id) throw new Error('Agent ID 不能为空')
-    // 写入 openclaw.json 的 agents 配置
-    if (!fs.existsSync(CONFIG_PATH)) throw new Error('openclaw.json 不存在')
-    const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
+    // 写入配置文件的 agents 配置
+    const configPath = resolveConfigPath()
+    if (!fs.existsSync(configPath)) throw new Error('配置文件不存在')
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
     if (!config.agents) config.agents = {}
     if (!config.agents.profiles) config.agents.profiles = {}
     if (!config.agents.profiles[id]) config.agents.profiles[id] = {}
     if (name) config.agents.profiles[id].identityName = name
     if (emoji) config.agents.profiles[id].emoji = emoji
-    fs.copyFileSync(CONFIG_PATH, CONFIG_PATH + '.bak')
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2))
+    fs.copyFileSync(configPath, configPath + '.bak')
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
     return true
   },
 
   update_agent_model({ id, model }) {
     if (!id) throw new Error('Agent ID 不能为空')
-    if (!fs.existsSync(CONFIG_PATH)) throw new Error('openclaw.json 不存在')
-    const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
+    const configPath = resolveConfigPath()
+    if (!fs.existsSync(configPath)) throw new Error('配置文件不存在')
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
     if (!config.agents) config.agents = {}
     if (!config.agents.profiles) config.agents.profiles = {}
     if (!config.agents.profiles[id]) config.agents.profiles[id] = {}
     config.agents.profiles[id].model = model || null
-    fs.copyFileSync(CONFIG_PATH, CONFIG_PATH + '.bak')
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2))
+    fs.copyFileSync(configPath, configPath + '.bak')
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
     return true
   },
 
@@ -3944,6 +3976,14 @@ export function devApiPlugin() {
     configurePreviewServer(server) {
       ensureInit()
       server.middlewares.use(_apiMiddleware)
+    },
+  }
+}
+iddlewares.use(_apiMiddleware)
+    },
+  }
+}
+dlewares.use(_apiMiddleware)
     },
   }
 }

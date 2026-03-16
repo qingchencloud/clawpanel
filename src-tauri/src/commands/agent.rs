@@ -4,12 +4,12 @@ use serde_json::Value;
 use std::fs;
 use std::io::Write;
 
-/// 获取 agent 列表（直接读 openclaw.json，不走 CLI，毫秒级响应）
+/// 获取 agent 列表（直接读配置文件，不走 CLI，毫秒级响应）
 #[tauri::command]
 pub async fn list_agents() -> Result<Value, String> {
-    let config_path = super::openclaw_dir().join("openclaw.json");
+    let config_path = super::openclaw_config_path();
     if !config_path.exists() {
-        return Err("openclaw.json 不存在，请先安装 OpenClaw".to_string());
+        return Err("配置文件不存在，请先安装 OpenClaw".to_string());
     }
     let content = fs::read_to_string(&config_path).map_err(|e| format!("读取配置失败: {e}"))?;
     let config: Value =
@@ -173,7 +173,7 @@ pub fn update_agent_identity(
     name: Option<String>,
     emoji: Option<String>,
 ) -> Result<String, String> {
-    let path = super::openclaw_dir().join("openclaw.json");
+    let path = super::openclaw_config_path();
     let content = fs::read_to_string(&path).map_err(|e| format!("读取配置失败: {e}"))?;
     let mut config: Value =
         serde_json::from_str(&content).map_err(|e| format!("解析 JSON 失败: {e}"))?;
@@ -296,7 +296,7 @@ fn collect_dir_to_zip(
 /// 更新 agent 模型配置
 #[tauri::command]
 pub fn update_agent_model(id: String, model: String) -> Result<String, String> {
-    let path = super::openclaw_dir().join("openclaw.json");
+    let path = super::openclaw_config_path();
     let content = fs::read_to_string(&path).map_err(|e| format!("读取配置失败: {e}"))?;
     let mut config: Value =
         serde_json::from_str(&content).map_err(|e| format!("解析 JSON 失败: {e}"))?;

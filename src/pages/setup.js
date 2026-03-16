@@ -78,6 +78,11 @@ async function runDetect(page) {
     }
   }
 
+  // 兼容：仅配置存在也视为可用
+  if (!cliOk && config.installed) {
+    // 保持流程可继续，不强制安装 CLI
+  }
+
   // Git 已安装时，自动配置 HTTPS 替代 SSH（静默执行）
   if (git.installed) {
     api.configureGitHttps().catch(() => {})
@@ -95,7 +100,7 @@ function renderSteps(page, { node, git, cliOk, config, version }) {
   const stepsEl = page.querySelector('#setup-steps')
   const nodeOk = node.installed
   const gitOk = git?.installed || false
-  const allOk = nodeOk && cliOk && config.installed
+  const allOk = nodeOk && config.installed
 
   let html = ''
 
@@ -171,7 +176,7 @@ function renderSteps(page, { node, git, cliOk, config, version }) {
                   检测到当前本地 OpenClaw ${version.current || ''} 高于当前面板推荐稳定版 ${version.recommended}，可能存在兼容或稳定性风险。建议稍后到「关于」页回退到推荐版。
                 </div>`
              : ''}`
-        : renderInstallSection()
+        : (config.installed ? `<p style="color:var(--warning,#f59e0b);font-size:var(--font-size-sm)">已检测到配置文件，但 CLI 未安装</p>` : renderInstallSection())
       }
     </div>
   `
@@ -187,6 +192,10 @@ function renderSteps(page, { node, git, cliOk, config, version }) {
             配置文件不存在，点击下方按钮自动创建默认配置。
           </p>
           <button class="btn btn-primary btn-sm" id="btn-init-config">一键初始化配置</button>`
+      }
+      ${config.installed && !cliOk
+        ? `<p style="margin-top:6px;color:var(--text-tertiary);font-size:var(--font-size-xs)">仅检测到配置文件，未检测到 CLI。你仍可继续使用，但部分功能可能受限。</p>`
+        : ''
       }
     </div>
   `

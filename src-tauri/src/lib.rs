@@ -4,8 +4,8 @@ mod tray;
 mod utils;
 
 use commands::{
-    agent, assistant, config, device, extensions, logs, memory, messaging, pairing, service,
-    skills, update,
+    agent, assistant, cloudflared, config, device, extensions, logs, memory, messaging, pairing,
+    service, skills, update,
 };
 
 pub fn run() {
@@ -106,6 +106,12 @@ pub fn run() {
             pairing::check_pairing_status,
             pairing::pairing_list_channel,
             pairing::pairing_approve_channel,
+            // Cloudflared
+            cloudflared::cloudflared_get_status,
+            cloudflared::cloudflared_install,
+            cloudflared::cloudflared_login,
+            cloudflared::cloudflared_start,
+            cloudflared::cloudflared_stop,
             // 服务
             service::get_services_status,
             service::start_service,

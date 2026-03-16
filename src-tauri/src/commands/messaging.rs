@@ -1,6 +1,6 @@
 /// 消息渠道管理
 /// 负责 Telegram / Discord / QQ Bot 等消息渠道的配置持久化与凭证校验
-/// 配置写入 openclaw.json 的 channels / plugins 节点
+/// 配置写入配置文件的 channels / plugins 节点
 use serde_json::{json, Map, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -58,7 +58,7 @@ fn gateway_auth_value(cfg: &Value, key: &str) -> Option<String> {
         .map(|v| v.to_string())
 }
 
-/// 读取指定平台的当前配置（从 openclaw.json 中提取表单可用的值）
+/// 读取指定平台的当前配置（从配置文件中提取表单可用的值）
 #[tauri::command]
 pub async fn read_platform_config(platform: String) -> Result<Value, String> {
     let cfg = super::config::load_openclaw_json()?;

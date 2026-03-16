@@ -282,7 +282,7 @@ fn backups_dir() -> PathBuf {
 
 #[tauri::command]
 pub fn read_openclaw_config() -> Result<Value, String> {
-    let path = super::openclaw_dir().join("openclaw.json");
+    let path = super::openclaw_config_path();
     let raw = fs::read(&path).map_err(|e| format!("读取配置失败: {e}"))?;
 
     // 自愈：自动剥离 UTF-8 BOM（EF BB BF），防止 JSON 解析失败
@@ -303,7 +303,7 @@ pub fn read_openclaw_config() -> Result<Value, String> {
         }
         Err(e) => {
             // JSON 解析失败，尝试从备份恢复
-            let bak = super::openclaw_dir().join("openclaw.json.bak");
+            let bak = path.with_extension("json.bak");
             if bak.exists() {
                 let bak_raw = fs::read(&bak).map_err(|e2| format!("备份也读取失败: {e2}"))?;
                 let bak_content = if bak_raw.starts_with(&[0xEF, 0xBB, 0xBF]) {
@@ -326,7 +326,7 @@ pub fn read_openclaw_config() -> Result<Value, String> {
     if has_ui_fields(&config) {
         config = strip_ui_fields(config);
         // 静默写回清理后的配置
-        let bak = super::openclaw_dir().join("openclaw.json.bak");
+        let bak = path.with_extension("json.bak");
         let _ = fs::copy(&path, &bak);
         let json = serde_json::to_string_pretty(&config).map_err(|e| format!("序列化失败: {e}"))?;
         let _ = fs::write(&path, json);
@@ -335,12 +335,12 @@ pub fn read_openclaw_config() -> Result<Value, String> {
     Ok(config)
 }
 
-/// 供其他模块复用：读取 openclaw.json 为 JSON Value
+/// 供其他模块复用：读取配置文件为 JSON Value
 pub fn load_openclaw_json() -> Result<Value, String> {
     read_openclaw_config()
 }
 
-/// 供其他模块复用：将 JSON Value 写回 openclaw.json（含备份和清理）
+/// 供其他模块复用：将 JSON Value 写回配置文件（含备份和清理）
 pub fn save_openclaw_json(config: &Value) -> Result<(), String> {
     write_openclaw_config(config.clone())
 }
@@ -353,9 +353,9 @@ pub async fn do_reload_gateway(app: &tauri::AppHandle) -> Result<String, String>
 
 #[tauri::command]
 pub fn write_openclaw_config(config: Value) -> Result<(), String> {
-    let path = super::openclaw_dir().join("openclaw.json");
+    let path = super::openclaw_config_path();
     // 备份
-    let bak = super::openclaw_dir().join("openclaw.json.bak");
+    let bak = super::openclaw_dir().join("config.json.bak");
     let _ = fs::copy(&path, &bak);
     // 清理 UI 专属字段，避免 CLI schema 校验失败
     let cleaned = strip_ui_fields(config.clone());
@@ -1266,11 +1266,11 @@ async fn uninstall_openclaw_inner(
     Ok(msg.into())
 }
 
-/// 自动初始化配置文件（CLI 已装但 openclaw.json 不存在时）
+/// 自动初始化配置文件（CLI 已装但配置不存在时）
 #[tauri::command]
 pub fn init_openclaw_config() -> Result<Value, String> {
     let dir = super::openclaw_dir();
-    let config_path = dir.join("openclaw.json");
+    let config_path = super::openclaw_config_path();
     let mut result = serde_json::Map::new();
 
     if config_path.exists() {
@@ -1311,11 +1311,16 @@ pub fn init_openclaw_config() -> Result<Value, String> {
 #[tauri::command]
 pub fn check_installation() -> Result<Value, String> {
     let dir = super::openclaw_dir();
-    let installed = dir.join("openclaw.json").exists();
+    let config_path = super::openclaw_config_path();
+    let installed = config_path.exists();
     let mut result = serde_json::Map::new();
     result.insert("installed".into(), Value::Bool(installed));
     result.insert(
         "path".into(),
+        Value::String(config_path.to_string_lossy().to_string()),
+    );
+    result.insert(
+        "dir".into(),
         Value::String(dir.to_string_lossy().to_string()),
     );
     Ok(Value::Object(result))

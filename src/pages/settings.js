@@ -164,6 +164,24 @@ function bindEvents(page) {
         case 'save-registry':
           await handleSaveRegistry(page)
           break
+        case 'cloudflared-install':
+          await handleCloudflaredInstall(page)
+          break
+        case 'cloudflared-login':
+          await handleCloudflaredLogin(page)
+          break
+        case 'cloudflared-start':
+          await handleCloudflaredStart(page)
+          break
+        case 'cloudflared-stop':
+          await handleCloudflaredStop(page)
+          break
+        case 'cloudflared-refresh':
+          await loadCloudflared(page)
+          break
+        case 'cloudflared-save':
+          await handleCloudflaredSave(page)
+          break
       }
     } catch (e) {
       toast(e.toString(), 'error')
@@ -243,4 +261,144 @@ async function handleSaveRegistry(page) {
   if (!registry) { toast('请输入源地址', 'error'); return }
   await api.setNpmRegistry(registry)
   toast('npm 源已保存', 'success')
+}
+
+// ===== Cloudflared 公网访问 =====
+
+function getCloudflaredForm(page) {
+  const mode = page.querySelector('[data-name="cloudflared-mode"]')?.value || 'quick'
+  const exposeTarget = page.querySelector('[data-name="cloudflared-expose"]')?.value || 'gateway'
+  const customPort = Number(page.querySelector('[data-name="cloudflared-port"]')?.value || 0)
+  const useHttp2 = !!page.querySelector('[data-name="cloudflared-http2"]')?.checked
+  const tunnelName = (page.querySelector('[data-name="cloudflared-tunnel"]')?.value || '').trim()
+  const hostname = (page.querySelector('[data-name="cloudflared-hostname"]')?.value || '').trim()
+  return { mode, exposeTarget, customPort, useHttp2, tunnelName, hostname }
+}
+
+function resolveExposePort(form) {
+  if (form.exposeTarget === 'webui') return 1420
+  if (form.exposeTarget === 'custom') return form.customPort || 18789
+  return 18789
+}
+
+async function loadCloudflared(page) {
+  const el = page.querySelector('#cloudflared-bar')
+  if (!el) return
+
+  const cfg = await api.readPanelConfig()
+  if (!cfg.cloudflared || typeof cfg.cloudflared !== 'object') {
+    cfg.cloudflared = { mode: 'quick', exposeTarget: 'gateway', customPort: '', useHttp2: true, tunnelName: '', hostname: '' }
+    await api.writePanelConfig(cfg)
+  }
+  const saved = cfg.cloudflared || {}
+  const status = await api.cloudflaredGetStatus().catch(() => ({ installed: false, running: false }))
+
+  const mode = saved.mode || 'quick'
+  const exposeTarget = saved.exposeTarget || 'gateway'
+  const customPort = saved.customPort || ''
+  const useHttp2 = saved.useHttp2 !== false
+  const tunnelName = saved.tunnelName || ''
+  const hostname = saved.hostname || ''
+
+  el.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:var(--space-sm)">
+      <span class="status-dot ${status.running ? 'running' : 'stopped'}"></span>
+      <span>${status.running ? '运行中' : '未运行'}</span>
+      <span style="color:var(--text-tertiary)">版本: ${escapeHtml(status.version || '未知')}</span>
+      ${status.url ? `<a href="${escapeHtml(status.url)}" target="_blank" rel="noopener">打开公网地址</a>` : ''}
+    </div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:var(--space-sm)">
+      <button class="btn btn-primary btn-sm" data-action="cloudflared-install">安装</button>
+      <button class="btn btn-secondary btn-sm" data-action="cloudflared-login">登录</button>
+      ${status.running
+        ? '<button class="btn btn-danger btn-sm" data-action="cloudflared-stop">停止</button>'
+        : '<button class="btn btn-primary btn-sm" data-action="cloudflared-start">启动</button>'
+      }
+      <button class="btn btn-secondary btn-sm" data-action="cloudflared-refresh">刷新</button>
+      <button class="btn btn-secondary btn-sm" data-action="cloudflared-save">保存设置</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:720px">
+      <label class="form-label">隧道类型
+        <select class="form-input" data-name="cloudflared-mode">
+          <option value="quick" ${mode === 'quick' ? 'selected' : ''}>快速隧道</option>
+          <option value="named" ${mode === 'named' ? 'selected' : ''}>命名隧道</option>
+        </select>
+      </label>
+      <label class="form-label">暴露目标
+        <select class="form-input" data-name="cloudflared-expose">
+          <option value="gateway" ${exposeTarget === 'gateway' ? 'selected' : ''}>Gateway 18789</option>
+          <option value="webui" ${exposeTarget === 'webui' ? 'selected' : ''}>Web UI 1420</option>
+          <option value="custom" ${exposeTarget === 'custom' ? 'selected' : ''}>自定义端口</option>
+        </select>
+      </label>
+      <label class="form-label">自定义端口
+        <input class="form-input" data-name="cloudflared-port" placeholder="18789" value="${escapeHtml(String(customPort))}">
+      </label>
+      <label class="form-label">启用 HTTP/2
+        <input type="checkbox" data-name="cloudflared-http2" ${useHttp2 ? 'checked' : ''}>
+      </label>
+      <label class="form-label">隧道名称（命名隧道）
+        <input class="form-input" data-name="cloudflared-tunnel" value="${escapeHtml(tunnelName)}">
+      </label>
+      <label class="form-label">域名（命名隧道）
+        <input class="form-input" data-name="cloudflared-hostname" value="${escapeHtml(hostname)}">
+      </label>
+    </div>
+
+    <div class="form-hint" style="margin-top:8px">
+      选择 Gateway 暴露时，会自动将 Cloudflare URL 写入 gateway.controlUi.allowedOrigins。
+    </div>
+  `
+}
+
+async function handleCloudflaredSave(page) {
+  const cfg = await api.readPanelConfig()
+  const form = getCloudflaredForm(page)
+  cfg.cloudflared = {
+    mode: form.mode,
+    exposeTarget: form.exposeTarget,
+    customPort: form.customPort,
+    useHttp2: form.useHttp2,
+    tunnelName: form.tunnelName,
+    hostname: form.hostname,
+  }
+  await api.writePanelConfig(cfg)
+  toast('Cloudflared 设置已保存', 'success')
+}
+
+async function handleCloudflaredInstall(page) {
+  await api.cloudflaredInstall()
+  await loadCloudflared(page)
+  toast('Cloudflared 已安装', 'success')
+}
+
+async function handleCloudflaredLogin(page) {
+  await api.cloudflaredLogin()
+  await loadCloudflared(page)
+  toast('Cloudflared 登录完成', 'success')
+}
+
+async function handleCloudflaredStart(page) {
+  const form = getCloudflaredForm(page)
+  const port = resolveExposePort(form)
+  await handleCloudflaredSave(page)
+  await api.cloudflaredStart({
+    mode: form.mode,
+    port,
+    use_http2: form.useHttp2,
+    tunnel_name: form.tunnelName || null,
+    hostname: form.hostname || null,
+    add_allowed_origins: true,
+    expose_target: form.exposeTarget,
+  })
+  await loadCloudflared(page)
+  toast('Cloudflared 已启动', 'success')
+}
+
+async function handleCloudflaredStop(page) {
+  await api.cloudflaredStop()
+  await loadCloudflared(page)
+  toast('Cloudflared 已停止', 'success')
 }

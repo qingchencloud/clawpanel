@@ -207,6 +207,13 @@ export const api = {
   writePanelConfig: (config) => invoke('write_panel_config', { config }),
   testProxy: (url) => invoke('test_proxy', { url: url || null }),
 
+  // Cloudflared
+  cloudflaredGetStatus: () => invoke('cloudflared_get_status'),
+  cloudflaredInstall: () => invoke('cloudflared_install'),
+  cloudflaredLogin: () => invoke('cloudflared_login'),
+  cloudflaredStart: (config) => invoke('cloudflared_start', { config }),
+  cloudflaredStop: () => invoke('cloudflared_stop'),
+
   // 安装/部署
   checkInstallation: () => cachedInvoke('check_installation', {}, 60000),
   initOpenclawConfig: () => { invalidate('check_installation'); return invoke('init_openclaw_config') },

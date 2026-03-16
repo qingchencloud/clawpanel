@@ -5,6 +5,7 @@ use std::time::Duration;
 
 pub mod agent;
 pub mod assistant;
+pub mod cloudflared;
 pub mod config;
 pub mod device;
 pub mod extensions;
@@ -19,6 +20,22 @@ pub mod update;
 /// 获取 OpenClaw 配置目录 (~/.openclaw/)
 pub fn openclaw_dir() -> PathBuf {
     dirs::home_dir().unwrap_or_default().join(".openclaw")
+}
+
+/// 获取 OpenClaw 配置文件路径
+/// 优先 config.json，若不存在则回退 openclaw.json
+pub fn openclaw_config_path() -> PathBuf {
+    let dir = openclaw_dir();
+    let config_json = dir.join("config.json");
+    if config_json.exists() {
+        return config_json;
+    }
+    let legacy = dir.join("openclaw.json");
+    if legacy.exists() {
+        return legacy;
+    }
+    // 默认使用 config.json
+    config_json
 }
 
 fn panel_config_path() -> PathBuf {
