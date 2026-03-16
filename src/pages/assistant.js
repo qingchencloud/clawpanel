@@ -1099,6 +1099,9 @@ function renderSoulStats(soul) {
 // ── 状态 ──
 let _page = null, _messagesEl = null, _textarea = null, _sendBtn = null
 let _sessionListEl = null, _settingsPanel = null, _queueEl = null
+let _optimizeBtn = null, _restoreBtn = null
+let _optOriginalText = null, _optOptimizedText = null
+let _optBusy = false
 let _isStreaming = false, _abortController = null
 let _config = null, _sessions = [], _currentSessionId = null
 let _lastRenderTime = 0
@@ -3468,6 +3471,7 @@ function sendMessage(text) {
     enqueueMessage(text.trim())
     return
   }
+  clearOptimizeSnapshot()
   sendMessageDirect(text)
 }
 
@@ -3480,6 +3484,8 @@ async function sendMessageDirect(text) {
     enqueueMessage(text.trim())
     return
   }
+
+  clearOptimizeSnapshot()
 
   let session = getCurrentSession()
   if (!session) {
@@ -3959,6 +3965,8 @@ export async function render() {
           </button>
           <input type="file" id="ast-file-input" accept="image/*" multiple style="display:none"/>
           <textarea class="ast-textarea" id="ast-textarea" placeholder="描述你的问题，粘贴日志、截图或错误信息..." rows="1"></textarea>
+          <button class="ast-optimize-btn" id="ast-optimize-btn" title="优化">优化</button>
+          <button class="ast-restore-btn" id="ast-restore-btn" title="恢复原文" disabled>恢复原文</button>
           <button class="ast-send-btn" id="ast-send-btn" title="发送">${sendIcon()}</button>
         </div>
         <div class="ast-input-hint">Enter 发送 · Shift+Enter 换行 · 支持粘贴/拖拽图片 · AI 助手独立于 OpenClaw</div>
@@ -3971,6 +3979,8 @@ export async function render() {
   _queueEl = page.querySelector('#ast-queue')
   _textarea = page.querySelector('#ast-textarea')
   _sendBtn = page.querySelector('#ast-send-btn')
+  _optimizeBtn = page.querySelector('#ast-optimize-btn')
+  _restoreBtn = page.querySelector('#ast-restore-btn')
   _sessionListEl = page.querySelector('#ast-session-list')
 
   // 渲染
@@ -4029,6 +4039,7 @@ export async function render() {
       sendMessage(_textarea.value)
       _textarea.value = ''
       autoResize(_textarea)
+      updateOptimizeState()
     }
   })
 
@@ -4040,11 +4051,26 @@ export async function render() {
       sendMessage(_textarea.value)
       _textarea.value = ''
       autoResize(_textarea)
+      updateOptimizeState()
     }
   })
 
   // 自动高度
-  _textarea.addEventListener('input', () => autoResize(_textarea))
+  _textarea.addEventListener('input', () => {
+    autoResize(_textarea)
+    updateOptimizeState()
+  })
+
+  if (_optimizeBtn) {
+    _optimizeBtn.addEventListener('click', () => optimizeInputText())
+  }
+  if (_restoreBtn) {
+    _restoreBtn.addEventListener('click', () => {
+      restoreOriginalText()
+      updateOptimizeState()
+    })
+  }
+  updateOptimizeState()
 
   // 图片上传按钮
   const fileInput = page.querySelector('#ast-file-input')
@@ -4233,6 +4259,71 @@ export async function render() {
   return page
 }
 
+function updateOptimizeState() {
+  if (!_optimizeBtn || !_restoreBtn || !_textarea) return
+  const hasText = _textarea.value.trim().length > 0
+  _optimizeBtn.disabled = _optBusy || !hasText
+  _restoreBtn.disabled = _optOriginalText === null
+}
+
+function applyTextareaText(text) {
+  if (!_textarea) return
+  _textarea.focus()
+  _textarea.setRangeText(text, 0, _textarea.value.length, 'end')
+  const ev = new Event('input', { bubbles: true })
+  _textarea.dispatchEvent(ev)
+}
+
+async function optimizeInputText() {
+  if (_optBusy || !_textarea) return
+  const raw = _textarea.value.trim()
+  if (!raw) {
+    updateOptimizeState()
+    return
+  }
+  if (_currentSessionId && getStreaming(_currentSessionId)) {
+    toast('AI 正在回复中，请稍后再试', 'info')
+    return
+  }
+
+  _optBusy = true
+  updateOptimizeState()
+
+  const prompt = '请在不改变原意和语言的前提下，重写为意思更清晰、更简洁的表达。'
+  const messages = [
+    { role: 'user', content: prompt + '\n\n原文:\n' + raw }
+  ]
+
+  try {
+    let result = ''
+    await callAI(_currentSessionId || 'opt', messages, (chunk) => {
+      result += chunk
+    })
+    const next = result.trim()
+    if (next) {
+      if (_optOriginalText === null) _optOriginalText = raw
+      _optOptimizedText = next
+      applyTextareaText(next)
+    }
+  } catch (e) {
+    toast('优化失败: ' + (e?.message || e), 'error')
+  } finally {
+    _optBusy = false
+    updateOptimizeState()
+  }
+}
+
+function restoreOriginalText() {
+  if (_optOriginalText === null) return
+  applyTextareaText(_optOriginalText)
+}
+
+function clearOptimizeSnapshot() {
+  _optOriginalText = null
+  _optOptimizedText = null
+  updateOptimizeState()
+}
+
 function autoResize(textarea) {
   textarea.style.height = 'auto'
   textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px'
@@ -4247,5 +4338,7 @@ export function cleanup() {
   _queueEl = null
   _textarea = null
   _sendBtn = null
+  _optimizeBtn = null
+  _restoreBtn = null
   _sessionListEl = null
 }
