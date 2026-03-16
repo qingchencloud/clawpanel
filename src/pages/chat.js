@@ -105,7 +105,7 @@ export async function render() {
         </div>
         <div class="chat-header-actions">
           <div class="chat-model-group">
-            <select class="form-input" id="chat-model-select" title="切换当前会话模型" style="width:200px;max-width:28vw;padding:6px 10px;font-size:var(--font-size-xs)">
+            <select class="form-input chat-model-select" id="chat-model-select" title="切换当前会话模型">
               <option value="">加载模型中...</option>
             </select>
             <button class="btn btn-sm btn-ghost" id="btn-refresh-models" title="刷新模型列表">
@@ -1233,6 +1233,15 @@ function extractChatContent(message) {
 function stripAnsi(text) {
   if (!text) return ''
   return text.replace(/\u001b\[[0-9;]*[A-Za-z]/g, '')
+}
+
+function escapeHtml(text) {
+  return (text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
 }
 
 function stripThinkingTags(text) {

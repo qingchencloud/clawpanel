@@ -615,6 +615,14 @@
   gap: 2px;
 }
 
+.chat-model-select {
+  width: auto;
+  max-width: none;
+  white-space: nowrap;
+  padding: 6px 10px;
+  font-size: var(--font-size-xs);
+}
+
 /* 头部操作区 */
 .chat-header-actions {
   display: flex;
