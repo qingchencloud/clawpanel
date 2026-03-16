@@ -440,8 +440,6 @@ async function openTaskDialog(job, page, state) {
     })
   }
 
-  toggleFields()
-
   const toggleFields = () => {
     const kind = modal.querySelector('select[name="taskKind"]').value
     const showSession = kind === 'sessionMessage'
@@ -450,6 +448,7 @@ async function openTaskDialog(job, page, state) {
     modal.querySelector('[data-field="agent"]').style.display = showSession ? 'none' : 'block'
     modal.querySelector('[data-field="delivery"]').style.display = showSession ? 'none' : 'block'
   }
+  toggleFields()
   modal.querySelector('select[name="taskKind"]').onchange = toggleFields
 
   // 保存
