@@ -267,6 +267,14 @@ fn expand_env_vars(value: &str, env_map: &HashMap<String, String>) -> String {
 }
 
 pub fn build_system_env() -> Vec<(String, String)> {
+    if let Ok(guard) = SYSTEM_ENV_CACHE.read() {
+        if let Some((ts, cached)) = &*guard {
+            if ts.elapsed().as_secs() <= SYSTEM_ENV_CACHE_TTL_SECS {
+                return cached.clone();
+            }
+        }
+    }
+
     #[cfg(target_os = "windows")]
     {
         let system_entries = read_registry_env(
@@ -314,7 +322,11 @@ pub fn build_system_env() -> Vec<(String, String)> {
         let enhanced = build_enhanced_path_with_base(&base_path);
         map.insert("PATH".to_string(), enhanced);
 
-        map.into_iter().collect()
+        let built = map.into_iter().collect();
+        if let Ok(mut guard) = SYSTEM_ENV_CACHE.write() {
+            *guard = Some((std::time::Instant::now(), built.clone()));
+        }
+        built
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -323,13 +335,19 @@ pub fn build_system_env() -> Vec<(String, String)> {
         let base = map.get("PATH").cloned().unwrap_or_default();
         let enhanced = build_enhanced_path_with_base(&base);
         map.insert("PATH".to_string(), enhanced);
-        map.into_iter().collect()
+        let built = map.into_iter().collect();
+        if let Ok(mut guard) = SYSTEM_ENV_CACHE.write() {
+            *guard = Some((std::time::Instant::now(), built.clone()));
+        }
+        built
     }
 }
 
 /// 缓存 enhanced_path 结果，避免每次调用都扫描文件系统
 /// 使用 RwLock 替代 OnceLock，支持运行时刷新缓存
 static ENHANCED_PATH_CACHE: RwLock<Option<String>> = RwLock::new(None);
+static SYSTEM_ENV_CACHE: RwLock<Option<(std::time::Instant, Vec<(String, String)>)>> = RwLock::new(None);
+const SYSTEM_ENV_CACHE_TTL_SECS: u64 = 5;
 
 /// Tauri 应用启动时 PATH 可能不完整：
 /// - macOS 从 Finder 启动时 PATH 只有 /usr/bin:/bin:/usr/sbin:/sbin

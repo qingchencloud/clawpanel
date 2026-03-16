@@ -2807,11 +2807,13 @@ function showSettings() {
           toast('未找到可导入的 AI 配置', 'warning')
           return
         }
-        baseUrlInput.value = result.baseUrl || ''
-        apiKeyInput.value = result.apiKey || ''
-        overlay.querySelector('#ast-model').value = result.model || ''
-        apiTypeSelect.value = normalizeApiType(result.apiType || 'openai-completions')
-        apiTypeSelect.dispatchEvent(new Event('change'))
+        if (result.baseUrl) baseUrlInput.value = result.baseUrl
+        if (result.apiKey) apiKeyInput.value = result.apiKey
+        if (result.model) overlay.querySelector('#ast-model').value = result.model
+        if (result.apiType) {
+          apiTypeSelect.value = normalizeApiType(result.apiType)
+          apiTypeSelect.dispatchEvent(new Event('change'))
+        }
         if (result.temperature && overlay.querySelector('#ast-temp')) {
           overlay.querySelector('#ast-temp').value = result.temperature
         }
