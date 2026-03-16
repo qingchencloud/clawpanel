@@ -17,6 +17,13 @@
 **Files:**
 - Modify: `src/style/components.css`
 
+- [ ] **Step 0: Checkpoint**
+
+```bash
+git status -sb
+git commit --allow-empty -m "chore: checkpoint before toast style update"
+```
+
 - [ ] **Step 1: Remove blur and set base card styles**
 
 Update `.toast` rule:
