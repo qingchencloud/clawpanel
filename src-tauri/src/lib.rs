@@ -9,6 +9,10 @@ use commands::{
 };
 
 pub fn run() {
+    for (k, v) in commands::build_system_env() {
+        std::env::set_var(k, v);
+    }
+
     let hot_update_dir = commands::openclaw_dir()
         .join("clawpanel")
         .join("web-update");

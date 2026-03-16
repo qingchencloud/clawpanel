@@ -1,7 +1,13 @@
+use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::path::PathBuf;
 use std::sync::RwLock;
 use std::time::Duration;
+
+#[cfg(target_os = "windows")]
+use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RegType, KEY_READ};
+#[cfg(target_os = "windows")]
+use winreg::RegKey;
 
 pub mod agent;
 pub mod assistant;
@@ -141,6 +147,161 @@ pub fn apply_proxy_env_tokio(cmd: &mut tokio::process::Command) {
     }
 }
 
+pub fn apply_system_env(cmd: &mut std::process::Command) {
+    cmd.envs(build_system_env());
+}
+
+pub fn apply_system_env_tokio(cmd: &mut tokio::process::Command) {
+    cmd.envs(build_system_env());
+}
+
+fn merge_path_parts(parts: Vec<String>, sep: char) -> String {
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut out: Vec<String> = Vec::new();
+    for part in parts {
+        for seg in part.split(sep) {
+            let trimmed = seg.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let key = trimmed.to_ascii_lowercase();
+            if seen.insert(key) {
+                out.push(trimmed.to_string());
+            }
+        }
+    }
+    out.join(&sep.to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn decode_reg_utf16(bytes: &[u8]) -> String {
+    let mut u16s: Vec<u16> = Vec::with_capacity(bytes.len() / 2);
+    for chunk in bytes.chunks(2) {
+        if chunk.len() == 2 {
+            u16s.push(u16::from_le_bytes([chunk[0], chunk[1]]));
+        }
+    }
+    while let Some(&0) = u16s.last() {
+        u16s.pop();
+    }
+    String::from_utf16_lossy(&u16s)
+}
+
+#[cfg(target_os = "windows")]
+fn read_registry_env(hkey: RegKey, subkey: &str) -> Vec<(String, String, RegType)> {
+    let key = match hkey.open_subkey_with_flags(subkey, KEY_READ) {
+        Ok(k) => k,
+        Err(_) => return Vec::new(),
+    };
+    let mut entries = Vec::new();
+    for item in key.enum_values().flatten() {
+        let (name, value) = item;
+        let vtype = value.vtype;
+        if vtype == RegType::REG_SZ || vtype == RegType::REG_EXPAND_SZ {
+            let text = decode_reg_utf16(&value.bytes);
+            entries.push((name, text, vtype));
+        }
+    }
+    entries
+}
+
+#[cfg(target_os = "windows")]
+fn expand_env_vars(value: &str, env_map: &HashMap<String, String>) -> String {
+    let mut output = value.to_string();
+    for _ in 0..5 {
+        let mut chars: Vec<char> = output.chars().collect();
+        let mut i = 0usize;
+        let mut changed = false;
+        let mut result = String::new();
+        while i < chars.len() {
+            if chars[i] == '%' {
+                let mut j = i + 1;
+                while j < chars.len() && chars[j] != '%' {
+                    j += 1;
+                }
+                if j < chars.len() && chars[j] == '%' {
+                    let key: String = chars[i + 1..j].iter().collect();
+                    let lookup = key.to_ascii_uppercase();
+                    if let Some(repl) = env_map.get(&lookup) {
+                        result.push_str(repl);
+                        changed = true;
+                    }
+                    i = j + 1;
+                    continue;
+                }
+            }
+            result.push(chars[i]);
+            i += 1;
+        }
+        output = result;
+        if !changed {
+            break;
+        }
+    }
+    output
+}
+
+pub fn build_system_env() -> Vec<(String, String)> {
+    #[cfg(target_os = "windows")]
+    {
+        let system_entries = read_registry_env(
+            RegKey::predef(HKEY_LOCAL_MACHINE),
+            r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+        );
+        let user_entries = read_registry_env(RegKey::predef(HKEY_CURRENT_USER), r"Environment");
+
+        let mut map: HashMap<String, String> = HashMap::new();
+        for (k, v, _) in system_entries.iter() {
+            map.insert(k.to_ascii_uppercase(), v.clone());
+        }
+        for (k, v, _) in user_entries.iter() {
+            map.insert(k.to_ascii_uppercase(), v.clone());
+        }
+
+        for (k, v, t) in system_entries.iter().chain(user_entries.iter()) {
+            if *t == RegType::REG_EXPAND_SZ {
+                let key = k.to_ascii_uppercase();
+                let expanded = expand_env_vars(v, &map);
+                map.insert(key, expanded);
+            }
+        }
+
+        for (k, v) in std::env::vars() {
+            map.insert(k.to_ascii_uppercase(), v);
+        }
+
+        let mut path_parts: Vec<String> = Vec::new();
+        for (k, v, _) in system_entries.iter() {
+            if k.eq_ignore_ascii_case("PATH") {
+                path_parts.push(v.clone());
+            }
+        }
+        for (k, v, _) in user_entries.iter() {
+            if k.eq_ignore_ascii_case("PATH") {
+                path_parts.push(v.clone());
+            }
+        }
+        if let Ok(process_path) = std::env::var("PATH") {
+            path_parts.push(process_path);
+        }
+
+        let base_path = merge_path_parts(path_parts, ';');
+        let enhanced = build_enhanced_path_with_base(&base_path);
+        map.insert("PATH".to_string(), enhanced);
+
+        map.into_iter().collect()
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let mut map: HashMap<String, String> = std::env::vars().collect();
+        let base = map.get("PATH").cloned().unwrap_or_default();
+        let enhanced = build_enhanced_path_with_base(&base);
+        map.insert("PATH".to_string(), enhanced);
+        map.into_iter().collect()
+    }
+}
+
 /// 缓存 enhanced_path 结果，避免每次调用都扫描文件系统
 /// 使用 RwLock 替代 OnceLock，支持运行时刷新缓存
 static ENHANCED_PATH_CACHE: RwLock<Option<String>> = RwLock::new(None);
@@ -158,7 +319,7 @@ pub fn enhanced_path() -> String {
         }
     }
     // 缓存为空，重新构建
-    let path = build_enhanced_path();
+    let path = build_enhanced_path_with_base(&std::env::var("PATH").unwrap_or_default());
     if let Ok(mut guard) = ENHANCED_PATH_CACHE.write() {
         *guard = Some(path.clone());
     }
@@ -167,14 +328,14 @@ pub fn enhanced_path() -> String {
 
 /// 刷新 enhanced_path 缓存，使新设置的 Node.js 路径立即生效（无需重启应用）
 pub fn refresh_enhanced_path() {
-    let new_path = build_enhanced_path();
+    let new_path = build_enhanced_path_with_base(&std::env::var("PATH").unwrap_or_default());
     if let Ok(mut guard) = ENHANCED_PATH_CACHE.write() {
         *guard = Some(new_path);
     }
 }
 
-fn build_enhanced_path() -> String {
-    let current = std::env::var("PATH").unwrap_or_default();
+fn build_enhanced_path_with_base(base_path: &str) -> String {
+    let current = base_path.to_string();
     let home = dirs::home_dir().unwrap_or_default();
 
     // 读取用户保存的自定义 Node.js 路径

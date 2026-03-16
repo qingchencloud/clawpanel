@@ -149,11 +149,13 @@ pub async fn assistant_exec(command: String, cwd: Option<String>) -> Result<Stri
     #[cfg(target_os = "windows")]
     {
         const CREATE_NO_WINDOW: u32 = 0x08000000;
-        output = tokio::process::Command::new("cmd")
-            .args(["/c", &command])
+        let mut cmd = tokio::process::Command::new("cmd");
+        cmd.args(["/c", &command])
             .current_dir(&work_dir)
-            .env("PATH", super::enhanced_path())
-            .creation_flags(CREATE_NO_WINDOW)
+            .creation_flags(CREATE_NO_WINDOW);
+        super::apply_system_env_tokio(&mut cmd);
+        super::apply_proxy_env_tokio(&mut cmd);
+        output = cmd
             .output()
             .await
             .map_err(|e| format!("执行失败: {e}"))?;
@@ -161,10 +163,12 @@ pub async fn assistant_exec(command: String, cwd: Option<String>) -> Result<Stri
 
     #[cfg(not(target_os = "windows"))]
     {
-        output = tokio::process::Command::new("sh")
-            .args(["-c", &command])
-            .current_dir(&work_dir)
-            .env("PATH", super::enhanced_path())
+        let mut cmd = tokio::process::Command::new("sh");
+        cmd.args(["-c", &command])
+            .current_dir(&work_dir);
+        super::apply_system_env_tokio(&mut cmd);
+        super::apply_proxy_env_tokio(&mut cmd);
+        output = cmd
             .output()
             .await
             .map_err(|e| format!("执行失败: {e}"))?;

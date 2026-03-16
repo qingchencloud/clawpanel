@@ -4240,7 +4240,6 @@ function autoResize(textarea) {
 
 export function cleanup() {
   flushSave()
-  stopStreaming()
   stopStreamRefresh()
   _pendingImages = []
   _page = null

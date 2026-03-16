@@ -459,10 +459,10 @@ mod platform {
 
         let mut cmd = Command::new("openclaw");
         cmd.arg("gateway")
-            .env("PATH", &enhanced)
             .stdin(std::process::Stdio::null())
             .stdout(stdout_log)
             .stderr(stderr_log);
+        crate::commands::apply_system_env(&mut cmd);
         crate::commands::apply_proxy_env(&mut cmd);
         cmd.spawn().map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
@@ -691,7 +691,7 @@ mod platform {
         // 方式2: 通过 where 查找（兼容 nvm、自定义 prefix 等）
         let mut where_cmd = std::process::Command::new("where");
         where_cmd.arg("openclaw");
-        where_cmd.env("PATH", crate::commands::enhanced_path());
+        crate::commands::apply_system_env(&mut where_cmd);
         where_cmd.creation_flags(CREATE_NO_WINDOW);
         if let Ok(o) = where_cmd.output() {
             if o.status.success() && !String::from_utf8_lossy(&o.stdout).trim().is_empty() {
@@ -702,7 +702,7 @@ mod platform {
         // 方式3: 直接执行版本命令兜底
         let mut cmd = std::process::Command::new("cmd");
         cmd.args(["/c", "openclaw", "--version"]);
-        cmd.env("PATH", crate::commands::enhanced_path());
+        crate::commands::apply_system_env(&mut cmd);
         cmd.creation_flags(CREATE_NO_WINDOW);
         if let Ok(o) = cmd.output() {
             if o.status.success() {
@@ -880,16 +880,15 @@ mod platform {
             ));
         }
 
-        let enhanced = crate::commands::enhanced_path();
         let (stdout_log, stderr_log) = create_gateway_log_files()?;
 
         let mut cmd = std::process::Command::new("cmd");
         cmd.args(["/c", "openclaw", "gateway"])
-            .env("PATH", &enhanced)
             .creation_flags(CREATE_NO_WINDOW)
             .stdin(Stdio::null())
             .stdout(stdout_log)
             .stderr(stderr_log);
+        crate::commands::apply_system_env(&mut cmd);
         crate::commands::apply_proxy_env(&mut cmd);
         cmd.spawn().map_err(|e| format!("启动 Gateway 失败: {e}"))?;
 
@@ -987,10 +986,10 @@ mod platform {
     }
 
     pub async fn is_cli_installed() -> bool {
-        Command::new("openclaw")
-            .arg("--version")
-            .env("PATH", crate::commands::enhanced_path())
-            .output()
+        let mut cmd = Command::new("openclaw");
+        cmd.arg("--version");
+        crate::commands::apply_system_env(&mut cmd);
+        cmd.output()
             .await
             .map(|o| o.status.success())
             .unwrap_or(false)
@@ -1030,12 +1029,10 @@ mod platform {
         ) {
             Ok(_) => (true, None),
             Err(_) => {
-                if let Ok(output) = Command::new("openclaw")
-                    .arg("health")
-                    .env("PATH", crate::commands::enhanced_path())
-                    .output()
-                    .await
-                {
+                let mut cmd = Command::new("openclaw");
+                cmd.arg("health");
+                crate::commands::apply_system_env(&mut cmd);
+                if let Ok(output) = cmd.output().await {
                     let text = String::from_utf8_lossy(&output.stdout);
                     if output.status.success() && !text.contains("not running") {
                         return (true, None);

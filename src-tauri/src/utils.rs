@@ -27,7 +27,7 @@ pub fn openclaw_command() -> std::process::Command {
         if let Some(cmd_path) = find_openclaw_cmd() {
             let mut cmd = std::process::Command::new("cmd");
             cmd.arg("/c").arg(cmd_path);
-            cmd.env("PATH", &enhanced);
+            crate::commands::apply_system_env(&mut cmd);
             crate::commands::apply_proxy_env(&mut cmd);
             cmd.creation_flags(CREATE_NO_WINDOW);
             return cmd;
@@ -35,7 +35,7 @@ pub fn openclaw_command() -> std::process::Command {
         // 兜底：直接用 cmd /c openclaw
         let mut cmd = std::process::Command::new("cmd");
         cmd.arg("/c").arg("openclaw");
-        cmd.env("PATH", &enhanced);
+        crate::commands::apply_system_env(&mut cmd);
         crate::commands::apply_proxy_env(&mut cmd);
         cmd.creation_flags(CREATE_NO_WINDOW);
         cmd
@@ -43,7 +43,7 @@ pub fn openclaw_command() -> std::process::Command {
     #[cfg(not(target_os = "windows"))]
     {
         let mut cmd = std::process::Command::new("openclaw");
-        cmd.env("PATH", crate::commands::enhanced_path());
+        crate::commands::apply_system_env(&mut cmd);
         crate::commands::apply_proxy_env(&mut cmd);
         cmd
     }
@@ -59,7 +59,7 @@ pub fn openclaw_command_async() -> tokio::process::Command {
         if let Some(cmd_path) = find_openclaw_cmd() {
             let mut cmd = tokio::process::Command::new("cmd");
             cmd.arg("/c").arg(cmd_path);
-            cmd.env("PATH", &enhanced);
+            crate::commands::apply_system_env_tokio(&mut cmd);
             crate::commands::apply_proxy_env_tokio(&mut cmd);
             cmd.creation_flags(CREATE_NO_WINDOW);
             return cmd;
@@ -67,7 +67,7 @@ pub fn openclaw_command_async() -> tokio::process::Command {
         // 兜底
         let mut cmd = tokio::process::Command::new("cmd");
         cmd.arg("/c").arg("openclaw");
-        cmd.env("PATH", &enhanced);
+        crate::commands::apply_system_env_tokio(&mut cmd);
         crate::commands::apply_proxy_env_tokio(&mut cmd);
         cmd.creation_flags(CREATE_NO_WINDOW);
         cmd
@@ -75,7 +75,7 @@ pub fn openclaw_command_async() -> tokio::process::Command {
     #[cfg(not(target_os = "windows"))]
     {
         let mut cmd = tokio::process::Command::new("openclaw");
-        cmd.env("PATH", crate::commands::enhanced_path());
+        crate::commands::apply_system_env_tokio(&mut cmd);
         crate::commands::apply_proxy_env_tokio(&mut cmd);
         cmd
     }

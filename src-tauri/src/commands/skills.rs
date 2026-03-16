@@ -66,7 +66,6 @@ pub async fn skills_check() -> Result<Value, String> {
 /// 安装 Skill 依赖（根据 install spec 执行 brew/npm/go/uv/download）
 #[tauri::command]
 pub async fn skills_install_dep(kind: String, spec: Value) -> Result<Value, String> {
-    let path_env = super::enhanced_path();
 
     let (program, args) = match kind.as_str() {
         "brew" => {
@@ -111,7 +110,8 @@ pub async fn skills_install_dep(kind: String, spec: Value) -> Result<Value, Stri
     };
 
     let mut cmd = tokio::process::Command::new(&program);
-    cmd.args(&args).env("PATH", &path_env);
+    cmd.args(&args);
+    super::apply_system_env_tokio(&mut cmd);
     super::apply_proxy_env_tokio(&mut cmd);
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000);
@@ -140,7 +140,6 @@ pub async fn skills_install_dep(kind: String, spec: Value) -> Result<Value, Stri
 /// 检测 SkillHub CLI 是否已安装
 #[tauri::command]
 pub async fn skills_skillhub_check() -> Result<Value, String> {
-    let path_env = super::enhanced_path();
     #[cfg(target_os = "windows")]
     let mut cmd = {
         let mut c = tokio::process::Command::new("cmd");
@@ -154,20 +153,88 @@ pub async fn skills_skillhub_check() -> Result<Value, String> {
         c.arg("--version");
         c
     };
-    cmd.env("PATH", &path_env);
+    super::apply_system_env_tokio(&mut cmd);
     match cmd.output().await {
         Ok(o) if o.status.success() => {
             let ver = String::from_utf8_lossy(&o.stdout).trim().to_string();
             Ok(serde_json::json!({ "installed": true, "version": ver }))
         }
-        _ => Ok(serde_json::json!({ "installed": false })),
+        _ => {
+            #[cfg(target_os = "windows")]
+            {
+                let mut where_cmd = tokio::process::Command::new("cmd");
+                where_cmd.args(["/c", "where", "skillhub"]);
+                where_cmd.creation_flags(0x08000000);
+                super::apply_system_env_tokio(&mut where_cmd);
+                if let Ok(out) = where_cmd.output().await {
+                    if out.status.success() {
+                        let text = String::from_utf8_lossy(&out.stdout).to_string();
+                        if let Some(first) = text.lines().find(|l| !l.trim().is_empty()) {
+                            let path = first.trim().to_string();
+                            let mut ver_cmd = tokio::process::Command::new("cmd");
+                            ver_cmd.args(["/c", &path, "--version"]);
+                            ver_cmd.creation_flags(0x08000000);
+                            super::apply_system_env_tokio(&mut ver_cmd);
+                            if let Ok(ver_out) = ver_cmd.output().await {
+                                if ver_out.status.success() {
+                                    let ver = String::from_utf8_lossy(&ver_out.stdout)
+                                        .trim()
+                                        .to_string();
+                                    return Ok(serde_json::json!({
+                                        "installed": true,
+                                        "version": ver,
+                                        "path": path
+                                    }));
+                                }
+                            }
+                            return Ok(serde_json::json!({
+                                "installed": true,
+                                "path": path
+                            }));
+                        }
+                    }
+                }
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                let mut which_cmd = tokio::process::Command::new("sh");
+                which_cmd.args(["-c", "which skillhub"]);
+                super::apply_system_env_tokio(&mut which_cmd);
+                if let Ok(out) = which_cmd.output().await {
+                    if out.status.success() {
+                        let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                        if !path.is_empty() {
+                            let mut ver_cmd = tokio::process::Command::new(&path);
+                            ver_cmd.arg("--version");
+                            super::apply_system_env_tokio(&mut ver_cmd);
+                            if let Ok(ver_out) = ver_cmd.output().await {
+                                if ver_out.status.success() {
+                                    let ver = String::from_utf8_lossy(&ver_out.stdout)
+                                        .trim()
+                                        .to_string();
+                                    return Ok(serde_json::json!({
+                                        "installed": true,
+                                        "version": ver,
+                                        "path": path
+                                    }));
+                                }
+                            }
+                            return Ok(serde_json::json!({
+                                "installed": true,
+                                "path": path
+                            }));
+                        }
+                    }
+                }
+            }
+            Ok(serde_json::json!({ "installed": false }))
+        }
     }
 }
 
 /// 安装 SkillHub CLI（从腾讯云 COS 下载）
 #[tauri::command]
 pub async fn skills_skillhub_setup(cli_only: bool) -> Result<Value, String> {
-    let path_env = super::enhanced_path();
     #[allow(unused_variables)]
     let flag = if cli_only {
         "--cli-only"
@@ -180,8 +247,8 @@ pub async fn skills_skillhub_setup(cli_only: bool) -> Result<Value, String> {
         let mut cmd = tokio::process::Command::new("bash");
         cmd.args(["-c", &format!(
             "curl -fsSL https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/install/install.sh | bash -s -- {flag}"
-        )])
-        .env("PATH", &path_env);
+        )]);
+        super::apply_system_env_tokio(&mut cmd);
         super::apply_proxy_env_tokio(&mut cmd);
         let output = cmd
             .output()
@@ -206,8 +273,8 @@ pub async fn skills_skillhub_setup(cli_only: bool) -> Result<Value, String> {
             "skillhub@latest",
             "--registry",
             "https://registry.npmmirror.com",
-        ])
-        .env("PATH", &path_env);
+        ]);
+        super::apply_system_env_tokio(&mut cmd);
         super::apply_proxy_env_tokio(&mut cmd);
         cmd.creation_flags(0x08000000);
         let output = cmd
@@ -226,7 +293,6 @@ pub async fn skills_skillhub_setup(cli_only: bool) -> Result<Value, String> {
 /// 从 SkillHub 安装 Skill（skillhub install <slug>）
 #[tauri::command]
 pub async fn skills_skillhub_install(slug: String) -> Result<Value, String> {
-    let path_env = super::enhanced_path();
     let home = dirs::home_dir().unwrap_or_default();
 
     let skills_dir = super::openclaw_dir().join("skills");
@@ -247,7 +313,8 @@ pub async fn skills_skillhub_install(slug: String) -> Result<Value, String> {
         c.args(["install", &slug, "--force"]);
         c
     };
-    cmd.env("PATH", &path_env).current_dir(&home);
+    cmd.current_dir(&home);
+    super::apply_system_env_tokio(&mut cmd);
     super::apply_proxy_env_tokio(&mut cmd);
     let output = cmd
         .output()
@@ -276,7 +343,6 @@ pub async fn skills_skillhub_search(query: String) -> Result<Value, String> {
         return Ok(Value::Array(vec![]));
     }
 
-    let path_env = super::enhanced_path();
     #[cfg(target_os = "windows")]
     let mut cmd = {
         let mut c = tokio::process::Command::new("cmd");
@@ -290,7 +356,7 @@ pub async fn skills_skillhub_search(query: String) -> Result<Value, String> {
         c.args(["search", &q]);
         c
     };
-    cmd.env("PATH", &path_env);
+    super::apply_system_env_tokio(&mut cmd);
     super::apply_proxy_env_tokio(&mut cmd);
     let output = cmd
         .output()
@@ -331,29 +397,24 @@ pub async fn skills_skillhub_search(query: String) -> Result<Value, String> {
             continue;
         }
 
-        // 描述在下一行：跳过数字、⬇、⭐ 等统计信息，提取文字描述
+        // 描述在下一行：跳过数字与统计字段，提取文字描述
         let mut desc = String::new();
         if i + 1 < lines.len() {
             let next = lines[i + 1].trim();
-            // 找到第一个英文或中文字母开始的描述文字
-            // 格式: "AI 85  ⬇     33  ⭐ 248.7k  Feishu document..."
-            // 或: "⬇      0  ⭐ 212.2k  Feishu document..."
-            // 策略：找 ⭐ 后面的数字后的文字
-            if let Some(star_pos) = next.find('⭐') {
-                let after_star = &next[star_pos + '⭐'.len_utf8()..].trim_start();
-                // 跳过星标数字（如 "248.7k"）
-                let after_num = after_star
-                    .trim_start_matches(|c: char| {
-                        c.is_ascii_digit()
-                            || c == '.'
-                            || c == 'k'
-                            || c == 'K'
-                            || c == 'm'
-                            || c == 'M'
-                    })
-                    .trim();
-                if !after_num.is_empty() {
-                    desc = after_num.to_string();
+            // 策略：找到首个英文或中文字符作为描述起点
+            let mut start_idx = None;
+            for (idx, ch) in next.char_indices() {
+                if ch.is_ascii_alphabetic()
+                    || (ch >= '\u{4E00}' && ch <= '\u{9FFF}')
+                {
+                    start_idx = Some(idx);
+                    break;
+                }
+            }
+            if let Some(idx) = start_idx {
+                let after = next[idx..].trim();
+                if !after.is_empty() {
+                    desc = after.to_string();
                 }
             }
         }
@@ -375,7 +436,6 @@ pub async fn skills_clawhub_search(query: String) -> Result<Value, String> {
     if q.is_empty() {
         return Ok(Value::Array(vec![]));
     }
-    let path_env = super::enhanced_path();
     #[cfg(target_os = "windows")]
     let mut cmd = {
         let mut c = tokio::process::Command::new("cmd");
@@ -389,7 +449,7 @@ pub async fn skills_clawhub_search(query: String) -> Result<Value, String> {
         c.args(["-y", "clawhub", "search", &q]);
         c
     };
-    cmd.env("PATH", &path_env);
+    super::apply_system_env_tokio(&mut cmd);
     super::apply_proxy_env_tokio(&mut cmd);
     let output = cmd
         .output()
@@ -418,7 +478,6 @@ pub async fn skills_clawhub_search(query: String) -> Result<Value, String> {
 /// 从 ClawHub 安装 Skill（npx clawhub install <slug>）— 原版海外源
 #[tauri::command]
 pub async fn skills_clawhub_install(slug: String) -> Result<Value, String> {
-    let path_env = super::enhanced_path();
     let home = dirs::home_dir().unwrap_or_default();
     let skills_dir = super::openclaw_dir().join("skills");
     if !skills_dir.exists() {
@@ -437,7 +496,8 @@ pub async fn skills_clawhub_install(slug: String) -> Result<Value, String> {
         c.args(["-y", "clawhub", "install", &slug]);
         c
     };
-    cmd.env("PATH", &path_env).current_dir(&home);
+    cmd.current_dir(&home);
+    super::apply_system_env_tokio(&mut cmd);
     super::apply_proxy_env_tokio(&mut cmd);
     let output = cmd
         .output()

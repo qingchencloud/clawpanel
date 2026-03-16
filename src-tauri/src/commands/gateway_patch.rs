@@ -152,7 +152,7 @@ fn npm_root_global() -> Result<PathBuf, String> {
         c.args(["root", "-g"]);
         c
     };
-    cmd.env("PATH", crate::commands::enhanced_path());
+    crate::commands::apply_system_env(&mut cmd);
     crate::commands::apply_proxy_env(&mut cmd);
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);

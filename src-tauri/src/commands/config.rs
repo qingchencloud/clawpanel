@@ -200,7 +200,7 @@ fn npm_command() -> Command {
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         let mut cmd = Command::new("cmd");
         cmd.args(["/c", "npm", "--registry", &registry]);
-        cmd.env("PATH", super::enhanced_path());
+        crate::commands::apply_system_env(&mut cmd);
         crate::commands::apply_proxy_env(&mut cmd);
         cmd.creation_flags(CREATE_NO_WINDOW);
         cmd
@@ -209,7 +209,7 @@ fn npm_command() -> Command {
     {
         let mut cmd = Command::new("npm");
         cmd.args(["--registry", &registry]);
-        cmd.env("PATH", super::enhanced_path());
+        crate::commands::apply_system_env(&mut cmd);
         crate::commands::apply_proxy_env(&mut cmd);
         cmd
     }
@@ -226,7 +226,7 @@ fn npm_command() -> Command {
             c.args(["--registry", &registry]);
             c
         };
-        cmd.env("PATH", super::enhanced_path());
+        crate::commands::apply_system_env(&mut cmd);
         crate::commands::apply_proxy_env(&mut cmd);
         cmd
     }
@@ -1332,7 +1332,7 @@ pub fn check_node() -> Result<Value, String> {
     let mut result = serde_json::Map::new();
     let mut cmd = Command::new("node");
     cmd.arg("--version");
-    cmd.env("PATH", super::enhanced_path());
+    crate::commands::apply_system_env(&mut cmd);
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     match cmd.output() {
