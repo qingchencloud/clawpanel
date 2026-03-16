@@ -65,6 +65,7 @@ let _lastRenderTime = 0, _renderPending = false, _lastHistoryHash = ''
 let _streamSafetyTimer = null, _unsubEvent = null, _unsubReady = null, _unsubStatus = null
 let _seenRunIds = new Set()
 let _pageActive = false
+const _toolEventTimes = new Map()
 let _errorTimer = null, _lastErrorMsg = null
 let _attachments = []
 let _hasEverConnected = false
@@ -910,6 +911,11 @@ function handleEvent(msg) {
   const { event, payload } = msg
   if (!payload) return
 
+  if (event === 'agent' && payload?.stream === 'tool' && payload?.data?.toolCallId) {
+    const ts = payload.ts
+    if (ts) _toolEventTimes.set(payload.data.toolCallId, ts)
+  }
+
   if (event === 'chat') handleChatEvent(payload)
 
   // Compaction 状态指示：上游 2026.3.12 新增 status_reaction 事件
@@ -1126,24 +1132,30 @@ function collectToolsFromMessage(message, tools) {
       const fn = call.function || null
       const name = call.name || call.tool || call.tool_name || fn?.name
       const input = call.input || call.args || call.parameters || call.arguments || fn?.arguments || null
+      const callId = call.id || call.tool_call_id
+      const fallbackTime = callId ? _toolEventTimes.get(callId) : null
       upsertTool(tools, {
-        id: call.id || call.tool_call_id,
+        id: callId,
         name: name || '工具',
         input,
         output: null,
         status: call.status || 'ok',
+        time: call.time || fallbackTime || null,
       })
     })
   }
   const toolResults = message.tool_results || message.toolResults
   if (Array.isArray(toolResults)) {
     toolResults.forEach(res => {
+      const resId = res.id || res.tool_call_id
+      const fallbackTime = resId ? _toolEventTimes.get(resId) : null
       upsertTool(tools, {
-        id: res.id || res.tool_call_id,
+        id: resId,
         name: res.name || res.tool || res.tool_name || '工具',
         input: res.input || res.args || null,
         output: res.output || res.result || res.content || null,
         status: res.status || 'ok',
+        time: res.time || fallbackTime || null,
       })
     })
   }
@@ -1192,19 +1204,25 @@ function extractChatContent(message) {
         files.push({ url: block.url || '', name: block.fileName || block.name || '文件', mimeType: block.mimeType || '', size: block.size, data: block.data })
       }
       else if (block.type === 'tool' || block.type === 'tool_use' || block.type === 'tool_call') {
+        const callId = block.id || block.tool_call_id
+        const fallbackTime = callId ? _toolEventTimes.get(callId) : null
         tools.push({
           name: block.name || block.tool || block.tool_name || '工具',
           input: block.input || block.args || block.parameters || null,
           output: null,
           status: block.status || 'ok',
+          time: block.time || fallbackTime || null,
         })
       }
       else if (block.type === 'tool_result' || block.type === 'toolResult') {
+        const resId = block.id || block.tool_call_id
+        const fallbackTime = resId ? _toolEventTimes.get(resId) : null
         tools.push({
           name: block.name || block.tool || block.tool_name || '工具',
           input: block.input || block.args || null,
           output: block.output || block.result || block.content || null,
           status: block.status || 'ok',
+          time: block.time || fallbackTime || null,
         })
       }
     }
@@ -1485,19 +1503,25 @@ function extractContent(msg) {
         files.push({ url: block.url || '', name: block.fileName || block.name || '文件', mimeType: block.mimeType || '', size: block.size, data: block.data })
       }
       else if (block.type === 'tool' || block.type === 'tool_use' || block.type === 'tool_call') {
+        const callId = block.id || block.tool_call_id
+        const fallbackTime = callId ? _toolEventTimes.get(callId) : null
         tools.push({
           name: block.name || block.tool || block.tool_name || '工具',
           input: block.input || block.args || block.parameters || null,
           output: null,
           status: block.status || 'ok',
+          time: block.time || fallbackTime || null,
         })
       }
       else if (block.type === 'tool_result' || block.type === 'toolResult') {
+        const resId = block.id || block.tool_call_id
+        const fallbackTime = resId ? _toolEventTimes.get(resId) : null
         tools.push({
           name: block.name || block.tool || block.tool_name || '工具',
           input: block.input || block.args || null,
           output: block.output || block.result || block.content || null,
           status: block.status || 'ok',
+          time: block.time || fallbackTime || null,
         })
       }
     }
