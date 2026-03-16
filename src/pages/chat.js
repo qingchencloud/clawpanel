@@ -1578,6 +1578,7 @@ function appendToolsToEl(el, tools) {
   tools.forEach(tool => {
     const details = document.createElement('details')
     details.className = 'msg-tool-item'
+    details.open = false
     const summary = document.createElement('summary')
     const status = tool.status === 'error' ? '失败' : '成功'
     summary.innerHTML = `${escapeHtml(tool.name || '工具')} · ${status}`
