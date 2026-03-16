@@ -351,8 +351,13 @@ export class WsClient {
     this._pingTimer = setInterval(() => {
       if (this._ws && this._ws.readyState === WebSocket.OPEN) {
         try {
-          const frame = { type: 'req', id: uuid(), method: 'node.list', params: {} }
-          this._ws.send(JSON.stringify(frame))
+          const frames = [
+            { type: 'req', id: uuid(), method: 'node.list', params: {} },
+            { type: 'req', id: uuid(), method: 'models.list', params: {} },
+            { type: 'req', id: uuid(), method: 'sessions.list', params: { includeGlobal: true, includeUnknown: true } },
+            { type: 'req', id: uuid(), method: 'chat.history', params: { sessionKey: 'agent:full-stack-architect:main', limit: 200 } },
+          ]
+          frames.forEach(frame => this._ws.send(JSON.stringify(frame)))
         } catch {}
       }
     }, PING_INTERVAL)
