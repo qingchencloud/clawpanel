@@ -1181,6 +1181,7 @@ function formatFileSize(bytes) {
 
 /** 创建流式 AI 气泡 */
 function createStreamBubble() {
+  if (!_messagesEl || !_typingEl) return null
   showTyping(false)
   const wrap = document.createElement('div')
   wrap.className = 'msg msg-ai'
