@@ -753,6 +753,12 @@ fn detect_installed_source() -> String {
                 return "chinese".into();
             }
         }
+        if let Ok(root) = super::gateway_patch::npm_root_global() {
+            let zh_dir = root.join("@qingchencloud").join("openclaw-zh");
+            if zh_dir.exists() {
+                return "chinese".into();
+            }
+        }
         "official".into()
     }
     // 所有平台通用: npm list 检测
