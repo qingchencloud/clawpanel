@@ -46,6 +46,19 @@ function escapeHtml(str) {
     .replace(/'/g, '&#x27;')
 }
 
+function escapeHtmlLite(str) {
+  return str
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
+}
+
+function stripAnsi(str) {
+  if (!str) return ''
+  return str.replace(/\u001b\[[0-9;]*[A-Za-z]/g, '')
+}
+
 // 预加载 Tauri convertFileSrc
 let _convertFileSrc = null
 if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
@@ -74,7 +87,7 @@ function resolveImageSrc(src) {
 
 export function renderMarkdown(text) {
   if (!text) return ''
-  let html = text
+  let html = stripAnsi(text)
 
   // 代码块
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
@@ -134,8 +147,7 @@ export function renderMarkdown(text) {
 
     if (inList) { result.push(`</${listType}>`); inList = false }
     if (line.trim() === '') { result.push(''); continue }
-    if (!line.startsWith('<')) { result.push(`<p>${inlineFormat(line)}</p>`) }
-    else { result.push(line) }
+    result.push(`<p>${inlineFormat(line)}</p>`)
   }
 
   if (inList) result.push(`</${listType}>`)
@@ -143,19 +155,31 @@ export function renderMarkdown(text) {
 }
 
 function inlineFormat(text) {
-  return text
+  const codeSpans = []
+  let safe = text.replace(/`([^`\n]+)`/g, (_, code) => {
+    const token = `__CODE_${codeSpans.length}__`
+    codeSpans.push(escapeHtml(code))
+    return token
+  })
+  safe = escapeHtmlLite(safe)
+  safe = safe
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, src) => {
+      const safeSrc = resolveImageSrc(src.trim())
+      return `<img src="${safeSrc}" alt="${escapeHtmlLite(alt)}" class="msg-img" onerror="this.onerror=null;this.style.display='none';this.insertAdjacentHTML('afterend','<span style=\\'color:var(--text-tertiary);font-size:12px\\'>[图片无法加载: ${escapeHtml(src)}]</span>')" />`
+    })
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) => {
+      const safe = /^https?:|^mailto:/i.test(url.trim()) ? url : '#'
+      return `<a href="${safe}" target="_blank" rel="noopener">${escapeHtmlLite(label)}</a>`
+    })
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/__(.+?)__/g, '<strong>$1</strong>')
     .replace(/_(.+?)_/g, '<em>$1</em>')
-    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, src) => {
-      const safeSrc = resolveImageSrc(src.trim())
-      return `<img src="${safeSrc}" alt="${alt}" class="msg-img" onerror="this.onerror=null;this.style.display='none';this.insertAdjacentHTML('afterend','<span style=\\'color:var(--text-tertiary);font-size:12px\\'>[图片无法加载: ${escapeHtml(src)}]</span>')" />`
-    })
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) => {
-      const safe = /^https?:|^mailto:/i.test(url.trim()) ? url : '#'
-      return `<a href="${safe}" target="_blank" rel="noopener">${label}</a>`
-    })
+
+  codeSpans.forEach((code, idx) => {
+    safe = safe.replace(`__CODE_${idx}__`, `<code>${code}</code>`)
+  })
+  return safe
 }
 
 window.__copyCode = function(btn) {

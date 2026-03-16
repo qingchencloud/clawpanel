@@ -1101,13 +1101,75 @@ function handleChatEvent(payload) {
   }
 }
 
+function upsertTool(tools, entry) {
+  if (!entry) return
+  const id = entry.id || entry.tool_call_id
+  let target = null
+  if (id) target = tools.find(t => t.id === id || t.tool_call_id === id)
+  if (!target && entry.name) target = tools.find(t => t.name === entry.name && !t.output)
+  if (target) {
+    if (entry.input != null && target.input == null) target.input = entry.input
+    if (entry.output != null) target.output = entry.output
+    if (entry.status) target.status = entry.status
+    return
+  }
+  tools.push(entry)
+}
+
+function collectToolsFromMessage(message, tools) {
+  if (!message || !tools) return
+  const toolCalls = message.tool_calls || message.toolCalls || message.tools
+  if (Array.isArray(toolCalls)) {
+    toolCalls.forEach(call => {
+      const fn = call.function || null
+      const name = call.name || call.tool || call.tool_name || fn?.name
+      const input = call.input || call.args || call.parameters || call.arguments || fn?.arguments || null
+      upsertTool(tools, {
+        id: call.id || call.tool_call_id,
+        name: name || '工具',
+        input,
+        output: null,
+        status: call.status || 'ok',
+      })
+    })
+  }
+  const toolResults = message.tool_results || message.toolResults
+  if (Array.isArray(toolResults)) {
+    toolResults.forEach(res => {
+      upsertTool(tools, {
+        id: res.id || res.tool_call_id,
+        name: res.name || res.tool || res.tool_name || '工具',
+        input: res.input || res.args || null,
+        output: res.output || res.result || res.content || null,
+        status: res.status || 'ok',
+      })
+    })
+  }
+}
+
 /** 从 Gateway message 对象提取文本和所有媒体（参照 clawapp extractContent） */
 function extractChatContent(message) {
   if (!message || typeof message !== 'object') return null
+  const tools = []
+  collectToolsFromMessage(message, tools)
+  if (message.role === 'tool' || message.role === 'toolResult') {
+    const output = typeof message.content === 'string' ? message.content : null
+    if (!tools.length) {
+      tools.push({
+        name: message.name || message.tool || message.tool_name || '工具',
+        input: message.input || message.args || message.parameters || null,
+        output: output || message.output || message.result || null,
+        status: message.status || 'ok',
+      })
+    } else if (output && !tools[0].output) {
+      tools[0].output = output
+    }
+    return { text: '', images: [], videos: [], audios: [], files: [], tools }
+  }
   const content = message.content
-  if (typeof content === 'string') return { text: stripThinkingTags(content), images: [], videos: [], audios: [], files: [], tools: [] }
+  if (typeof content === 'string') return { text: stripThinkingTags(content), images: [], videos: [], audios: [], files: [], tools }
   if (Array.isArray(content)) {
-    const texts = [], images = [], videos = [], audios = [], files = [], tools = []
+    const texts = [], images = [], videos = [], audios = [], files = []
     for (const block of content) {
       if (block.type === 'text' && typeof block.text === 'string') texts.push(block.text)
       else if (block.type === 'image' && !block.omitted) {
@@ -1144,6 +1206,12 @@ function extractChatContent(message) {
         })
       }
     }
+    if (tools.length) {
+      tools.forEach(t => {
+        if (typeof t.input === 'string') t.input = stripAnsi(t.input)
+        if (typeof t.output === 'string') t.output = stripAnsi(t.output)
+      })
+    }
     // 从 mediaUrl/mediaUrls 提取
     const mediaUrls = message.mediaUrls || (message.mediaUrl ? [message.mediaUrl] : [])
     for (const url of mediaUrls) {
@@ -1160,8 +1228,14 @@ function extractChatContent(message) {
   return null
 }
 
+function stripAnsi(text) {
+  if (!text) return ''
+  return text.replace(/\u001b\[[0-9;]*[A-Za-z]/g, '')
+}
+
 function stripThinkingTags(text) {
-  return text
+  const safe = stripAnsi(text)
+  return safe
     .replace(/<\s*think(?:ing)?\s*>[\s\S]*?<\s*\/\s*think(?:ing)?\s*>/gi, '')
     .replace(/Conversation info \(untrusted metadata\):\s*```json[\s\S]*?```\s*/gi, '')
     .replace(/\[Queued messages while agent was busy\]\s*---\s*Queued #\d+\s*/gi, '')
@@ -1353,8 +1427,24 @@ function dedupeHistory(messages) {
 }
 
 function extractContent(msg) {
+  const tools = []
+  collectToolsFromMessage(msg, tools)
+  if (msg.role === 'tool' || msg.role === 'toolResult') {
+    const output = typeof msg.content === 'string' ? msg.content : null
+    if (!tools.length) {
+      tools.push({
+        name: msg.name || msg.tool || msg.tool_name || '工具',
+        input: msg.input || msg.args || msg.parameters || null,
+        output: output || msg.output || msg.result || null,
+        status: msg.status || 'ok',
+      })
+    } else if (output && !tools[0].output) {
+      tools[0].output = output
+    }
+    return { text: '', images: [], videos: [], audios: [], files: [], tools }
+  }
   if (Array.isArray(msg.content)) {
-    const texts = [], images = [], videos = [], audios = [], files = [], tools = []
+    const texts = [], images = [], videos = [], audios = [], files = []
     for (const block of msg.content) {
       if (block.type === 'text' && typeof block.text === 'string') texts.push(block.text)
       else if (block.type === 'image' && !block.omitted) {
@@ -1391,7 +1481,13 @@ function extractContent(msg) {
         })
       }
     }
-    const mediaUrls = msg.mediaUrls || (msg.mediaUrl ? [msg.mediaUrl] : [])
+    if (tools.length) {
+    tools.forEach(t => {
+      if (typeof t.input === 'string') t.input = stripAnsi(t.input)
+      if (typeof t.output === 'string') t.output = stripAnsi(t.output)
+    })
+  }
+  const mediaUrls = msg.mediaUrls || (msg.mediaUrl ? [msg.mediaUrl] : [])
     for (const url of mediaUrls) {
       if (!url) continue
       if (/\.(mp4|webm|mov|mkv)(\?|$)/i.test(url)) videos.push({ url, mediaType: 'video/mp4' })
@@ -1402,7 +1498,7 @@ function extractContent(msg) {
     return { text: stripThinkingTags(texts.join('\n')), images, videos, audios, files, tools }
   }
   const text = typeof msg.text === 'string' ? msg.text : (typeof msg.content === 'string' ? msg.content : '')
-  return { text: stripThinkingTags(text), images: [], videos: [], audios: [], files: [], tools: [] }
+  return { text: stripThinkingTags(text), images: [], videos: [], audios: [], files: [], tools }
 }
 
 // ── DOM 操作 ──
@@ -1598,8 +1694,8 @@ function appendToolsToEl(el, tools) {
       open: details.open,
       bodyDisplay: body.style.display,
     })
-    const inputJson = safeStringify(tool.input)
-    const outputJson = safeStringify(tool.output)
+    const inputJson = stripAnsi(safeStringify(tool.input))
+    const outputJson = stripAnsi(safeStringify(tool.output))
     const input = inputJson ? `<div class="msg-tool-block"><div class="msg-tool-title">参数</div><pre>${escapeHtml(inputJson)}</pre></div>` : ''
     const output = outputJson ? `<div class="msg-tool-block"><div class="msg-tool-title">结果</div><pre>${escapeHtml(outputJson)}</pre></div>` : ''
     body.innerHTML = input + output
