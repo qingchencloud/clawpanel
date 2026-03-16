@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** On each websocket connect success, send the official 8-request bootstrap batch; set ping interval to 5s.
+**Goal:** On each websocket connect success, send the official 8-request bootstrap batch; set ping interval to 5s (bootstrap may duplicate the first ping batch).
 
 **Architecture:** Add `_sendBootstrapRequests()` to `WsClient`, call it from `_handleConnectSuccess`, update `PING_INTERVAL` constant to 5000.
 
@@ -34,6 +34,7 @@ Add method inside `WsClient`:
 _sendBootstrapRequests() {
   if (!this._ws || this._ws.readyState !== WebSocket.OPEN) return
   const sessionKey = this._sessionKey || 'agent:full-stack-architect:main'
+  // Note: responses are fire-and-forget in this batch
   const frames = [
     { type: 'req', id: uuid(), method: 'agent.identity.get', params: { sessionKey } },
     { type: 'req', id: uuid(), method: 'agents.list', params: {} },
@@ -63,6 +64,8 @@ Change constant:
 ```js
 const PING_INTERVAL = 5000
 ```
+
+Note: With 5s interval and multi-req pings, load increases. This matches the requested behavior.
 
 - [ ] **Step 4: Build**
 
