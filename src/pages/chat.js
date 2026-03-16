@@ -1572,7 +1572,7 @@ function appendFilesToEl(el, files) {
 
 /** 渲染工具调用到消息气泡 */
 function appendToolsToEl(el, tools) {
-  if (!tools?.length) return
+  if (!el || !tools?.length) return
   const container = document.createElement('div')
   container.className = 'msg-tool'
   tools.forEach(tool => {
@@ -1583,14 +1583,37 @@ function appendToolsToEl(el, tools) {
     summary.innerHTML = `${escapeHtml(tool.name || '工具')} · ${status}`
     const body = document.createElement('div')
     body.className = 'msg-tool-body'
-    const input = tool.input ? `<div class="msg-tool-block"><div class="msg-tool-title">参数</div><pre>${escapeHtml(JSON.stringify(tool.input, null, 2))}</pre></div>` : ''
-    const output = tool.output ? `<div class="msg-tool-block"><div class="msg-tool-title">结果</div><pre>${escapeHtml(JSON.stringify(tool.output, null, 2))}</pre></div>` : ''
+    const inputJson = safeStringify(tool.input)
+    const outputJson = safeStringify(tool.output)
+    const input = inputJson ? `<div class="msg-tool-block"><div class="msg-tool-title">参数</div><pre>${escapeHtml(inputJson)}</pre></div>` : ''
+    const output = outputJson ? `<div class="msg-tool-block"><div class="msg-tool-title">结果</div><pre>${escapeHtml(outputJson)}</pre></div>` : ''
     body.innerHTML = input + output
     details.appendChild(summary)
     details.appendChild(body)
     container.appendChild(details)
   })
   el.appendChild(container)
+}
+
+function safeStringify(value) {
+  if (value == null) return ''
+  const seen = new WeakSet()
+  try {
+    return JSON.stringify(value, (key, val) => {
+      if (typeof val === 'bigint') return val.toString()
+      if (typeof val === 'object' && val !== null) {
+        if (seen.has(val)) return '[Circular]'
+        seen.add(val)
+      }
+      return val
+    }, 2)
+  } catch (e) {
+    try {
+      return String(value)
+    } catch {
+      return ''
+    }
+  }
 }
 
 /** 图片灯箱查看 */
