@@ -11,7 +11,7 @@
 
 ## 方案
 - 监听 `event: agent` + `stream: tool` 事件
-- 使用 `payload.ts` 与 `toolCallId` 组成唯一键去重
+- 使用 `payload.runId` 与 `toolCallId` 组成唯一键去重
 - 插入消息时按 `payload.ts` 排序
 
 ## 设计细节
