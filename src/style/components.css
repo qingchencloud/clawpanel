@@ -189,6 +189,7 @@
   font-size: var(--font-size-sm);
   background: var(--bg-primary);
   border: 1px solid var(--border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
   animation: slideIn 250ms ease;
   max-width: 360px;
 }
