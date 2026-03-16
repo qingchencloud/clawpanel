@@ -355,7 +355,7 @@ pub async fn do_reload_gateway(app: &tauri::AppHandle) -> Result<String, String>
 pub fn write_openclaw_config(config: Value) -> Result<(), String> {
     let path = super::openclaw_config_path();
     // 备份
-    let bak = super::openclaw_dir().join("config.json.bak");
+    let bak = super::openclaw_dir().join("openclaw.json.bak");
     let _ = fs::copy(&path, &bak);
     // 清理 UI 专属字段，避免 CLI schema 校验失败
     let cleaned = strip_ui_fields(config.clone());
@@ -1287,7 +1287,7 @@ pub fn init_openclaw_config() -> Result<Value, String> {
     let last_touched_version =
         recommended_version_for("chinese").unwrap_or_else(|| "2026.1.1".to_string());
     let default_config = serde_json::json!({
-        "$schema": "https://openclaw.ai/schema/config.json",
+        "$schema": "https://openclaw.ai/schema/openclaw.json",
         "meta": { "lastTouchedVersion": last_touched_version },
         "models": { "providers": {} },
         "gateway": {

@@ -848,6 +848,52 @@
   color: var(--text-tertiary);
 }
 
+/* 工具调用 */
+.msg-tool {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.msg-tool-item {
+  border: 1px solid var(--border-primary);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+}
+.msg-tool-item > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-secondary);
+  list-style: none;
+}
+.msg-tool-item > summary::-webkit-details-marker {
+  display: none;
+}
+.msg-tool-body {
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+}
+.msg-tool-block {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+.msg-tool-title {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-bottom: 6px;
+}
+.msg-tool-block pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 11px;
+  color: var(--text-primary);
+}
+
 /* 首次引导提示 */
 .chat-page-guide {
   margin: 0 16px 8px;

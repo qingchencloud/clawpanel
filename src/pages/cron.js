@@ -24,6 +24,18 @@ const CRON_SHORTCUTS = [
   { expr: '0 9 1 * *', text: '每月 1 号 9:00' },
 ]
 
+const SESSION_MESSAGE_TEXT = '继续执行'
+
+function parseSessionLabel(key) {
+  const parts = (key || '').split(':')
+  if (parts.length < 3) return key || '未知'
+  const agent = parts[1] || 'main'
+  const channel = parts.slice(2).join(':')
+  if (agent === 'main' && channel === 'main') return '主会话'
+  if (agent === 'main') return channel
+  return `${agent} / ${channel}`
+}
+
 // ── 页面生命周期 ──
 
 export async function render() {
@@ -126,6 +138,7 @@ async function fetchJobs(page, state) {
       description: j.description || '',
       message: j.payload?.message || j.payload?.text || '',
       payloadKind: j.payload?.kind || 'agentTurn',
+      sessionLabel: j.payload?.label || '',
       schedule: j.schedule || {},
       enabled: j.enabled !== false,
       agentId: j.agentId || null,
@@ -215,10 +228,12 @@ function renderList(page, state) {
               ${lastRunHtml}
             </div>
             <div style="font-size:var(--font-size-sm);color:var(--text-tertiary);margin-bottom:6px">
-              ${icon('clock', 12)} ${scheduleText}${job.agentId ? ` &middot; Agent: ${escapeHtml(job.agentId)}` : ''}
+              ${icon('clock', 12)} ${scheduleText}${job.payloadKind === 'sessionMessage'
+    ? ` &middot; 目标: ${escapeHtml(job.sessionLabel || '未指定')}`
+    : (job.agentId ? ` &middot; Agent: ${escapeHtml(job.agentId)}` : '')}
             </div>
             <div style="font-size:var(--font-size-sm);color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:500px">
-              ${escapeHtml(job.message)}
+              ${escapeHtml(job.payloadKind === 'sessionMessage' ? SESSION_MESSAGE_TEXT : job.message)}
             </div>
             ${job.lastRunStatus === 'error' && job.lastError ? `
               <div style="margin-top:6px;font-size:var(--font-size-xs);color:var(--error);background:var(--error-muted, #fee2e2);padding:4px 8px;border-radius:var(--radius-sm)">
@@ -307,15 +322,27 @@ async function openTaskDialog(job, page, state) {
         <input class="form-input" name="name" value="${escapeAttr(job?.name || '')}" placeholder="如：每日摘要推送" autofocus>
       </div>
       <div class="form-group">
+        <label class="form-label">任务类型</label>
+        <select class="form-input" name="taskKind">
+          <option value="agentTurn" ${job?.payloadKind !== 'sessionMessage' ? 'selected' : ''}>Agent 执行指令</option>
+          <option value="sessionMessage" ${job?.payloadKind === 'sessionMessage' ? 'selected' : ''}>发送 user 消息</option>
+        </select>
+      </div>
+      <div class="form-group" data-field="sessionLabel" style="display:${job?.payloadKind === 'sessionMessage' ? 'block' : 'none'}">
+        <label class="form-label">目标会话</label>
+        <select class="form-input" name="sessionLabel"><option value="">请选择会话</option></select>
+        <div class="form-hint">仅发送 user 消息，不附带系统注入</div>
+      </div>
+      <div class="form-group" data-field="message" style="display:${job?.payloadKind === 'sessionMessage' ? 'none' : 'block'}">
         <label class="form-label">执行指令 *</label>
         <textarea class="form-input" name="message" rows="3" placeholder="AI 将在触发时执行这段指令">${escapeHtml(job?.message || '')}</textarea>
       </div>
-      <div class="form-group">
+      <div class="form-group" data-field="agent" style="display:${job?.payloadKind === 'sessionMessage' ? 'none' : 'block'}">
         <label class="form-label">指定 Agent</label>
         <select class="form-input" name="agentId">${agentOptionsHtml}</select>
         <div class="form-hint">不选则使用默认 Agent 执行</div>
       </div>
-      <div class="form-group">
+      <div class="form-group" data-field="delivery" style="display:${job?.payloadKind === 'sessionMessage' ? 'none' : 'block'}">
         <label class="form-label">投递渠道</label>
         <select class="form-input" name="deliveryChannel"><option value="">无（主会话）</option></select>
         <div class="form-hint">配置了多个消息渠道时必须指定，否则任务会报错</div>
@@ -370,6 +397,19 @@ async function openTaskDialog(job, page, state) {
     ).join('')
   }).catch(() => {})
 
+  // 异步加载会话列表
+  wsClient.sessionsList(50).then(res => {
+    const list = res?.sessions || res || []
+    const select = modal.querySelector('select[name="sessionLabel"]')
+    if (!select) return
+    const current = job?.sessionLabel || ''
+    select.innerHTML = `<option value="">请选择会话</option>` + list.map(s => {
+      const key = s.sessionKey || s.key || ''
+      const label = parseSessionLabel(key)
+      return `<option value="${escapeAttr(label)}" ${label === current ? 'selected' : ''}>${escapeHtml(label)}</option>`
+    }).join('')
+  }).catch(() => {})
+
   // 快捷预设按钮
   modal.querySelectorAll('.cron-shortcut').forEach(btn => {
     btn.onclick = () => {
@@ -400,16 +440,31 @@ async function openTaskDialog(job, page, state) {
     })
   }
 
+  toggleFields()
+
+  const toggleFields = () => {
+    const kind = modal.querySelector('select[name="taskKind"]').value
+    const showSession = kind === 'sessionMessage'
+    modal.querySelector('[data-field="sessionLabel"]').style.display = showSession ? 'block' : 'none'
+    modal.querySelector('[data-field="message"]').style.display = showSession ? 'none' : 'block'
+    modal.querySelector('[data-field="agent"]').style.display = showSession ? 'none' : 'block'
+    modal.querySelector('[data-field="delivery"]').style.display = showSession ? 'none' : 'block'
+  }
+  modal.querySelector('select[name="taskKind"]').onchange = toggleFields
+
   // 保存
   modal.querySelector('#btn-cron-save').onclick = async () => {
     const name = modal.querySelector('input[name="name"]').value.trim()
+    const taskKind = modal.querySelector('select[name="taskKind"]').value
     const message = modal.querySelector('textarea[name="message"]').value.trim()
     const schedule = modal.querySelector('input[name="schedule"]').value.trim()
     const agentId = modal.querySelector('select[name="agentId"]').value || undefined
     const enabled = modal.querySelector('input[name="enabled"]').checked
+    const sessionLabel = modal.querySelector('select[name="sessionLabel"]').value
 
     if (!name) { toast('请输入任务名称', 'warning'); return }
-    if (!message) { toast('请输入执行指令', 'warning'); return }
+    if (taskKind !== 'sessionMessage' && !message) { toast('请输入执行指令', 'warning'); return }
+    if (taskKind === 'sessionMessage' && !sessionLabel) { toast('请选择会话', 'warning'); return }
     if (!schedule) { toast('请设置执行周期', 'warning'); return }
 
     const saveBtn = modal.querySelector('#btn-cron-save')
@@ -420,11 +475,15 @@ async function openTaskDialog(job, page, state) {
       if (isEdit) {
         const patch = { name, enabled }
         patch.schedule = { kind: 'cron', expr: schedule }
-        patch.payload = { kind: 'agentTurn', message }
-        if (agentId) patch.agentId = agentId
-        const deliveryChannel = modal.querySelector('select[name="deliveryChannel"]')?.value
-        if (deliveryChannel) {
-          patch.delivery = { mode: 'push', to: deliveryChannel, channel: deliveryChannel }
+        if (taskKind === 'sessionMessage') {
+          patch.payload = { kind: 'sessionMessage', label: sessionLabel, message: SESSION_MESSAGE_TEXT, role: 'user', waitForIdle: true }
+        } else {
+          patch.payload = { kind: 'agentTurn', message }
+          if (agentId) patch.agentId = agentId
+          const deliveryChannel = modal.querySelector('select[name="deliveryChannel"]')?.value
+          if (deliveryChannel) {
+            patch.delivery = { mode: 'push', to: deliveryChannel, channel: deliveryChannel }
+          }
         }
         await wsClient.request('cron.update', { id: job.id, patch })
         toast('任务已更新', 'success')
@@ -433,12 +492,16 @@ async function openTaskDialog(job, page, state) {
           name,
           enabled,
           schedule: { kind: 'cron', expr: schedule },
-          payload: { kind: 'agentTurn', message },
         }
-        if (agentId) params.agentId = agentId
-        const deliveryChannel = modal.querySelector('select[name="deliveryChannel"]')?.value
-        if (deliveryChannel) {
-          params.delivery = { mode: 'push', to: deliveryChannel, channel: deliveryChannel }
+        if (taskKind === 'sessionMessage') {
+          params.payload = { kind: 'sessionMessage', label: sessionLabel, message: SESSION_MESSAGE_TEXT, role: 'user', waitForIdle: true }
+        } else {
+          params.payload = { kind: 'agentTurn', message }
+          if (agentId) params.agentId = agentId
+          const deliveryChannel = modal.querySelector('select[name="deliveryChannel"]')?.value
+          if (deliveryChannel) {
+            params.delivery = { mode: 'push', to: deliveryChannel, channel: deliveryChannel }
+          }
         }
         await wsClient.request('cron.add', params)
         toast('任务已创建', 'success')

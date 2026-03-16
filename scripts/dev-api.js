@@ -16,7 +16,7 @@ const DOCKER_TASK_TIMEOUT_MS = 10 * 60 * 1000
 
 const __dev_dirname = path.dirname(fileURLToPath(import.meta.url))
 const OPENCLAW_DIR = path.join(homedir(), '.openclaw')
-const CONFIG_PATH_DEFAULT = path.join(OPENCLAW_DIR, 'config.json')
+const CONFIG_PATH_DEFAULT = path.join(OPENCLAW_DIR, 'openclaw.json')
 const CONFIG_PATH_LEGACY = path.join(OPENCLAW_DIR, 'openclaw.json')
 function resolveConfigPath() {
   if (fs.existsSync(CONFIG_PATH_DEFAULT)) return CONFIG_PATH_DEFAULT
@@ -2256,9 +2256,9 @@ const handlers = {
         }
 
         const configB64 = b64(JSON.stringify(syncConfig, null, 2))
-        await cExec(`mkdir -p /root/.openclaw && echo '${configB64}' | base64 -d > /root/.openclaw/config.json`)
+        await cExec(`mkdir -p /root/.openclaw && echo '${configB64}' | base64 -d > /root/.openclaw/openclaw.json`)
         results.config = true
-        results.files.push('config.json')
+        results.files.push('openclaw.json')
         console.log(`[init-worker] 配置已同步 → ${containerId.slice(0, 12)}`)
       }
     } catch (e) {
@@ -3025,7 +3025,7 @@ const handlers = {
     if (!fs.existsSync(OPENCLAW_DIR)) fs.mkdirSync(OPENCLAW_DIR, { recursive: true })
     const lastTouchedVersion = recommendedVersionFor('chinese') || '2026.1.1'
     const defaultConfig = {
-      "$schema": "https://openclaw.ai/schema/config.json",
+      "$schema": "https://openclaw.ai/schema/openclaw.json",
       meta: { lastTouchedVersion },
       models: { providers: {} },
       gateway: {
@@ -3976,14 +3976,6 @@ export function devApiPlugin() {
     configurePreviewServer(server) {
       ensureInit()
       server.middlewares.use(_apiMiddleware)
-    },
-  }
-}
-iddlewares.use(_apiMiddleware)
-    },
-  }
-}
-dlewares.use(_apiMiddleware)
     },
   }
 }

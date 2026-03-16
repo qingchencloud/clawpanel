@@ -22,20 +22,9 @@ pub fn openclaw_dir() -> PathBuf {
     dirs::home_dir().unwrap_or_default().join(".openclaw")
 }
 
-/// 获取 OpenClaw 配置文件路径
-/// 优先 config.json，若不存在则回退 openclaw.json
+/// 获取 OpenClaw 配置文件路径（仅使用 openclaw.json）
 pub fn openclaw_config_path() -> PathBuf {
-    let dir = openclaw_dir();
-    let config_json = dir.join("config.json");
-    if config_json.exists() {
-        return config_json;
-    }
-    let legacy = dir.join("openclaw.json");
-    if legacy.exists() {
-        return legacy;
-    }
-    // 默认使用 config.json
-    config_json
+    openclaw_dir().join("openclaw.json")
 }
 
 fn panel_config_path() -> PathBuf {

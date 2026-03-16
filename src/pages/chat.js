@@ -964,6 +964,7 @@ function handleChatEvent(payload) {
     const finalVideos = c?.videos || []
     const finalAudios = c?.audios || []
     const finalFiles = c?.files || []
+    const finalTools = c?.tools || []
     if (finalImages.length) _currentAiImages = finalImages
     if (finalVideos.length) _currentAiVideos = finalVideos
     if (finalAudios.length) _currentAiAudios = finalAudios
@@ -991,6 +992,7 @@ function handleChatEvent(payload) {
       appendVideosToEl(_currentAiBubble, _currentAiVideos)
       appendAudiosToEl(_currentAiBubble, _currentAiAudios)
       appendFilesToEl(_currentAiBubble, _currentAiFiles)
+      appendToolsToEl(_currentAiBubble, finalTools)
     }
     // 添加时间戳 + 耗时 + token 消耗
     const wrapper = _currentAiBubble?.parentElement
@@ -1005,7 +1007,7 @@ function handleChatEvent(payload) {
       } else if (_streamStartTime) {
         durStr = ((Date.now() - _streamStartTime) / 1000).toFixed(1) + 's'
       }
-      if (durStr) parts.push(`<span class="meta-sep">·</span><span class="msg-duration">⏱ ${durStr}</span>`)
+      if (durStr) parts.push(`<span class="meta-sep">·</span><span class="msg-duration">耗时 ${durStr}</span>`)
       // token 消耗（从 payload.usage 或 payload.message.usage 提取）
       const usage = payload.usage || payload.message?.usage || null
       if (usage) {
@@ -1086,9 +1088,9 @@ function handleChatEvent(payload) {
 function extractChatContent(message) {
   if (!message || typeof message !== 'object') return null
   const content = message.content
-  if (typeof content === 'string') return { text: stripThinkingTags(content), images: [], videos: [], audios: [], files: [] }
+  if (typeof content === 'string') return { text: stripThinkingTags(content), images: [], videos: [], audios: [], files: [], tools: [] }
   if (Array.isArray(content)) {
-    const texts = [], images = [], videos = [], audios = [], files = []
+    const texts = [], images = [], videos = [], audios = [], files = [], tools = []
     for (const block of content) {
       if (block.type === 'text' && typeof block.text === 'string') texts.push(block.text)
       else if (block.type === 'image' && !block.omitted) {
@@ -1108,6 +1110,22 @@ function extractChatContent(message) {
       else if (block.type === 'file' || block.type === 'document') {
         files.push({ url: block.url || '', name: block.fileName || block.name || '文件', mimeType: block.mimeType || '', size: block.size, data: block.data })
       }
+      else if (block.type === 'tool' || block.type === 'tool_use' || block.type === 'tool_call') {
+        tools.push({
+          name: block.name || block.tool || block.tool_name || '工具',
+          input: block.input || block.args || block.parameters || null,
+          output: null,
+          status: block.status || 'ok',
+        })
+      }
+      else if (block.type === 'tool_result' || block.type === 'toolResult') {
+        tools.push({
+          name: block.name || block.tool || block.tool_name || '工具',
+          input: block.input || block.args || null,
+          output: block.output || block.result || block.content || null,
+          status: block.status || 'ok',
+        })
+      }
     }
     // 从 mediaUrl/mediaUrls 提取
     const mediaUrls = message.mediaUrls || (message.mediaUrl ? [message.mediaUrl] : [])
@@ -1119,9 +1137,9 @@ function extractChatContent(message) {
       else files.push({ url, name: url.split('/').pop().split('?')[0] || '文件', mimeType: '' })
     }
     const text = texts.length ? stripThinkingTags(texts.join('\n')) : ''
-    return { text, images, videos, audios, files }
+    return { text, images, videos, audios, files, tools }
   }
-  if (typeof message.text === 'string') return { text: stripThinkingTags(message.text), images: [], videos: [], audios: [], files: [] }
+  if (typeof message.text === 'string') return { text: stripThinkingTags(message.text), images: [], videos: [], audios: [], files: [], tools: [] }
   return null
 }
 
@@ -1229,7 +1247,7 @@ async function loadHistory() {
         if (msg.role === 'user') appendUserMessage(msg.content || '', msg.attachments || null, msgTime)
         else if (msg.role === 'assistant') {
           const images = (msg.attachments || []).filter(a => a.category === 'image').map(a => ({ mediaType: a.mimeType, data: a.content, url: a.url }))
-          appendAiMessage(msg.content || '', msgTime, images)
+          appendAiMessage(msg.content || '', msgTime, images, [], [], [], [])
         }
       })
       scrollToBottom()
@@ -1251,7 +1269,8 @@ async function loadHistory() {
     if (hasExisting && (_isSending || _isStreaming || _messageQueue.length > 0)) {
       saveMessages(result.messages.map(m => {
         const c = extractContent(m)
-        return { id: m.id || uuid(), sessionKey: _sessionKey, role: m.role, content: c?.text || '', timestamp: m.timestamp || Date.now() }
+        const role = (m.role === 'tool' || m.role === 'toolResult') ? 'assistant' : m.role
+        return { id: m.id || uuid(), sessionKey: _sessionKey, role, content: c?.text || '', timestamp: m.timestamp || Date.now() }
       }))
       return
     }
@@ -1259,7 +1278,7 @@ async function loadHistory() {
     clearMessages()
     let hasOmittedImages = false
     deduped.forEach(msg => {
-      if (!msg.text && !msg.images?.length && !msg.videos?.length && !msg.audios?.length && !msg.files?.length) return
+      if (!msg.text && !msg.images?.length && !msg.videos?.length && !msg.audios?.length && !msg.files?.length && !msg.tools?.length) return
       const msgTime = msg.timestamp ? new Date(msg.timestamp) : new Date()
       if (msg.role === 'user') {
         const userAtts = msg.images?.length ? msg.images.map(i => ({
@@ -1270,7 +1289,7 @@ async function loadHistory() {
         if (msg.images?.length && !userAtts.length) hasOmittedImages = true
         appendUserMessage(msg.text, userAtts, msgTime)
       } else if (msg.role === 'assistant') {
-        appendAiMessage(msg.text, msgTime, msg.images, msg.videos, msg.audios, msg.files)
+        appendAiMessage(msg.text, msgTime, msg.images, msg.videos, msg.audios, msg.files, msg.tools)
       }
     })
     if (hasOmittedImages) {
@@ -1278,7 +1297,8 @@ async function loadHistory() {
     }
     saveMessages(result.messages.map(m => {
       const c = extractContent(m)
-      return { id: m.id || uuid(), sessionKey: _sessionKey, role: m.role, content: c?.text || '', timestamp: m.timestamp || Date.now() }
+      const role = (m.role === 'tool' || m.role === 'toolResult') ? 'assistant' : m.role
+      return { id: m.id || uuid(), sessionKey: _sessionKey, role, content: c?.text || '', timestamp: m.timestamp || Date.now() }
     }))
     scrollToBottom()
   } catch (e) {
@@ -1290,13 +1310,13 @@ async function loadHistory() {
 function dedupeHistory(messages) {
   const deduped = []
   for (const msg of messages) {
-    if (msg.role === 'toolResult') continue
+    const role = (msg.role === 'tool' || msg.role === 'toolResult') ? 'assistant' : msg.role
     const c = extractContent(msg)
-    if (!c.text && !c.images.length && !c.videos.length && !c.audios.length && !c.files.length) continue
+    if (!c.text && !c.images.length && !c.videos.length && !c.audios.length && !c.files.length && !c.tools.length) continue
     const last = deduped[deduped.length - 1]
-    if (last && last.role === msg.role) {
-      if (msg.role === 'user' && last.text === c.text) continue
-      if (msg.role === 'assistant') {
+    if (last && last.role === role) {
+      if (role === 'user' && last.text === c.text) continue
+      if (role === 'assistant') {
         // 同文本去重（Gateway 重试产生的重复回复）
         if (c.text && last.text === c.text) continue
         // 不同文本则合并
@@ -1305,17 +1325,18 @@ function dedupeHistory(messages) {
         last.videos = [...(last.videos || []), ...c.videos]
         last.audios = [...(last.audios || []), ...c.audios]
         last.files = [...(last.files || []), ...c.files]
+        last.tools = [...(last.tools || []), ...(c.tools || [])]
         continue
       }
     }
-    deduped.push({ role: msg.role, text: c.text, images: c.images, videos: c.videos, audios: c.audios, files: c.files, timestamp: msg.timestamp })
+    deduped.push({ role, text: c.text, images: c.images, videos: c.videos, audios: c.audios, files: c.files, tools: c.tools || [], timestamp: msg.timestamp })
   }
   return deduped
 }
 
 function extractContent(msg) {
   if (Array.isArray(msg.content)) {
-    const texts = [], images = [], videos = [], audios = [], files = []
+    const texts = [], images = [], videos = [], audios = [], files = [], tools = []
     for (const block of msg.content) {
       if (block.type === 'text' && typeof block.text === 'string') texts.push(block.text)
       else if (block.type === 'image' && !block.omitted) {
@@ -1335,6 +1356,22 @@ function extractContent(msg) {
       else if (block.type === 'file' || block.type === 'document') {
         files.push({ url: block.url || '', name: block.fileName || block.name || '文件', mimeType: block.mimeType || '', size: block.size, data: block.data })
       }
+      else if (block.type === 'tool' || block.type === 'tool_use' || block.type === 'tool_call') {
+        tools.push({
+          name: block.name || block.tool || block.tool_name || '工具',
+          input: block.input || block.args || block.parameters || null,
+          output: null,
+          status: block.status || 'ok',
+        })
+      }
+      else if (block.type === 'tool_result' || block.type === 'toolResult') {
+        tools.push({
+          name: block.name || block.tool || block.tool_name || '工具',
+          input: block.input || block.args || null,
+          output: block.output || block.result || block.content || null,
+          status: block.status || 'ok',
+        })
+      }
     }
     const mediaUrls = msg.mediaUrls || (msg.mediaUrl ? [msg.mediaUrl] : [])
     for (const url of mediaUrls) {
@@ -1344,10 +1381,10 @@ function extractContent(msg) {
       else if (/\.(jpe?g|png|gif|webp|heic|svg)(\?|$)/i.test(url)) images.push({ url, mediaType: 'image/png' })
       else files.push({ url, name: url.split('/').pop().split('?')[0] || '文件', mimeType: '' })
     }
-    return { text: stripThinkingTags(texts.join('\n')), images, videos, audios, files }
+    return { text: stripThinkingTags(texts.join('\n')), images, videos, audios, files, tools }
   }
   const text = typeof msg.text === 'string' ? msg.text : (typeof msg.content === 'string' ? msg.content : '')
-  return { text: stripThinkingTags(text), images: [], videos: [], audios: [], files: [] }
+  return { text: stripThinkingTags(text), images: [], videos: [], audios: [], files: [], tools: [] }
 }
 
 // ── DOM 操作 ──
@@ -1413,7 +1450,7 @@ function appendUserMessage(text, attachments = [], msgTime) {
   scrollToBottom()
 }
 
-function appendAiMessage(text, msgTime, images, videos, audios, files) {
+function appendAiMessage(text, msgTime, images, videos, audios, files, tools) {
   const wrap = document.createElement('div')
   wrap.className = 'msg msg-ai'
   const bubble = document.createElement('div')
@@ -1423,6 +1460,7 @@ function appendAiMessage(text, msgTime, images, videos, audios, files) {
   appendVideosToEl(bubble, videos)
   appendAudiosToEl(bubble, audios)
   appendFilesToEl(bubble, files)
+  appendToolsToEl(bubble, tools)
   // 图片点击灯箱
   bubble.querySelectorAll('img').forEach(img => { if (!img.onclick) img.onclick = () => showLightbox(img.src) })
 
@@ -1519,6 +1557,29 @@ function appendFilesToEl(el, files) {
     }
     el.appendChild(card)
   })
+}
+
+/** 渲染工具调用到消息气泡 */
+function appendToolsToEl(el, tools) {
+  if (!tools?.length) return
+  const container = document.createElement('div')
+  container.className = 'msg-tool'
+  tools.forEach(tool => {
+    const details = document.createElement('details')
+    details.className = 'msg-tool-item'
+    const summary = document.createElement('summary')
+    const status = tool.status === 'error' ? '失败' : '成功'
+    summary.innerHTML = `${escapeHtml(tool.name || '工具')} · ${status}`
+    const body = document.createElement('div')
+    body.className = 'msg-tool-body'
+    const input = tool.input ? `<div class="msg-tool-block"><div class="msg-tool-title">参数</div><pre>${escapeHtml(JSON.stringify(tool.input, null, 2))}</pre></div>` : ''
+    const output = tool.output ? `<div class="msg-tool-block"><div class="msg-tool-title">结果</div><pre>${escapeHtml(JSON.stringify(tool.output, null, 2))}</pre></div>` : ''
+    body.innerHTML = input + output
+    details.appendChild(summary)
+    details.appendChild(body)
+    container.appendChild(details)
+  })
+  el.appendChild(container)
 }
 
 /** 图片灯箱查看 */
