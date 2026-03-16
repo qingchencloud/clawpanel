@@ -4,8 +4,8 @@ mod tray;
 mod utils;
 
 use commands::{
-    agent, assistant, cloudflared, config, device, extensions, logs, memory, messaging, pairing,
-    service, skills, update,
+    agent, assistant, cloudflared, config, device, extensions, gateway_patch, logs, memory,
+    messaging, pairing, service, skills, update,
 };
 
 pub fn run() {
@@ -112,6 +112,10 @@ pub fn run() {
             cloudflared::cloudflared_login,
             cloudflared::cloudflared_start,
             cloudflared::cloudflared_stop,
+            // Gateway 补丁
+            gateway_patch::gateway_patch_status,
+            gateway_patch::gateway_patch_apply,
+            gateway_patch::gateway_patch_rollback,
             // 服务
             service::get_services_status,
             service::start_service,

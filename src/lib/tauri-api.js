@@ -214,6 +214,11 @@ export const api = {
   cloudflaredStart: (config) => invoke('cloudflared_start', { config }),
   cloudflaredStop: () => invoke('cloudflared_stop'),
 
+  // Gateway 补丁
+  gatewayPatchStatus: () => invoke('gateway_patch_status'),
+  gatewayPatchApply: (force) => invoke('gateway_patch_apply', { force: !!force }),
+  gatewayPatchRollback: () => invoke('gateway_patch_rollback'),
+
   // 安装/部署
   checkInstallation: () => cachedInvoke('check_installation', {}, 60000),
   initOpenclawConfig: () => { invalidate('check_installation'); return invoke('init_openclaw_config') },

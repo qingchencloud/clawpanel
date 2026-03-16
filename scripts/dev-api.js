@@ -3557,6 +3557,11 @@ const handlers = {
   cloudflared_start() { throw new Error('web mode not supported') },
   cloudflared_stop() { return { installed: false, running: false, url: null } },
 
+  // Gateway 补丁（Web 模式不支持）
+  gateway_patch_status() { return { installed_version: null, patched: false, patched_version: null, patched_at: null, files: [], last_error: 'web mode not supported' } },
+  gateway_patch_apply() { throw new Error('web mode not supported') },
+  gateway_patch_rollback() { throw new Error('web mode not supported') },
+
   // === Agent 管理（Web 模式） ===
 
   add_agent({ name, model, workspace }) {

@@ -7,6 +7,7 @@ pub mod agent;
 pub mod assistant;
 pub mod cloudflared;
 pub mod config;
+pub mod gateway_patch;
 pub mod device;
 pub mod extensions;
 pub mod logs;
