@@ -139,7 +139,7 @@ fn write_status_to_panel(status: &GatewayPatchStatus) -> Result<(), String> {
     fs::write(&path, json).map_err(|e| format!("写入失败: {e}"))
 }
 
-fn npm_root_global() -> Result<PathBuf, String> {
+pub(crate) fn npm_root_global() -> Result<PathBuf, String> {
     #[cfg(target_os = "windows")]
     const CREATE_NO_WINDOW: u32 = 0x08000000;
 
@@ -299,21 +299,25 @@ fn patch_gateway_file(path: &Path, _force: bool) -> Result<bool, String> {
     }
 
     let needle_assert = "\tif (job.sessionTarget === \"main\" && job.payload.kind !== \"systemEvent\") throw new Error(\"main cron jobs require payload.kind=\\\"systemEvent\\\"\");";
+    let needle_assert_sp = "  if (job.sessionTarget === \"main\" && job.payload.kind !== \"systemEvent\") throw new Error(\"main cron jobs require payload.kind=\\\"systemEvent\\\"\");";
     let insert_assert = "\tif (job.sessionTarget === \"main\" && job.payload.kind !== \"systemEvent\" && job.payload.kind !== \"sessionMessage\") throw new Error(\"main cron jobs require payload.kind=\\\"systemEvent\\\" or \\\"sessionMessage\\\"\");";
 
     let needle_merge = "\tif (patch.kind === \"systemEvent\") {\n\t\tif (existing.kind !== \"systemEvent\") return buildPayloadFromPatch(patch);\n\t\treturn {\n\t\t\tkind: \"systemEvent\",\n\t\t\ttext: typeof patch.text === \"string\" ? patch.text : existing.text\n\t\t};\n\t}\n\tif (existing.kind !== \"agentTurn\") return buildPayloadFromPatch(patch);";
+    let needle_merge_sp = "  if (patch.kind === \"systemEvent\") {\n    if (existing.kind !== \"systemEvent\") return buildPayloadFromPatch(patch);\n    return {\n      kind: \"systemEvent\",\n      text: typeof patch.text === \"string\" ? patch.text : existing.text\n    };\n  }\n  if (existing.kind !== \"agentTurn\") return buildPayloadFromPatch(patch);";
     let insert_merge = "\tif (patch.kind === \"systemEvent\") {\n\t\tif (existing.kind !== \"systemEvent\") return buildPayloadFromPatch(patch);\n\t\treturn {\n\t\t\tkind: \"systemEvent\",\n\t\t\ttext: typeof patch.text === \"string\" ? patch.text : existing.text\n\t\t};\n\t}\n\tif (patch.kind === \"sessionMessage\") {\n\t\tif (existing.kind !== \"sessionMessage\") return buildPayloadFromPatch(patch);\n\t\treturn {\n\t\t\tkind: \"sessionMessage\",\n\t\t\tlabel: typeof patch.label === \"string\" ? patch.label : existing.label,\n\t\t\tmessage: typeof patch.message === \"string\" ? patch.message : existing.message,\n\t\t\trole: \"user\",\n\t\t\twaitForIdle: typeof patch.waitForIdle === \"boolean\" ? patch.waitForIdle : existing.waitForIdle\n\t\t};\n\t}\n\tif (existing.kind !== \"agentTurn\") return buildPayloadFromPatch(patch);";
 
     let needle_build = "\tif (patch.kind === \"systemEvent\") {\n\t\tif (typeof patch.text !== \"string\" || patch.text.length === 0) throw new Error(\"cron.update payload.kind=\\\"systemEvent\\\" requires text\");\n\t\treturn {\n\t\t\tkind: \"systemEvent\",\n\t\t\ttext: patch.text\n\t\t};\n\t}\n\tif (typeof patch.message !== \"string\" || patch.message.length === 0) throw new Error(\"cron.update payload.kind=\\\"agentTurn\\\" requires message\");";
+    let needle_build_sp = "  if (patch.kind === \"systemEvent\") {\n    if (typeof patch.text !== \"string\" || patch.text.length === 0) throw new Error(\"cron.update payload.kind=\\\"systemEvent\\\" requires text\");\n    return {\n      kind: \"systemEvent\",\n      text: patch.text\n    };\n  }\n  if (typeof patch.message !== \"string\" || patch.message.length === 0) throw new Error(\"cron.update payload.kind=\\\"agentTurn\\\" requires message\");";
     let insert_build = "\tif (patch.kind === \"systemEvent\") {\n\t\tif (typeof patch.text !== \"string\" || patch.text.length === 0) throw new Error(\"cron.update payload.kind=\\\"systemEvent\\\" requires text\");\n\t\treturn {\n\t\t\tkind: \"systemEvent\",\n\t\t\ttext: patch.text\n\t\t};\n\t}\n\tif (patch.kind === \"sessionMessage\") {\n\t\tif (typeof patch.label !== \"string\" || patch.label.length === 0) throw new Error(\"cron.update payload.kind=\\\"sessionMessage\\\" requires label\");\n\t\tif (typeof patch.message !== \"string\" || patch.message.length === 0) throw new Error(\"cron.update payload.kind=\\\"sessionMessage\\\" requires message\");\n\t\treturn {\n\t\t\tkind: \"sessionMessage\",\n\t\t\tlabel: patch.label,\n\t\t\tmessage: patch.message,\n\t\t\trole: \"user\",\n\t\t\twaitForIdle: typeof patch.waitForIdle === \"boolean\" ? patch.waitForIdle : true\n\t\t};\n\t}\n\tif (typeof patch.message !== \"string\" || patch.message.length === 0) throw new Error(\"cron.update payload.kind=\\\"agentTurn\\\" requires message\");";
 
     let needle_execute = "\tif (abortSignal?.aborted) return resolveAbortError();\n\tif (job.sessionTarget === \"main\") {";
+    let needle_execute_sp = "  if (abortSignal?.aborted) return resolveAbortError();\n  if (job.sessionTarget === \"main\") {";
     let insert_execute = "\tif (abortSignal?.aborted) return resolveAbortError();\n\tif (job.payload.kind === \"sessionMessage\") {\n\t\tconst cfg = loadConfig();\n\t\tconst resolved = await resolveSessionKeyFromResolveParams({\n\t\t\tcfg,\n\t\t\tp: { label: job.payload.label }\n\t\t});\n\t\tif (!resolved.ok) return {\n\t\t\tstatus: \"error\",\n\t\t\terror: resolved.error?.message ?? \"session not found\"\n\t\t};\n\t\tif (job.payload.waitForIdle) {\n\t\t\tawait waitForActiveEmbeddedRuns(15e3);\n\t\t}\n\t\tconst { entry } = loadSessionEntry(resolved.key);\n\t\tconst prefixOptions = createReplyPrefixOptions({\n\t\t\tcfg,\n\t\t\tentry,\n\t\t\tsessionKey: resolved.key,\n\t\t\tclient: void 0\n\t\t});\n\t\tconst dispatcher = createReplyDispatcher({\n\t\t\t...prefixOptions,\n\t\t\tonError: (err) => {\n\t\t\t\tstate.deps.log.warn(`cron sessionMessage dispatch failed: ${String(err)}`);\n\t\t\t}\n\t\t});\n\t\tconst message = job.payload.message;\n\t\tconst ctx = {\n\t\t\tBody: message,\n\t\t\tBodyForAgent: message,\n\t\t\tBodyForCommands: message,\n\t\t\tRawBody: message,\n\t\t\tCommandBody: message,\n\t\t\tSessionKey: resolved.key,\n\t\t\tProvider: INTERNAL_MESSAGE_CHANNEL,\n\t\t\tSurface: INTERNAL_MESSAGE_CHANNEL,\n\t\t\tChatType: \"direct\",\n\t\t\tCommandAuthorized: true,\n\t\t\tMessageSid: `cron:${job.id}:${state.deps.nowMs()}`\n\t\t};\n\t\tawait dispatchInboundMessage({\n\t\t\tctx,\n\t\t\tcfg,\n\t\t\tdispatcher,\n\t\t\treplyOptions: { runId: `cron:${job.id}:${state.deps.nowMs()}` }\n\t\t});\n\t\treturn {\n\t\t\tstatus: \"ok\",\n\t\t\tsummary: message,\n\t\t\tsessionKey: resolved.key\n\t\t};\n\t}\n\tif (job.sessionTarget === \"main\") {";
 
-    let mut next = replace_once(&content, needle_assert, insert_assert)?;
-    next = replace_once(&next, needle_merge, insert_merge)?;
-    next = replace_once(&next, needle_build, insert_build)?;
-    next = replace_once(&next, needle_execute, insert_execute)?;
+    let mut next = replace_once_any(&content, &[needle_assert, needle_assert_sp], insert_assert)?;
+    next = replace_once_any(&next, &[needle_merge, needle_merge_sp], insert_merge)?;
+    next = replace_once_any(&next, &[needle_build, needle_build_sp], insert_build)?;
+    next = replace_once_any(&next, &[needle_execute, needle_execute_sp], insert_execute)?;
 
     backup_file(path)?;
     fs::write(path, next).map_err(|e| format!("写入失败: {e}"))?;

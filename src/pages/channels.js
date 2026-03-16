@@ -320,10 +320,14 @@ async function openConfigDialog(pid, page, state) {
   let isEdit = false
   let agents = []
   let currentBinding = ''
+  let existingAccountId = ''
   try {
     const res = await api.readPlatformConfig(pid)
     if (res?.values) {
       existing = res.values
+    }
+    if (res?.accountId) {
+      existingAccountId = res.accountId
     }
     if (res?.exists) {
       isEdit = true
@@ -337,7 +341,11 @@ async function openConfigDialog(pid, page, state) {
     const config = await api.readOpenclawConfig()
     const bindings = config?.bindings || []
     const channelKey = getChannelBindingKey(pid)
-    const found = bindings.find(b => b.match?.channel === channelKey)
+    const found = bindings.find(b => {
+      if (b.match?.channel !== channelKey) return false
+      if (existingAccountId) return (b.match?.accountId || '') === existingAccountId
+      return !b.match?.accountId
+    })
     if (found) currentBinding = found.agentId || ''
   } catch {}
 
@@ -352,7 +360,7 @@ async function openConfigDialog(pid, page, state) {
   const accountIdHtml = supportsMultiAccount ? `
     <div class="form-group">
       <label class="form-label">账号标识（多账号模式）</label>
-      <input class="form-input" name="__accountId" placeholder="如 sales、support（留空则为默认账号）" value="">
+      <input class="form-input" name="__accountId" placeholder="如 sales、support（留空则为默认账号）" value="${escapeAttr(existingAccountId)}">
       <div class="form-hint">为同一平台接入多个应用时，每个应用需要一个唯一的账号标识。不同账号可绑定不同 Agent</div>
     </div>
   ` : ''

@@ -262,7 +262,7 @@ function renderList(page, state) {
       const btn = e.currentTarget
       btn.disabled = true
       try {
-        await wsClient.request('cron.run', { id: jid })
+        await wsClient.request('cron.run', { jobId: jid })
         toast('任务已触发执行', 'success')
         setTimeout(() => fetchJobs(page, state), 2000)
       } catch (err) { toast('触发失败: ' + err, 'error') }
@@ -274,7 +274,7 @@ function renderList(page, state) {
       btn.disabled = true
       btn.innerHTML = icon('refresh-cw', 14)
       try {
-        await wsClient.request('cron.update', { id: jid, patch: { enabled: !job.enabled } })
+        await wsClient.request('cron.update', { jobId: jid, patch: { enabled: !job.enabled } })
         toast(job.enabled ? '已暂停' : '已启用', 'info')
         await fetchJobs(page, state)
       } catch (err) { toast('操作失败: ' + err, 'error'); btn.disabled = false; btn.innerHTML = job.enabled ? icon('pause', 14) : icon('play', 14) }
@@ -288,7 +288,7 @@ function renderList(page, state) {
       if (!yes) return
       if (btn) btn.disabled = true
       try {
-        await wsClient.request('cron.remove', { id: jid })
+        await wsClient.request('cron.remove', { jobId: jid })
         toast('已删除', 'info')
         await fetchJobs(page, state)
       } catch (err) { toast('删除失败: ' + err, 'error'); if (btn) btn.disabled = false }
@@ -485,7 +485,7 @@ async function openTaskDialog(job, page, state) {
             patch.delivery = { mode: 'push', to: deliveryChannel, channel: deliveryChannel }
           }
         }
-        await wsClient.request('cron.update', { id: job.id, patch })
+        await wsClient.request('cron.update', { jobId: job.id, patch })
         toast('任务已更新', 'success')
       } else {
         const params = {

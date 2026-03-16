@@ -220,7 +220,7 @@ let _pollTimer = null
 /** 启动 Gateway 状态轮询（每 15 秒，避免过于频繁） */
 export function startGatewayPoll() {
   if (_pollTimer) return
-  _pollTimer = setInterval(() => refreshGatewayStatus(), 15000)
+  _pollTimer = setInterval(() => refreshGatewayStatus(), 30000)
 }
 export function stopGatewayPoll() {
   if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null }

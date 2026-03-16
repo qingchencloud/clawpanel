@@ -33,7 +33,7 @@ export async function render() {
           <span style="font-size:10px;background:var(--primary);color:#fff;padding:1px 6px;border-radius:8px">推荐</span>
         </div>
         <div style="font-size:var(--font-size-xs);color:var(--text-secondary);line-height:1.5">
-          在力所能及的范围内为用户提供不限量的模型支持，动态获取最新可用模型列表
+          面板用户免费使用部分模型，付费用户享全系列顶级模型支持，全部模型低至 2-3 折
         </div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">

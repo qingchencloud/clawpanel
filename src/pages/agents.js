@@ -96,7 +96,7 @@ function renderAgents(page, state) {
           </div>
           <div class="agent-info-row">
             <span class="agent-info-label">模型:</span>
-            <span class="agent-info-value">${a.model || '未设置'}</span>
+            <span class="agent-info-value">${typeof a.model === 'object' ? (a.model?.primary || a.model?.id || JSON.stringify(a.model)) : (a.model || '未设置')}</span>
           </div>
           <div class="agent-info-row">
             <span class="agent-info-label">工作区:</span>

@@ -108,6 +108,22 @@ function _checkMultiInstances(el) {
   }).catch(() => {})
 }
 
+const LS_SIDEBAR_COLLAPSED = 'clawpanel_sidebar_collapsed'
+
+function _isDesktopSidebarCollapsed() {
+  try { return localStorage.getItem(LS_SIDEBAR_COLLAPSED) === '1' } catch { return false }
+}
+
+function _setDesktopSidebarCollapsed(collapsed) {
+  try { localStorage.setItem(LS_SIDEBAR_COLLAPSED, collapsed ? '1' : '0') } catch {}
+  const sidebar = document.getElementById('sidebar')
+  if (sidebar) {
+    sidebar.classList.toggle('sidebar-collapsed', !!collapsed)
+  }
+  const btn = document.getElementById('btn-sidebar-collapse')
+  if (btn) btn.textContent = collapsed ? '»' : '«'
+}
+
 export function renderSidebar(el) {
   const current = getCurrentRoute()
 
@@ -115,12 +131,14 @@ export function renderSidebar(el) {
   const isLocal = inst.type === 'local'
   const showSwitcher = !isLocal || _hasMultipleInstances
 
+  const collapsed = _isDesktopSidebarCollapsed()
   let html = `
     <div class="sidebar-header">
       <div class="sidebar-logo">
         <img src="/images/logo.png" alt="ClawPanel">
       </div>
       <span class="sidebar-title">ClawPanel</span>
+      <button class="sidebar-collapse-btn" id="btn-sidebar-collapse" title="折叠/展开">${collapsed ? '»' : '«'}</button>
       <button class="sidebar-close-btn" id="btn-sidebar-close" title="关闭菜单">&times;</button>
     </div>
     ${showSwitcher ? `<div class="instance-switcher" id="instance-switcher">
@@ -172,6 +190,9 @@ export function renderSidebar(el) {
 
   el.innerHTML = html
 
+  // 应用折叠态（桌面端）
+  _setDesktopSidebarCollapsed(collapsed)
+
   // 首次渲染时异步检测多实例
   if (!_delegated) _checkMultiInstances(el)
 
@@ -189,6 +210,13 @@ export function renderSidebar(el) {
       // 移动端关闭按钮
       if (e.target.closest('#btn-sidebar-close')) {
         _closeMobileSidebar()
+        return
+      }
+      // 侧边栏折叠
+      const collapseBtn = e.target.closest('#btn-sidebar-collapse')
+      if (collapseBtn) {
+        _setDesktopSidebarCollapsed(!_isDesktopSidebarCollapsed())
+        // 不需要整体重渲染
         return
       }
       // 主题切换

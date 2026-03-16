@@ -27,8 +27,10 @@ nul
 release_body.md
 release_body.md.bak
 
-# 本地临时文件 / 设计文档
+# 本地临时文件 / 设计文档 / 构建脚本
 .tmp/
+scripts/build-r2-archive.sh
+r2-archives/
 
 # 内部开发文档（不入公开仓）
 BLOCKING_ISSUES_REPORT.md

@@ -19,6 +19,7 @@ const _invokeReady = isTauri
 
 // 简单缓存：避免页面切换时重复请求后端
 const _cache = new Map()
+const _inflight = new Map() // in-flight 请求去重，防止缓存过期后同一命令并发 spawn 多个进程
 const CACHE_TTL = 15000 // 15秒
 
 // 网络请求日志（用于调试）
@@ -56,10 +57,21 @@ function cachedInvoke(cmd, args = {}, ttl = CACHE_TTL) {
     logRequest(cmd, args, 0, true)
     return Promise.resolve(cached.val)
   }
-  return invoke(cmd, args).then(val => {
+  // in-flight 去重：同一个 key 的请求正在执行中，复用同一个 Promise
+  // 避免缓存过期瞬间多个调用者同时 spawn 进程（ARM 设备上的 CPU 爆满根因）
+  if (_inflight.has(key)) {
+    return _inflight.get(key)
+  }
+  const p = invoke(cmd, args).then(val => {
     _cache.set(key, { val, ts: Date.now() })
+    _inflight.delete(key)
     return val
+  }).catch(err => {
+    _inflight.delete(key)
+    throw err
   })
+  _inflight.set(key, p)
+  return p
 }
 
 // 清除指定命令的缓存（写操作后调用）
@@ -147,7 +159,7 @@ export async function checkBackendHealth() {
 // 导出 API
 export const api = {
   // 服务管理（状态用短缓存，操作不缓存）
-  getServicesStatus: () => cachedInvoke('get_services_status', {}, 3000),
+  getServicesStatus: () => cachedInvoke('get_services_status', {}, 10000),
   startService: (label) => { invalidate('get_services_status'); return invoke('start_service', { label }) },
   stopService: (label) => { invalidate('get_services_status'); return invoke('stop_service', { label }) },
   restartService: (label) => { invalidate('get_services_status'); return invoke('restart_service', { label }) },
@@ -155,7 +167,7 @@ export const api = {
 
   // 配置（读缓存，写清缓存）
   getVersionInfo: () => cachedInvoke('get_version_info', {}, 30000),
-  getStatusSummary: () => cachedInvoke('get_status_summary', {}, 5000),
+  getStatusSummary: () => cachedInvoke('get_status_summary', {}, 60000),
   readOpenclawConfig: () => cachedInvoke('read_openclaw_config'),
   writeOpenclawConfig: (config) => { invalidate('read_openclaw_config'); return invoke('write_openclaw_config', { config }) },
   importOpenclawAiConfig: () => invoke('import_openclaw_ai_config'),
