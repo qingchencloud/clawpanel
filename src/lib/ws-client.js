@@ -350,7 +350,10 @@ export class WsClient {
     this._stopPing()
     this._pingTimer = setInterval(() => {
       if (this._ws && this._ws.readyState === WebSocket.OPEN) {
-        try { this._ws.send('{"type":"ping"}') } catch {}
+        try {
+          const frame = { type: 'req', id: uuid(), method: 'node.list', params: {} }
+          this._ws.send(JSON.stringify(frame))
+        } catch {}
       }
     }, PING_INTERVAL)
   }
