@@ -1,4 +1,4 @@
-use crate::commands::{apply_proxy_env, build_http_client, openclaw_config_path, openclaw_dir};
+use crate::commands::{apply_proxy_env, build_http_client, openclaw_dir};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -11,6 +11,7 @@ use std::os::windows::process::CommandExt;
 use std::process::Command;
 
 use tokio::process::Child;
+use tokio::io::AsyncBufReadExt;
 
 static STATE: std::sync::LazyLock<Mutex<CloudflaredState>> =
     std::sync::LazyLock::new(|| Mutex::new(CloudflaredState::default()));
@@ -368,14 +369,16 @@ pub async fn cloudflared_start(config: CloudflaredStartConfig) -> Result<Value, 
     let port = if config.port == 0 { 18789 } else { config.port };
 
     // stop existing
-    {
+    let existing_child = {
         let mut state = STATE.lock().unwrap();
-        if let Some(mut child) = state.child.take() {
-            let _ = child.kill().await;
-        }
+        let child = state.child.take();
         state.running = false;
         state.url = None;
         state.last_error = None;
+        child
+    };
+    if let Some(mut child) = existing_child {
+        let _ = child.kill().await;
     }
 
     let mode = config.mode.clone();
@@ -402,21 +405,23 @@ pub async fn cloudflared_start(config: CloudflaredStartConfig) -> Result<Value, 
         // parse stdout for url
         if let Some(stdout) = child.stdout.take() {
             let mut reader = tokio::io::BufReader::new(stdout).lines();
-            let mut deadline = tokio::time::sleep(Duration::from_secs(12));
-            tokio::pin!(deadline);
+            let deadline = std::time::Instant::now() + Duration::from_secs(12);
             loop {
-                tokio::select! {
-                    line = reader.next_line() => {
-                        if let Ok(Some(l)) = line {
-                            if let Some(u) = parse_quick_url(&l) {
-                                url = Some(u);
-                                break;
-                            }
-                        } else {
+                let now = std::time::Instant::now();
+                if now >= deadline {
+                    break;
+                }
+                let remain = deadline.saturating_duration_since(now);
+                match tokio::time::timeout(remain, reader.next_line()).await {
+                    Ok(Ok(Some(l))) => {
+                        if let Some(u) = parse_quick_url(&l) {
+                            url = Some(u);
                             break;
                         }
                     }
-                    _ = &mut deadline => { break; }
+                    Ok(Ok(None)) => break,
+                    Ok(Err(_)) => break,
+                    Err(_) => break,
                 }
             }
         }
@@ -482,12 +487,17 @@ pub async fn cloudflared_start(config: CloudflaredStartConfig) -> Result<Value, 
 
 #[tauri::command]
 pub async fn cloudflared_stop() -> Result<Value, String> {
-    let mut state = STATE.lock().unwrap();
-    if let Some(mut child) = state.child.take() {
+    let existing_child = {
+        let mut state = STATE.lock().unwrap();
+        let child = state.child.take();
+        state.running = false;
+        state.url = None;
+        child
+    };
+    if let Some(mut child) = existing_child {
         let _ = child.kill().await;
     }
-    state.running = false;
-    state.url = None;
+    let state = STATE.lock().unwrap();
     Ok(json!(CloudflaredStatus {
         installed: resolve_cloudflared_bin().is_some(),
         version: resolve_cloudflared_bin().as_ref().and_then(|b| get_version(b)),
