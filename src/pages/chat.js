@@ -466,6 +466,7 @@ function fileToBase64(file) {
 }
 
 function renderAttachments() {
+  if (!_attachPreviewEl) return
   if (!_attachments.length) {
     _attachPreviewEl.style.display = 'none'
     return
@@ -1244,8 +1245,8 @@ function resetStreamState() {
 // ── 历史消息加载 ──
 
 async function loadHistory() {
-  if (!_sessionKey) return
-  const hasExisting = _messagesEl?.querySelector('.msg')
+  if (!_sessionKey || !_messagesEl) return
+  const hasExisting = _messagesEl.querySelector('.msg')
   if (!hasExisting && isStorageAvailable()) {
     const local = await getLocalMessages(_sessionKey, 200)
     if (local.length) {
@@ -1266,7 +1267,7 @@ async function loadHistory() {
   try {
     const result = await wsClient.chatHistory(_sessionKey, 200)
     if (!result?.messages?.length) {
-      if (!_messagesEl.querySelector('.msg')) appendSystemMessage('还没有消息，开始聊天吧')
+      if (_messagesEl && !_messagesEl.querySelector('.msg')) appendSystemMessage('还没有消息，开始聊天吧')
       return
     }
     const deduped = dedupeHistory(result.messages)
@@ -1312,7 +1313,7 @@ async function loadHistory() {
     scrollToBottom()
   } catch (e) {
     console.error('[chat] loadHistory error:', e)
-    if (!_messagesEl.querySelector('.msg')) appendSystemMessage('加载历史失败: ' + e.message)
+    if (_messagesEl && !_messagesEl.querySelector('.msg')) appendSystemMessage('加载历史失败: ' + e.message)
   }
 }
 
