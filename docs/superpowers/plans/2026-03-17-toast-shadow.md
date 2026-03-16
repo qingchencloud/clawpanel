@@ -24,6 +24,8 @@ git status -sb
 git commit --allow-empty -m "chore: checkpoint before toast shadow"
 ```
 
+Note: This checkpoint is required by policy to protect rollbacks. The final functional commit still happens after `npm run build`.
+
 - [ ] **Step 1: Add box-shadow**
 
 ```css
@@ -38,15 +40,15 @@ Run: `npm run build`
 Expected: Build succeeds without errors.
 Note: This is the frontend Vite build; no `wails build` required for this CSS-only change.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Commit（PowerShell）**
 
-```bash
+```powershell
 git add src/style/components.css
 git commit -m "fix: add toast shadow"
 ```
 
-- [ ] **Step 4: Push**
+- [ ] **Step 4: Push（PowerShell）**
 
-```bash
+```powershell
 git push
 ```
