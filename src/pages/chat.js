@@ -59,7 +59,7 @@ let _sessionKey = null, _page = null, _messagesEl = null, _textarea = null
 let _sendBtn = null, _statusDot = null, _typingEl = null, _scrollBtn = null
 let _sessionListEl = null, _cmdPanelEl = null, _attachPreviewEl = null, _fileInputEl = null
 let _modelSelectEl = null
-let _currentAiBubble = null, _currentAiText = '', _currentAiImages = [], _currentAiVideos = [], _currentAiAudios = [], _currentAiFiles = [], _currentRunId = null
+let _currentAiBubble = null, _currentAiText = '', _currentAiImages = [], _currentAiVideos = [], _currentAiAudios = [], _currentAiFiles = [], _currentAiTools = [], _currentRunId = null
 let _isStreaming = false, _isSending = false, _messageQueue = [], _streamStartTime = 0
 let _lastRenderTime = 0, _renderPending = false, _lastHistoryHash = ''
 let _streamSafetyTimer = null, _unsubEvent = null, _unsubReady = null, _unsubStatus = null
@@ -946,6 +946,7 @@ function handleChatEvent(payload) {
     if (c?.videos?.length) _currentAiVideos = c.videos
     if (c?.audios?.length) _currentAiAudios = c.audios
     if (c?.files?.length) _currentAiFiles = c.files
+    if (c?.tools?.length) _currentAiTools = c.tools
     if (c?.text && c.text.length > _currentAiText.length) {
       showTyping(false)
       if (!_currentAiBubble) {
@@ -986,7 +987,8 @@ function handleChatEvent(payload) {
     if (finalVideos.length) _currentAiVideos = finalVideos
     if (finalAudios.length) _currentAiAudios = finalAudios
     if (finalFiles.length) _currentAiFiles = finalFiles
-    const hasContent = finalText || _currentAiImages.length || _currentAiVideos.length || _currentAiAudios.length || _currentAiFiles.length
+    if (finalTools.length) _currentAiTools = finalTools
+    const hasContent = finalText || _currentAiImages.length || _currentAiVideos.length || _currentAiAudios.length || _currentAiFiles.length || _currentAiTools.length
     // 忽略空 final（Gateway 会为一条消息触发多个 run，部分是空 final）
     if (!_currentAiBubble && !hasContent) return
     // 标记 runId 为已处理，防止重复
@@ -1009,7 +1011,7 @@ function handleChatEvent(payload) {
       appendVideosToEl(_currentAiBubble, _currentAiVideos)
       appendAudiosToEl(_currentAiBubble, _currentAiAudios)
       appendFilesToEl(_currentAiBubble, _currentAiFiles)
-      appendToolsToEl(_currentAiBubble, finalTools)
+      appendToolsToEl(_currentAiBubble, finalTools.length ? finalTools : _currentAiTools)
     }
     // 添加时间戳 + 耗时 + token 消耗
     const wrapper = _currentAiBubble?.parentElement
@@ -1300,12 +1302,13 @@ function doRender() {
 
 function resetStreamState() {
   clearTimeout(_streamSafetyTimer)
-  if (_currentAiBubble && (_currentAiText || _currentAiImages.length || _currentAiVideos.length || _currentAiAudios.length || _currentAiFiles.length)) {
+  if (_currentAiBubble && (_currentAiText || _currentAiImages.length || _currentAiVideos.length || _currentAiAudios.length || _currentAiFiles.length || _currentAiTools.length)) {
     _currentAiBubble.innerHTML = renderMarkdown(_currentAiText)
     appendImagesToEl(_currentAiBubble, _currentAiImages)
     appendVideosToEl(_currentAiBubble, _currentAiVideos)
     appendAudiosToEl(_currentAiBubble, _currentAiAudios)
     appendFilesToEl(_currentAiBubble, _currentAiFiles)
+    appendToolsToEl(_currentAiBubble, _currentAiTools)
   }
   _renderPending = false
   _lastRenderTime = 0
@@ -1315,6 +1318,7 @@ function resetStreamState() {
   _currentAiVideos = []
   _currentAiAudios = []
   _currentAiFiles = []
+  _currentAiTools = []
   _currentRunId = null
   _isStreaming = false
   _streamStartTime = 0
@@ -1842,6 +1846,7 @@ export function cleanup() {
   _currentAiVideos = []
   _currentAiAudios = []
   _currentAiFiles = []
+  _currentAiTools = []
   _currentRunId = null
   _isStreaming = false
   _isSending = false
