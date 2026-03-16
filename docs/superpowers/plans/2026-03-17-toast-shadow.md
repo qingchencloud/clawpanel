@@ -17,9 +17,9 @@
 **Files:**
 - Modify: `src/style/components.css`
 
-- [ ] **Step 0: Checkpoint**
+- [ ] **Step 0: Checkpoint（PowerShell）**
 
-```bash
+```powershell
 git status -sb
 git commit --allow-empty -m "chore: checkpoint before toast shadow"
 ```
@@ -36,6 +36,7 @@ git commit --allow-empty -m "chore: checkpoint before toast shadow"
 
 Run: `npm run build`
 Expected: Build succeeds without errors.
+Note: This is the frontend Vite build; no `wails build` required for this CSS-only change.
 
 - [ ] **Step 3: Commit**
 
