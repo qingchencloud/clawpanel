@@ -1537,7 +1537,7 @@ function createStreamBubble() {
   bubble.className = 'msg-bubble'
   bubble.innerHTML = '<span class="stream-cursor"></span>'
   wrap.appendChild(bubble)
-  _messagesEl.insertBefore(wrap, _typingEl)
+  insertMessageByTime(wrap, Date.now())
   scrollToBottom()
   return bubble
 }
@@ -2123,9 +2123,13 @@ function clearMessages() {
   _virtualItems = []
   _virtualHeights = new Map()
   _virtualAvgHeight = 64
-  _virtualRange = { start: 0, end: 0, prefix: [] }
+  _virtualRange = { start: 0, end: 0, prefix: [0] }
   _autoScrollEnabled = true
   _lastScrollTop = 0
+  _toolEventTimes.clear()
+  _toolEventData.clear()
+  _toolRunIndex.clear()
+  _toolEventSeen.clear()
   if (_virtualTopSpacer) _virtualTopSpacer.style.height = '0px'
   if (_virtualBottomSpacer) _virtualBottomSpacer.style.height = '0px'
 }
@@ -2205,7 +2209,8 @@ function doVirtualRender() {
   const visibleIds = new Set(items.slice(start, end).map(i => i.id))
   _messagesEl.querySelectorAll('.msg').forEach(node => {
     const vid = node.dataset.vid
-    if (!vid || !visibleIds.has(vid)) node.remove()
+    if (!vid) return
+    if (!visibleIds.has(vid)) node.remove()
   })
 
   const anchor = _virtualTopSpacer.nextSibling
