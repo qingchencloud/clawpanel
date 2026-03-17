@@ -153,7 +153,7 @@ const COMMANDS = [
 
 let _sessionKey = null, _page = null, _messagesEl = null, _textarea = null
 let _sendBtn = null, _statusDot = null, _typingEl = null, _scrollBtn = null
-let _sessionListEl = null, _cmdPanelEl = null, _attachPreviewEl = null, _fileInputEl = null
+let _sessionListEl = null, _cmdPanelEl = null, _attachPreviewEl = null, _fileInputEl = null, _attachBtnEl = null
 let _modelSelectEl = null
 let _hostedBtn = null, _hostedPanelEl = null, _hostedBadgeEl = null
 let _hostedPromptEl = null, _hostedEnableEl = null, _hostedMaxStepsEl = null, _hostedContextLimitEl = null
@@ -168,6 +168,7 @@ let _hostedBusy = false
 let _hostedAbort = null
 let _hostedLastCompletionRunId = ''
 let _askUserBlockedNotice = false
+const _askUserToolHandled = new Set()
 let _currentAiBubble = null, _currentAiText = '', _currentAiImages = [], _currentAiVideos = [], _currentAiAudios = [], _currentAiFiles = [], _currentAiTools = [], _currentRunId = null
 let _isStreaming = false, _isSending = false, _messageQueue = [], _streamStartTime = 0
 let _lastRenderTime = 0, _renderPending = false, _lastHistoryHash = ''
@@ -353,6 +354,7 @@ export async function render() {
   _cmdPanelEl = page.querySelector('#chat-cmd-panel')
   _attachPreviewEl = page.querySelector('#chat-attachments-preview')
   _fileInputEl = page.querySelector('#chat-file-input')
+  _attachBtnEl = page.querySelector('#chat-attach-btn')
   _modelSelectEl = page.querySelector('#chat-model-select')
   _hostedBtn = page.querySelector('#chat-hosted-btn')
   _hostedBadgeEl = page.querySelector('#chat-hosted-badge')
@@ -440,6 +442,7 @@ function bindEvents(page) {
   })
 
   _sendBtn.addEventListener('click', () => {
+    if (_hostedSessionConfig?.enabled) { toast('托管 Agent 已启用，用户输入已锁定', 'warning'); return }
     if (_isStreaming) stopGeneration()
     else sendMessage()
   })
@@ -956,6 +959,7 @@ function switchSession(newKey) {
   loadHostedSessionConfig()
   renderHostedPanel()
   updateHostedBadge()
+  updateHostedInputLock()
 }
 
 async function showNewSessionDialog() {
@@ -1135,6 +1139,10 @@ function toggleCmdPanel() {
 // ── 消息发送 ──
 
 function sendMessage() {
+  if (_hostedSessionConfig?.enabled) {
+    toast('托管 Agent 已启用，用户输入已锁定', 'warning')
+    return
+  }
   const text = _textarea.value.trim()
   if (!text && !_attachments.length) return
   if (!wsClient.gatewayReady || !_sessionKey) {
@@ -2182,15 +2190,27 @@ function appendToolsToEl(el, tools) {
   }
 
   let filtered = tools
+  const askUserTools = tools.filter(t => (t.name || '').toLowerCase() === 'ask_user')
   if (!_hostedSessionConfig?.enabled) {
-    const hasAskUser = tools.some(t => (t.name || '').toLowerCase() === 'ask_user')
-    if (hasAskUser) {
+    if (askUserTools.length) {
       filtered = tools.filter(t => (t.name || '').toLowerCase() !== 'ask_user')
       if (!_askUserBlockedNotice) {
         _askUserBlockedNotice = true
         appendSystemMessage('已拦截 ask_user：仅托管 Agent 允许调用用户交互工具')
       }
     }
+  } else if (askUserTools.length) {
+    askUserTools.forEach(tool => {
+      const input = tool.input || {}
+      showAskUserCardChat({
+        question: input.question || input.prompt || '请提供信息',
+        type: input.type || 'text',
+        options: input.options || [],
+        placeholder: input.placeholder || '',
+        toolId: tool.id || tool.tool_call_id || tool.tool_use_id || tool.toolUseId,
+      })
+    })
+    filtered = tools.filter(t => (t.name || '').toLowerCase() !== 'ask_user')
   }
 
   if (!filtered.length) {
@@ -2626,6 +2646,7 @@ async function saveHostedConfig() {
   persistHostedRuntime()
   renderHostedPanel()
   updateHostedBadge()
+  updateHostedInputLock()
 
   if (enabled && _hostedRuntime.status === HOSTED_STATUS.IDLE) {
     if (!wsClient.gatewayReady || !_sessionKey) {
@@ -3166,6 +3187,86 @@ function showHostedCompletionModal(summary, content) {
     buttons: [{ label: '确定', className: 'btn btn-primary btn-sm', id: 'hosted-done' }],
     width: 520,
   })
+}
+
+function updateHostedInputLock() {
+  const enabled = !!_hostedSessionConfig?.enabled
+  if (_textarea) {
+    _textarea.disabled = enabled
+    _textarea.placeholder = enabled ? '托管 Agent 已启用，用户输入已锁定' : '输入消息，Enter 发送，/ 打开指令'
+  }
+  if (_sendBtn) _sendBtn.disabled = enabled || (!_textarea?.value?.trim() && !_attachments.length)
+  if (_attachBtnEl) _attachBtnEl.disabled = enabled
+  if (_fileInputEl) _fileInputEl.disabled = enabled
+}
+
+function showAskUserCardChat({ question, type, options, placeholder, toolId }) {
+  if (!_messagesEl) return
+  if (toolId && _askUserToolHandled.has(toolId)) return
+  if (toolId) _askUserToolHandled.add(toolId)
+
+  const cardId = 'chat-ask-user-' + Date.now()
+  const optionsHtml = (options || []).map((opt) => {
+    const inputType = type === 'multiple' ? 'checkbox' : 'radio'
+    return `<label class="ast-ask-option">
+      <input type="${inputType}" name="${cardId}" value="${escapeHtml(opt)}">
+      <span>${escapeHtml(opt)}</span>
+    </label>`
+  }).join('')
+
+  const textHtml = type === 'text' || !options?.length
+    ? `<textarea class="ast-ask-text" placeholder="${escapeHtml(placeholder || '请输入...')}" rows="2"></textarea>`
+    : ''
+
+  const customHtml = type !== 'text' && options?.length
+    ? `<div class="ast-ask-custom"><input type="text" class="ast-ask-custom-input" placeholder="或输入自定义内容..."></div>`
+    : ''
+
+  const card = document.createElement('div')
+  card.className = 'ast-ask-card'
+  card.id = cardId
+  card.innerHTML = `
+    <div class="ast-ask-question">${escapeHtml(question || '请提供信息')}</div>
+    ${optionsHtml ? `<div class="ast-ask-options">${optionsHtml}</div>` : ''}
+    ${customHtml}
+    ${textHtml}
+    <div class="ast-ask-actions">
+      <button class="ast-ask-submit btn btn-primary btn-sm">确认</button>
+      <button class="ast-ask-skip btn btn-secondary btn-sm">跳过</button>
+    </div>
+  `
+
+  _messagesEl.appendChild(card)
+  _messagesEl.scrollTop = _messagesEl.scrollHeight
+
+  const buildAnswer = () => {
+    if (type === 'text' || (!options?.length)) {
+      return card.querySelector('.ast-ask-text')?.value?.trim() || ''
+    }
+    if (type === 'multiple') {
+      const checked = [...card.querySelectorAll('input[type="checkbox"]:checked')].map(el => el.value)
+      const custom = card.querySelector('.ast-ask-custom-input')?.value?.trim()
+      if (custom) checked.push(custom)
+      return checked.join('、') || '未选择'
+    }
+    const checked = card.querySelector('input[type="radio"]:checked')
+    const custom = card.querySelector('.ast-ask-custom-input')?.value?.trim()
+    return custom || checked?.value || '未选择'
+  }
+
+  const submit = (answer) => {
+    card.innerHTML = `<div class="ast-ask-answered">
+      <div class="ast-ask-question">${escapeHtml(question || '请提供信息')}</div>
+      <div class="ast-ask-answer">${escapeHtml(answer || '未选择')}</div>
+    </div>`
+    card.classList.add('answered')
+    if (_sessionKey && wsClient.gatewayReady) {
+      wsClient.chatSend(_sessionKey, answer || '').catch(() => {})
+    }
+  }
+
+  card.querySelector('.ast-ask-submit').addEventListener('click', () => submit(buildAnswer()))
+  card.querySelector('.ast-ask-skip').addEventListener('click', () => submit('用户跳过了此问题'))
 }
 
 function appendHostedOutput(text) {
