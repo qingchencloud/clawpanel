@@ -2587,14 +2587,14 @@ async function runHostedAgentStep() {
     _hostedRuntime.lastError = 'Gateway 未就绪或 sessionKey 缺失'
     persistHostedRuntime()
     updateHostedBadge()
-    appendHostedOutput(`[托管 Agent] 需要人工介入: Gateway 未就绪或 sessionKey 缺失${formatHostedSummary()}`)
+    appendHostedOutput(`需要人工介入: Gateway 未就绪或 sessionKey 缺失${formatHostedSummary()}`)
     return
   }
-  if (_hostedRuntime.errorCount > _hostedSessionConfig.retryLimit) {
+  if (_hostedRuntime.errorCount >= _hostedSessionConfig.retryLimit) {
     _hostedRuntime.status = HOSTED_STATUS.ERROR
     persistHostedRuntime()
     updateHostedBadge()
-    appendHostedOutput(`[托管 Agent] 需要人工介入: 连续错误超过阈值${formatHostedSummary()}`)
+    appendHostedOutput(`需要人工介入: 连续错误超过阈值${formatHostedSummary()}`)
     return
   }
   if (_hostedRuntime.stepCount >= _hostedSessionConfig.maxSteps) {
@@ -2624,7 +2624,14 @@ async function runHostedAgentStep() {
       resultText += chunk
     })
     const parsed = parseHostedTemplate(resultText)
-    if (!parsed) throw new Error('托管 Agent 输出未符合模板')
+    if (!parsed) {
+      _hostedRuntime.errorCount = (_hostedRuntime.errorCount || 0) + 1
+      _hostedRuntime.lastError = '托管 Agent 输出未符合模板'
+      _hostedRuntime.pending = false
+      persistHostedRuntime()
+      updateHostedBadge()
+      return
+    }
 
     _hostedRuntime.stepCount += 1
     _hostedRuntime.errorCount = 0
@@ -2650,11 +2657,11 @@ async function runHostedAgentStep() {
     _hostedRuntime.errorCount = (_hostedRuntime.errorCount || 0) + 1
     _hostedRuntime.lastError = e.message || String(e)
     _hostedRuntime.pending = false
-    if (_hostedRuntime.errorCount > _hostedSessionConfig.retryLimit) {
+    if (_hostedRuntime.errorCount >= _hostedSessionConfig.retryLimit) {
       _hostedRuntime.status = HOSTED_STATUS.ERROR
       updateHostedBadge()
       persistHostedRuntime()
-      appendHostedOutput(`[托管 Agent] 需要人工介入: 连续错误超过阈值${formatHostedSummary()}`)
+      appendHostedOutput(`需要人工介入: 连续错误超过阈值${formatHostedSummary()}`)
       return
     }
     persistHostedRuntime()
@@ -2921,6 +2928,7 @@ function parseHostedTemplate(text) {
     else if (section === 'suggest') suggestions.push(line.replace(/^[\-*\d\.\s]+/, ''))
     else if (section === 'risk') risks.push(line.replace(/^[\-*\d\.\s]+/, ''))
   }
+  // risk 可为空，goal 与 suggestions 必须存在
   if (!goals.length || !suggestions.length) return null
   return {
     goal: goals.join(' '),
@@ -2932,7 +2940,7 @@ function parseHostedTemplate(text) {
 function renderHostedTemplate(parsed) {
   const riskText = parsed.risks.length ? parsed.risks.map(r => `- ${r}`).join('\n') : '- 暂无'
   const suggestText = parsed.suggestions.map(s => `- ${s}`).join('\n')
-  return `[托管 Agent] 目标: ${parsed.goal}\n建议:\n${suggestText}\n风险:\n${riskText}`
+  return `目标: ${parsed.goal}\n建议:\n${suggestText}\n风险:\n${riskText}`
 }
 
 function appendHostedOutput(text) {
