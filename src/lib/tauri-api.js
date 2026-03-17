@@ -166,7 +166,7 @@ export const api = {
   guardianStatus: () => invoke('guardian_status'),
 
   // 配置（读缓存，写清缓存）
-  getVersionInfo: () => cachedInvoke('get_version_info', {}, 30000),
+  getVersionInfo: () => invoke('get_version_info'),
   getStatusSummary: () => cachedInvoke('get_status_summary', {}, 60000),
   readOpenclawConfig: () => cachedInvoke('read_openclaw_config'),
   writeOpenclawConfig: (config) => { invalidate('read_openclaw_config'); return invoke('write_openclaw_config', { config }) },
@@ -226,11 +226,6 @@ export const api = {
   cloudflaredLogin: () => invoke('cloudflared_login'),
   cloudflaredStart: (config) => invoke('cloudflared_start', { config }),
   cloudflaredStop: () => invoke('cloudflared_stop'),
-
-  // Gateway 补丁
-  gatewayPatchStatus: () => invoke('gateway_patch_status'),
-  gatewayPatchApply: (force) => invoke('gateway_patch_apply', { force: !!force }),
-  gatewayPatchRollback: () => invoke('gateway_patch_rollback'),
 
   // 安装/部署
   checkInstallation: () => cachedInvoke('check_installation', {}, 60000),

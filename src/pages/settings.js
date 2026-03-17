@@ -47,11 +47,6 @@ export async function render() {
       <div class="config-section-title">公网访问</div>
       <div id="cloudflared-bar"><div class="stat-card loading-placeholder" style="height:48px"></div></div>
     </div>
-
-    <div class="config-section" id="gateway-patch-section">
-      <div class="config-section-title">Gateway 补丁</div>
-      <div id="gateway-patch-bar"><div class="stat-card loading-placeholder" style="height:48px"></div></div>
-    </div>
   `
 
   bindEvents(page)
@@ -63,9 +58,7 @@ async function loadAll(page) {
   const tasks = [loadProxyConfig(page), loadModelProxyConfig(page)]
   tasks.push(loadRegistry(page))
   tasks.push(loadCloudflared(page))
-  tasks.push(loadGatewayPatch(page))
   await Promise.all(tasks)
-  await runGatewayPatchAutoDetect(page)
 }
 
 // ===== 网络代理 =====
@@ -195,18 +188,6 @@ function bindEvents(page) {
         case 'cloudflared-save':
           await handleCloudflaredSave(page)
           break
-        case 'gateway-patch-apply':
-          await handleGatewayPatchApply(page, false)
-          break
-        case 'gateway-patch-apply-force':
-          await handleGatewayPatchApply(page, true)
-          break
-        case 'gateway-patch-rollback':
-          await handleGatewayPatchRollback(page)
-          break
-        case 'gateway-patch-refresh':
-          await loadGatewayPatch(page)
-          break
       }
     } catch (e) {
       toast(e.toString(), 'error')
@@ -286,107 +267,6 @@ async function handleSaveRegistry(page) {
   if (!registry) { toast('请输入源地址', 'error'); return }
   await api.setNpmRegistry(registry)
   toast('npm 源已保存', 'success')
-}
-
-// ===== Gateway 补丁 =====
-
-const GATEWAY_PATCH_COOLDOWN_MS = 5 * 60 * 1000
-let _gatewayPatchLastCheck = 0
-let _gatewayPatchRunning = false
-
-async function runGatewayPatchAutoDetect(page) {
-  if (_gatewayPatchRunning) return
-  const now = Date.now()
-  if (now - _gatewayPatchLastCheck < GATEWAY_PATCH_COOLDOWN_MS) return
-  _gatewayPatchLastCheck = now
-  _gatewayPatchRunning = true
-  try {
-    const status = await api.gatewayPatchStatus()
-    const installed = status?.installed_version
-    const recorded = status?.openclawVersion || status?.openclaw_version
-    if (!installed || !recorded) return
-    if (installed === recorded) return
-    await api.gatewayPatchApply(true)
-    await loadGatewayPatch(page)
-  } catch (e) {
-    const msg = String(e || '')
-    if (msg && page) {
-      const el = page.querySelector('#gateway-patch-bar')
-      if (el) {
-        const existing = el.querySelector('[data-name="gateway-patch-error"]')
-        if (existing) existing.remove()
-        const errorEl = document.createElement('div')
-        errorEl.dataset.name = 'gateway-patch-error'
-        errorEl.style.color = 'var(--error)'
-        errorEl.style.marginTop = 'var(--space-xs)'
-        errorEl.textContent = `自动重打失败: ${msg}`
-        el.appendChild(errorEl)
-      }
-    }
-  } finally {
-    _gatewayPatchRunning = false
-  }
-}
-
-async function loadGatewayPatch(page) {
-  const el = page.querySelector('#gateway-patch-bar')
-  if (!el) return
-  try {
-    const status = await api.gatewayPatchStatus()
-    const patched = !!status?.patched
-    const installed = status?.installed_version || '未知'
-    const recorded = status?.openclawVersion || status?.openclaw_version || '-'
-    const patchedVersion = status?.patched_version || '-'
-    const patchedAt = status?.patched_at || '-'
-    const files = Array.isArray(status?.files) && status.files.length > 0 ? status.files.map(escapeHtml).join(', ') : '-'
-    const lastError = status?.last_error ? `<div style="color:var(--error);margin-top:var(--space-xs)">错误: ${escapeHtml(status.last_error)}</div>` : ''
-
-    el.innerHTML = `
-      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:var(--space-sm)">
-        <span class="status-dot ${patched ? 'running' : 'stopped'}"></span>
-        <span>${patched ? '已补丁' : '未补丁'}</span>
-        <span style="color:var(--text-tertiary)">OpenClaw 版本: ${escapeHtml(installed)}</span>
-      </div>
-
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:var(--space-sm)">
-        <button class="btn btn-primary btn-sm" data-action="gateway-patch-apply">一键补丁</button>
-        <button class="btn btn-secondary btn-sm" data-action="gateway-patch-apply-force">重打补丁</button>
-        <button class="btn btn-danger btn-sm" data-action="gateway-patch-rollback">回滚</button>
-        <button class="btn btn-secondary btn-sm" data-action="gateway-patch-refresh">刷新</button>
-      </div>
-
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:720px">
-        <div class="form-label">补丁版本
-          <div class="form-hint">${escapeHtml(patchedVersion)}</div>
-        </div>
-        <div class="form-label">补丁时间
-          <div class="form-hint">${escapeHtml(patchedAt)}</div>
-        </div>
-        <div class="form-label">记录版本
-          <div class="form-hint">${escapeHtml(recorded)}</div>
-        </div>
-        <div class="form-label">补丁文件
-          <div class="form-hint">${escapeHtml(files)}</div>
-        </div>
-      </div>
-      ${lastError}
-      <div class="form-hint" style="margin-top:8px">自动定位全局 npm 安装的 openclaw 包并打补丁。支持回滚。</div>
-    `
-  } catch (e) {
-    el.innerHTML = `<div style="color:var(--error)">加载失败: ${escapeHtml(String(e))}</div>`
-  }
-}
-
-async function handleGatewayPatchApply(page, force) {
-  await api.gatewayPatchApply(!!force)
-  await loadGatewayPatch(page)
-  toast(force ? '补丁已重打' : '补丁已完成', 'success')
-}
-
-async function handleGatewayPatchRollback(page) {
-  await api.gatewayPatchRollback()
-  await loadGatewayPatch(page)
-  toast('补丁已回滚', 'success')
 }
 
 // ===== Cloudflared 公网访问 =====

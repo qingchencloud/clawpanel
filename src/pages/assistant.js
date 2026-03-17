@@ -1509,14 +1509,17 @@ async function callAI(sessionId, messages, onChunk) {
   }
 
   const base = cleanBaseUrl(_config.baseUrl, apiType)
-  _abortController = new AbortController()
+  const controller = new AbortController()
+  _abortController = controller
+  if (sessionId) setAbortController(sessionId, controller)
   const allMessages = [{ role: 'system', content: buildSystemPrompt() }, ...messages]
 
   // 总超时保护
   let _timedOut = false
   const totalTimer = setTimeout(() => {
     _timedOut = true
-    if (_abortController) _abortController.abort()
+    const active = sessionId ? getAbortController(sessionId) : controller
+    if (active) active.abort()
   }, TIMEOUT_TOTAL)
 
   try {
@@ -1543,7 +1546,9 @@ async function callAI(sessionId, messages, onChunk) {
       const msg = err.message || ''
       if (msg.includes('legacy protocol') || msg.includes('/v1/responses') || msg.includes('not supported')) {
         console.log('[assistant] Chat Completions 不支持此模型，自动切换到 Responses API')
-        _abortController = new AbortController()
+        const nextController = new AbortController()
+        _abortController = nextController
+        if (sessionId) setAbortController(sessionId, nextController)
         await callResponsesAPI(base, allMessages, onChunk)
         return
       }
@@ -1551,6 +1556,9 @@ async function callAI(sessionId, messages, onChunk) {
     }
   } finally {
     clearTimeout(totalTimer)
+    if (sessionId && getAbortController(sessionId) === controller) {
+      setAbortController(sessionId, null)
+    }
   }
 }
 
@@ -2088,14 +2096,17 @@ async function callAIWithTools(sessionId, messages, onStatus, onToolProgress) {
   const tools = getEnabledTools()
   let currentMessages = [{ role: 'system', content: buildSystemPrompt() }, ...messages]
   const toolHistory = []
+  let controller = null
 
   const autoRounds = _config.autoRounds ?? 8  // 0 = 无限制
   let nextPauseAt = autoRounds   // 下一次暂停的轮次阈值
-  for (let round = 0; ; round++) {
-    // 检查是否已被用户中止
-    if (!sessionId || !getStreaming(sessionId) || _abortController?.signal?.aborted) {
-      throw new DOMException('Aborted', 'AbortError')
-    }
+  try {
+    for (let round = 0; ; round++) {
+      // 检查是否已被用户中止
+      const active = sessionId ? getAbortController(sessionId) : null
+      if (!sessionId || !getStreaming(sessionId) || active?.signal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError')
+      }
     if (autoRounds > 0 && round >= nextPauseAt) {
       const answer = await showAskUserCard({
         question: `AI 已连续调用工具 ${round} 轮，可能陷入循环。你希望怎么做？`,
@@ -2114,7 +2125,9 @@ async function callAIWithTools(sessionId, messages, onStatus, onToolProgress) {
       }
     }
 
-    _abortController = new AbortController()
+    controller = new AbortController()
+    _abortController = controller
+    if (sessionId) setAbortController(sessionId, controller)
     onStatus(round === 0 ? 'AI 思考中...' : `AI 处理工具结果 (第${round + 1}轮)...`)
 
     // ── Anthropic 工具调用 ──
@@ -2132,7 +2145,7 @@ async function callAIWithTools(sessionId, messages, onStatus, onToolProgress) {
 
       const resp = await fetchWithRetry(base + '/messages', {
         method: 'POST', headers: authHeaders(), body: JSON.stringify(body),
-        signal: _abortController.signal,
+        signal: controller.signal,
       })
       if (!resp.ok) {
         const errText = await resp.text().catch(() => '')
@@ -2191,7 +2204,7 @@ async function callAIWithTools(sessionId, messages, onStatus, onToolProgress) {
       const url = `${base}/models/${_config.model}:generateContent?key=${_config.apiKey}`
       const resp = await fetchWithRetry(url, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body), signal: _abortController.signal,
+        body: JSON.stringify(body), signal: controller.signal,
       })
       if (!resp.ok) {
         const errText = await resp.text().catch(() => '')
@@ -2242,7 +2255,7 @@ async function callAIWithTools(sessionId, messages, onStatus, onToolProgress) {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify(body),
-      signal: _abortController.signal,
+      signal: controller.signal,
     })
 
     if (!resp.ok) {
@@ -2286,6 +2299,11 @@ async function callAIWithTools(sessionId, messages, onStatus, onToolProgress) {
 
     const content = assistantMsg.content || assistantMsg.reasoning_content || ''
     return { content, toolHistory }
+  }
+  } finally {
+    if (sessionId && controller && getAbortController(sessionId) === controller) {
+      setAbortController(sessionId, null)
+    }
   }
 }
 
@@ -3821,6 +3839,11 @@ async function retryAIResponse(session) {
 function stopStreaming() {
   if (_currentSessionId) {
     setStreaming(_currentSessionId, false)
+    const controller = getAbortController(_currentSessionId)
+    if (controller) {
+      controller.abort()
+      setAbortController(_currentSessionId, null)
+    }
   }
   _isStreaming = false
   if (_abortController) {

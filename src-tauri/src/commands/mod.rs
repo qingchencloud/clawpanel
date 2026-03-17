@@ -13,7 +13,6 @@ pub mod agent;
 pub mod assistant;
 pub mod cloudflared;
 pub mod config;
-pub mod gateway_patch;
 pub mod device;
 pub mod extensions;
 pub mod logs;
@@ -234,7 +233,7 @@ fn read_registry_env(hkey: RegKey, subkey: &str) -> Vec<(String, String, RegType
 fn expand_env_vars(value: &str, env_map: &HashMap<String, String>) -> String {
     let mut output = value.to_string();
     for _ in 0..5 {
-        let mut chars: Vec<char> = output.chars().collect();
+        let chars: Vec<char> = output.chars().collect();
         let mut i = 0usize;
         let mut changed = false;
         let mut result = String::new();
@@ -322,7 +321,7 @@ pub fn build_system_env() -> Vec<(String, String)> {
         let enhanced = build_enhanced_path_with_base(&base_path);
         map.insert("PATH".to_string(), enhanced);
 
-        let built = map.into_iter().collect();
+        let built: Vec<(String, String)> = map.into_iter().collect();
         if let Ok(mut guard) = SYSTEM_ENV_CACHE.write() {
             *guard = Some((std::time::Instant::now(), built.clone()));
         }
@@ -335,7 +334,7 @@ pub fn build_system_env() -> Vec<(String, String)> {
         let base = map.get("PATH").cloned().unwrap_or_default();
         let enhanced = build_enhanced_path_with_base(&base);
         map.insert("PATH".to_string(), enhanced);
-        let built = map.into_iter().collect();
+        let built: Vec<(String, String)> = map.into_iter().collect();
         if let Ok(mut guard) = SYSTEM_ENV_CACHE.write() {
             *guard = Some((std::time::Instant::now(), built.clone()));
         }

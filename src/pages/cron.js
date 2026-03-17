@@ -1,16 +1,19 @@
 /**
- * 定时任务管理
- * 通过 Gateway WebSocket RPC 管理（cron.list / cron.add / cron.update / cron.remove / cron.run）
- * 注意：openclaw.json 不支持 cron.jobs 字段，定时任务只能通过 Gateway 在线管理
+ * 定时任务管理（本地调度 + WSS 发送）
+ * 任务存储在 panel config，本地调度器在 Gateway 连接后发送 user 消息
  */
 import { toast } from '../components/toast.js'
 import { showContentModal, showConfirm } from '../components/modal.js'
 import { icon } from '../lib/icons.js'
 import { onGatewayChange } from '../lib/app-state.js'
-import { wsClient } from '../lib/ws-client.js'
-import { api, invalidate } from '../lib/tauri-api.js'
+import { wsClient, uuid } from '../lib/ws-client.js'
+import { api } from '../lib/tauri-api.js'
 
 let _unsub = null
+let _schedulerTimer = null
+let _lastSessionActivity = new Map() // sessionKey -> ts
+let _sessionLabelMap = new Map() // label -> sessionKey
+let _sessionLabelLastFetch = 0
 
 // ── Cron 表达式快捷预设 ──
 
@@ -24,7 +27,9 @@ const CRON_SHORTCUTS = [
   { expr: '0 9 1 * *', text: '每月 1 号 9:00' },
 ]
 
-const SESSION_MESSAGE_TEXT = '继续执行'
+const LOCAL_CRON_KEY = 'localCronJobs'
+const SESSION_IDLE_MS = 5000
+const SCHEDULER_INTERVAL_MS = 10000
 
 function parseSessionLabel(key) {
   const parts = (key || '').split(':')
@@ -51,7 +56,7 @@ export async function render() {
       <div class="config-section" style="border-left:3px solid var(--warning);padding:12px 16px">
         <div style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);font-size:var(--font-size-sm)">
           ${icon('alert-circle', 16)}
-          <span>定时任务通过 Gateway 管理。请先启动 Gateway 后使用此功能。</span>
+          <span>本地定时任务需要 Gateway 连接后才能发送消息。</span>
           <a href="#/services" class="btn btn-sm btn-secondary" style="margin-left:auto;font-size:11px">服务管理</a>
         </div>
       </div>
@@ -69,38 +74,25 @@ export async function render() {
   page.querySelector('#btn-new-task').onclick = () => openTaskDialog(null, page, state)
   page.querySelector('#btn-refresh-tasks').onclick = () => fetchJobs(page, state)
 
-  // 自动修复：移除可能被写入的无效 cron.jobs 字段
-  fixInvalidCronConfig()
-
   // 监听 Gateway 状态变化
   if (_unsub) _unsub()
   _unsub = onGatewayChange(() => {
     updateGatewayHint(page)
     fetchJobs(page, state)
+    restartScheduler(page, state)
   })
 
   updateGatewayHint(page)
   await fetchJobs(page, state)
+  attachSessionActivityListener()
+  restartScheduler(page, state)
 
   return page
 }
 
 export function cleanup() {
   if (_unsub) { _unsub(); _unsub = null }
-}
-
-/** 自动移除无效的 cron.jobs 字段（之前版本错误写入，会导致 Gateway 崩溃） */
-async function fixInvalidCronConfig() {
-  try {
-    invalidate('read_openclaw_config')
-    const config = await api.readOpenclawConfig()
-    if (config?.cron?.jobs) {
-      delete config.cron.jobs
-      if (Object.keys(config.cron).length === 0) delete config.cron
-      await api.writeOpenclawConfig(config)
-      toast('已自动修复配置（移除无效的 cron.jobs）', 'info')
-    }
-  } catch {}
+  stopScheduler()
 }
 
 function isGatewayUp() {
@@ -116,38 +108,26 @@ function updateGatewayHint(page) {
 // ── 数据加载（Gateway RPC） ──
 
 async function fetchJobs(page, state) {
-  if (!isGatewayUp()) {
-    state.jobs = []
-    state.loading = false
-    renderStats(page, state)
-    renderList(page, state)
-    return
-  }
-
   state.loading = true
   renderList(page, state)
 
   try {
-    const res = await wsClient.request('cron.list', { includeDisabled: true })
-    let jobs = res?.jobs || res
-    if (!Array.isArray(jobs)) jobs = []
-
+    const cfg = await api.readPanelConfig()
+    const jobs = Array.isArray(cfg?.[LOCAL_CRON_KEY]) ? cfg[LOCAL_CRON_KEY] : []
     state.jobs = jobs.map(j => ({
       id: j.id,
       name: j.name || j.id || '未命名',
-      description: j.description || '',
-      message: j.payload?.message || j.payload?.text || '',
-      payloadKind: j.payload?.kind || 'agentTurn',
+      message: j.payload?.message || '',
+      payloadKind: 'sessionMessage',
       sessionLabel: j.payload?.label || '',
       schedule: j.schedule || {},
       enabled: j.enabled !== false,
-      agentId: j.agentId || null,
-      lastRunStatus: j.state?.lastRunStatus || j.state?.lastStatus || null,
+      lastRunStatus: j.state?.lastStatus || null,
       lastRunAtMs: j.state?.lastRunAtMs || null,
       lastError: j.state?.lastError || null,
     }))
   } catch (e) {
-    toast('获取任务列表失败: ' + e, 'error')
+    toast('获取本地任务失败: ' + e, 'error')
     state.jobs = []
   }
 
@@ -228,12 +208,10 @@ function renderList(page, state) {
               ${lastRunHtml}
             </div>
             <div style="font-size:var(--font-size-sm);color:var(--text-tertiary);margin-bottom:6px">
-              ${icon('clock', 12)} ${scheduleText}${job.payloadKind === 'sessionMessage'
-    ? ` &middot; 目标: ${escapeHtml(job.sessionLabel || '未指定')}`
-    : (job.agentId ? ` &middot; Agent: ${escapeHtml(job.agentId)}` : '')}
+              ${icon('clock', 12)} ${scheduleText} &middot; 目标: ${escapeHtml(job.sessionLabel || '未指定')}
             </div>
             <div style="font-size:var(--font-size-sm);color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:500px">
-              ${escapeHtml(job.payloadKind === 'sessionMessage' ? SESSION_MESSAGE_TEXT : job.message)}
+              ${escapeHtml(job.message)}
             </div>
             ${job.lastRunStatus === 'error' && job.lastError ? `
               <div style="margin-top:6px;font-size:var(--font-size-xs);color:var(--error);background:var(--error-muted, #fee2e2);padding:4px 8px;border-radius:var(--radius-sm)">
@@ -262,9 +240,9 @@ function renderList(page, state) {
       const btn = e.currentTarget
       btn.disabled = true
       try {
-        await wsClient.request('cron.run', { jobId: jid })
+        await runLocalJob(job, true)
         toast('任务已触发执行', 'success')
-        setTimeout(() => fetchJobs(page, state), 2000)
+        await fetchJobs(page, state)
       } catch (err) { toast('触发失败: ' + err, 'error') }
       finally { btn.disabled = false }
     }
@@ -274,7 +252,7 @@ function renderList(page, state) {
       btn.disabled = true
       btn.innerHTML = icon('refresh-cw', 14)
       try {
-        await wsClient.request('cron.update', { jobId: jid, patch: { enabled: !job.enabled } })
+        await updateLocalJob(job.id, { enabled: !job.enabled })
         toast(job.enabled ? '已暂停' : '已启用', 'info')
         await fetchJobs(page, state)
       } catch (err) { toast('操作失败: ' + err, 'error'); btn.disabled = false; btn.innerHTML = job.enabled ? icon('pause', 14) : icon('play', 14) }
@@ -288,7 +266,7 @@ function renderList(page, state) {
       if (!yes) return
       if (btn) btn.disabled = true
       try {
-        await wsClient.request('cron.remove', { jobId: jid })
+        await removeLocalJob(job.id)
         toast('已删除', 'info')
         await fetchJobs(page, state)
       } catch (err) { toast('删除失败: ' + err, 'error'); if (btn) btn.disabled = false }
@@ -299,10 +277,6 @@ function renderList(page, state) {
 // ── 创建/编辑任务弹窗 ──
 
 async function openTaskDialog(job, page, state) {
-  if (!isGatewayUp()) {
-    toast('Gateway 未连接，无法管理定时任务。请先启动 Gateway', 'warning')
-    return
-  }
   const isEdit = !!job
   const initSchedule = extractCronExpr(job?.schedule) || '0 9 * * *'
   const formId = 'cron-form-' + Date.now()
@@ -312,9 +286,6 @@ async function openTaskDialog(job, page, state) {
     return `<button type="button" class="btn btn-sm ${selected ? 'btn-primary' : 'btn-secondary'} cron-shortcut" data-expr="${s.expr}">${s.text}</button>`
   }).join('')
 
-  // 先用默认选项，弹窗后异步加载 Agent 列表
-  const agentOptionsHtml = `<option value="" ${!job?.agentId ? 'selected' : ''}>默认 Agent</option>${job?.agentId ? `<option value="${escapeAttr(job.agentId)}" selected>${escapeHtml(job.agentId)}</option>` : ''}`
-
   const content = `
     <form id="${formId}" style="display:flex;flex-direction:column;gap:var(--space-md)">
       <div class="form-group">
@@ -322,30 +293,13 @@ async function openTaskDialog(job, page, state) {
         <input class="form-input" name="name" value="${escapeAttr(job?.name || '')}" placeholder="如：每日摘要推送" autofocus>
       </div>
       <div class="form-group">
-        <label class="form-label">任务类型</label>
-        <select class="form-input" name="taskKind">
-          <option value="agentTurn" ${job?.payloadKind !== 'sessionMessage' ? 'selected' : ''}>Agent 执行指令</option>
-          <option value="sessionMessage" ${job?.payloadKind === 'sessionMessage' ? 'selected' : ''}>发送 user 消息</option>
-        </select>
-      </div>
-      <div class="form-group" data-field="sessionLabel" style="display:${job?.payloadKind === 'sessionMessage' ? 'block' : 'none'}">
         <label class="form-label">目标会话</label>
         <select class="form-input" name="sessionLabel"><option value="">请选择会话</option></select>
-        <div class="form-hint">仅发送 user 消息，不附带系统注入</div>
+        <div class="form-hint">将通过 WSS 发送 user 消息</div>
       </div>
-      <div class="form-group" data-field="message" style="display:${job?.payloadKind === 'sessionMessage' ? 'none' : 'block'}">
-        <label class="form-label">执行指令 *</label>
-        <textarea class="form-input" name="message" rows="3" placeholder="AI 将在触发时执行这段指令">${escapeHtml(job?.message || '')}</textarea>
-      </div>
-      <div class="form-group" data-field="agent" style="display:${job?.payloadKind === 'sessionMessage' ? 'none' : 'block'}">
-        <label class="form-label">指定 Agent</label>
-        <select class="form-input" name="agentId">${agentOptionsHtml}</select>
-        <div class="form-hint">不选则使用默认 Agent 执行</div>
-      </div>
-      <div class="form-group" data-field="delivery" style="display:${job?.payloadKind === 'sessionMessage' ? 'none' : 'block'}">
-        <label class="form-label">投递渠道</label>
-        <select class="form-input" name="deliveryChannel"><option value="">无（主会话）</option></select>
-        <div class="form-hint">配置了多个消息渠道时必须指定，否则任务会报错</div>
+      <div class="form-group">
+        <label class="form-label">消息内容 *</label>
+        <textarea class="form-input" name="message" rows="3" placeholder="发送给会话的内容">${escapeHtml(job?.message || '')}</textarea>
       </div>
       <div class="form-group">
         <label class="form-label">执行周期</label>
@@ -372,42 +326,16 @@ async function openTaskDialog(job, page, state) {
     width: 500,
   })
 
-  // 异步加载渠道列表
-  api.readOpenclawConfig().then(cfg => {
-    const channels = cfg?.channels || {}
-    const channelIds = Object.keys(channels).filter(k => k !== 'defaults')
-    if (channelIds.length <= 1) return // 单渠道或无渠道不需要选
-    const select = modal.querySelector('select[name="deliveryChannel"]')
-    if (!select) return
-    const current = job?.delivery?.channel || ''
-    select.innerHTML = `<option value="">无（主会话）</option>` + channelIds.map(ch =>
-      `<option value="${escapeAttr(ch)}" ${ch === current ? 'selected' : ''}>${escapeHtml(ch)}</option>`
-    ).join('')
-  }).catch(() => {})
-
-  // 异步加载 Agent 列表并更新下拉框（不阻塞弹窗显示）
-  api.listAgents().then(res => {
-    const agents = Array.isArray(res) ? res : (res?.agents || [])
-    if (!agents.length) return
-    const select = modal.querySelector('select[name="agentId"]')
-    if (!select) return
-    const currentVal = select.value
-    select.innerHTML = `<option value="">默认 Agent</option>` + agents.map(a =>
-      `<option value="${escapeAttr(a.id)}" ${a.id === (job?.agentId || currentVal) ? 'selected' : ''}>${escapeHtml(a.name || a.id)}</option>`
-    ).join('')
-  }).catch(() => {})
-
   // 异步加载会话列表
-  wsClient.sessionsList(50).then(res => {
-    const list = res?.sessions || res || []
+  refreshSessionLabelMap().then(() => {
     const select = modal.querySelector('select[name="sessionLabel"]')
     if (!select) return
     const current = job?.sessionLabel || ''
-    select.innerHTML = `<option value="">请选择会话</option>` + list.map(s => {
-      const key = s.sessionKey || s.key || ''
-      const label = parseSessionLabel(key)
-      return `<option value="${escapeAttr(label)}" ${label === current ? 'selected' : ''}>${escapeHtml(label)}</option>`
+    const options = Array.from(_sessionLabelMap.entries()).map(([label, key]) => {
+      const selected = label === current ? 'selected' : ''
+      return `<option value="${escapeAttr(label)}" ${selected}>${escapeHtml(label)}</option>`
     }).join('')
+    select.innerHTML = `<option value="">请选择会话</option>` + options
   }).catch(() => {})
 
   // 快捷预设按钮
@@ -440,30 +368,17 @@ async function openTaskDialog(job, page, state) {
     })
   }
 
-  const toggleFields = () => {
-    const kind = modal.querySelector('select[name="taskKind"]').value
-    const showSession = kind === 'sessionMessage'
-    modal.querySelector('[data-field="sessionLabel"]').style.display = showSession ? 'block' : 'none'
-    modal.querySelector('[data-field="message"]').style.display = showSession ? 'none' : 'block'
-    modal.querySelector('[data-field="agent"]').style.display = showSession ? 'none' : 'block'
-    modal.querySelector('[data-field="delivery"]').style.display = showSession ? 'none' : 'block'
-  }
-  toggleFields()
-  modal.querySelector('select[name="taskKind"]').onchange = toggleFields
-
   // 保存
   modal.querySelector('#btn-cron-save').onclick = async () => {
     const name = modal.querySelector('input[name="name"]').value.trim()
-    const taskKind = modal.querySelector('select[name="taskKind"]').value
     const message = modal.querySelector('textarea[name="message"]').value.trim()
     const schedule = modal.querySelector('input[name="schedule"]').value.trim()
-    const agentId = modal.querySelector('select[name="agentId"]').value || undefined
     const enabled = modal.querySelector('input[name="enabled"]').checked
     const sessionLabel = modal.querySelector('select[name="sessionLabel"]').value
 
     if (!name) { toast('请输入任务名称', 'warning'); return }
-    if (taskKind !== 'sessionMessage' && !message) { toast('请输入执行指令', 'warning'); return }
-    if (taskKind === 'sessionMessage' && !sessionLabel) { toast('请选择会话', 'warning'); return }
+    if (!message) { toast('请输入消息内容', 'warning'); return }
+    if (!sessionLabel) { toast('请选择会话', 'warning'); return }
     if (!schedule) { toast('请设置执行周期', 'warning'); return }
 
     const saveBtn = modal.querySelector('#btn-cron-save')
@@ -472,39 +387,22 @@ async function openTaskDialog(job, page, state) {
 
     try {
       if (isEdit) {
-        const patch = { name, enabled }
-        patch.schedule = { kind: 'cron', expr: schedule }
-        if (taskKind === 'sessionMessage') {
-          patch.sessionTarget = 'main'
-          patch.payload = { kind: 'sessionMessage', label: sessionLabel, message: SESSION_MESSAGE_TEXT, role: 'user', waitForIdle: true }
-        } else {
-          patch.payload = { kind: 'agentTurn', message }
-          if (agentId) patch.agentId = agentId
-          const deliveryChannel = modal.querySelector('select[name="deliveryChannel"]')?.value
-          if (deliveryChannel) {
-            patch.delivery = { mode: 'push', to: deliveryChannel, channel: deliveryChannel }
-          }
-        }
-        await wsClient.request('cron.update', { jobId: job.id, patch })
-        toast('任务已更新', 'success')
-      } else {
-        const params = {
+        await updateLocalJob(job.id, {
           name,
           enabled,
           schedule: { kind: 'cron', expr: schedule },
-        }
-        if (taskKind === 'sessionMessage') {
-          params.sessionTarget = 'main'
-          params.payload = { kind: 'sessionMessage', label: sessionLabel, message: SESSION_MESSAGE_TEXT, role: 'user', waitForIdle: true }
-        } else {
-          params.payload = { kind: 'agentTurn', message }
-          if (agentId) params.agentId = agentId
-          const deliveryChannel = modal.querySelector('select[name="deliveryChannel"]')?.value
-          if (deliveryChannel) {
-            params.delivery = { mode: 'push', to: deliveryChannel, channel: deliveryChannel }
-          }
-        }
-        await wsClient.request('cron.add', params)
+          payload: { kind: 'sessionMessage', label: sessionLabel, message, waitForIdle: true },
+        })
+        toast('任务已更新', 'success')
+      } else {
+        await addLocalJob({
+          id: uuid(),
+          name,
+          enabled,
+          schedule: { kind: 'cron', expr: schedule },
+          payload: { kind: 'sessionMessage', label: sessionLabel, message, waitForIdle: true },
+          state: { lastRunAtMs: 0, lastStatus: null, lastError: null },
+        })
         toast('任务已创建', 'success')
       }
       modal.close?.() || modal.remove?.()
@@ -519,7 +417,169 @@ async function openTaskDialog(job, page, state) {
 
 // ── 工具函数 ──
 
-/** 从 Gateway 的 CronSchedule 对象或字符串中提取纯 cron 表达式 */
+// ── 本地调度辅助 ──
+
+async function loadLocalJobs() {
+  const cfg = await api.readPanelConfig()
+  if (!cfg[LOCAL_CRON_KEY] || !Array.isArray(cfg[LOCAL_CRON_KEY])) {
+    cfg[LOCAL_CRON_KEY] = []
+    await api.writePanelConfig(cfg)
+  }
+  return cfg[LOCAL_CRON_KEY]
+}
+
+async function saveLocalJobs(jobs) {
+  const cfg = await api.readPanelConfig()
+  cfg[LOCAL_CRON_KEY] = jobs
+  await api.writePanelConfig(cfg)
+}
+
+async function addLocalJob(job) {
+  const jobs = await loadLocalJobs()
+  jobs.push(job)
+  await saveLocalJobs(jobs)
+}
+
+async function updateLocalJob(id, patch) {
+  const jobs = await loadLocalJobs()
+  const idx = jobs.findIndex(j => j.id === id)
+  if (idx === -1) throw new Error('任务不存在')
+  jobs[idx] = { ...jobs[idx], ...patch }
+  await saveLocalJobs(jobs)
+}
+
+async function removeLocalJob(id) {
+  const jobs = await loadLocalJobs()
+  const next = jobs.filter(j => j.id !== id)
+  await saveLocalJobs(next)
+}
+
+function attachSessionActivityListener() {
+  wsClient.onEvent((msg) => {
+    if (msg?.type !== 'event') return
+    const payload = msg.payload || {}
+    const sessionKey = payload.sessionKey || payload.session_key || null
+    if (sessionKey) {
+      _lastSessionActivity.set(sessionKey, Date.now())
+    }
+  })
+}
+
+async function refreshSessionLabelMap() {
+  const now = Date.now()
+  if (now - _sessionLabelLastFetch < 30000 && _sessionLabelMap.size > 0) return
+  _sessionLabelLastFetch = now
+  if (!isGatewayUp()) return
+  const res = await wsClient.sessionsList(200)
+  const list = res?.sessions || res || []
+  _sessionLabelMap.clear()
+  list.forEach(s => {
+    const key = s.sessionKey || s.key || ''
+    const label = parseSessionLabel(key)
+    if (label) _sessionLabelMap.set(label, key)
+  })
+}
+
+function isSessionIdle(sessionKey) {
+  const last = _lastSessionActivity.get(sessionKey) || 0
+  return Date.now() - last >= SESSION_IDLE_MS
+}
+
+function stopScheduler() {
+  if (_schedulerTimer) {
+    clearInterval(_schedulerTimer)
+    _schedulerTimer = null
+  }
+}
+
+function restartScheduler(page, state) {
+  stopScheduler()
+  _schedulerTimer = setInterval(() => tickScheduler(page, state), SCHEDULER_INTERVAL_MS)
+  tickScheduler(page, state)
+}
+
+async function tickScheduler(page, state) {
+  if (!isGatewayUp()) return
+  await refreshSessionLabelMap().catch(() => {})
+  const jobs = await loadLocalJobs()
+  const now = new Date()
+  for (const job of jobs) {
+    if (job.enabled === false) continue
+    const expr = extractCronExpr(job.schedule)
+    if (!expr) continue
+    if (!isCronDue(expr, now, job.state?.lastRunAtMs || 0)) continue
+    await runLocalJob(job, false).catch(() => {})
+  }
+  await fetchJobs(page, state)
+}
+
+async function runLocalJob(job, manual) {
+  await refreshSessionLabelMap().catch(() => {})
+  const sessionKey = _sessionLabelMap.get(job.payload?.label || '')
+  if (!sessionKey) {
+    await updateLocalJob(job.id, { state: { ...job.state, lastStatus: 'error', lastError: 'session not found', lastRunAtMs: Date.now() } })
+    throw new Error('session not found')
+  }
+  if (job.payload?.waitForIdle && !isSessionIdle(sessionKey)) {
+    if (manual) throw new Error('session busy')
+    return
+  }
+  try {
+    await wsClient.chatSend(sessionKey, job.payload?.message || '')
+    await updateLocalJob(job.id, { state: { ...job.state, lastStatus: 'ok', lastError: null, lastRunAtMs: Date.now() } })
+  } catch (e) {
+    await updateLocalJob(job.id, { state: { ...job.state, lastStatus: 'error', lastError: String(e), lastRunAtMs: Date.now() } })
+    throw e
+  }
+}
+
+function isCronDue(expr, now, lastRunAtMs) {
+  const parts = expr.trim().split(/\s+/)
+  if (parts.length !== 5) return false
+  const [min, hr, dom, mon, dow] = parts
+  const last = lastRunAtMs ? new Date(lastRunAtMs) : null
+  if (last && last.getFullYear() === now.getFullYear() && last.getMonth() === now.getMonth() && last.getDate() === now.getDate() && last.getHours() === now.getHours() && last.getMinutes() === now.getMinutes()) {
+    return false
+  }
+  return matchCronField(min, now.getMinutes(), 0, 59)
+    && matchCronField(hr, now.getHours(), 0, 23)
+    && matchCronField(dom, now.getDate(), 1, 31)
+    && matchCronField(mon, now.getMonth() + 1, 1, 12)
+    && matchCronField(dow, now.getDay(), 0, 6)
+}
+
+function matchCronField(field, value, min, max) {
+  if (field === '*') return true
+  const parts = field.split(',')
+  return parts.some(p => matchCronPart(p, value, min, max))
+}
+
+function matchCronPart(part, value, min, max) {
+  if (part === '*') return true
+  if (part.includes('/')) {
+    const [base, stepStr] = part.split('/')
+    const step = Number(stepStr)
+    if (!step || Number.isNaN(step)) return false
+    if (base === '*') return (value - min) % step === 0
+    if (base.includes('-')) {
+      const [start, end] = base.split('-').map(Number)
+      if (Number.isNaN(start) || Number.isNaN(end)) return false
+      if (value < start || value > end) return false
+      return (value - start) % step === 0
+    }
+    return false
+  }
+  if (part.includes('-')) {
+    const [start, end] = part.split('-').map(Number)
+    if (Number.isNaN(start) || Number.isNaN(end)) return false
+    return value >= start && value <= end
+  }
+  const num = Number(part)
+  if (Number.isNaN(num)) return false
+  return num === value
+}
+
+/** 从 CronSchedule 对象或字符串中提取纯 cron 表达式 */
 function extractCronExpr(schedule) {
   if (!schedule) return null
   if (typeof schedule === 'string') return schedule
@@ -550,20 +610,11 @@ function describeCron(raw) {
   return expr
 }
 
-/** 将 Gateway 返回的 CronSchedule 对象也处理成可读文字 */
+/** 将 CronSchedule 对象处理成可读文字 */
 function describeCronFull(schedule) {
   if (!schedule) return '未知'
   if (typeof schedule === 'string') return describeCron(schedule)
   if (typeof schedule === 'object') {
-    if (schedule.kind === 'every' && schedule.everyMs) {
-      const ms = schedule.everyMs
-      if (ms < 60000) return `每 ${Math.round(ms / 1000)} 秒`
-      if (ms < 3600000) return `每 ${Math.round(ms / 60000)} 分钟`
-      return `每 ${Math.round(ms / 3600000)} 小时`
-    }
-    if (schedule.kind === 'at' && schedule.at) {
-      try { return '一次性: ' + new Date(schedule.at).toLocaleString() } catch { return schedule.at }
-    }
     if (schedule.kind === 'cron' && schedule.expr) return describeCron(schedule.expr)
   }
   return String(schedule)

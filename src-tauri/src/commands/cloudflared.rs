@@ -265,6 +265,7 @@ fn add_allowed_origin_for_target(origin: &str, target: &str, port: u16) -> Resul
     Ok(())
 }
 
+#[allow(dead_code)]
 fn add_allowed_origin(origin: &str) -> Result<(), String> {
     let mut config = crate::commands::config::load_openclaw_json()?;
     let root = config.as_object_mut().ok_or("配置格式错误")?;

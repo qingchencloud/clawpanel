@@ -31,30 +31,6 @@ const isTauri = !!window.__TAURI_INTERNALS__
 let _forceSetup = false
 let _skipSetup = false
 
-const GATEWAY_PATCH_COOLDOWN_MS = 5 * 60 * 1000
-let _gatewayPatchLastCheck = 0
-let _gatewayPatchRunning = false
-
-async function runGatewayPatchAutoDetect() {
-  if (!isTauri) return
-  if (_gatewayPatchRunning) return
-  const now = Date.now()
-  if (now - _gatewayPatchLastCheck < GATEWAY_PATCH_COOLDOWN_MS) return
-  _gatewayPatchLastCheck = now
-  _gatewayPatchRunning = true
-  try {
-    const status = await api.gatewayPatchStatus()
-    const installed = status?.installed_version
-    const recorded = status?.openclawVersion || status?.openclaw_version
-    if (!installed || !recorded) return
-    if (installed === recorded) return
-    await api.gatewayPatchApply(true)
-  } catch {
-    // 静默
-  } finally {
-    _gatewayPatchRunning = false
-  }
-}
 
 async function checkAuth() {
   if (isTauri) {
@@ -376,7 +352,7 @@ async function boot() {
   const ensureWebSession = isTauri
     ? api.readPanelConfig().then(cfg => {
         _forceSetup = cfg.forceSetup === true
-        _skipSetup = cfg.Setup === true
+        _skipSetup = cfg.skipSetup === true
         if (cfg.accessPassword) {
           return fetch('/__api/auth_login', {
             method: 'POST',
@@ -775,7 +751,6 @@ function startUpdateChecker() {
         <div style="margin-top:24px;font-size:11px;color:#a1a1aa">如果问题持续出现，请尝试重新安装 ClawPanel<br>或在 <a href="https://github.com/qingchencloud/clawpanel/issues" target="_blank" style="color:#6366f1">GitHub Issues</a> 反馈</div>
       </div>`
   }
-  await runGatewayPatchAutoDetect()
   startUpdateChecker()
 
   // 初始化全局 AI 助手浮动按钮（延迟加载，不阻塞启动）
