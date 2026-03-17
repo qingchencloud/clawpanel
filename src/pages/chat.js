@@ -6,7 +6,7 @@ import { api, invalidate } from '../lib/tauri-api.js'
 import { navigate } from '../router.js'
 import { wsClient, uuid } from '../lib/ws-client.js'
 import { renderMarkdown } from '../lib/markdown.js'
-import { computeVirtualRange, getSpacerHeights } from '../lib/virtual-scroll.js'
+import { buildPrefixHeights, findStartIndex, getSpacerHeights } from '../lib/virtual-scroll.js'
 import { saveMessage, saveMessages, getLocalMessages, isStorageAvailable } from '../lib/message-db.js'
 import { toast } from '../components/toast.js'
 import { showModal, showConfirm } from '../components/modal.js'
@@ -117,6 +117,8 @@ let _virtualHeights = new Map()
 let _virtualAvgHeight = 64
 let _virtualRange = { start: 0, end: 0, prefix: [] }
 let _virtualItems = []
+let _virtualPrefix = [0]
+let _virtualPrefixDirty = true
 let _virtualTopSpacer = null
 let _virtualBottomSpacer = null
 let _virtualRenderPending = false
@@ -2122,6 +2124,7 @@ function insertMessageByTime(wrap, ts) {
   let insertIdx = _virtualItems.findIndex(item => item.ts > tsValue)
   if (insertIdx < 0) insertIdx = _virtualItems.length
   _virtualItems.splice(insertIdx, 0, entry)
+  _virtualPrefixDirty = true
   requestVirtualRender(true)
 }
 
@@ -2139,6 +2142,8 @@ function clearMessages() {
   _virtualHeights = new Map()
   _virtualAvgHeight = 64
   _virtualRange = { start: 0, end: 0, prefix: [0] }
+  _virtualPrefix = [0]
+  _virtualPrefixDirty = true
   _autoScrollEnabled = true
   _lastScrollTop = 0
   _toolEventTimes.clear()
@@ -2215,7 +2220,13 @@ function doVirtualRender() {
   const scrollTop = _messagesEl.scrollTop
   const viewport = _messagesEl.clientHeight
   const items = _virtualItems
-  const { start, end, prefix } = computeVirtualRange(items, scrollTop, viewport, _virtualAvgHeight, VIRTUAL_OVERSCAN, VIRTUAL_WINDOW, _virtualHeights)
+  if (_virtualPrefixDirty) {
+    _virtualPrefix = buildPrefixHeights(items, _virtualHeights, _virtualAvgHeight)
+    _virtualPrefixDirty = false
+  }
+  const prefix = _virtualPrefix
+  const start = Math.max(0, findStartIndex(prefix, scrollTop) - VIRTUAL_OVERSCAN)
+  const end = Math.min(items.length, start + VIRTUAL_WINDOW + VIRTUAL_OVERSCAN * 2)
   _virtualRange = { start, end, prefix }
   const { top, bottom } = getSpacerHeights(prefix, start, end)
   _virtualTopSpacer.style.height = `${top}px`
@@ -2253,6 +2264,7 @@ function doVirtualRender() {
       const h = Math.max(1, Math.ceil(el.getBoundingClientRect().height))
       if (h) {
         _virtualHeights.set(item.id, h)
+        _virtualPrefixDirty = true
         total += h
         count += 1
       }
