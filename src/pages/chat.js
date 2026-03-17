@@ -122,6 +122,7 @@ let _virtualPrefixDirty = true
 let _virtualTopSpacer = null
 let _virtualBottomSpacer = null
 let _virtualRenderPending = false
+let _virtualObserver = null
 let _autoScrollEnabled = true, _lastScrollTop = 0, _touchStartY = 0
 
 let _streamSafetyTimer = null, _unsubEvent = null, _unsubReady = null, _unsubStatus = null
@@ -2099,6 +2100,20 @@ function showLightbox(src) {
   document.addEventListener('keydown', onKey)
 }
 
+function ensureVirtualObserver() {
+  if (_virtualObserver || typeof ResizeObserver === 'undefined') return
+  _virtualObserver = new ResizeObserver(entries => {
+    for (const entry of entries) {
+      const el = entry.target
+      const id = el?.dataset?.vid
+      if (!id) continue
+      const h = Math.max(1, Math.ceil(entry.contentRect?.height || el.getBoundingClientRect().height))
+      _virtualHeights.set(id, h)
+      _virtualPrefixDirty = true
+    }
+  })
+}
+
 function insertMessageByTime(wrap, ts) {
   const tsValue = Number(ts || Date.now())
   wrap.dataset.ts = String(tsValue)
@@ -2117,6 +2132,8 @@ function insertMessageByTime(wrap, ts) {
   }
 
   if (!wrap.dataset.vid) wrap.dataset.vid = uuid()
+  ensureVirtualObserver()
+  if (_virtualObserver) _virtualObserver.observe(wrap)
   const vid = wrap.dataset.vid
   const existingIdx = _virtualItems.findIndex(item => item.id === vid)
   const entry = { id: vid, ts: tsValue, node: wrap }
@@ -2144,6 +2161,7 @@ function clearMessages() {
   _virtualRange = { start: 0, end: 0, prefix: [0] }
   _virtualPrefix = [0]
   _virtualPrefixDirty = true
+  if (_virtualObserver) { _virtualObserver.disconnect(); _virtualObserver = null }
   _autoScrollEnabled = true
   _lastScrollTop = 0
   _toolEventTimes.clear()
