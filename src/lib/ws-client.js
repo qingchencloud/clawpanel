@@ -61,7 +61,7 @@ export class WsClient {
     this._autoPairAttempts = 0
     this._autoPairing = false
     this._serverVersion = null
-    this._state = 'disconnected'
+    this._state = WS_STATE.DISCONNECTED
   }
 
   get connected() { return this._connected }

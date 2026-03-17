@@ -1392,9 +1392,9 @@ function extractChatContent(message) {
     const output = typeof message.content === 'string' ? message.content : null
     if (!tools.length) {
       tools.push({
-        name: message.name || message.tool || message.tool_name || '工具',
-        input: message.input || message.args || message.parameters || null,
-        output: output || message.output || message.result || null,
+        name: message.name || message.tool || message.tool_name || message.toolName || message.tool?.name || message.meta?.toolName || '工具',
+        input: message.input || message.args || message.parameters || message.arguments || message.tool_input || message.toolInput || message.meta?.input || message.meta?.args || null,
+        output: output || message.output || message.result || message.content || message.tool_output || message.output_text || message.result_text || message.meta?.output || null,
         status: message.status || 'ok',
       })
     } else if (output && !tools[0].output) {
@@ -1429,8 +1429,8 @@ function extractChatContent(message) {
         const callId = block.id || block.tool_call_id || block.toolCallId || block.tool_use_id || block.toolUseId
         upsertTool(tools, {
           id: callId,
-          name: block.name || block.tool || block.tool_name || block.toolName || '工具',
-          input: block.input || block.args || block.parameters || block.arguments || block.meta?.input || null,
+          name: block.name || block.tool || block.tool_name || block.toolName || block.tool?.name || block.meta?.toolName || '工具',
+          input: block.input || block.args || block.parameters || block.arguments || block.tool_input || block.toolInput || block.meta?.input || block.meta?.args || null,
           output: null,
           status: block.status || 'ok',
           time: resolveToolTime(callId, message.timestamp, message.runId),
@@ -1442,9 +1442,9 @@ function extractChatContent(message) {
         const resId = block.id || block.tool_call_id || block.toolCallId || block.result_id || block.resultId
         upsertTool(tools, {
           id: resId,
-          name: block.name || block.tool || block.tool_name || block.toolName || '工具',
-          input: block.input || block.args || block.meta?.input || null,
-          output: block.output || block.result || block.content || block.meta?.output || null,
+          name: block.name || block.tool || block.tool_name || block.toolName || block.tool?.name || block.meta?.toolName || '工具',
+          input: block.input || block.args || block.tool_input || block.toolInput || block.meta?.input || block.meta?.args || null,
+          output: block.output || block.result || block.content || block.tool_output || block.output_text || block.result_text || block.meta?.output || null,
           status: block.status || 'ok',
           time: resolveToolTime(resId, message.timestamp, message.runId),
           runId: message.runId,
@@ -1797,8 +1797,8 @@ function extractContent(msg) {
         const callId = block.id || block.tool_call_id || block.toolCallId || block.tool_use_id || block.toolUseId
         upsertTool(tools, {
           id: callId,
-          name: block.name || block.tool || block.tool_name || block.toolName || '工具',
-          input: block.input || block.args || block.parameters || block.arguments || block.meta?.input || null,
+          name: block.name || block.tool || block.tool_name || block.toolName || block.tool?.name || block.meta?.toolName || '工具',
+          input: block.input || block.args || block.parameters || block.arguments || block.tool_input || block.toolInput || block.meta?.input || block.meta?.args || null,
           output: null,
           status: block.status || 'ok',
           time: resolveToolTime(callId, msg.timestamp, msg.runId),
@@ -1808,9 +1808,9 @@ function extractContent(msg) {
         const resId = block.id || block.tool_call_id || block.toolCallId || block.result_id || block.resultId
         upsertTool(tools, {
           id: resId,
-          name: block.name || block.tool || block.tool_name || block.toolName || '工具',
-          input: block.input || block.args || block.meta?.input || null,
-          output: block.output || block.result || block.content || block.meta?.output || null,
+          name: block.name || block.tool || block.tool_name || block.toolName || block.tool?.name || block.meta?.toolName || '工具',
+          input: block.input || block.args || block.tool_input || block.toolInput || block.meta?.input || block.meta?.args || null,
+          output: block.output || block.result || block.content || block.tool_output || block.output_text || block.result_text || block.meta?.output || null,
           status: block.status || 'ok',
           time: resolveToolTime(resId, msg.timestamp, msg.runId),
         })
@@ -2060,8 +2060,8 @@ function collectToolsFromMessage(message, tools) {
   if (Array.isArray(toolCalls)) {
     toolCalls.forEach(call => {
       const fn = call.function || null
-      const name = call.name || call.tool || call.tool_name || fn?.name
-      const input = call.input || call.args || call.parameters || call.arguments || fn?.arguments || null
+      const name = call.name || call.tool || call.tool_name || call.toolName || call.tool?.name || call.meta?.toolName || fn?.name
+      const input = call.input || call.args || call.parameters || call.arguments || call.tool_input || call.toolInput || call.meta?.input || call.meta?.args || fn?.arguments || null
       const callId = call.id || call.tool_call_id || call.tool_use_id || call.toolUseId
       upsertTool(tools, {
         id: callId,
@@ -2081,9 +2081,9 @@ function collectToolsFromMessage(message, tools) {
       const resId = res.id || res.tool_call_id || res.result_id || res.resultId
       upsertTool(tools, {
         id: resId,
-        name: res.name || res.tool || res.tool_name || '工具',
-        input: res.input || res.args || res.meta?.input || null,
-        output: res.output || res.result || res.content || res.meta?.output || null,
+        name: res.name || res.tool || res.tool_name || res.toolName || res.tool?.name || res.meta?.toolName || '工具',
+        input: res.input || res.args || res.tool_input || res.toolInput || res.meta?.input || res.meta?.args || null,
+        output: res.output || res.result || res.content || res.tool_output || res.output_text || res.result_text || res.meta?.output || null,
         status: res.status || 'ok',
         time: resolveToolTime(resId, message?.timestamp, message?.runId),
         runId: message?.runId,
