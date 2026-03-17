@@ -6,6 +6,7 @@ import { api, invalidate } from '../lib/tauri-api.js'
 import { navigate } from '../router.js'
 import { wsClient, uuid } from '../lib/ws-client.js'
 import { renderMarkdown } from '../lib/markdown.js'
+import { computeVirtualRange, getSpacerHeights } from '../lib/virtual-scroll.js'
 import { saveMessage, saveMessages, getLocalMessages, isStorageAvailable } from '../lib/message-db.js'
 import { toast } from '../components/toast.js'
 import { showModal, showConfirm } from '../components/modal.js'
@@ -63,6 +64,17 @@ let _currentAiBubble = null, _currentAiText = '', _currentAiImages = [], _curren
 let _isStreaming = false, _isSending = false, _messageQueue = [], _streamStartTime = 0
 let _lastRenderTime = 0, _renderPending = false, _lastHistoryHash = ''
 let _isLoadingHistory = false
+
+const VIRTUAL_WINDOW = 40
+const VIRTUAL_OVERSCAN = 20
+let _virtualEnabled = true
+let _virtualHeights = new Map()
+let _virtualAvgHeight = 64
+let _virtualRange = { start: 0, end: 0, prefix: [0] }
+let _virtualItems = []
+let _virtualTopSpacer = null
+let _virtualBottomSpacer = null
+let _virtualRenderPending = false
 let _streamSafetyTimer = null, _unsubEvent = null, _unsubReady = null, _unsubStatus = null
 let _seenRunIds = new Set()
 let _pageActive = false
@@ -277,6 +289,9 @@ function bindEvents(page) {
     if (!target) return
     if (target.closest('code, pre')) return
     target.classList.toggle('revealed')
+  })
+  _messagesEl.addEventListener('scroll', () => {
+    if (_virtualEnabled) requestVirtualRender()
   })
 }
 
@@ -1893,15 +1908,29 @@ function showLightbox(src) {
 function insertMessageByTime(wrap, ts) {
   const tsValue = Number(ts || Date.now())
   wrap.dataset.ts = String(tsValue)
-  const items = Array.from(_messagesEl.querySelectorAll('.msg'))
-  for (const node of items) {
-    const nodeTs = parseInt(node.dataset.ts || '0', 10)
-    if (nodeTs > tsValue) {
-      _messagesEl.insertBefore(wrap, node)
-      return
+
+  if (!_virtualEnabled) {
+    const items = Array.from(_messagesEl.querySelectorAll('.msg'))
+    for (const node of items) {
+      const nodeTs = parseInt(node.dataset.ts || '0', 10)
+      if (nodeTs > tsValue) {
+        _messagesEl.insertBefore(wrap, node)
+        return
+      }
     }
+    _messagesEl.insertBefore(wrap, _typingEl)
+    return
   }
-  _messagesEl.insertBefore(wrap, _typingEl)
+
+  if (!wrap.dataset.vid) wrap.dataset.vid = uuid()
+  const vid = wrap.dataset.vid
+  const existingIdx = _virtualItems.findIndex(item => item.id === vid)
+  const entry = { id: vid, ts: tsValue, node: wrap }
+  if (existingIdx >= 0) _virtualItems.splice(existingIdx, 1)
+  let insertIdx = _virtualItems.findIndex(item => item.ts > tsValue)
+  if (insertIdx < 0) insertIdx = _virtualItems.length
+  _virtualItems.splice(insertIdx, 0, entry)
+  requestVirtualRender(true)
 }
 
 function appendSystemMessage(text, ts) {
@@ -1914,6 +1943,12 @@ function appendSystemMessage(text, ts) {
 
 function clearMessages() {
   _messagesEl.querySelectorAll('.msg').forEach(m => m.remove())
+  _virtualItems = []
+  _virtualHeights = new Map()
+  _virtualAvgHeight = 64
+  _virtualRange = { start: 0, end: 0, prefix: [0] }
+  if (_virtualTopSpacer) _virtualTopSpacer.style.height = '0px'
+  if (_virtualBottomSpacer) _virtualBottomSpacer.style.height = '0px'
 }
 
 function showTyping(show) {
@@ -1938,6 +1973,90 @@ function showCompactionHint(show) {
 function scrollToBottom() {
   if (!_messagesEl) return
   requestAnimationFrame(() => { _messagesEl.scrollTop = _messagesEl.scrollHeight })
+}
+
+function isAtBottom() {
+  if (!_messagesEl) return true
+  const threshold = 80
+  return _messagesEl.scrollHeight - _messagesEl.scrollTop - _messagesEl.clientHeight < threshold
+}
+
+function ensureVirtualSpacers() {
+  if (!_messagesEl) return
+  if (!_virtualTopSpacer) {
+    _virtualTopSpacer = document.createElement('div')
+    _virtualTopSpacer.className = 'msg-virtual-spacer'
+    _messagesEl.insertBefore(_virtualTopSpacer, _messagesEl.firstChild)
+  }
+  if (!_virtualBottomSpacer) {
+    _virtualBottomSpacer = document.createElement('div')
+    _virtualBottomSpacer.className = 'msg-virtual-spacer'
+    _messagesEl.insertBefore(_virtualBottomSpacer, _typingEl)
+  }
+}
+
+function requestVirtualRender(force = false) {
+  if (!_virtualEnabled || !_messagesEl) return
+  if (_virtualRenderPending && !force) return
+  _virtualRenderPending = true
+  requestAnimationFrame(() => {
+    _virtualRenderPending = false
+    doVirtualRender()
+  })
+}
+
+function doVirtualRender() {
+  if (!_virtualEnabled || !_messagesEl) return
+  ensureVirtualSpacers()
+  const atBottom = isAtBottom()
+  const scrollTop = _messagesEl.scrollTop
+  const viewport = _messagesEl.clientHeight
+  const items = _virtualItems
+  const { start, end, prefix } = computeVirtualRange(items, scrollTop, viewport, _virtualAvgHeight, VIRTUAL_OVERSCAN, VIRTUAL_WINDOW, _virtualHeights)
+  _virtualRange = { start, end, prefix }
+  const { top, bottom } = getSpacerHeights(prefix, start, end)
+  _virtualTopSpacer.style.height = `${top}px`
+  _virtualBottomSpacer.style.height = `${bottom}px`
+
+  const visibleIds = new Set(items.slice(start, end).map(i => i.id))
+  _messagesEl.querySelectorAll('.msg').forEach(node => {
+    const vid = node.dataset.vid
+    if (!vid || !visibleIds.has(vid)) node.remove()
+  })
+
+  const anchor = _virtualTopSpacer.nextSibling
+  let refNode = anchor
+  for (let i = start; i < end; i++) {
+    const item = items[i]
+    if (!item?.node) continue
+    if (item.node.parentNode !== _messagesEl) {
+      _messagesEl.insertBefore(item.node, refNode || _virtualBottomSpacer)
+    }
+    refNode = item.node.nextSibling
+  }
+
+  requestAnimationFrame(() => {
+    let total = 0, count = 0
+    items.slice(start, end).forEach(item => {
+      const el = item.node
+      if (!el || !el.getBoundingClientRect) return
+      const h = Math.max(1, Math.ceil(el.getBoundingClientRect().height))
+      if (h) {
+        _virtualHeights.set(item.id, h)
+        total += h
+        count += 1
+      }
+    })
+    if (count) _virtualAvgHeight = Math.max(24, Math.round(total / count))
+
+    if (atBottom) {
+      scrollToBottom()
+    } else {
+      const newTop = _virtualTopSpacer.offsetHeight
+      const delta = newTop - top
+      if (delta !== 0) _messagesEl.scrollTop = scrollTop + delta
+    }
+  })
 }
 
 function updateSendState() {
