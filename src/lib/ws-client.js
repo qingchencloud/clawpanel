@@ -327,11 +327,29 @@ export class WsClient {
     this._state = status
     this._connected = status === WS_STATE.CONNECTED || status === WS_STATE.READY
     if (WS_DEBUG && prev !== status) {
+      const allowed = this._isAllowedTransition(prev, status)
+      if (!allowed) console.warn('[ws] unexpected state transition', prev, '->', status)
       console.log('[ws] state', prev, '->', status, errorMsg || '')
     }
     this._statusListeners.forEach(fn => {
       try { fn(status, errorMsg) } catch (e) { console.error('[ws] status listener error:', e) }
     })
+  }
+
+  _isAllowedTransition(from, to) {
+    if (!from) return true
+    const map = {
+      [WS_STATE.DISCONNECTED]: [WS_STATE.CONNECTING, WS_STATE.RECONNECTING],
+      [WS_STATE.CONNECTING]: [WS_STATE.HANDSHAKING, WS_STATE.ERROR, WS_STATE.DISCONNECTED, WS_STATE.RECONNECTING],
+      [WS_STATE.HANDSHAKING]: [WS_STATE.READY, WS_STATE.ERROR, WS_STATE.DISCONNECTED],
+      [WS_STATE.READY]: [WS_STATE.RECONNECTING, WS_STATE.DISCONNECTED, WS_STATE.ERROR],
+      [WS_STATE.CONNECTED]: [WS_STATE.HANDSHAKING, WS_STATE.READY, WS_STATE.RECONNECTING, WS_STATE.DISCONNECTED],
+      [WS_STATE.RECONNECTING]: [WS_STATE.CONNECTING, WS_STATE.HANDSHAKING, WS_STATE.READY, WS_STATE.ERROR],
+      [WS_STATE.ERROR]: [WS_STATE.CONNECTING, WS_STATE.RECONNECTING, WS_STATE.DISCONNECTED],
+      [WS_STATE.AUTH_FAILED]: [WS_STATE.CONNECTING, WS_STATE.DISCONNECTED],
+    }
+    const next = map[from] || []
+    return next.includes(to)
   }
 
   _setConnected(val, status, errorMsg) {
