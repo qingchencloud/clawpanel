@@ -8,7 +8,7 @@ export const API_TYPES = [
   { value: 'openai-completions', label: 'OpenAI 兼容 (最常用)' },
   { value: 'anthropic-messages', label: 'Anthropic 原生' },
   { value: 'openai-responses', label: 'OpenAI Responses' },
-  { value: 'google-gemini', label: 'Google Gemini' },
+  { value: 'google-generative-ai', label: 'Google Gemini' },
 ]
 
 // 服务商快捷预设
@@ -23,7 +23,7 @@ export const PROVIDER_PRESETS = [
   { key: 'openai', label: 'OpenAI 官方', baseUrl: 'https://api.openai.com/v1', api: 'openai-completions' },
   { key: 'anthropic', label: 'Anthropic 官方', baseUrl: 'https://api.anthropic.com', api: 'anthropic-messages' },
   { key: 'deepseek', label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', api: 'openai-completions' },
-  { key: 'google', label: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta', api: 'google-gemini' },
+  { key: 'google', label: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta', api: 'google-generative-ai' },
   { key: 'nvidia', label: 'NVIDIA NIM', baseUrl: 'https://integrate.api.nvidia.com/v1', api: 'openai-completions', desc: '英伟达推理平台，支持 Llama、Mistral 等模型' },
   { key: 'ollama', label: 'Ollama (本地)', baseUrl: 'http://127.0.0.1:11434/v1', api: 'openai-completions' },
 ]

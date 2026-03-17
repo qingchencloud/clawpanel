@@ -1,9 +1,7 @@
 /**
- * Markdown 渲染器 - markdown-it 版本
- * 支持代码高亮、下划线、剧透、@提及
+ * Markdown 渲染器 - 轻量级，支持代码高亮
+ * 从 clawapp 移植，去掉 MEDIA 路径处理
  */
-
-import MarkdownIt from 'markdown-it'
 
 const KEYWORDS = new Set([
   'const','let','var','function','return','if','else','for','while','do',
@@ -19,6 +17,8 @@ const KEYWORDS = new Set([
 
 function highlightCode(code, lang) {
   const escaped = escapeHtml(code)
+  // Two-phase: mark with control chars first, convert to HTML last
+  // Prevents keyword regex from matching "class" inside <span class="..."> attributes
   const S = '\x02', E = '\x03'
   const CLS = ['hl-number','hl-comment','hl-string','hl-type','hl-func','hl-keyword']
   return escaped
@@ -46,154 +46,116 @@ function escapeHtml(str) {
     .replace(/'/g, '&#x27;')
 }
 
-function escapeHtmlLite(str) {
-  return str
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#x27;')
-}
-
-function stripAnsi(str) {
-  if (!str) return ''
-  return str.replace(/\u001b\[[0-9;]*[A-Za-z]/g, '')
-}
-
 // 预加载 Tauri convertFileSrc
 let _convertFileSrc = null
 if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
   import('@tauri-apps/api/core').then(m => { _convertFileSrc = m.convertFileSrc }).catch(() => {})
 }
 
+/** 将本地文件路径转换为可加载的 URL */
 function resolveImageSrc(src) {
   if (!src) return src
+  // 已经是 http/https/data URL → 直接返回
   if (/^(https?|data|blob):/.test(src)) return src
+  // Windows 绝对路径 (C:\... or C:/...)
   const isWinPath = /^[A-Za-z]:[\\/]/.test(src)
+  // Unix 绝对路径 (/Users/... /home/... /tmp/...)
   const isUnixPath = /^\/[^/]/.test(src)
   if (isWinPath || isUnixPath) {
+    // Tauri 环境：使用 convertFileSrc 转换为 asset protocol URL
     if (_convertFileSrc) {
       try { return _convertFileSrc(src) } catch {}
     }
+    // Tauri 未就绪或 Web 模式：返回原始路径（onerror 会处理显示）
     return src
   }
   return src
 }
 
-function spoilerPlugin(md) {
-  md.inline.ruler.before('emphasis', 'spoiler', (state, silent) => {
-    const src = state.src
-    const pos = state.pos
-    if (src.startsWith('||', pos)) {
-      const end = src.indexOf('||', pos + 2)
-      if (end === -1) return false
-      if (!silent) {
-        const tokenOpen = state.push('spoiler_open', 'span', 1)
-        tokenOpen.markup = '||'
-        const oldPos = state.pos
-        const oldMax = state.posMax
-        state.pos = pos + 2
-        state.posMax = end
-        state.md.inline.tokenize(state)
-        state.pos = oldPos
-        state.posMax = oldMax
-        const tokenClose = state.push('spoiler_close', 'span', -1)
-        tokenClose.markup = '||'
-      }
-      state.pos = end + 2
-      return true
-    }
-    if (src.startsWith('>!', pos)) {
-      const end = src.indexOf('!<', pos + 2)
-      if (end === -1) return false
-      if (!silent) {
-        const tokenOpen = state.push('spoiler_open', 'span', 1)
-        tokenOpen.markup = '>!'
-        const oldPos = state.pos
-        const oldMax = state.posMax
-        state.pos = pos + 2
-        state.posMax = end
-        state.md.inline.tokenize(state)
-        state.pos = oldPos
-        state.posMax = oldMax
-        const tokenClose = state.push('spoiler_close', 'span', -1)
-        tokenClose.markup = '!<'
-      }
-      state.pos = end + 2
-      return true
-    }
-    return false
-  })
+export function renderMarkdown(text) {
+  if (!text) return ''
+  let html = text
 
-  md.renderer.rules.spoiler_open = () => '<span class="msg-spoiler">'
-  md.renderer.rules.spoiler_close = () => '</span>'
-}
-
-function mentionPlugin(md) {
-  md.inline.ruler.before('text', 'mention', (state, silent) => {
-    const src = state.src
-    const pos = state.pos
-    if (src[pos] !== '@') return false
-    if (pos > 0 && /[\w.]/.test(src[pos - 1])) return false
-    const match = src.slice(pos + 1).match(/^[a-zA-Z0-9_]{1,32}/)
-    if (!match) return false
-    if (!silent) {
-      const token = state.push('mention', '', 0)
-      token.content = '@' + match[0]
-    }
-    state.pos += 1 + match[0].length
-    return true
-  })
-
-  md.renderer.rules.mention = (tokens, idx) => {
-    return `<span class="msg-mention">${escapeHtml(tokens[idx].content)}</span>`
-  }
-}
-
-const md = new MarkdownIt({
-  html: false,
-  linkify: true,
-  breaks: false,
-  highlight: (code, lang) => {
+  // 代码块
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
     const highlighted = highlightCode(code.trimEnd(), lang)
     const langLabel = lang ? `<span class="code-lang">${escapeHtml(lang)}</span>` : ''
     return `<pre data-lang="${escapeHtml(lang)}">${langLabel}<button class="code-copy-btn" onclick="window.__copyCode(this)">Copy</button><code>${highlighted}</code></pre>`
-  },
-})
+  })
 
-// __text__ -> <u>text</u>, keep ** for <strong>
-md.renderer.rules.strong_open = (tokens, idx) => (tokens[idx].markup === '__' ? '<u>' : '<strong>')
-md.renderer.rules.strong_close = (tokens, idx) => (tokens[idx].markup === '__' ? '</u>' : '</strong>')
+  // 行内代码
+  html = html.replace(/`([^`\n]+)`/g, (_, code) => `<code>${escapeHtml(code)}</code>`)
 
-// Link whitelist
-const defaultLinkOpen = md.renderer.rules.link_open || ((tokens, idx, options, env, self) => self.renderToken(tokens, idx, options))
-md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
-  const hrefIdx = tokens[idx].attrIndex('href')
-  if (hrefIdx >= 0) {
-    const url = tokens[idx].attrs[hrefIdx][1] || ''
-    const safe = /^(https?:|mailto:)/i.test(url.trim()) ? url : '#'
-    tokens[idx].attrs[hrefIdx][1] = safe
+  const lines = html.split('\n')
+  const result = []
+  let inList = false
+  let listType = ''
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i]
+
+    // 跳过 pre 块内容
+    if (line.startsWith('<pre')) {
+      result.push(line)
+      while (i < lines.length - 1 && !lines[i].includes('</pre>')) { i++; result.push(lines[i]) }
+      continue
+    }
+
+    // 标题
+    const headingMatch = line.match(/^(#{1,3})\s+(.+)$/)
+    if (headingMatch) {
+      if (inList) { result.push(`</${listType}>`); inList = false }
+      const level = headingMatch[1].length
+      result.push(`<h${level}>${inlineFormat(headingMatch[2])}</h${level}>`)
+      continue
+    }
+
+    // 无序列表
+    const ulMatch = line.match(/^[\s]*[-*]\s+(.+)$/)
+    if (ulMatch) {
+      if (!inList || listType !== 'ul') {
+        if (inList) result.push(`</${listType}>`)
+        result.push('<ul>'); inList = true; listType = 'ul'
+      }
+      result.push(`<li>${inlineFormat(ulMatch[1])}</li>`)
+      continue
+    }
+
+    // 有序列表
+    const olMatch = line.match(/^[\s]*\d+\.\s+(.+)$/)
+    if (olMatch) {
+      if (!inList || listType !== 'ol') {
+        if (inList) result.push(`</${listType}>`)
+        result.push('<ol>'); inList = true; listType = 'ol'
+      }
+      result.push(`<li>${inlineFormat(olMatch[1])}</li>`)
+      continue
+    }
+
+    if (inList) { result.push(`</${listType}>`); inList = false }
+    if (line.trim() === '') { result.push(''); continue }
+    if (!line.startsWith('<')) { result.push(`<p>${inlineFormat(line)}</p>`) }
+    else { result.push(line) }
   }
-  return defaultLinkOpen(tokens, idx, options, env, self)
+
+  if (inList) result.push(`</${listType}>`)
+  return result.join('\n')
 }
 
-// Image renderer
-md.renderer.rules.image = (tokens, idx) => {
-  const token = tokens[idx]
-  const srcIdx = token.attrIndex('src')
-  const rawSrc = srcIdx >= 0 ? token.attrs[srcIdx][1] : ''
-  const safeSrc = resolveImageSrc((rawSrc || '').trim())
-  const alt = escapeHtmlLite(token.content || '')
-  const rawEscaped = escapeHtml(rawSrc || '')
-  return `<img src="${safeSrc}" alt="${alt}" class="msg-img" onerror="this.onerror=null;this.style.display='none';this.insertAdjacentHTML('afterend','<span style=\\'color:var(--text-tertiary);font-size:12px\\'>[图片无法加载: ${rawEscaped}]</span>')" />`
-}
-
-md.use(spoilerPlugin)
-md.use(mentionPlugin)
-
-export function renderMarkdown(text) {
-  if (!text) return ''
-  const clean = stripAnsi(text)
-  return md.render(clean)
+function inlineFormat(text) {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/__(.+?)__/g, '<strong>$1</strong>')
+    .replace(/(?<!\w)_(.+?)_(?!\w)/g, '<em>$1</em>')
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, src) => {
+      const safeSrc = resolveImageSrc(src.trim())
+      return `<img src="${safeSrc}" alt="${alt}" class="msg-img" onerror="this.onerror=null;this.style.display='none';this.insertAdjacentHTML('afterend','<span style=\\'color:var(--text-tertiary);font-size:12px\\'>[图片无法加载: ${escapeHtml(src)}]</span>')" />`
+    })
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) => {
+      const safe = /^https?:|^mailto:/i.test(url.trim()) ? url : '#'
+      return `<a href="${safe}" target="_blank" rel="noopener">${label}</a>`
+    })
 }
 
 window.__copyCode = function(btn) {

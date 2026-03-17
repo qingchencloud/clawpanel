@@ -21,7 +21,7 @@ export function uuid() {
 
 const REQUEST_TIMEOUT = 30000
 const MAX_RECONNECT_DELAY = 30000
-const PING_INTERVAL = 5000
+const PING_INTERVAL = 25000
 const CHALLENGE_TIMEOUT = 5000
 
 export class WsClient {
@@ -289,29 +289,12 @@ export class WsClient {
     }
     this._gatewayReady = true
     console.log('[ws] Gateway 就绪, sessionKey:', this._sessionKey)
-    this._sendBootstrapRequests()
     this._setConnected(true, 'ready')
     this._readyCallbacks.forEach(fn => {
       try { fn(this._hello, this._sessionKey) } catch (e) {
         console.error('[ws] ready cb error:', e)
       }
     })
-  }
-
-  _sendBootstrapRequests() {
-    if (!this._ws || this._ws.readyState !== WebSocket.OPEN) return
-    const sessionKey = this._sessionKey || 'agent:full-stack-architect:main'
-    const frames = [
-      { type: 'req', id: uuid(), method: 'agent.identity.get', params: { sessionKey } },
-      { type: 'req', id: uuid(), method: 'agents.list', params: {} },
-      { type: 'req', id: uuid(), method: 'health', params: {} },
-      { type: 'req', id: uuid(), method: 'node.list', params: {} },
-      { type: 'req', id: uuid(), method: 'device.pair.list', params: {} },
-      { type: 'req', id: uuid(), method: 'chat.history', params: { sessionKey, limit: 200 } },
-      { type: 'req', id: uuid(), method: 'sessions.list', params: { includeGlobal: true, includeUnknown: true } },
-      { type: 'req', id: uuid(), method: 'models.list', params: {} },
-    ]
-    frames.forEach(frame => this._ws.send(JSON.stringify(frame)))
   }
 
   _setConnected(val, status, errorMsg) {
@@ -367,16 +350,7 @@ export class WsClient {
     this._stopPing()
     this._pingTimer = setInterval(() => {
       if (this._ws && this._ws.readyState === WebSocket.OPEN) {
-        try {
-          const sessionKey = this._sessionKey || 'agent:full-stack-architect:main'
-          const frames = [
-            { type: 'req', id: uuid(), method: 'node.list', params: {} },
-            { type: 'req', id: uuid(), method: 'models.list', params: {} },
-            { type: 'req', id: uuid(), method: 'sessions.list', params: { includeGlobal: true, includeUnknown: true } },
-            { type: 'req', id: uuid(), method: 'chat.history', params: { sessionKey, limit: 200 } },
-          ]
-          frames.forEach(frame => this._ws.send(JSON.stringify(frame)))
-        } catch {}
+        try { this._ws.send('{"type":"ping"}') } catch {}
       }
     }, PING_INTERVAL)
   }
@@ -410,7 +384,7 @@ export class WsClient {
   }
 
   chatSend(sessionKey, message, attachments) {
-    const params = { sessionKey, message, deliver: true, idempotencyKey: uuid() }
+    const params = { sessionKey, message, deliver: false, idempotencyKey: uuid() }
     if (attachments && attachments.length > 0) {
       params.attachments = attachments
       console.log('[ws] 发送附件:', attachments.length, '个')
@@ -447,6 +421,6 @@ export class WsClient {
   }
 }
 
-const g = typeof window !== 'undefined' ? window : globalThis
-if (!g.__clawpanelWsClient) g.__clawpanelWsClient = new WsClient()
-export const wsClient = g.__clawpanelWsClient
+const _g = typeof window !== 'undefined' ? window : globalThis
+if (!_g.__clawpanelWsClient) _g.__clawpanelWsClient = new WsClient()
+export const wsClient = _g.__clawpanelWsClient

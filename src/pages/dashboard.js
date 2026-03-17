@@ -41,7 +41,14 @@ export async function render() {
   bindActions(page)
 
   // 异步加载数据
-  loadDashboardData(page)
+  loadDashboardData(page).catch(e => {
+    console.error('[dashboard] loadDashboardData 异常:', e)
+    const cardsEl = page.querySelector('#stat-cards')
+    if (cardsEl && cardsEl.querySelector('.loading-placeholder')) {
+      cardsEl.innerHTML = `<div class="stat-card" style="grid-column:1/-1;text-align:center;color:var(--text-secondary)"><div>加载失败: ${escapeHtml(String(e?.message || e))}</div><button class="btn btn-sm btn-secondary" style="margin-top:8px" onclick="this.closest('.page')&&this.closest('.page').__retryLoad?.()">重试</button></div>`
+    }
+  })
+  page.__retryLoad = () => loadDashboardData(page).catch(() => {})
 
   // 监听 Gateway 状态变化，自动刷新仪表盘
   if (_unsubGw) _unsubGw()
@@ -61,19 +68,23 @@ let _dashboardInitialized = false
 async function loadDashboardData(page, fullRefresh = false) {
   // 分波加载：关键数据先渲染，次要数据后填充，减少白屏等待
   // 轻量调用（读文件）每次都做；重量调用（spawn CLI/网络请求）只在首次或手动刷新时做
-  const coreP = Promise.allSettled([
+  const withTimeout = (promise, ms) => Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`超时(${ms/1000}s)`)), ms))
+  ])
+  const coreP = withTimeout(Promise.allSettled([
     api.getServicesStatus(),
     api.readOpenclawConfig(),
     // 版本信息：首次加载或手动刷新时才查询（避免 ARM 设备上频繁查 npm registry）
     (!_dashboardInitialized || fullRefresh) ? api.getVersionInfo() : Promise.resolve(null),
-  ])
-  const secondaryP = Promise.allSettled([
+  ]), 15000)
+  const secondaryP = withTimeout(Promise.allSettled([
     api.listAgents(),
     api.readMcpConfig(),
     api.listBackups(),
     // getStatusSummary 是最重的调用（spawn openclaw status --json），只在首次加载时调用
     (!_dashboardInitialized || fullRefresh) ? api.getStatusSummary() : Promise.resolve(null),
-  ])
+  ]), 15000).catch(() => [{ status: 'rejected' }, { status: 'rejected' }, { status: 'rejected' }, { status: 'rejected' }])
   const logsP = api.readLogTail('gateway', 20).catch(() => '')
 
   // 第一波：服务状态 + 配置 + 版本 → 立即渲染统计卡片

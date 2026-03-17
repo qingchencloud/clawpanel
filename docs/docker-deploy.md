@@ -320,6 +320,34 @@ docker logs clawpanel
 
 确认看到 `VITE ready` 和 `[dev-api] 开发 API 已启动` 输出。
 
+### Q: 面板里点"安装 OpenClaw"失败 / 拉取不了？
+
+面板中的"安装 OpenClaw"走的是 `npm install -g`（在容器内通过网络下载安装），**不是拉取 Docker 镜像**。失败原因通常是容器网络不通或 npm 源访问慢。
+
+**推荐方案（二选一）：**
+
+1. **使用一体镜像（最简单）**：直接用预装了 OpenClaw + Gateway + ClawPanel 的一体镜像，不需要在面板里点安装：
+   ```bash
+   docker run -d --name openclaw -p 1420:1420 -p 18789:18789 \
+     -v openclaw-data:/root/.openclaw \
+     ghcr.io/qingchencloud/openclaw:latest
+   ```
+   > 一体镜像仓库：[github.com/qingchencloud/openclaw-docker](https://github.com/qingchencloud/openclaw-docker)
+
+2. **在 Dockerfile 中预装**：构建镜像时就安装好 OpenClaw，避免运行时下载：
+   ```dockerfile
+   FROM node:22-slim
+   RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+   # 预装 OpenClaw CLI（使用国内镜像源加速）
+   RUN npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com
+   # ... 后续 ClawPanel 安装步骤
+   ```
+
+**临时方案**：如果容器已经在运行，可以手动进入容器安装：
+```bash
+docker exec -it clawpanel npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com
+```
+
 ### Q: 面板显示 "openclaw.json 不存在"？
 
 在容器内初始化 OpenClaw：

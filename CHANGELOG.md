@@ -5,15 +5,30 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## PR #94 摘要
+## [0.9.5] - 2026-03-17
 
-- 里程碑：v0.1.0→v0.9.4 版本演进与功能聚合完成。
-- 核心功能：聊天体验重构、虚拟滚动与工具事件展示完善。
-- 安装/诊断：独立安装包、安装方式选择器、Gateway 补丁与自动检测链路完善。
-- 渠道/协作：多 Agent 渠道绑定与飞书/QQ 等渠道扩展。
-- 性能/分发：ARM 优化、R2 分发与通用包策略升级。
-- 质量/安全：CI/Clippy 清理、安全修复与稳定性增强。
-- 文档/官网：部署指南、官网展示与 README 双语完善。
+### 修复 (Fixes)
+
+- **仪表盘加载卡住** — 从其他页面返回仪表盘时不再永远显示加载占位符，添加错误捕获和重试按钮 (#96)
+- **Gemini 模型配置崩溃** — Google Gemini 的 api 类型从错误的 `google-gemini` 修正为 `google-generative-ai`，与上游 OpenClaw 配置规范一致 (#93)
+- **聊天代码下划线消失** — Markdown 渲染器的下划线转斜体正则改为 word-boundary 匹配，`my_variable` 等标识符不再被误转 (#92)
+- **聊天发送前校验** — Gateway 未就绪时点击发送按钮会提示警告，而非静默失败
+- **聊天页空值防御** — `createStreamBubble`、`renderAttachments`、`showPageGuide`、`loadHistory` 等 8 处空值检查，防止快速切页时报错
+- **WebSocket 重复连接** — 添加 `_connecting` 状态标记和 `connect()` 防重入守卫，避免重复发起连接
+
+### 新功能 (Features)
+
+- **工具调用渲染** — 聊天消息中的 AI 工具调用（tool call）以可折叠卡片形式展示，包含工具名、状态、时间、参数和结果详情
+- **自动滚动控制** — 用户向上滚动查看历史消息时，新回复不再强制跳到底部；点击 ↓ 按钮恢复自动跟随
+
+### 改进 (Improvements)
+
+- **WebSocket 全局单例** — `wsClient` 改为 `window` 级单例，防止热更新时创建重复实例
+- **Docker 部署文档** — 新增 FAQ：面板内安装 OpenClaw 失败的原因和解决方案（推荐一体镜像或 Dockerfile 预装）
+
+### 安全 (Security)
+
+- **quinn-proto 漏洞修复** — 更新 quinn-proto 0.11.13 → 0.11.14，修复 QUIC transport parameter 解析 panic (GHSA-6xvm-j4wr-6v98)
 
 ## [0.9.4] - 2026-03-17
 

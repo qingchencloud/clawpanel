@@ -6,7 +6,6 @@ import { api, invalidate } from '../lib/tauri-api.js'
 import { navigate } from '../router.js'
 import { wsClient, uuid } from '../lib/ws-client.js'
 import { renderMarkdown } from '../lib/markdown.js'
-import { computeVirtualRange, getSpacerHeights } from '../lib/virtual-scroll.js'
 import { saveMessage, saveMessages, getLocalMessages, isStorageAvailable } from '../lib/message-db.js'
 import { toast } from '../components/toast.js'
 import { showModal, showConfirm } from '../components/modal.js'
@@ -17,40 +16,6 @@ const STORAGE_SESSION_KEY = 'clawpanel-last-session'
 const STORAGE_MODEL_KEY = 'clawpanel-chat-selected-model'
 const STORAGE_SIDEBAR_KEY = 'clawpanel-chat-sidebar-open'
 const STORAGE_SESSION_NAMES_KEY = 'clawpanel-chat-session-names'
-
-const HOSTED_STATUS = {
-  IDLE: 'idle',
-  RUNNING: 'running',
-  WAITING: 'waiting_reply',
-  PAUSED: 'paused',
-  ERROR: 'error',
-}
-const HOSTED_SESSIONS_KEY = 'clawpanel-hosted-agent-sessions'
-const HOSTED_GLOBAL_KEY = 'hostedAgent.default'
-
-// { enabled, prompt, autoRunAfterTarget, stopPolicy, maxSteps, stepDelayMs, retryLimit, toolPolicy, state, history }
-// history roles: system | assistant | target
-const HOSTED_DEFAULTS = {
-  enabled: false,
-  prompt: '',
-  autoRunAfterTarget: true,
-  stopPolicy: 'self',
-  maxSteps: 50,
-  stepDelayMs: 1200,
-  retryLimit: 2,
-  toolPolicy: 'inherit',
-}
-
-const HOSTED_RUNTIME_DEFAULT = {
-  status: HOSTED_STATUS.IDLE,
-  stepCount: 0,
-  lastRunAt: 0,
-  lastError: '',
-  pending: false,
-  errorCount: 0,
-}
-
-const HOSTED_CONTEXT_MAX = 30
 
 const COMMANDS = [
   { title: '会话', commands: [
@@ -94,34 +59,11 @@ let _sessionKey = null, _page = null, _messagesEl = null, _textarea = null
 let _sendBtn = null, _statusDot = null, _typingEl = null, _scrollBtn = null
 let _sessionListEl = null, _cmdPanelEl = null, _attachPreviewEl = null, _fileInputEl = null
 let _modelSelectEl = null
-let _hostedBtn = null, _hostedPanelEl = null, _hostedBadgeEl = null
-let _hostedPromptEl = null, _hostedEnableEl = null, _hostedMaxStepsEl = null, _hostedStepDelayEl = null, _hostedRetryLimitEl = null
-let _hostedSaveBtn = null, _hostedPauseBtn = null, _hostedStopBtn = null, _hostedCloseBtn = null
-let _hostedGlobalSyncEl = null
-let _hostedDefaults = null
-let _hostedSessionConfig = null
-let _hostedRuntime = { ...HOSTED_RUNTIME_DEFAULT }
-let _hostedAutoTimer = null
-let _hostedLastTargetTs = 0
-let _hostedBusy = false
 let _currentAiBubble = null, _currentAiText = '', _currentAiImages = [], _currentAiVideos = [], _currentAiAudios = [], _currentAiFiles = [], _currentAiTools = [], _currentRunId = null
 let _isStreaming = false, _isSending = false, _messageQueue = [], _streamStartTime = 0
 let _lastRenderTime = 0, _renderPending = false, _lastHistoryHash = ''
+let _autoScrollEnabled = true, _lastScrollTop = 0, _touchStartY = 0
 let _isLoadingHistory = false
-
-const VIRTUAL_WINDOW = 40
-const VIRTUAL_OVERSCAN = 20
-let _virtualEnabled = true
-let _virtualHeights = new Map()
-let _virtualAvgHeight = 64
-let _virtualRange = { start: 0, end: 0, prefix: [0] }
-let _virtualItems = []
-let _virtualTopSpacer = null
-let _virtualBottomSpacer = null
-let _virtualRenderPending = false
-let _autoScrollEnabled = true
-let _lastScrollTop = 0
-let _touchStartY = 0
 let _streamSafetyTimer = null, _unsubEvent = null, _unsubReady = null, _unsubStatus = null
 let _seenRunIds = new Set()
 let _pageActive = false
@@ -169,7 +111,7 @@ export async function render() {
         </div>
         <div class="chat-header-actions">
           <div class="chat-model-group">
-            <select class="form-input chat-model-select" id="chat-model-select" title="切换当前会话模型">
+            <select class="form-input" id="chat-model-select" title="切换当前会话模型" style="width:200px;max-width:28vw;padding:6px 10px;font-size:var(--font-size-xs)">
               <option value="">加载模型中...</option>
             </select>
             <button class="btn btn-sm btn-ghost" id="btn-refresh-models" title="刷新模型列表">
@@ -203,65 +145,6 @@ export async function render() {
         <button class="chat-send-btn" id="chat-send-btn" disabled>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
         </button>
-        <button class="chat-hosted-btn" id="chat-hosted-btn" title="托管 Agent">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>
-          <span class="chat-hosted-label">托管</span>
-          <span class="chat-hosted-badge" id="chat-hosted-badge">未启用</span>
-        </button>
-      </div>
-      <div class="hosted-agent-panel" id="hosted-agent-panel" style="display:none">
-        <div class="hosted-agent-header">
-          <div class="hosted-agent-title">托管 Agent</div>
-          <button class="hosted-agent-close" id="hosted-agent-close" title="关闭">×</button>
-        </div>
-        <div class="hosted-agent-body">
-          <div class="form-group">
-            <label class="form-label">初始提示词</label>
-            <textarea class="form-input hosted-agent-prompt" id="hosted-agent-prompt" rows="3" placeholder="请输入托管 Agent 的初始提示词..." ></textarea>
-            <div class="form-hint">托管 Agent 仅基于该提示词 + 对面回复自动生成下一步指令</div>
-          </div>
-          <label class="hosted-agent-switch">
-            <span>启用托管 Agent</span>
-            <input type="checkbox" id="hosted-agent-enabled">
-            <span class="hosted-agent-track"></span>
-          </label>
-          <div class="hosted-agent-row">
-            <div class="hosted-agent-tag">运行模式</div>
-            <div class="hosted-agent-value">对面回复后自动继续</div>
-          </div>
-          <div class="hosted-agent-row">
-            <div class="hosted-agent-tag">停止策略</div>
-            <div class="hosted-agent-value">托管 Agent 自评停止</div>
-          </div>
-          <div class="hosted-agent-advanced">
-            <div class="hosted-agent-advanced-title">高级选项</div>
-            <div class="hosted-agent-grid">
-              <div class="form-group">
-                <label class="form-label">最大步数</label>
-                <input class="form-input" id="hosted-agent-max-steps" type="number" min="1" max="200" step="1">
-              </div>
-              <div class="form-group">
-                <label class="form-label">步间隔 (ms)</label>
-                <input class="form-input" id="hosted-agent-step-delay" type="number" min="200" max="10000" step="100">
-              </div>
-              <div class="form-group">
-                <label class="form-label">重试次数</label>
-                <input class="form-input" id="hosted-agent-retry" type="number" min="0" max="5" step="1">
-              </div>
-            </div>
-          </div>
-          <label class="hosted-agent-switch">
-            <span>同步为全局默认</span>
-            <input type="checkbox" id="hosted-agent-sync-global">
-            <span class="hosted-agent-track"></span>
-          </label>
-          <div class="hosted-agent-actions">
-            <button class="btn btn-primary btn-sm" id="hosted-agent-save">保存并启用</button>
-            <button class="btn btn-secondary btn-sm" id="hosted-agent-pause">暂停</button>
-            <button class="btn btn-ghost btn-sm" id="hosted-agent-stop">立即停止</button>
-          </div>
-        </div>
-        <div class="hosted-agent-footer" id="hosted-agent-status"></div>
       </div>
       <div class="chat-disconnect-bar" id="chat-disconnect-bar" style="display:none">连接已断开，正在重连...</div>
       <div class="chat-connect-overlay" id="chat-connect-overlay" style="display:none">
@@ -292,19 +175,6 @@ export async function render() {
   _attachPreviewEl = page.querySelector('#chat-attachments-preview')
   _fileInputEl = page.querySelector('#chat-file-input')
   _modelSelectEl = page.querySelector('#chat-model-select')
-  _hostedBtn = page.querySelector('#chat-hosted-btn')
-  _hostedBadgeEl = page.querySelector('#chat-hosted-badge')
-  _hostedPanelEl = page.querySelector('#hosted-agent-panel')
-  _hostedPromptEl = page.querySelector('#hosted-agent-prompt')
-  _hostedEnableEl = page.querySelector('#hosted-agent-enabled')
-  _hostedMaxStepsEl = page.querySelector('#hosted-agent-max-steps')
-  _hostedStepDelayEl = page.querySelector('#hosted-agent-step-delay')
-  _hostedRetryLimitEl = page.querySelector('#hosted-agent-retry')
-  _hostedSaveBtn = page.querySelector('#hosted-agent-save')
-  _hostedPauseBtn = page.querySelector('#hosted-agent-pause')
-  _hostedStopBtn = page.querySelector('#hosted-agent-stop')
-  _hostedCloseBtn = page.querySelector('#hosted-agent-close')
-  _hostedGlobalSyncEl = page.querySelector('#hosted-agent-sync-global')
   page.querySelector('#chat-sidebar')?.classList.toggle('open', getSidebarOpen())
 
   bindEvents(page)
@@ -312,12 +182,6 @@ export async function render() {
 
   // 首次使用引导提示
   showPageGuide(_messagesEl)
-
-  loadHostedDefaults().then(() => {
-    loadHostedSessionConfig()
-    renderHostedPanel()
-    updateHostedBadge()
-  })
 
   loadModelOptions()
   // 非阻塞：先返回 DOM，后台连接 Gateway
@@ -383,25 +247,6 @@ function bindEvents(page) {
     else sendMessage()
   })
 
-  if (_hostedBtn) {
-    _hostedBtn.addEventListener('click', (e) => {
-      e.stopPropagation()
-      toggleHostedPanel()
-    })
-  }
-  if (_hostedCloseBtn) {
-    _hostedCloseBtn.addEventListener('click', () => hideHostedPanel())
-  }
-  if (_hostedSaveBtn) {
-    _hostedSaveBtn.addEventListener('click', () => saveHostedConfig())
-  }
-  if (_hostedPauseBtn) {
-    _hostedPauseBtn.addEventListener('click', () => pauseHostedAgent())
-  }
-  if (_hostedStopBtn) {
-    _hostedStopBtn.addEventListener('click', () => stopHostedAgent())
-  }
-
   const toggleSidebar = () => {
     const sidebar = page.querySelector('#chat-sidebar')
     if (!sidebar) return
@@ -443,16 +288,7 @@ function bindEvents(page) {
     _autoScrollEnabled = true
     scrollToBottom(true)
   })
-  _messagesEl.addEventListener('click', () => { hideCmdPanel(); hideHostedPanel() })
-  _messagesEl.addEventListener('click', (e) => {
-    const target = e.target?.closest?.('.msg-spoiler')
-    if (!target) return
-    if (target.closest('code, pre')) return
-    target.classList.toggle('revealed')
-  })
-  _messagesEl.addEventListener('scroll', () => {
-    if (_virtualEnabled) requestVirtualRender()
-  })
+  _messagesEl.addEventListener('click', () => hideCmdPanel())
 }
 
 async function loadModelOptions(showToast = false) {
@@ -702,11 +538,6 @@ async function connectGateway() {
         _hasEverConnected = true
         if (bar) bar.style.display = 'none'
         if (overlay) overlay.style.display = 'none'
-        if (_hostedRuntime.status === HOSTED_STATUS.PAUSED) {
-          _hostedRuntime.status = HOSTED_STATUS.IDLE
-          persistHostedRuntime()
-          updateHostedBadge()
-        }
       } else if (status === 'error') {
         // 连接错误：显示引导遮罩而非底部条
         if (bar) bar.style.display = 'none'
@@ -714,22 +545,12 @@ async function connectGateway() {
           overlay.style.display = 'flex'
           if (desc) desc.textContent = errorMsg || '连接 Gateway 失败'
         }
-        if (_hostedRuntime.status !== HOSTED_STATUS.PAUSED) {
-          _hostedRuntime.status = HOSTED_STATUS.PAUSED
-          persistHostedRuntime()
-          updateHostedBadge()
-        }
       } else if (status === 'reconnecting' || status === 'disconnected') {
         // 首次连接或多次重连失败时，显示引导遮罩而非底部小条
         if (!_hasEverConnected) {
           if (overlay) { overlay.style.display = 'flex'; if (desc) desc.textContent = '正在连接 Gateway...' }
         } else {
           if (bar) { bar.textContent = '连接已断开，正在重连...'; bar.style.display = 'flex' }
-        }
-        if (_hostedRuntime.status !== HOSTED_STATUS.PAUSED) {
-          _hostedRuntime.status = HOSTED_STATUS.PAUSED
-          persistHostedRuntime()
-          updateHostedBadge()
         }
       } else {
         if (bar) bar.style.display = 'none'
@@ -886,9 +707,6 @@ function switchSession(newKey) {
   clearMessages()
   loadHistory()
   refreshSessionList()
-  loadHostedSessionConfig()
-  renderHostedPanel()
-  updateHostedBadge()
 }
 
 async function showNewSessionDialog() {
@@ -1049,17 +867,6 @@ function hideCmdPanel() {
   if (_cmdPanelEl) _cmdPanelEl.style.display = 'none'
 }
 
-function toggleHostedPanel() {
-  if (!_hostedPanelEl) return
-  const next = _hostedPanelEl.style.display !== 'block'
-  _hostedPanelEl.style.display = next ? 'block' : 'none'
-  if (next) renderHostedPanel()
-}
-
-function hideHostedPanel() {
-  if (_hostedPanelEl) _hostedPanelEl.style.display = 'none'
-}
-
 function toggleCmdPanel() {
   if (_cmdPanelEl?.style.display === 'block') hideCmdPanel()
   else { _textarea.value = '/'; showCmdPanel(); _textarea.focus() }
@@ -1143,27 +950,16 @@ function handleEvent(msg) {
       if (!list.includes(toolCallId)) list.push(toolCallId)
       _toolRunIndex.set(payload.runId, list)
     }
-    const name = payload.data?.name || '工具'
-    const phase = payload.data?.phase || 'unknown'
-    if (!_isLoadingHistory) appendSystemMessage(`${name} · ${phase}`, ts)
   }
 
   if (event === 'chat') handleChatEvent(payload)
 
-  if ((event === 'status' || event === 'gateway.status') && payload?.state === 'disconnected') {
-    if (_hostedRuntime.status !== HOSTED_STATUS.PAUSED) {
-      _hostedRuntime.status = HOSTED_STATUS.PAUSED
-      persistHostedRuntime()
-      updateHostedBadge()
-    }
-  }
-
   // Compaction 状态指示：上游 2026.3.12 新增 status_reaction 事件
   if (event === 'chat.status_reaction' || event === 'status_reaction') {
     const reaction = payload.reaction || payload.emoji || ''
-    if (reaction.includes('compact') || reaction === 'compress' || reaction === 'package') {
+    if (reaction.includes('compact') || reaction === '🗜️' || reaction === '📦') {
       showCompactionHint(true)
-    } else if (!reaction || reaction === 'thinking' || reaction === 'thought') {
+    } else if (!reaction || reaction === 'thinking' || reaction === '💭') {
       showCompactionHint(false)
     }
   }
@@ -1233,14 +1029,6 @@ function handleChatEvent(payload) {
       const ids = _toolRunIndex.get(runId) || []
       finalTools = ids.map(id => mergeToolEventData({ id, name: '工具' })).filter(Boolean)
     }
-
-    // 托管 Agent：记录对面回复并触发下一步
-    if (payload.sessionKey === _sessionKey || !_sessionKey) {
-      if (finalText && shouldCaptureHostedTarget(payload)) {
-        appendHostedTarget(finalText, payload.timestamp || Date.now())
-        maybeTriggerHostedRun()
-      }
-    }
     if (finalImages.length) _currentAiImages = finalImages
     if (finalVideos.length) _currentAiVideos = finalVideos
     if (finalAudios.length) _currentAiAudios = finalAudios
@@ -1284,7 +1072,7 @@ function handleChatEvent(payload) {
       } else if (_streamStartTime) {
         durStr = ((Date.now() - _streamStartTime) / 1000).toFixed(1) + 's'
       }
-      if (durStr) parts.push(`<span class="meta-sep">·</span><span class="msg-duration">耗时 ${durStr}</span>`)
+      if (durStr) parts.push(`<span class="meta-sep">·</span><span class="msg-duration">⏱ ${durStr}</span>`)
       // token 消耗（从 payload.usage 或 payload.message.usage 提取）
       const usage = payload.usage || payload.message?.usage || null
       if (usage) {
@@ -1358,69 +1146,6 @@ function handleChatEvent(payload) {
     resetStreamState()
     processMessageQueue()
     return
-  }
-}
-
-function mergeToolEventData(entry) {
-  const id = entry?.id || entry?.tool_call_id
-  if (!id) return entry
-  const extra = _toolEventData.get(id)
-  if (!extra) return entry
-  if (entry.input == null && extra.input != null) entry.input = extra.input
-  if (entry.output == null && extra.output != null) entry.output = extra.output
-  if (entry.status == null && extra.status != null) entry.status = extra.status
-  if (entry.time == null) entry.time = extra.time || _toolEventTimes.get(id) || null
-  return entry
-}
-
-function upsertTool(tools, entry) {
-  if (!entry) return
-  const id = entry.id || entry.tool_call_id
-  let target = null
-  if (id) target = tools.find(t => t.id === id || t.tool_call_id === id)
-  if (!target && entry.name) target = tools.find(t => t.name === entry.name && !t.output)
-  if (target) {
-    if (entry.input != null && target.input == null) target.input = entry.input
-    if (entry.output != null && target.output == null) target.output = entry.output
-    if (entry.status && target.status == null) target.status = entry.status
-    if (entry.time && target.time == null) target.time = entry.time
-    return
-  }
-  tools.push(mergeToolEventData(entry))
-}
-
-function collectToolsFromMessage(message, tools) {
-  if (!message || !tools) return
-  const toolCalls = message.tool_calls || message.toolCalls || message.tools
-  if (Array.isArray(toolCalls)) {
-    toolCalls.forEach(call => {
-      const fn = call.function || null
-      const name = call.name || call.tool || call.tool_name || fn?.name
-      const input = call.input || call.args || call.parameters || call.arguments || fn?.arguments || null
-      const callId = call.id || call.tool_call_id
-      upsertTool(tools, {
-        id: callId,
-        name: name || '工具',
-        input,
-        output: null,
-        status: call.status || 'ok',
-        time: resolveToolTime(callId, message?.timestamp),
-      })
-    })
-  }
-  const toolResults = message.tool_results || message.toolResults
-  if (Array.isArray(toolResults)) {
-    toolResults.forEach(res => {
-      const resId = res.id || res.tool_call_id
-      upsertTool(tools, {
-        id: resId,
-        name: res.name || res.tool || res.tool_name || '工具',
-        input: res.input || res.args || null,
-        output: res.output || res.result || res.content || null,
-        status: res.status || 'ok',
-        time: resolveToolTime(resId, message?.timestamp),
-      })
-    })
   }
 }
 
@@ -1559,6 +1284,23 @@ function getToolTime(tool) {
   return normalizeTime(raw)
 }
 
+function safeStringify(value) {
+  if (value == null) return ''
+  const seen = new WeakSet()
+  try {
+    return JSON.stringify(value, (key, val) => {
+      if (typeof val === 'bigint') return val.toString()
+      if (typeof val === 'object' && val !== null) {
+        if (seen.has(val)) return '[Circular]'
+        seen.add(val)
+      }
+      return val
+    }, 2)
+  } catch {
+    try { return String(value) } catch { return '' }
+  }
+}
+
 function formatTime(date) {
   const now = new Date()
   const h = date.getHours().toString().padStart(2, '0')
@@ -1587,7 +1329,7 @@ function createStreamBubble() {
   bubble.className = 'msg-bubble'
   bubble.innerHTML = '<span class="stream-cursor"></span>'
   wrap.appendChild(bubble)
-  insertMessageByTime(wrap, Date.now())
+  _messagesEl.insertBefore(wrap, _typingEl)
   scrollToBottom()
   return bubble
 }
@@ -1665,7 +1407,7 @@ async function loadHistory() {
       scrollToBottom()
     }
   }
-  if (!wsClient.gatewayReady) return
+  if (!wsClient.gatewayReady) { _isLoadingHistory = false; return }
   try {
     const result = await wsClient.chatHistory(_sessionKey, 200)
     if (!result?.messages?.length) {
@@ -1684,6 +1426,7 @@ async function loadHistory() {
         const role = (m.role === 'tool' || m.role === 'toolResult') ? 'assistant' : m.role
         return { id: m.id || uuid(), sessionKey: _sessionKey, role, content: c?.text || '', timestamp: m.timestamp || Date.now() }
       }))
+      _isLoadingHistory = false
       return
     }
 
@@ -1817,12 +1560,12 @@ function extractContent(msg) {
       }
     }
     if (tools.length) {
-    tools.forEach(t => {
-      if (typeof t.input === 'string') t.input = stripAnsi(t.input)
-      if (typeof t.output === 'string') t.output = stripAnsi(t.output)
-    })
-  }
-  const mediaUrls = msg.mediaUrls || (msg.mediaUrl ? [msg.mediaUrl] : [])
+      tools.forEach(t => {
+        if (typeof t.input === 'string') t.input = stripAnsi(t.input)
+        if (typeof t.output === 'string') t.output = stripAnsi(t.output)
+      })
+    }
+    const mediaUrls = msg.mediaUrls || (msg.mediaUrl ? [msg.mediaUrl] : [])
     for (const url of mediaUrls) {
       if (!url) continue
       if (/\.(mp4|webm|mov|mkv)(\?|$)/i.test(url)) videos.push({ url, mediaType: 'video/mp4' })
@@ -1895,7 +1638,7 @@ function appendUserMessage(text, attachments = [], msgTime) {
 
   wrap.appendChild(bubble)
   wrap.appendChild(meta)
-  insertMessageByTime(wrap, msgTime?.getTime?.() || Date.now())
+  _messagesEl.insertBefore(wrap, _typingEl)
   scrollToBottom()
 }
 
@@ -1922,7 +1665,7 @@ function appendAiMessage(text, msgTime, images, videos, audios, files, tools) {
 
   wrap.appendChild(bubble)
   wrap.appendChild(meta)
-  insertMessageByTime(wrap, msgTime?.getTime?.() || Date.now())
+  _messagesEl.insertBefore(wrap, _typingEl)
   scrollToBottom()
 }
 
@@ -2011,6 +1754,69 @@ function appendFilesToEl(el, files) {
   })
 }
 
+function mergeToolEventData(entry) {
+  const id = entry?.id || entry?.tool_call_id
+  if (!id) return entry
+  const extra = _toolEventData.get(id)
+  if (!extra) return entry
+  if (entry.input == null && extra.input != null) entry.input = extra.input
+  if (entry.output == null && extra.output != null) entry.output = extra.output
+  if (entry.status == null && extra.status != null) entry.status = extra.status
+  if (entry.time == null) entry.time = extra.time || _toolEventTimes.get(id) || null
+  return entry
+}
+
+function upsertTool(tools, entry) {
+  if (!entry) return
+  const id = entry.id || entry.tool_call_id
+  let target = null
+  if (id) target = tools.find(t => t.id === id || t.tool_call_id === id)
+  if (!target && entry.name) target = tools.find(t => t.name === entry.name && !t.output)
+  if (target) {
+    if (entry.input != null && target.input == null) target.input = entry.input
+    if (entry.output != null && target.output == null) target.output = entry.output
+    if (entry.status && target.status == null) target.status = entry.status
+    if (entry.time && target.time == null) target.time = entry.time
+    return
+  }
+  tools.push(mergeToolEventData(entry))
+}
+
+function collectToolsFromMessage(message, tools) {
+  if (!message || !tools) return
+  const toolCalls = message.tool_calls || message.toolCalls || message.tools
+  if (Array.isArray(toolCalls)) {
+    toolCalls.forEach(call => {
+      const fn = call.function || null
+      const name = call.name || call.tool || call.tool_name || fn?.name
+      const input = call.input || call.args || call.parameters || call.arguments || fn?.arguments || null
+      const callId = call.id || call.tool_call_id
+      upsertTool(tools, {
+        id: callId,
+        name: name || '工具',
+        input,
+        output: null,
+        status: call.status || 'ok',
+        time: resolveToolTime(callId, message?.timestamp),
+      })
+    })
+  }
+  const toolResults = message.tool_results || message.toolResults
+  if (Array.isArray(toolResults)) {
+    toolResults.forEach(res => {
+      const resId = res.id || res.tool_call_id
+      upsertTool(tools, {
+        id: resId,
+        name: res.name || res.tool || res.tool_name || '工具',
+        input: res.input || res.args || null,
+        output: res.output || res.result || res.content || null,
+        status: res.status || 'ok',
+        time: resolveToolTime(resId, message?.timestamp),
+      })
+    })
+  }
+}
+
 /** 渲染工具调用到消息气泡 */
 function appendToolsToEl(el, tools) {
   if (!el) return
@@ -2024,76 +1830,23 @@ function appendToolsToEl(el, tools) {
   tools.forEach(tool => {
     const details = document.createElement('details')
     details.className = 'msg-tool-item'
-    details.open = false
-    details.removeAttribute('open')
     const summary = document.createElement('summary')
     const status = tool.status === 'error' ? '失败' : '成功'
     const timeValue = getToolTime(tool) || resolveToolTime(tool.id || tool.tool_call_id, tool.messageTimestamp)
-    const timeText = timeValue ? formatTime(new Date(timeValue)) : '时间未知'
-    summary.innerHTML = `${escapeHtml(tool.name || '工具')} · ${status} · ${timeText}`
+    const timeText = timeValue ? formatTime(new Date(timeValue)) : ''
+    summary.innerHTML = `${escapeHtml(tool.name || '工具')} · ${status}${timeText ? ' · ' + timeText : ''}`
     const body = document.createElement('div')
     body.className = 'msg-tool-body'
-    body.style.display = 'none'
-    console.debug('[chat][tool] init', {
-      name: tool.name,
-      open: details.open,
-      bodyDisplay: body.style.display,
-    })
     const inputJson = stripAnsi(safeStringify(tool.input))
     const outputJson = stripAnsi(safeStringify(tool.output))
-    const input = inputJson
-      ? `<div class="msg-tool-block"><div class="msg-tool-title">参数</div><pre>${escapeHtml(inputJson)}</pre></div>`
-      : `<div class="msg-tool-block"><div class="msg-tool-title">参数</div><pre>无参数</pre></div>`
-    const output = outputJson
-      ? `<div class="msg-tool-block"><div class="msg-tool-title">结果</div><pre>${escapeHtml(outputJson)}</pre></div>`
-      : `<div class="msg-tool-block"><div class="msg-tool-title">结果</div><pre>无结果</pre></div>`
-    body.innerHTML = input + output
+    body.innerHTML = `<div class="msg-tool-block"><div class="msg-tool-title">参数</div><pre>${escapeHtml(inputJson || '无参数')}</pre></div>`
+      + `<div class="msg-tool-block"><div class="msg-tool-title">结果</div><pre>${escapeHtml(outputJson || '无结果')}</pre></div>`
     details.appendChild(summary)
     details.appendChild(body)
-    details.addEventListener('toggle', () => {
-      body.style.display = details.open ? 'grid' : 'none'
-      console.debug('[chat][tool] toggle', {
-        name: tool.name,
-        open: details.open,
-        bodyDisplay: body.style.display,
-      })
-    })
     container.appendChild(details)
   })
   if (existing) existing.remove()
   el.insertBefore(container, el.firstChild)
-  try {
-    const first = container.querySelector('details')
-    if (first) {
-      const body = first.querySelector('.msg-tool-body')
-      console.debug('[chat][tool] after-append', {
-        open: first.open,
-        bodyDisplay: body?.style?.display,
-        computed: body ? getComputedStyle(body).display : null,
-      })
-    }
-  } catch {}
-}
-
-function safeStringify(value) {
-  if (value == null) return ''
-  const seen = new WeakSet()
-  try {
-    return JSON.stringify(value, (key, val) => {
-      if (typeof val === 'bigint') return val.toString()
-      if (typeof val === 'object' && val !== null) {
-        if (seen.has(val)) return '[Circular]'
-        seen.add(val)
-      }
-      return val
-    }, 2)
-  } catch (e) {
-    try {
-      return String(value)
-    } catch {
-      return ''
-    }
-  }
 }
 
 /** 图片灯箱查看 */
@@ -2110,52 +1863,18 @@ function showLightbox(src) {
   document.addEventListener('keydown', onKey)
 }
 
-function insertMessageByTime(wrap, ts) {
-  const tsValue = Number(ts || Date.now())
-  wrap.dataset.ts = String(tsValue)
-
-  if (!_virtualEnabled) {
-    const items = Array.from(_messagesEl.querySelectorAll('.msg'))
-    for (const node of items) {
-      const nodeTs = parseInt(node.dataset.ts || '0', 10)
-      if (nodeTs > tsValue) {
-        _messagesEl.insertBefore(wrap, node)
-        return
-      }
-    }
-    _messagesEl.insertBefore(wrap, _typingEl)
-    return
-  }
-
-  if (!wrap.dataset.vid) wrap.dataset.vid = uuid()
-  const vid = wrap.dataset.vid
-  const existingIdx = _virtualItems.findIndex(item => item.id === vid)
-  const entry = { id: vid, ts: tsValue, node: wrap }
-  if (existingIdx >= 0) _virtualItems.splice(existingIdx, 1)
-  let insertIdx = _virtualItems.findIndex(item => item.ts > tsValue)
-  if (insertIdx < 0) insertIdx = _virtualItems.length
-  _virtualItems.splice(insertIdx, 0, entry)
-  requestVirtualRender(true)
-}
-
-function appendSystemMessage(text, ts) {
+function appendSystemMessage(text) {
   const wrap = document.createElement('div')
   wrap.className = 'msg msg-system'
   wrap.textContent = text
-  insertMessageByTime(wrap, ts)
+  _messagesEl.insertBefore(wrap, _typingEl)
   scrollToBottom()
 }
 
 function clearMessages() {
   _messagesEl.querySelectorAll('.msg').forEach(m => m.remove())
-  _virtualItems = []
-  _virtualHeights = new Map()
-  _virtualAvgHeight = 64
-  _virtualRange = { start: 0, end: 0, prefix: [0] }
   _autoScrollEnabled = true
   _lastScrollTop = 0
-  if (_virtualTopSpacer) _virtualTopSpacer.style.height = '0px'
-  if (_virtualBottomSpacer) _virtualBottomSpacer.style.height = '0px'
 }
 
 function showTyping(show) {
@@ -2169,7 +1888,7 @@ function showCompactionHint(show) {
     hint = document.createElement('div')
     hint.id = 'compaction-hint'
     hint.className = 'msg msg-system compaction-hint'
-    hint.innerHTML = '正在整理上下文（Compaction）…'
+    hint.innerHTML = '🗜️ 正在整理上下文（Compaction）…'
     _messagesEl.insertBefore(hint, _typingEl)
     scrollToBottom()
   } else if (!show && hint) {
@@ -2185,92 +1904,7 @@ function scrollToBottom(force = false) {
 
 function isAtBottom() {
   if (!_messagesEl) return true
-  const threshold = 80
-  return _messagesEl.scrollHeight - _messagesEl.scrollTop - _messagesEl.clientHeight < threshold
-}
-
-function ensureVirtualSpacers() {
-  if (!_messagesEl) return
-  if (!_virtualTopSpacer || _virtualTopSpacer.parentNode !== _messagesEl) {
-    _virtualTopSpacer = document.createElement('div')
-    _virtualTopSpacer.className = 'msg-virtual-spacer'
-    _messagesEl.insertBefore(_virtualTopSpacer, _messagesEl.firstChild)
-  }
-  if (!_virtualBottomSpacer || _virtualBottomSpacer.parentNode !== _messagesEl) {
-    _virtualBottomSpacer = document.createElement('div')
-    _virtualBottomSpacer.className = 'msg-virtual-spacer'
-    if (_typingEl && _typingEl.parentNode === _messagesEl) {
-      _messagesEl.insertBefore(_virtualBottomSpacer, _typingEl)
-    } else {
-      _messagesEl.appendChild(_virtualBottomSpacer)
-    }
-  }
-}
-
-function requestVirtualRender(force = false) {
-  if (!_virtualEnabled || !_messagesEl) return
-  if (_virtualRenderPending && !force) return
-  _virtualRenderPending = true
-  requestAnimationFrame(() => {
-    _virtualRenderPending = false
-    doVirtualRender()
-  })
-}
-
-function doVirtualRender() {
-  if (!_virtualEnabled || !_messagesEl) return
-  ensureVirtualSpacers()
-  const atBottom = isAtBottom()
-  const scrollTop = _messagesEl.scrollTop
-  const viewport = _messagesEl.clientHeight
-  const items = _virtualItems
-  const { start, end, prefix } = computeVirtualRange(items, scrollTop, viewport, _virtualAvgHeight, VIRTUAL_OVERSCAN, VIRTUAL_WINDOW, _virtualHeights)
-  _virtualRange = { start, end, prefix }
-  const { top, bottom } = getSpacerHeights(prefix, start, end)
-  _virtualTopSpacer.style.height = `${top}px`
-  _virtualBottomSpacer.style.height = `${bottom}px`
-
-  const visibleIds = new Set(items.slice(start, end).map(i => i.id))
-  _messagesEl.querySelectorAll('.msg').forEach(node => {
-    const vid = node.dataset.vid
-    if (!vid || !visibleIds.has(vid)) node.remove()
-  })
-
-  const anchor = _virtualTopSpacer.nextSibling
-  let refNode = anchor
-  for (let i = start; i < end; i++) {
-    const item = items[i]
-    if (!item?.node) continue
-    if (refNode && refNode.parentNode !== _messagesEl) refNode = _virtualBottomSpacer
-    if (_virtualBottomSpacer && _virtualBottomSpacer.parentNode !== _messagesEl) {
-      _messagesEl.appendChild(_virtualBottomSpacer)
-    }
-    if (item.node.parentNode !== _messagesEl) {
-      _messagesEl.insertBefore(item.node, refNode || _virtualBottomSpacer)
-    }
-    refNode = item.node.nextSibling
-  }
-
-  requestAnimationFrame(() => {
-    let total = 0, count = 0
-    items.slice(start, end).forEach(item => {
-      const el = item.node
-      if (!el || !el.getBoundingClientRect) return
-      const h = Math.max(1, Math.ceil(el.getBoundingClientRect().height))
-      if (h) {
-        _virtualHeights.set(item.id, h)
-        total += h
-        count += 1
-      }
-    })
-    if (count) _virtualAvgHeight = Math.max(24, Math.round(total / count))
-
-    if (!atBottom || !_autoScrollEnabled) {
-      const newTop = _virtualTopSpacer.offsetHeight
-      const delta = newTop - top
-      if (delta !== 0) _messagesEl.scrollTop = scrollTop + delta
-    }
-  })
+  return _messagesEl.scrollHeight - _messagesEl.scrollTop - _messagesEl.clientHeight < 80
 }
 
 function updateSendState() {
@@ -2292,502 +1926,6 @@ function updateStatusDot(status) {
   if (status === 'ready' || status === 'connected') _statusDot.classList.add('online')
   else if (status === 'connecting' || status === 'reconnecting') _statusDot.classList.add('connecting')
   else _statusDot.classList.add('offline')
-}
-
-async function loadHostedDefaults() {
-  _hostedDefaults = { ...HOSTED_DEFAULTS }
-  try {
-    const panel = await api.readPanelConfig()
-    const stored = panel?.hostedAgent?.default || null
-    if (stored) _hostedDefaults = { ..._hostedDefaults, ...stored }
-  } catch (e) {
-    console.warn('[chat][hosted] 读取 panel 配置失败:', e)
-  }
-}
-
-function getHostedSessionKey() {
-  return _sessionKey || localStorage.getItem(STORAGE_SESSION_KEY) || 'agent:main:main'
-}
-
-function loadHostedSessionConfig() {
-  let data = {}
-  try { data = JSON.parse(localStorage.getItem(HOSTED_SESSIONS_KEY) || '{}') } catch { data = {} }
-  const key = getHostedSessionKey()
-  const current = data[key] || {}
-  _hostedSessionConfig = { ...HOSTED_DEFAULTS, ..._hostedDefaults, ...current }
-  if (!_hostedSessionConfig.state) _hostedSessionConfig.state = { ...HOSTED_RUNTIME_DEFAULT }
-  if (!_hostedSessionConfig.history) _hostedSessionConfig.history = []
-  _hostedRuntime = { ...HOSTED_RUNTIME_DEFAULT, ..._hostedSessionConfig.state }
-  updateHostedBadge()
-}
-
-function saveHostedSessionConfig(nextConfig) {
-  let data = {}
-  try { data = JSON.parse(localStorage.getItem(HOSTED_SESSIONS_KEY) || '{}') } catch { data = {} }
-  data[getHostedSessionKey()] = nextConfig
-  localStorage.setItem(HOSTED_SESSIONS_KEY, JSON.stringify(data))
-}
-
-function persistHostedRuntime() {
-  if (!_hostedSessionConfig) return
-  _hostedSessionConfig.state = { ..._hostedRuntime }
-  saveHostedSessionConfig(_hostedSessionConfig)
-}
-
-function updateHostedBadge() {
-  if (!_hostedBadgeEl || !_hostedSessionConfig) return
-  const status = _hostedRuntime.status || HOSTED_STATUS.IDLE
-  const enabled = _hostedSessionConfig.enabled
-  let text = '未启用'
-  let cls = 'chat-hosted-badge'
-  if (!enabled) {
-    text = '未启用'
-    cls += ' idle'
-  } else if (status === HOSTED_STATUS.RUNNING) {
-    text = '运行中'
-    cls += ' running'
-  } else if (status === HOSTED_STATUS.WAITING) {
-    text = '等待回复'
-    cls += ' waiting'
-  } else if (status === HOSTED_STATUS.PAUSED) {
-    text = '已暂停'
-    cls += ' paused'
-  } else if (status === HOSTED_STATUS.ERROR) {
-    text = '异常'
-    cls += ' error'
-  } else {
-    text = '待命'
-    cls += ' idle'
-  }
-  _hostedBadgeEl.className = cls
-  _hostedBadgeEl.textContent = text
-}
-
-function renderHostedPanel() {
-  if (!_hostedPanelEl || !_hostedSessionConfig) return
-  if (_hostedPromptEl) _hostedPromptEl.value = _hostedSessionConfig.prompt || ''
-  if (_hostedEnableEl) _hostedEnableEl.checked = !!_hostedSessionConfig.enabled
-  if (_hostedMaxStepsEl) _hostedMaxStepsEl.value = _hostedSessionConfig.maxSteps || HOSTED_DEFAULTS.maxSteps
-  if (_hostedStepDelayEl) _hostedStepDelayEl.value = _hostedSessionConfig.stepDelayMs || HOSTED_DEFAULTS.stepDelayMs
-  if (_hostedRetryLimitEl) _hostedRetryLimitEl.value = _hostedSessionConfig.retryLimit ?? HOSTED_DEFAULTS.retryLimit
-  const statusEl = _hostedPanelEl.querySelector('#hosted-agent-status')
-  if (statusEl) {
-    const msg = _hostedRuntime.lastError ? `上次错误: ${_hostedRuntime.lastError}` : '状态正常'
-    statusEl.textContent = msg
-  }
-}
-
-async function saveHostedConfig() {
-  if (!_hostedSessionConfig) return
-  const prompt = (_hostedPromptEl?.value || '').trim()
-  if (!prompt) { toast('请输入初始提示词', 'warning'); return }
-  const enabled = !!_hostedEnableEl?.checked
-  const maxSteps = Math.max(1, parseInt(_hostedMaxStepsEl?.value || HOSTED_DEFAULTS.maxSteps, 10))
-  const stepDelayMs = Math.max(200, parseInt(_hostedStepDelayEl?.value || HOSTED_DEFAULTS.stepDelayMs, 10))
-  const retryLimit = Math.max(0, parseInt(_hostedRetryLimitEl?.value || HOSTED_DEFAULTS.retryLimit, 10))
-
-  _hostedSessionConfig = {
-    ..._hostedSessionConfig,
-    prompt,
-    enabled,
-    autoRunAfterTarget: true,
-    stopPolicy: 'self',
-    maxSteps,
-    stepDelayMs,
-    retryLimit,
-  }
-
-  if (!_hostedSessionConfig.history || !_hostedSessionConfig.history.length) {
-    _hostedSessionConfig.history = [{ role: 'system', content: prompt }]
-  } else if (_hostedSessionConfig.history[0]?.role !== 'system') {
-    _hostedSessionConfig.history.unshift({ role: 'system', content: prompt })
-  } else {
-    _hostedSessionConfig.history[0].content = prompt
-  }
-
-  if (!_hostedSessionConfig.state) _hostedSessionConfig.state = { ...HOSTED_RUNTIME_DEFAULT }
-  _hostedRuntime = { ...HOSTED_RUNTIME_DEFAULT, ..._hostedSessionConfig.state }
-  if (enabled && _hostedRuntime.status === HOSTED_STATUS.PAUSED) _hostedRuntime.status = HOSTED_STATUS.IDLE
-  persistHostedRuntime()
-  renderHostedPanel()
-  updateHostedBadge()
-
-  if (_hostedGlobalSyncEl?.checked) {
-    try {
-      const panel = await api.readPanelConfig()
-      const nextPanel = { ...(panel || {}) }
-      if (!nextPanel.hostedAgent) nextPanel.hostedAgent = {}
-      nextPanel.hostedAgent.default = {
-        ...HOSTED_DEFAULTS,
-        prompt,
-        enabled,
-        maxSteps,
-        stepDelayMs,
-        retryLimit,
-      }
-      await api.writePanelConfig(nextPanel)
-      toast('已同步为全局默认', 'success')
-    } catch (e) {
-      toast('同步全局默认失败: ' + (e.message || e), 'error')
-    }
-  }
-
-  if (enabled) toast('托管 Agent 已启用', 'success')
-  else toast('托管 Agent 已保存', 'info')
-}
-
-function pauseHostedAgent() {
-  if (!_hostedSessionConfig) return
-  _hostedRuntime.status = HOSTED_STATUS.PAUSED
-  _hostedRuntime.pending = false
-  persistHostedRuntime()
-  updateHostedBadge()
-  toast('托管 Agent 已暂停', 'info')
-}
-
-function stopHostedAgent() {
-  if (!_hostedSessionConfig) return
-  _hostedRuntime.status = HOSTED_STATUS.IDLE
-  _hostedRuntime.pending = false
-  _hostedRuntime.stepCount = 0
-  _hostedRuntime.lastError = ''
-  _hostedRuntime.errorCount = 0
-  persistHostedRuntime()
-  updateHostedBadge()
-  toast('托管 Agent 已停止', 'info')
-}
-
-function shouldCaptureHostedTarget(payload) {
-  if (!_hostedSessionConfig?.enabled) return false
-  if (_hostedRuntime.status === HOSTED_STATUS.PAUSED || _hostedRuntime.status === HOSTED_STATUS.ERROR) return false
-  if (payload?.message?.role && payload.message.role !== 'assistant') return false
-  const ts = payload?.timestamp || Date.now()
-  if (ts && ts === _hostedLastTargetTs) return false
-  _hostedLastTargetTs = ts
-  return true
-}
-
-function appendHostedTarget(text, ts) {
-  if (!_hostedSessionConfig) return
-  if (!_hostedSessionConfig.history) _hostedSessionConfig.history = []
-  _hostedSessionConfig.history.push({ role: 'target', content: text, ts: ts || Date.now() })
-  persistHostedRuntime()
-}
-
-function maybeTriggerHostedRun() {
-  if (!_hostedSessionConfig?.enabled) return
-  if (!_hostedSessionConfig.autoRunAfterTarget) return
-  if (_hostedRuntime.pending || _hostedRuntime.status === HOSTED_STATUS.RUNNING) return
-  if (_hostedRuntime.status === HOSTED_STATUS.PAUSED || _hostedRuntime.status === HOSTED_STATUS.ERROR) return
-  if (!wsClient.gatewayReady) {
-    _hostedRuntime.status = HOSTED_STATUS.PAUSED
-    persistHostedRuntime()
-    updateHostedBadge()
-    return
-  }
-  if (_hostedRuntime.status === HOSTED_STATUS.WAITING) {
-    _hostedRuntime.status = HOSTED_STATUS.IDLE
-  }
-  runHostedAgentStep()
-}
-
-function buildHostedMessages() {
-  const history = _hostedSessionConfig?.history || []
-  const trimmed = history.slice(-HOSTED_CONTEXT_MAX)
-  return trimmed.map(item => {
-    if (item.role === 'system') return { role: 'system', content: item.content }
-    if (item.role === 'assistant') return { role: 'assistant', content: item.content }
-    return { role: 'user', content: item.content }
-  })
-}
-
-function detectStopFromText(text) {
-  if (!text) return false
-  return /\b(完成|无需继续|结束|停止|done|stop|final)\b/i.test(text)
-}
-
-async function runHostedAgentStep() {
-  if (_hostedBusy || !_hostedSessionConfig?.enabled) return
-  const prompt = (_hostedSessionConfig.prompt || '').trim()
-  if (!prompt) return
-  if (_hostedRuntime.stepCount >= _hostedSessionConfig.maxSteps) {
-    _hostedRuntime.status = HOSTED_STATUS.IDLE
-    persistHostedRuntime()
-    updateHostedBadge()
-    return
-  }
-  _hostedBusy = true
-  _hostedRuntime.pending = true
-  _hostedRuntime.status = HOSTED_STATUS.RUNNING
-  _hostedRuntime.lastRunAt = Date.now()
-  persistHostedRuntime()
-  updateHostedBadge()
-
-  const delay = _hostedSessionConfig.stepDelayMs || HOSTED_DEFAULTS.stepDelayMs
-  if (delay > 0) {
-    await new Promise(r => setTimeout(r, delay))
-  }
-
-  try {
-    const messages = buildHostedMessages()
-    let resultText = ''
-    await callHostedAI(messages, (chunk) => {
-      resultText += chunk
-    })
-    const nextInstruction = resultText.trim()
-    if (!nextInstruction) throw new Error('托管 Agent 未生成指令')
-
-    _hostedRuntime.stepCount += 1
-    _hostedRuntime.errorCount = 0
-    _hostedRuntime.lastError = ''
-
-    _hostedSessionConfig.history.push({ role: 'assistant', content: nextInstruction, ts: Date.now() })
-    persistHostedRuntime()
-
-    appendHostedOutput(`[托管 Agent] 下一步指令: ${nextInstruction}`)
-    await wsClient.chatSend(_sessionKey, nextInstruction)
-
-    _hostedRuntime.status = HOSTED_STATUS.WAITING
-    _hostedRuntime.pending = false
-    persistHostedRuntime()
-    updateHostedBadge()
-
-    if (_hostedSessionConfig.stopPolicy === 'self' && detectStopFromText(nextInstruction)) {
-      _hostedRuntime.status = HOSTED_STATUS.IDLE
-      persistHostedRuntime()
-      updateHostedBadge()
-    }
-  } catch (e) {
-    _hostedRuntime.errorCount = (_hostedRuntime.errorCount || 0) + 1
-    _hostedRuntime.lastError = e.message || String(e)
-    _hostedRuntime.pending = false
-    if (_hostedRuntime.errorCount > _hostedSessionConfig.retryLimit) {
-      _hostedRuntime.status = HOSTED_STATUS.ERROR
-      updateHostedBadge()
-      persistHostedRuntime()
-      return
-    }
-    persistHostedRuntime()
-    updateHostedBadge()
-    const delay = _hostedSessionConfig.stepDelayMs || HOSTED_DEFAULTS.stepDelayMs
-    setTimeout(() => {
-      _hostedBusy = false
-      runHostedAgentStep()
-    }, delay)
-    return
-  } finally {
-    _hostedBusy = false
-  }
-}
-
-async function callHostedAI(messages, onChunk) {
-  const config = await loadHostedAssistantConfig()
-  const apiType = normalizeApiType(config.apiType)
-  if (!config.baseUrl || !config.model || (requiresApiKey(apiType) && !config.apiKey)) {
-    throw new Error('托管 Agent 未配置模型（请在 AI 助手页面配置）')
-  }
-  const base = cleanBaseUrl(config.baseUrl, apiType)
-  const systemPrompt = messages.find(m => m.role === 'system')?.content || ''
-  const chatMessages = messages.filter(m => m.role !== 'system')
-
-  if (apiType === 'anthropic-messages') {
-    await callAnthropicHosted(base, systemPrompt, chatMessages, config, onChunk)
-    return
-  }
-  if (apiType === 'google-gemini') {
-    await callGeminiHosted(base, systemPrompt, chatMessages, config, onChunk)
-    return
-  }
-  await callChatCompletionsHosted(base, systemPrompt, chatMessages, config, onChunk)
-}
-
-async function loadHostedAssistantConfig() {
-  try {
-    const raw = localStorage.getItem('clawpanel-assistant')
-    const stored = raw ? JSON.parse(raw) : {}
-    return {
-      baseUrl: stored.baseUrl || '',
-      apiKey: stored.apiKey || '',
-      model: stored.model || '',
-      temperature: stored.temperature || 0.7,
-      apiType: stored.apiType || 'openai-completions',
-    }
-  } catch {
-    return { baseUrl: '', apiKey: '', model: '', temperature: 0.7, apiType: 'openai-completions' }
-  }
-}
-
-function normalizeApiType(raw) {
-  const type = (raw || '').trim()
-  if (type === 'anthropic' || type === 'anthropic-messages') return 'anthropic-messages'
-  if (type === 'google-gemini') return 'google-gemini'
-  if (type === 'openai' || type === 'openai-completions' || type === 'openai-responses') return 'openai-completions'
-  return 'openai-completions'
-}
-
-function requiresApiKey(apiType) {
-  const type = normalizeApiType(apiType)
-  return type === 'anthropic-messages' || type === 'google-gemini'
-}
-
-function cleanBaseUrl(raw, apiType) {
-  let base = (raw || '').replace(/\/+$/, '')
-  base = base.replace(/\/api\/chat\/?$/, '')
-  base = base.replace(/\/api\/generate\/?$/, '')
-  base = base.replace(/\/api\/tags\/?$/, '')
-  base = base.replace(/\/api\/?$/, '')
-  base = base.replace(/\/chat\/completions\/?$/, '')
-  base = base.replace(/\/completions\/?$/, '')
-  base = base.replace(/\/responses\/?$/, '')
-  base = base.replace(/\/messages\/?$/, '')
-  base = base.replace(/\/models\/?$/, '')
-  const type = normalizeApiType(apiType)
-  if (type === 'anthropic-messages') {
-    if (!base.endsWith('/v1')) base += '/v1'
-    return base
-  }
-  if (type === 'google-gemini') return base
-  if (/:(11434)$/i.test(base) && !base.endsWith('/v1')) return `${base}/v1`
-  return base
-}
-
-function authHeaders(apiType, apiKey) {
-  const type = normalizeApiType(apiType)
-  if (type === 'anthropic-messages') {
-    const headers = {
-      'Content-Type': 'application/json',
-      'anthropic-version': '2023-06-01',
-    }
-    if (apiKey) headers['x-api-key'] = apiKey
-    return headers
-  }
-  const headers = { 'Content-Type': 'application/json' }
-  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
-  return headers
-}
-
-async function fetchWithRetry(url, options, retries = 2) {
-  const delays = [800, 1600, 3200]
-  for (let i = 0; i <= retries; i++) {
-    try {
-      const resp = await fetch(url, options)
-      if (resp.ok || resp.status < 500 || i >= retries) return resp
-      await new Promise(r => setTimeout(r, delays[i]))
-    } catch (err) {
-      if (i >= retries) throw err
-      await new Promise(r => setTimeout(r, delays[i]))
-    }
-  }
-}
-
-async function readSSEStream(resp, onEvent) {
-  const reader = resp.body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split('\n')
-    buffer = lines.pop() || ''
-    for (const line of lines) {
-      const trimmed = line.trim()
-      if (!trimmed) continue
-      if (!trimmed.startsWith('data:')) continue
-      const data = trimmed.slice(5).trim()
-      if (data === '[DONE]') return
-      try { onEvent(JSON.parse(data)) } catch {}
-    }
-  }
-}
-
-async function callChatCompletionsHosted(base, systemPrompt, messages, config, onChunk) {
-  const body = {
-    model: config.model,
-    messages: [systemPrompt ? { role: 'system', content: systemPrompt } : null, ...messages].filter(Boolean),
-    stream: true,
-    temperature: config.temperature || 0.7,
-  }
-  const resp = await fetchWithRetry(base + '/chat/completions', {
-    method: 'POST',
-    headers: authHeaders(config.apiType, config.apiKey),
-    body: JSON.stringify(body),
-  })
-  if (!resp.ok) {
-    const errText = await resp.text().catch(() => '')
-    let errMsg = `API 错误 ${resp.status}`
-    try { errMsg = JSON.parse(errText).error?.message || errMsg } catch {}
-    throw new Error(errMsg)
-  }
-  await readSSEStream(resp, (json) => {
-    const delta = json.choices?.[0]?.delta
-    if (delta?.content) onChunk(delta.content)
-  })
-}
-
-async function callAnthropicHosted(base, systemPrompt, messages, config, onChunk) {
-  const body = {
-    model: config.model,
-    max_tokens: 4096,
-    stream: true,
-    temperature: config.temperature || 0.7,
-    messages,
-  }
-  if (systemPrompt) body.system = systemPrompt
-  const resp = await fetchWithRetry(base + '/messages', {
-    method: 'POST',
-    headers: authHeaders(config.apiType, config.apiKey),
-    body: JSON.stringify(body),
-  })
-  if (!resp.ok) {
-    const errText = await resp.text().catch(() => '')
-    let errMsg = `API 错误 ${resp.status}`
-    try { errMsg = JSON.parse(errText).error?.message || errMsg } catch {}
-    throw new Error(errMsg)
-  }
-  await readSSEStream(resp, (json) => {
-    if (json.type === 'content_block_delta') {
-      const delta = json.delta
-      if (delta?.type === 'text_delta' && delta.text) onChunk(delta.text)
-    }
-  })
-}
-
-async function callGeminiHosted(base, systemPrompt, messages, config, onChunk) {
-  const contents = messages.map(m => ({
-    role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }],
-  }))
-  const body = {
-    contents,
-    generationConfig: { temperature: config.temperature || 0.7 },
-  }
-  if (systemPrompt) body.systemInstruction = { parts: [{ text: systemPrompt }] }
-  const url = `${base}/models/${config.model}:streamGenerateContent?alt=sse&key=${config.apiKey}`
-  const resp = await fetchWithRetry(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  if (!resp.ok) {
-    const errText = await resp.text().catch(() => '')
-    let errMsg = `API 错误 ${resp.status}`
-    try { errMsg = JSON.parse(errText).error?.message || errMsg } catch {}
-    throw new Error(errMsg)
-  }
-  await readSSEStream(resp, (json) => {
-    const text = json.candidates?.[0]?.content?.parts?.[0]?.text
-    if (text) onChunk(text)
-  })
-}
-
-function appendHostedOutput(text) {
-  if (!text) return
-  const wrap = document.createElement('div')
-  wrap.className = 'msg msg-system msg-hosted'
-  wrap.textContent = text
-  insertMessageByTime(wrap, Date.now())
-  scrollToBottom()
 }
 
 // ── 页面离开清理 ──
@@ -2821,21 +1959,4 @@ export function cleanup() {
   _isSending = false
   _messageQueue = []
   _lastHistoryHash = ''
-  _hostedBtn = null
-  _hostedPanelEl = null
-  _hostedBadgeEl = null
-  _hostedPromptEl = null
-  _hostedEnableEl = null
-  _hostedMaxStepsEl = null
-  _hostedStepDelayEl = null
-  _hostedRetryLimitEl = null
-  _hostedSaveBtn = null
-  _hostedPauseBtn = null
-  _hostedStopBtn = null
-  _hostedCloseBtn = null
-  _hostedGlobalSyncEl = null
-  _hostedSessionConfig = null
-  _hostedDefaults = null
-  _hostedRuntime = { ...HOSTED_RUNTIME_DEFAULT }
-  _hostedBusy = false
 }
