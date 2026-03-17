@@ -133,6 +133,97 @@ function r2Config() {
   return policy?.r2 || { enabled: false }
 }
 
+function standaloneConfig() {
+  const policy = loadVersionPolicy()
+  return policy?.standalone || { enabled: false }
+}
+
+function standalonePlatformKey() {
+  const arch = process.arch
+  const plat = process.platform
+  if (plat === 'win32' && arch === 'x64') return 'win-x64'
+  if (plat === 'darwin' && arch === 'arm64') return 'mac-arm64'
+  if (plat === 'darwin' && arch === 'x64') return 'mac-x64'
+  if (plat === 'linux' && arch === 'x64') return 'linux-x64'
+  if (plat === 'linux' && arch === 'arm64') return 'linux-arm64'
+  return 'unknown'
+}
+
+function standaloneInstallDir() {
+  if (isWindows) return path.join(process.env.LOCALAPPDATA || '', 'OpenClaw')
+  return path.join(os.homedir(), '.openclaw-bin')
+}
+
+async function _tryStandaloneInstall(version, logs, overrideBaseUrl = null) {
+  const cfg = standaloneConfig()
+  if (!cfg.enabled || !cfg.baseUrl) return false
+  const platform = standalonePlatformKey()
+  if (platform === 'unknown') throw new Error('当前平台不支持 standalone 安装包')
+  const installDir = standaloneInstallDir()
+
+  logs.push('📦 尝试 standalone 独立安装包（汉化版专属，自带 Node.js 运行时，无需 npm）')
+  logs.push('查询最新版本...')
+  const manifestUrl = `${cfg.baseUrl}/latest.json`
+  const resp = await globalThis.fetch(manifestUrl, { signal: AbortSignal.timeout(10000) })
+  if (!resp.ok) throw new Error(`standalone 清单不可用 (HTTP ${resp.status})`)
+  const manifest = await resp.json()
+
+  const remoteVersion = manifest.version
+  if (!remoteVersion) throw new Error('standalone 清单缺少 version 字段')
+  if (version !== 'latest' && !versionsMatch(remoteVersion, version)) {
+    throw new Error(`standalone 版本 ${remoteVersion} 与请求版本 ${version} 不匹配`)
+  }
+
+  const remoteBase = overrideBaseUrl || manifest.base_url || `${cfg.baseUrl}/${remoteVersion}`
+  const ext = isWindows ? 'zip' : 'tar.gz'
+  const filename = `openclaw-${remoteVersion}-${platform}.${ext}`
+  const downloadUrl = `${remoteBase}/${filename}`
+
+  logs.push(`从 CDN 下载: ${filename}`)
+
+  const tmpPath = path.join(os.tmpdir(), filename)
+  const dlResp = await globalThis.fetch(downloadUrl, { signal: AbortSignal.timeout(600000) })
+  if (!dlResp.ok) throw new Error(`standalone 下载失败 (HTTP ${dlResp.status})`)
+  const buffer = Buffer.from(await dlResp.arrayBuffer())
+  const sizeMb = (buffer.length / 1048576).toFixed(0)
+  logs.push(`下载完成 (${sizeMb}MB)，解压安装中...`)
+  fs.writeFileSync(tmpPath, buffer)
+
+  // 清理旧安装 & 解压
+  if (fs.existsSync(installDir)) {
+    fs.rmSync(installDir, { recursive: true, force: true })
+  }
+  fs.mkdirSync(installDir, { recursive: true })
+
+  if (isWindows) {
+    // Windows: 用 PowerShell 解压 zip
+    execSync(`powershell -NoProfile -Command "Expand-Archive -Path '${tmpPath}' -DestinationPath '${installDir}' -Force"`, { windowsHide: true })
+    // 处理嵌套 openclaw/ 目录
+    const nested = path.join(installDir, 'openclaw')
+    if (fs.existsSync(nested) && fs.existsSync(path.join(nested, 'node.exe'))) {
+      for (const entry of fs.readdirSync(nested)) {
+        fs.renameSync(path.join(nested, entry), path.join(installDir, entry))
+      }
+      fs.rmSync(nested, { recursive: true, force: true })
+    }
+  } else {
+    // Unix: tar 解压
+    execSync(`tar -xzf "${tmpPath}" -C "${installDir}" --strip-components=1`, { windowsHide: true })
+  }
+
+  try { fs.unlinkSync(tmpPath) } catch {}
+
+  // 验证
+  const binFile = isWindows ? 'openclaw.cmd' : 'openclaw'
+  if (!fs.existsSync(path.join(installDir, binFile))) {
+    throw new Error('standalone 解压后未找到 openclaw 可执行文件')
+  }
+
+  logs.push(`✅ standalone 安装完成 (${remoteVersion})`)
+  logs.push(`安装目录: ${installDir}`)
+  return true
+}
+
 function r2PlatformKey() {
   const arch = process.arch // x64, arm64, etc.
   const plat = process.platform // linux, darwin, win32
@@ -3180,7 +3271,7 @@ const handlers = {
     throw new Error('查询版本失败: ' + (lastError?.message || lastError || 'unknown error'))
   },
 
-  async upgrade_openclaw({ source = 'chinese', version } = {}) {
+  async upgrade_openclaw({ source = 'chinese', version, method = 'auto' } = {}) {
     const currentSource = detectInstalledSource()
     const pkg = npmPackageName(source)
     const recommended = recommendedVersionFor(source)
@@ -3191,15 +3282,29 @@ const handlers = {
     const registry = pickRegistryForPackage(pkg)
     const logs = []
 
-    // ── R2 CDN 加速：优先尝试从 CDN 下载预装归档 ──
-    if (source !== 'official') {
+    // ── standalone 安装（auto / standalone-r2 / standalone-github） ──
+    const tryStandalone = source !== 'official' && ['auto', 'standalone-r2', 'standalone-github'].includes(method)
+    if (tryStandalone) {
       try {
-        const r2Result = await _tryR2Install(ver, source, logs)
-        if (r2Result) return logs.join('\n')
+        const githubBase = method === 'standalone-github'
+          ? `https://github.com/qingchencloud/openclaw-standalone/releases/download/v${ver}`
+          : null
+        const saResult = await _tryStandaloneInstall(ver, logs, githubBase)
+        if (saResult) {
+          const label = method === 'standalone-github' ? 'GitHub' : 'CDN'
+          logs.push(`✅ standalone (${label}) 安装完成`)
+          return logs.join('\n')
+        }
       } catch (e) {
-        logs.push(`CDN 加速不可用（${e.message}），降级到 npm 安装...`)
+        if (method === 'auto') {
+          logs.push(`standalone 不可用（${e.message}），降级到 npm 安装...`)
+        } else {
+          throw new Error(`standalone 安装失败: ${e.message}`)
+        }
       }
     }
+
+    // ── npm install（兜底或用户明确选择） ──
 
     if (!version && recommended) {
       logs.push(`ClawPanel ${PANEL_VERSION} 默认绑定 OpenClaw 稳定版: ${recommended}`)
@@ -3235,6 +3340,12 @@ const handlers = {
 
   uninstall_openclaw({ cleanConfig = false } = {}) {
     const npmBin = isWindows ? 'npm.cmd' : 'npm'
+    // 清理 standalone 安装
+    const saDir = standaloneInstallDir()
+    if (fs.existsSync(saDir)) {
+      try { fs.rmSync(saDir, { recursive: true, force: true }) } catch {}
+    }
+    // 清理 npm 安装
     try { execSync(`${npmBin} uninstall -g openclaw 2>&1`, { timeout: 60000, windowsHide: true }) } catch {}
     try { execSync(`${npmBin} uninstall -g @qingchencloud/openclaw-zh 2>&1`, { timeout: 60000, windowsHide: true }) } catch {}
     if (cleanConfig && fs.existsSync(OPENCLAW_DIR)) {

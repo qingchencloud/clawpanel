@@ -464,11 +464,13 @@ async function openTaskDialog(job, page, state) {
     const list = res?.sessions || res || []
     const select = modal.querySelector('select[name="sessionLabel"]')
     if (!select) return
-    const current = job?.sessionLabel || ''
+    const currentKey = job?.sessionKey || ''
+    const currentLabel = job?.sessionLabel || ''
     select.innerHTML = `<option value="">请选择会话</option>` + list.map(s => {
       const key = s.sessionKey || s.key || ''
       const label = parseSessionLabel(key)
-      return `<option value="${escapeAttr(label)}" ${label === current ? 'selected' : ''}>${escapeHtml(label)}</option>`
+      const selected = (currentKey && key === currentKey) || (!currentKey && label === currentLabel)
+      return `<option value="${escapeAttr(key)}" ${selected ? 'selected' : ''}>${escapeHtml(label)}</option>`
     }).join('')
   }).catch(() => {})
 
@@ -523,12 +525,13 @@ async function openTaskDialog(job, page, state) {
     const schedule = modal.querySelector('input[name="schedule"]').value.trim()
     const agentId = modal.querySelector('select[name="agentId"]').value || undefined
     const enabled = modal.querySelector('input[name="enabled"]').checked
-    const sessionLabel = modal.querySelector('select[name="sessionLabel"]').value
+    const sessionKey = modal.querySelector('select[name="sessionLabel"]').value
+    const sessionLabel = sessionKey ? parseSessionLabel(sessionKey) : ''
     const triggerMode = modal.querySelector('select[name="triggerMode"]').value
 
     if (!name) { toast('请输入任务名称', 'warning'); return }
     if (!message) { toast('请输入执行内容', 'warning'); return }
-    if (taskKind === 'sessionMessage' && !sessionLabel) { toast('请选择会话', 'warning'); return }
+    if (taskKind === 'sessionMessage' && !sessionKey) { toast('请选择会话', 'warning'); return }
     if (taskKind === 'sessionMessage' && triggerMode === 'cron' && !schedule) { toast('请设置执行周期', 'warning'); return }
     if (taskKind !== 'sessionMessage' && !schedule) { toast('请设置执行周期', 'warning'); return }
     if (taskKind !== 'sessionMessage' && !isGatewayUp()) { toast('Gateway 未连接，无法保存非 sessionMessage 任务', 'warning'); return }
@@ -545,7 +548,7 @@ async function openTaskDialog(job, page, state) {
             enabled,
             triggerMode,
             schedule: { kind: 'cron', expr: schedule },
-            payload: { kind: 'sessionMessage', label: sessionLabel, message, role: 'user', waitForIdle: true },
+            payload: { kind: 'sessionMessage', label: sessionLabel, sessionKey, message, role: 'user', waitForIdle: true },
           })
           toast('任务已更新', 'success')
         } else {
@@ -555,7 +558,7 @@ async function openTaskDialog(job, page, state) {
             enabled,
             triggerMode,
             schedule: { kind: 'cron', expr: schedule },
-            payload: { kind: 'sessionMessage', label: sessionLabel, message, role: 'user', waitForIdle: true },
+            payload: { kind: 'sessionMessage', label: sessionLabel, sessionKey, message, role: 'user', waitForIdle: true },
             state: { lastRunStatus: null, lastRunAtMs: 0, lastError: null, lastIdleAtMs: 0 },
           })
           toast('任务已创建', 'success')
@@ -717,7 +720,7 @@ async function tickSessionMessageJobs(page, state) {
 async function runSessionMessageJob(job, manual) {
   await refreshSessionLabelMap().catch(() => {})
   const label = job.payload?.label || '主会话'
-  const sessionKey = _sessionLabelMap.get(label) || wsClient.sessionKey
+  const sessionKey = job.payload?.sessionKey || _sessionLabelMap.get(label) || wsClient.sessionKey
   if (!sessionKey) {
     await updateLocalSessionMessageJob(job.id, { state: { ...job.state, lastRunStatus: 'error', lastError: 'session not found', lastRunAtMs: Date.now() } })
     throw new Error('session not found')

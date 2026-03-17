@@ -505,7 +505,7 @@ async function handleSaveConfig(page, restart) {
 
 // ===== 升级操作 =====
 
-async function doUpgradeWithModal(source, page, version = null) {
+async function doUpgradeWithModal(source, page, version = null, method = 'auto') {
   const modal = showUpgradeModal('升级 / 切换版本')
   let unlistenLog, unlistenProgress, unlistenDone, unlistenError
   setUpgrading(true)
@@ -549,12 +549,12 @@ async function doUpgradeWithModal(source, page, version = null) {
       })
 
       // 发起后台任务（立即返回）
-      await api.upgradeOpenclaw(source, version)
+      await api.upgradeOpenclaw(source, version, method)
       modal.appendLog('后台任务已启动，请等待完成...')
     } else {
       // Web 模式：仍然同步等待（dev-api 后端没有 spawn）
       modal.appendLog('Web 模式：升级过程日志不可用，请等待完成...')
-      const msg = await api.upgradeOpenclaw(source, version)
+      const msg = await api.upgradeOpenclaw(source, version, method)
       modal.setDone(typeof msg === 'string' ? msg : (msg?.message || '升级完成'))
       await loadVersion(page)
       cleanup()

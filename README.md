@@ -41,6 +41,16 @@ ClawPanel 是 [OpenClaw](https://github.com/1186258278/OpenClawChineseTranslatio
 
 > **官网**: [claw.qt.cool](https://claw.qt.cool/)  |  **下载**: [GitHub Releases](https://github.com/qingchencloud/clawpanel/releases/latest)
 
+### ⚡ OpenClaw 独立安装包（零依赖，无需 Node.js/npm）
+
+不想折腾 Node.js 环境？直接下载 [OpenClaw 独立安装包](https://github.com/qingchencloud/openclaw-standalone/releases/latest)，**内置运行时，解压即用**：
+
+- **Windows**: 下载 `.exe` 安装向导，双击即装
+- **macOS / Linux / 树莓派**: `curl -fsSL https://dl.qrj.ai/openclaw/install.sh | bash`
+- **全平台**: [GitHub Releases](https://github.com/qingchencloud/openclaw-standalone/releases/latest)
+
+> ClawPanel 安装 OpenClaw 时会**自动优先使用独立安装包**，无需手动操作。此方案仅供不使用 ClawPanel 的用户独立安装。
+
 ### 开发板 / 嵌入式设备支持
 
 ClawPanel 提供**纯 Web 版部署模式**（零 GUI 依赖），天然兼容 ARM64 开发板和嵌入式设备：

@@ -5,6 +5,24 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.9.4] - 2026-03-17
+
+### 新功能 (Features)
+
+- **OpenClaw 独立安装包** — 全新 standalone 安装方式，自带 Node.js 运行时，零依赖、无需 npm，下载即用。支持 Windows/macOS/Linux/树莓派
+- **安装方式选择器** — 初始设置页新增安装方式下拉：自动选择（推荐）/ CDN 加速 / GitHub / npm 编译，汉化版专属
+- **GitHub 下载模式** — 支持从 GitHub Releases 下载独立安装包，CDN 不可用时的备选方案
+- **动态版本查询** — 安装时动态查询 latest.json 获取最新版本，不怕旧资源被删除
+
+### 改进 (Improvements)
+
+- **默认汉化版** — 未安装状态默认识别为汉化优化版（而非官方版），更符合国内用户习惯
+- **CherryStudio 干扰过滤** — CLI 检测过滤第三方 openclaw 二进制（如 CherryStudio），避免误识别
+- **安装日志安全** — 日志不再暴露 R2 完整下载地址，防止被恶意利用
+- **卸载兼容增强** — 卸载同时清理 standalone 安装目录和 npm 全局安装，覆盖所有可能路径
+- **macOS 免 sudo** — standalone 安装到用户目录（~/.openclaw-bin），解决 macOS npm 全局安装权限不足问题
+- **官网独立安装包入口** — README 和 docs/index.html 下载区新增独立安装包说明和下载按钮
+
 ## [0.9.3] - 2026-03-16
 
 ### 修复 (Fixes)

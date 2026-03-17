@@ -1,4 +1,8 @@
 {
+  "standalone": {
+    "baseUrl": "https://dl.qrj.ai/openclaw-standalone",
+    "enabled": true
+  },
   "r2": {
     "baseUrl": "https://dl.qrj.ai/openclaw-zh",
     "enabled": true

@@ -176,7 +176,7 @@ export const api = {
   reloadGateway: () => invoke('reload_gateway'),
   restartGateway: () => invoke('restart_gateway'),
   listOpenclawVersions: (source = 'chinese') => invoke('list_openclaw_versions', { source }),
-  upgradeOpenclaw: (source = 'chinese', version = null) => invoke('upgrade_openclaw', { source, version }),
+  upgradeOpenclaw: (source = 'chinese', version = null, method = 'auto') => invoke('upgrade_openclaw', { source, version, method }),
   uninstallOpenclaw: (cleanConfig = false) => invoke('uninstall_openclaw', { cleanConfig }),
   installGateway: () => invoke('install_gateway'),
   uninstallGateway: () => invoke('uninstall_gateway'),

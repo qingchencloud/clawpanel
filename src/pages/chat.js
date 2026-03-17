@@ -2056,6 +2056,9 @@ function doVirtualRender() {
     const item = items[i]
     if (!item?.node) continue
     if (refNode && refNode.parentNode !== _messagesEl) refNode = _virtualBottomSpacer
+    if (_virtualBottomSpacer && _virtualBottomSpacer.parentNode !== _messagesEl) {
+      _messagesEl.appendChild(_virtualBottomSpacer)
+    }
     if (item.node.parentNode !== _messagesEl) {
       _messagesEl.insertBefore(item.node, refNode || _virtualBottomSpacer)
     }

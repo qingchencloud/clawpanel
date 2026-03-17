@@ -346,7 +346,17 @@ function renderInstallSection() {
         </div>
       </label>
     </div>
-    <div style="margin-bottom:var(--space-sm)">
+    <div style="margin-bottom:var(--space-sm)" id="install-method-section">
+      <label style="font-size:var(--font-size-xs);color:var(--text-tertiary);display:block;margin-bottom:4px">安装方式</label>
+      <select id="install-method" style="width:100%;padding:6px 8px;border-radius:var(--radius-sm);border:1px solid var(--border-primary);background:var(--bg-secondary);color:var(--text-primary);font-size:var(--font-size-sm)">
+        <option value="auto">自动选择（推荐）</option>
+        <option value="standalone-r2">独立安装包 · CDN 加速（国内推荐，自带 Node.js，无需 npm）</option>
+        <option value="standalone-github">独立安装包 · GitHub（CDN 不可用时备选）</option>
+        <option value="npm">npm 编译安装（传统方式，需要 Node.js + npm + 网络）</option>
+      </select>
+      <div id="method-hint" style="font-size:var(--font-size-xs);color:var(--text-tertiary);margin-top:4px;line-height:1.5"></div>
+    </div>
+    <div style="margin-bottom:var(--space-sm)" id="registry-section">
       <label style="font-size:var(--font-size-xs);color:var(--text-tertiary);display:block;margin-bottom:4px">npm 镜像源</label>
       <select id="registry-select" style="width:100%;padding:6px 8px;border-radius:var(--radius-sm);border:1px solid var(--border-primary);background:var(--bg-secondary);color:var(--text-primary);font-size:var(--font-size-sm)">
         <option value="https://registry.npmmirror.com">淘宝镜像（推荐国内用户）</option>
@@ -523,12 +533,44 @@ function bindEvents(page, nodeOk, detectState) {
     }
   })
 
+  // 安装方式联动：源切换时更新方式选项可见性
+  const methodSection = page.querySelector('#install-method-section')
+  const registrySection = page.querySelector('#registry-section')
+  const methodSelect = page.querySelector('#install-method')
+  const methodHint = page.querySelector('#method-hint')
+  const sourceRadios = page.querySelectorAll('input[name="install-source"]')
+
+  const METHOD_HINTS = {
+    'auto': '自动选择最优安装方式：优先使用独立安装包（零依赖、最快），失败时自动降级到 npm 编译安装。',
+    'standalone-r2': '从晴辰云 CDN 下载独立安装包，自带 Node.js 运行时，无需 npm。国内下载速度最快。',
+    'standalone-github': '从 GitHub Releases 下载独立安装包。CDN 不可用时的备选方案。',
+    'npm': '传统的 npm install 方式，需要本机已安装 Node.js 和 npm，且网络能访问 npm 仓库。',
+  }
+
+  function updateMethodVisibility() {
+    const source = page.querySelector('input[name="install-source"]:checked')?.value || 'chinese'
+    if (source === 'official') {
+      if (methodSection) methodSection.style.display = 'none'
+      if (registrySection) registrySection.style.display = ''
+    } else {
+      if (methodSection) methodSection.style.display = ''
+      const method = methodSelect?.value || 'auto'
+      if (registrySection) registrySection.style.display = (method === 'npm') ? '' : 'none'
+    }
+    if (methodHint && methodSelect) methodHint.textContent = METHOD_HINTS[methodSelect.value] || ''
+  }
+
+  sourceRadios.forEach(r => r.addEventListener('change', updateMethodVisibility))
+  if (methodSelect) methodSelect.addEventListener('change', updateMethodVisibility)
+  updateMethodVisibility()
+
   // 一键安装
   const installBtn = page.querySelector('#btn-install')
   if (!installBtn || !nodeOk) return
 
   installBtn.addEventListener('click', async () => {
     const source = page.querySelector('input[name="install-source"]:checked')?.value || 'chinese'
+    const method = (source === 'official') ? 'npm' : (page.querySelector('#install-method')?.value || 'auto')
     const registry = page.querySelector('#registry-select')?.value
     const modal = showUpgradeModal('安装 OpenClaw')
     let unlistenLog, unlistenProgress
@@ -618,7 +660,7 @@ function bindEvents(page, nodeOk, detectState) {
         }
 
         // 发起后台任务（立即返回）
-        await api.upgradeOpenclaw(source)
+        await api.upgradeOpenclaw(source, null, method)
         modal.appendLog('后台安装任务已启动，请等待完成...')
       } else {
         // Web 模式：同步等待
@@ -627,7 +669,7 @@ function bindEvents(page, nodeOk, detectState) {
           modal.appendLog(`设置 npm 镜像源: ${registry}`)
           try { await api.setNpmRegistry(registry) } catch {}
         }
-        const msg = await api.upgradeOpenclaw(source)
+        const msg = await api.upgradeOpenclaw(source, null, method)
         modal.setDone(msg)
         toast('OpenClaw 安装成功', 'success')
         setTimeout(() => window.location.reload(), 1500)
