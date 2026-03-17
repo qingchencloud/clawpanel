@@ -2117,8 +2117,9 @@ async function callAIWithTools(sessionId, messages, onStatus, onToolProgress) {
     mode: currentMode(),
   })
   return { content: result.text || '', toolHistory }
+}
 
-  // ── 渲染 ──
+// ── 渲染 ──
 
 function renderSessionList() {
   if (!_sessionListEl) return
