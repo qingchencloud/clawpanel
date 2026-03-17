@@ -2634,7 +2634,8 @@ function appendHostedTarget(text, ts) {
 }
 
 function maybeTriggerHostedRun() {
-  if (!_hostedSessionConfig?.enabled) return
+  if (!_hostedSessionConfig) return
+  if (!_hostedSessionConfig.enabled) return
   if (!_hostedSessionConfig.autoRunAfterTarget) return
   if (_hostedRuntime.pending || _hostedRuntime.status === HOSTED_STATUS.RUNNING) return
   if (_hostedRuntime.status === HOSTED_STATUS.PAUSED || _hostedRuntime.status === HOSTED_STATUS.ERROR) return
@@ -2669,7 +2670,11 @@ function detectStopFromText(text) {
 }
 
 async function runHostedAgentStep() {
-  if (_hostedBusy || !_hostedSessionConfig?.enabled) return
+  if (!_hostedSessionConfig) {
+    loadHostedSessionConfig()
+    if (!_hostedSessionConfig) return
+  }
+  if (_hostedBusy || !_hostedSessionConfig.enabled) return
   const prompt = (_hostedSessionConfig.prompt || '').trim()
   if (!prompt) return
   if (!wsClient.gatewayReady || !_sessionKey) {
