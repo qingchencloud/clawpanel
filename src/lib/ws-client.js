@@ -24,6 +24,16 @@ const MAX_RECONNECT_DELAY = 30000
 const PING_INTERVAL = 5000
 const CHALLENGE_TIMEOUT = 5000
 
+const WS_STATE = {
+  DISCONNECTED: 'disconnected',
+  CONNECTING: 'connecting',
+  CONNECTED: 'connected',
+  READY: 'ready',
+  RECONNECTING: 'reconnecting',
+  ERROR: 'error',
+  AUTH_FAILED: 'auth_failed',
+}
+
 export class WsClient {
   constructor() {
     this._ws = null
@@ -117,7 +127,7 @@ export class WsClient {
     this._closeWs()
     this._gatewayReady = false
     this._handshaking = false
-    this._setConnected(false, 'connecting')
+    this._setConnected(false, WS_STATE.CONNECTING)
     const wsId = ++this._wsId
     let ws
     try { ws = new WebSocket(this._url) } catch { this._scheduleReconnect(); return }
@@ -151,7 +161,7 @@ export class WsClient {
       this._connecting = false
       this._clearChallengeTimer()
       if (e.code === 4001 || e.code === 4003 || e.code === 4004) {
-        this._setConnected(false, 'auth_failed', e.reason || 'Token 认证失败')
+        this._setConnected(false, WS_STATE.AUTH_FAILED, e.reason || 'Token 认证失败')
         this._intentionalClose = true
         this._flushPending()
         return
@@ -159,12 +169,12 @@ export class WsClient {
       if (e.code === 1008 && !this._intentionalClose) {
         if (this._autoPairAttempts < 1) {
           console.log('[ws] origin not allowed (1008)，尝试自动修复...')
-          this._setConnected(false, 'reconnecting', 'origin not allowed，修复中...')
+          this._setConnected(false, WS_STATE.RECONNECTING, 'origin not allowed，修复中...')
           this._autoPairAndReconnect()
           return
         }
         console.warn('[ws] origin 1008 自动修复已尝试过，显示错误')
-        this._setConnected(false, 'error', e.reason || 'origin not allowed，请点击「修复并重连」')
+        this._setConnected(false, WS_STATE.ERROR, e.reason || 'origin not allowed，请点击「修复并重连」')
         return
       }
       this._setConnected(false)
@@ -207,7 +217,7 @@ export class WsClient {
           console.warn('[ws] 自动修复已尝试过，不再重试')
         }
 
-        this._setConnected(false, 'error', errMsg)
+        this._setConnected(false, WS_STATE.ERROR, errMsg)
         this._readyCallbacks.forEach(fn => {
           try { fn(null, null, { error: true, message: errMsg }) } catch {}
         })
@@ -299,7 +309,7 @@ export class WsClient {
     }
     this._gatewayReady = true
     console.log('[ws] Gateway 就绪, sessionKey:', this._sessionKey)
-    this._setConnected(true, 'ready')
+    this._setConnected(true, WS_STATE.READY)
     this._readyCallbacks.forEach(fn => {
       try { fn(this._hello, this._sessionKey) } catch (e) {
         console.error('[ws] ready cb error:', e)
@@ -353,7 +363,7 @@ export class WsClient {
       ? 1000
       : Math.min(1000 * Math.pow(2, this._reconnectAttempts - 2), MAX_RECONNECT_DELAY)
     this._reconnectAttempts++
-    this._setConnected(false, 'reconnecting')
+    this._setConnected(false, WS_STATE.RECONNECTING)
     this._reconnectTimer = setTimeout(() => this._doConnect(), delay)
   }
 
