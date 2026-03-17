@@ -321,13 +321,17 @@ export class WsClient {
     })
   }
 
-  _setConnected(val, status, errorMsg) {
-    this._connected = val
-    const s = status || (val ? 'connected' : 'disconnected')
-    this._state = s
+  _transition(status, errorMsg) {
+    this._state = status
+    this._connected = status === WS_STATE.CONNECTED || status === WS_STATE.READY
     this._statusListeners.forEach(fn => {
-      try { fn(s, errorMsg) } catch (e) { console.error('[ws] status listener error:', e) }
+      try { fn(status, errorMsg) } catch (e) { console.error('[ws] status listener error:', e) }
     })
+  }
+
+  _setConnected(val, status, errorMsg) {
+    const s = status || (val ? WS_STATE.CONNECTED : WS_STATE.DISCONNECTED)
+    this._transition(s, errorMsg)
   }
 
   _closeWs() {
