@@ -108,6 +108,7 @@ let _isStreaming = false, _isSending = false, _messageQueue = [], _streamStartTi
 let _lastRenderTime = 0, _renderPending = false, _lastHistoryHash = ''
 let _autoScrollEnabled = true, _lastScrollTop = 0, _touchStartY = 0
 let _isLoadingHistory = false
+let _virtualEnabled = false
 let _streamSafetyTimer = null, _unsubEvent = null, _unsubReady = null, _unsubStatus = null
 let _seenRunIds = new Set()
 let _pageActive = false
@@ -2058,11 +2059,17 @@ function showLightbox(src) {
   document.addEventListener('keydown', onKey)
 }
 
+function insertMessageByTime(wrap, ts) {
+  const tsValue = Number(ts || Date.now())
+  wrap.dataset.ts = String(tsValue)
+  _messagesEl.insertBefore(wrap, _typingEl)
+}
+
 function appendSystemMessage(text) {
   const wrap = document.createElement('div')
   wrap.className = 'msg msg-system'
   wrap.textContent = text
-  _messagesEl.insertBefore(wrap, _typingEl)
+  insertMessageByTime(wrap, Date.now())
   scrollToBottom()
 }
 
@@ -2071,6 +2078,8 @@ function clearMessages() {
   _autoScrollEnabled = true
   _lastScrollTop = 0
 }
+
+function requestVirtualRender() {}
 
 function showTyping(show) {
   if (_typingEl) _typingEl.style.display = show ? 'flex' : 'none'
@@ -2083,7 +2092,7 @@ function showCompactionHint(show) {
     hint = document.createElement('div')
     hint.id = 'compaction-hint'
     hint.className = 'msg msg-system compaction-hint'
-    hint.innerHTML = '🗜️ 正在整理上下文（Compaction）…'
+    hint.innerHTML = '正在整理上下文（Compaction）…'
     _messagesEl.insertBefore(hint, _typingEl)
     scrollToBottom()
   } else if (!show && hint) {
