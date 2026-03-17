@@ -272,6 +272,12 @@ function bindEvents(page) {
   })
   _scrollBtn.addEventListener('click', () => scrollToBottom())
   _messagesEl.addEventListener('click', () => hideCmdPanel())
+  _messagesEl.addEventListener('click', (e) => {
+    const target = e.target?.closest?.('.msg-spoiler')
+    if (!target) return
+    if (target.closest('code, pre')) return
+    target.classList.toggle('revealed')
+  })
 }
 
 async function loadModelOptions(showToast = false) {
