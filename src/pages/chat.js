@@ -6,6 +6,7 @@ import { api, invalidate } from '../lib/tauri-api.js'
 import { navigate } from '../router.js'
 import { wsClient, uuid } from '../lib/ws-client.js'
 import { renderMarkdown } from '../lib/markdown.js'
+import { computeVirtualRange, getSpacerHeights } from '../lib/virtual-scroll.js'
 import { saveMessage, saveMessages, getLocalMessages, isStorageAvailable } from '../lib/message-db.js'
 import { toast } from '../components/toast.js'
 import { showModal, showConfirm } from '../components/modal.js'
@@ -106,9 +107,20 @@ let _hostedBusy = false
 let _currentAiBubble = null, _currentAiText = '', _currentAiImages = [], _currentAiVideos = [], _currentAiAudios = [], _currentAiFiles = [], _currentAiTools = [], _currentRunId = null
 let _isStreaming = false, _isSending = false, _messageQueue = [], _streamStartTime = 0
 let _lastRenderTime = 0, _renderPending = false, _lastHistoryHash = ''
-let _autoScrollEnabled = true, _lastScrollTop = 0, _touchStartY = 0
 let _isLoadingHistory = false
-let _virtualEnabled = false
+
+const VIRTUAL_WINDOW = 40
+const VIRTUAL_OVERSCAN = 20
+let _virtualEnabled = true
+let _virtualHeights = new Map()
+let _virtualAvgHeight = 64
+let _virtualRange = { start: 0, end: 0, prefix: [] }
+let _virtualItems = []
+let _virtualTopSpacer = null
+let _virtualBottomSpacer = null
+let _virtualRenderPending = false
+let _autoScrollEnabled = true, _lastScrollTop = 0, _touchStartY = 0
+
 let _streamSafetyTimer = null, _unsubEvent = null, _unsubReady = null, _unsubStatus = null
 let _seenRunIds = new Set()
 let _pageActive = false
@@ -2062,24 +2074,50 @@ function showLightbox(src) {
 function insertMessageByTime(wrap, ts) {
   const tsValue = Number(ts || Date.now())
   wrap.dataset.ts = String(tsValue)
-  _messagesEl.insertBefore(wrap, _typingEl)
+
+  if (!_virtualEnabled) {
+    const items = Array.from(_messagesEl.querySelectorAll('.msg'))
+    for (const node of items) {
+      const nodeTs = parseInt(node.dataset.ts || '0', 10)
+      if (nodeTs > tsValue) {
+        _messagesEl.insertBefore(wrap, node)
+        return
+      }
+    }
+    _messagesEl.insertBefore(wrap, _typingEl)
+    return
+  }
+
+  if (!wrap.dataset.vid) wrap.dataset.vid = uuid()
+  const vid = wrap.dataset.vid
+  const existingIdx = _virtualItems.findIndex(item => item.id === vid)
+  const entry = { id: vid, ts: tsValue, node: wrap }
+  if (existingIdx >= 0) _virtualItems.splice(existingIdx, 1)
+  let insertIdx = _virtualItems.findIndex(item => item.ts > tsValue)
+  if (insertIdx < 0) insertIdx = _virtualItems.length
+  _virtualItems.splice(insertIdx, 0, entry)
+  requestVirtualRender(true)
 }
 
-function appendSystemMessage(text) {
+function appendSystemMessage(text, ts) {
   const wrap = document.createElement('div')
   wrap.className = 'msg msg-system'
   wrap.textContent = text
-  insertMessageByTime(wrap, Date.now())
+  insertMessageByTime(wrap, ts)
   scrollToBottom()
 }
 
 function clearMessages() {
   _messagesEl.querySelectorAll('.msg').forEach(m => m.remove())
+  _virtualItems = []
+  _virtualHeights = new Map()
+  _virtualAvgHeight = 64
+  _virtualRange = { start: 0, end: 0, prefix: [] }
   _autoScrollEnabled = true
   _lastScrollTop = 0
+  if (_virtualTopSpacer) _virtualTopSpacer.style.height = '0px'
+  if (_virtualBottomSpacer) _virtualBottomSpacer.style.height = '0px'
 }
-
-function requestVirtualRender() {}
 
 function showTyping(show) {
   if (_typingEl) _typingEl.style.display = show ? 'flex' : 'none'
@@ -2108,7 +2146,93 @@ function scrollToBottom(force = false) {
 
 function isAtBottom() {
   if (!_messagesEl) return true
-  return _messagesEl.scrollHeight - _messagesEl.scrollTop - _messagesEl.clientHeight < 80
+  const threshold = 80
+  return _messagesEl.scrollHeight - _messagesEl.scrollTop - _messagesEl.clientHeight < threshold
+}
+
+function ensureVirtualSpacers() {
+  if (!_messagesEl) return
+  if (!_virtualTopSpacer || _virtualTopSpacer.parentNode !== _messagesEl) {
+    _virtualTopSpacer = document.createElement('div')
+    _virtualTopSpacer.className = 'msg-virtual-spacer'
+    _messagesEl.insertBefore(_virtualTopSpacer, _messagesEl.firstChild)
+  }
+  if (!_virtualBottomSpacer || _virtualBottomSpacer.parentNode !== _messagesEl) {
+    _virtualBottomSpacer = document.createElement('div')
+    _virtualBottomSpacer.className = 'msg-virtual-spacer'
+    if (_typingEl && _typingEl.parentNode === _messagesEl) {
+      _messagesEl.insertBefore(_virtualBottomSpacer, _typingEl)
+    } else {
+      _messagesEl.appendChild(_virtualBottomSpacer)
+    }
+  }
+}
+
+function requestVirtualRender(force = false) {
+  if (!_virtualEnabled || !_messagesEl) return
+  if (_virtualRenderPending && !force) return
+  _virtualRenderPending = true
+  requestAnimationFrame(() => {
+    _virtualRenderPending = false
+    doVirtualRender()
+  })
+}
+
+function doVirtualRender() {
+  if (!_virtualEnabled || !_messagesEl) return
+  ensureVirtualSpacers()
+  const atBottom = isAtBottom()
+  const scrollTop = _messagesEl.scrollTop
+  const viewport = _messagesEl.clientHeight
+  const items = _virtualItems
+  const { start, end, prefix } = computeVirtualRange(items, scrollTop, viewport, _virtualAvgHeight, VIRTUAL_OVERSCAN, VIRTUAL_WINDOW, _virtualHeights)
+  _virtualRange = { start, end, prefix }
+  const { top, bottom } = getSpacerHeights(prefix, start, end)
+  _virtualTopSpacer.style.height = `${top}px`
+  _virtualBottomSpacer.style.height = `${bottom}px`
+
+  const visibleIds = new Set(items.slice(start, end).map(i => i.id))
+  _messagesEl.querySelectorAll('.msg').forEach(node => {
+    const vid = node.dataset.vid
+    if (!vid || !visibleIds.has(vid)) node.remove()
+  })
+
+  const anchor = _virtualTopSpacer.nextSibling
+  let refNode = anchor
+  for (let i = start; i < end; i++) {
+    const item = items[i]
+    if (!item?.node) continue
+    if (refNode && refNode.parentNode !== _messagesEl) refNode = _virtualBottomSpacer
+    if (_virtualBottomSpacer && _virtualBottomSpacer.parentNode !== _messagesEl) {
+      _messagesEl.appendChild(_virtualBottomSpacer)
+    }
+    if (item.node.parentNode !== _messagesEl) {
+      _messagesEl.insertBefore(item.node, refNode || _virtualBottomSpacer)
+    }
+    refNode = item.node.nextSibling
+  }
+
+  requestAnimationFrame(() => {
+    let total = 0
+    let count = 0
+    items.slice(start, end).forEach(item => {
+      const el = item.node
+      if (!el || !el.getBoundingClientRect) return
+      const h = Math.max(1, Math.ceil(el.getBoundingClientRect().height))
+      if (h) {
+        _virtualHeights.set(item.id, h)
+        total += h
+        count += 1
+      }
+    })
+    if (count) _virtualAvgHeight = Math.max(24, Math.round(total / count))
+
+    if (!atBottom || !_autoScrollEnabled) {
+      const newTop = _virtualTopSpacer.offsetHeight
+      const delta = newTop - top
+      if (delta !== 0) _messagesEl.scrollTop = scrollTop + delta
+    }
+  })
 }
 
 function updateSendState() {

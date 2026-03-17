@@ -21,7 +21,7 @@ export function uuid() {
 
 const REQUEST_TIMEOUT = 30000
 const MAX_RECONNECT_DELAY = 30000
-const PING_INTERVAL = 25000
+const PING_INTERVAL = 5000
 const CHALLENGE_TIMEOUT = 5000
 
 export class WsClient {
@@ -350,8 +350,11 @@ export class WsClient {
   _startPing() {
     this._stopPing()
     this._pingTimer = setInterval(() => {
-      if (this._ws && this._ws.readyState === WebSocket.OPEN) {
-        try { this._ws.send('{"type":"ping"}') } catch {}
+      if (this._ws && this._ws.readyState === WebSocket.OPEN && this._gatewayReady) {
+        try {
+          const id = uuid()
+          this._ws.send(JSON.stringify({ type: 'req', id, method: 'node.list', params: {} }))
+        } catch {}
       }
     }, PING_INTERVAL)
   }
