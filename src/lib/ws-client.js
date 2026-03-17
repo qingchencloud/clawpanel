@@ -109,6 +109,7 @@ export class WsClient {
   }
 
   _doConnect() {
+    if (this._connecting) return
     this._connecting = true
     this._closeWs()
     this._gatewayReady = false

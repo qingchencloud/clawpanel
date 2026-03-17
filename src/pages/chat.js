@@ -2242,7 +2242,11 @@ async function saveHostedConfig() {
   updateHostedBadge()
 
   if (enabled && _hostedRuntime.status === HOSTED_STATUS.IDLE) {
-    runHostedAgentStep()
+    if (!wsClient.gatewayReady || !_sessionKey) {
+      toast('Gateway 未就绪，暂不启动', 'warning')
+    } else {
+      runHostedAgentStep()
+    }
   }
 
   if (_hostedGlobalSyncEl?.checked) {
@@ -2671,4 +2675,8 @@ export function cleanup() {
   _hostedDefaults = null
   _hostedRuntime = { ...HOSTED_RUNTIME_DEFAULT }
   _hostedBusy = false
+  _toolEventTimes.clear()
+  _toolEventData.clear()
+  _toolRunIndex.clear()
+  _toolEventSeen.clear()
 }
