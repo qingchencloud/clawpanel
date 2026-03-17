@@ -28,7 +28,7 @@ git commit --allow-empty -m "chore: checkpoint before markdown-it"
 
 Add to dependencies:
 - markdown-it
-- markdown-it-ins
+- markdown-it
 
 - [ ] **Step 2: Install**
 
@@ -52,7 +52,7 @@ git commit -m "chore: add markdown-it deps"
 
 ```js
 import MarkdownIt from 'markdown-it'
-import ins from 'markdown-it-ins'
+import MarkdownIt from 'markdown-it'
 ```
 
 ```js
@@ -66,8 +66,11 @@ const md = new MarkdownIt({
     return `<pre data-lang="${escapeHtml(lang)}">${langLabel}<button class="code-copy-btn" onclick="window.__copyCode(this)">Copy</button><code>${highlighted}</code></pre>`
   },
 })
-md.use(ins)
 ```
+
+- [ ] **Step 1.1: Underline plugin (`__text__` -> `<u>`)**
+
+Implement a custom inline rule to parse double-underscore into `<u>` and keep `**` for bold.
 
 - [ ] **Step 2: Link whitelist**
 
