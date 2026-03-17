@@ -167,6 +167,7 @@ let _hostedLastTargetTs = 0
 let _hostedBusy = false
 let _hostedAbort = null
 let _hostedLastCompletionRunId = ''
+let _askUserBlockedNotice = false
 let _currentAiBubble = null, _currentAiText = '', _currentAiImages = [], _currentAiVideos = [], _currentAiAudios = [], _currentAiFiles = [], _currentAiTools = [], _currentRunId = null
 let _isStreaming = false, _isSending = false, _messageQueue = [], _streamStartTime = 0
 let _lastRenderTime = 0, _renderPending = false, _lastHistoryHash = ''
@@ -2179,9 +2180,27 @@ function appendToolsToEl(el, tools) {
     if (existing) existing.remove()
     return
   }
+
+  let filtered = tools
+  if (!_hostedSessionConfig?.enabled) {
+    const hasAskUser = tools.some(t => (t.name || '').toLowerCase() === 'ask_user')
+    if (hasAskUser) {
+      filtered = tools.filter(t => (t.name || '').toLowerCase() !== 'ask_user')
+      if (!_askUserBlockedNotice) {
+        _askUserBlockedNotice = true
+        appendSystemMessage('已拦截 ask_user：仅托管 Agent 允许调用用户交互工具')
+      }
+    }
+  }
+
+  if (!filtered.length) {
+    if (existing) existing.remove()
+    return
+  }
+
   const container = document.createElement('div')
   container.className = 'msg-tool'
-  tools.forEach(tool => {
+  filtered.forEach(tool => {
     const details = document.createElement('details')
     details.className = 'msg-tool-item'
     const summary = document.createElement('summary')
