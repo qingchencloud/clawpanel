@@ -62,6 +62,7 @@ export class WsClient {
     this._autoPairing = false
     this._serverVersion = null
     this._state = WS_STATE.DISCONNECTED
+    this._stateStats = {}
   }
 
   get connected() { return this._connected }
@@ -342,7 +343,8 @@ export class WsClient {
     if (WS_DEBUG && prev !== status) {
       const allowed = this._isAllowedTransition(prev, status)
       if (!allowed) console.warn('[ws] unexpected state transition', prev, '->', status)
-      console.log('[ws] state', prev, '->', status, errorMsg || '')
+      this._stateStats[status] = (this._stateStats[status] || 0) + 1
+      console.log('[ws] state', prev, '->', status, 'count=' + this._stateStats[status], errorMsg || '')
     }
     this._statusListeners.forEach(fn => {
       try { fn(status, errorMsg) } catch (e) { console.error('[ws] status listener error:', e) }
