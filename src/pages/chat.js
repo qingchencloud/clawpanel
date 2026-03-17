@@ -33,6 +33,7 @@ const HOSTED_GLOBAL_KEY = 'hostedAgent.default'
 const HOSTED_DEFAULTS = {
   enabled: false,
   prompt: '',
+  systemPrompt: '',
   autoRunAfterTarget: true,
   stopPolicy: 'self',
   maxSteps: 50,
@@ -49,9 +50,13 @@ const HOSTED_RUNTIME_DEFAULT = {
   lastError: '',
   pending: false,
   errorCount: 0,
+  contextTokens: 0,
+  lastTrimAt: 0,
+  lastAction: '',
 }
 
 const HOSTED_CONTEXT_MAX = 30
+const HOSTED_CONTEXT_TOKEN_LIMIT = 4000
 
 const COMMANDS = [
   { title: '会话', commands: [
@@ -708,6 +713,7 @@ async function connectGateway() {
         if (overlay) overlay.style.display = 'none'
         if (_hostedRuntime.status === HOSTED_STATUS.PAUSED) {
           _hostedRuntime.status = HOSTED_STATUS.IDLE
+          _hostedRuntime.lastAction = ''
           persistHostedRuntime()
           updateHostedBadge()
         }
@@ -720,6 +726,7 @@ async function connectGateway() {
         }
         if (_hostedRuntime.status !== HOSTED_STATUS.PAUSED) {
           _hostedRuntime.status = HOSTED_STATUS.PAUSED
+          _hostedRuntime.lastAction = 'paused'
           persistHostedRuntime()
           updateHostedBadge()
         }
@@ -732,6 +739,7 @@ async function connectGateway() {
         }
         if (_hostedRuntime.status !== HOSTED_STATUS.PAUSED) {
           _hostedRuntime.status = HOSTED_STATUS.PAUSED
+          _hostedRuntime.lastAction = 'paused'
           persistHostedRuntime()
           updateHostedBadge()
         }
@@ -2358,12 +2366,49 @@ function updateStatusDot(status) {
   else _statusDot.classList.add('offline')
 }
 
+function resolveHostedSystemPrompt() {
+  return (_hostedSessionConfig?.systemPrompt || _hostedDefaults?.systemPrompt || '').trim()
+}
+
+function estimateTokens(text) {
+  return Math.max(1, Math.ceil((text || '').length / 4))
+}
+
+function trimHostedHistoryByTokens(limit = HOSTED_CONTEXT_TOKEN_LIMIT) {
+  if (!_hostedSessionConfig?.history) return
+  const systemPrompt = resolveHostedSystemPrompt()
+  const items = _hostedSessionConfig.history.filter(m => m.role !== 'system')
+  let tokens = systemPrompt ? estimateTokens(systemPrompt) : 0
+  for (const item of items) tokens += estimateTokens(item.content)
+
+  if (tokens <= limit) {
+    _hostedRuntime.contextTokens = tokens
+    return
+  }
+
+  let trimmed = [...items]
+  while (trimmed.length && tokens > limit) {
+    const removed = trimmed.shift()
+    tokens -= estimateTokens(removed?.content)
+  }
+
+  _hostedSessionConfig.history = trimmed
+  _hostedRuntime.contextTokens = tokens
+  _hostedRuntime.lastTrimAt = Date.now()
+}
+
 async function loadHostedDefaults() {
   _hostedDefaults = { ...HOSTED_DEFAULTS }
   try {
     const panel = await api.readPanelConfig()
     const stored = panel?.hostedAgent?.default || null
     if (stored) _hostedDefaults = { ..._hostedDefaults, ...stored }
+    if (_hostedDefaults.prompt && !_hostedDefaults.systemPrompt) {
+      _hostedDefaults.systemPrompt = _hostedDefaults.prompt
+    }
+    if (_hostedDefaults.systemPrompt && !_hostedDefaults.prompt) {
+      _hostedDefaults.prompt = _hostedDefaults.systemPrompt
+    }
   } catch (e) {
     console.warn('[chat][hosted] 读取 panel 配置失败:', e)
   }
@@ -2379,9 +2424,17 @@ function loadHostedSessionConfig() {
   const key = getHostedSessionKey()
   const current = data[key] || {}
   _hostedSessionConfig = { ...HOSTED_DEFAULTS, ..._hostedDefaults, ...current }
+  if (!_hostedSessionConfig.systemPrompt && _hostedSessionConfig.prompt) {
+    _hostedSessionConfig.systemPrompt = _hostedSessionConfig.prompt
+  }
+  if (!_hostedSessionConfig.prompt && _hostedSessionConfig.systemPrompt) {
+    _hostedSessionConfig.prompt = _hostedSessionConfig.systemPrompt
+  }
   if (!_hostedSessionConfig.state) _hostedSessionConfig.state = { ...HOSTED_RUNTIME_DEFAULT }
   if (!_hostedSessionConfig.history) _hostedSessionConfig.history = []
+  _hostedSessionConfig.history = _hostedSessionConfig.history.filter(m => m.role !== 'system')
   _hostedRuntime = { ...HOSTED_RUNTIME_DEFAULT, ..._hostedSessionConfig.state }
+  trimHostedHistoryByTokens()
   updateHostedBadge()
 }
 
@@ -2436,7 +2489,11 @@ function renderHostedPanel() {
   if (_hostedRetryLimitEl) _hostedRetryLimitEl.value = _hostedSessionConfig.retryLimit ?? HOSTED_DEFAULTS.retryLimit
   const statusEl = _hostedPanelEl.querySelector('#hosted-agent-status')
   if (statusEl) {
-    const msg = _hostedRuntime.lastError ? `上次错误: ${_hostedRuntime.lastError}` : '状态正常'
+    let msg = '状态正常'
+    if (_hostedRuntime.status === HOSTED_STATUS.PAUSED) msg = '已暂停，历史保留'
+    if (_hostedRuntime.lastAction === 'stopped') msg = '已停止，历史已清空'
+    if (_hostedRuntime.status === HOSTED_STATUS.ERROR) msg = `异常: ${_hostedRuntime.lastError || '未知错误'}`
+    if (_hostedRuntime.lastError && _hostedRuntime.status !== HOSTED_STATUS.ERROR) msg = `上次错误: ${_hostedRuntime.lastError}`
     statusEl.textContent = msg
   }
 }
@@ -2444,15 +2501,17 @@ function renderHostedPanel() {
 async function saveHostedConfig() {
   if (!_hostedSessionConfig) return
   const prompt = (_hostedPromptEl?.value || '').trim()
-  if (!prompt) { toast('请输入初始提示词', 'warning'); return }
   const enabled = !!_hostedEnableEl?.checked
   const maxSteps = Math.max(1, parseInt(_hostedMaxStepsEl?.value || HOSTED_DEFAULTS.maxSteps, 10))
   const stepDelayMs = Math.max(200, parseInt(_hostedStepDelayEl?.value || HOSTED_DEFAULTS.stepDelayMs, 10))
   const retryLimit = Math.max(0, parseInt(_hostedRetryLimitEl?.value || HOSTED_DEFAULTS.retryLimit, 10))
 
+  if (!prompt && enabled) { toast('请输入初始提示词', 'warning'); return }
+
   _hostedSessionConfig = {
     ..._hostedSessionConfig,
     prompt,
+    systemPrompt: prompt,
     enabled,
     autoRunAfterTarget: true,
     stopPolicy: 'self',
@@ -2461,17 +2520,13 @@ async function saveHostedConfig() {
     retryLimit,
   }
 
-  if (!_hostedSessionConfig.history || !_hostedSessionConfig.history.length) {
-    _hostedSessionConfig.history = [{ role: 'system', content: prompt }]
-  } else if (_hostedSessionConfig.history[0]?.role !== 'system') {
-    _hostedSessionConfig.history.unshift({ role: 'system', content: prompt })
-  } else {
-    _hostedSessionConfig.history[0].content = prompt
-  }
+  if (!_hostedSessionConfig.history) _hostedSessionConfig.history = []
+  _hostedSessionConfig.history = _hostedSessionConfig.history.filter(m => m.role !== 'system')
 
   if (!_hostedSessionConfig.state) _hostedSessionConfig.state = { ...HOSTED_RUNTIME_DEFAULT }
   _hostedRuntime = { ...HOSTED_RUNTIME_DEFAULT, ..._hostedSessionConfig.state }
   if (enabled && _hostedRuntime.status === HOSTED_STATUS.PAUSED) _hostedRuntime.status = HOSTED_STATUS.IDLE
+  _hostedRuntime.lastAction = enabled ? '' : _hostedRuntime.lastAction
   persistHostedRuntime()
   renderHostedPanel()
   updateHostedBadge()
@@ -2492,6 +2547,7 @@ async function saveHostedConfig() {
       nextPanel.hostedAgent.default = {
         ...HOSTED_DEFAULTS,
         prompt,
+        systemPrompt: prompt,
         enabled,
         maxSteps,
         stepDelayMs,
@@ -2512,6 +2568,7 @@ function pauseHostedAgent() {
   if (!_hostedSessionConfig) return
   _hostedRuntime.status = HOSTED_STATUS.PAUSED
   _hostedRuntime.pending = false
+  _hostedRuntime.lastAction = 'paused'
   persistHostedRuntime()
   updateHostedBadge()
   toast('托管 Agent 已暂停', 'info')
@@ -2524,6 +2581,12 @@ function stopHostedAgent() {
   _hostedRuntime.stepCount = 0
   _hostedRuntime.lastError = ''
   _hostedRuntime.errorCount = 0
+  _hostedRuntime.contextTokens = 0
+  _hostedRuntime.lastTrimAt = 0
+  _hostedRuntime.lastRunId = ''
+  _hostedRuntime.lastRunAt = 0
+  _hostedRuntime.lastAction = 'stopped'
+  _hostedSessionConfig.history = []
   persistHostedRuntime()
   updateHostedBadge()
   toast('托管 Agent 已停止', 'info')
@@ -2543,6 +2606,7 @@ function appendHostedTarget(text, ts) {
   if (!_hostedSessionConfig) return
   if (!_hostedSessionConfig.history) _hostedSessionConfig.history = []
   _hostedSessionConfig.history.push({ role: 'target', content: text, ts: ts || Date.now() })
+  trimHostedHistoryByTokens()
   persistHostedRuntime()
 }
 
@@ -2560,17 +2624,21 @@ function maybeTriggerHostedRun() {
   if (_hostedRuntime.status === HOSTED_STATUS.WAITING) {
     _hostedRuntime.status = HOSTED_STATUS.IDLE
   }
+  _hostedRuntime.lastAction = ''
   runHostedAgentStep()
 }
 
 function buildHostedMessages() {
+  trimHostedHistoryByTokens()
   const history = _hostedSessionConfig?.history || []
   const trimmed = history.slice(-HOSTED_CONTEXT_MAX)
-  return trimmed.map(item => {
-    if (item.role === 'system') return { role: 'system', content: item.content }
+  const systemPrompt = resolveHostedSystemPrompt()
+  const mapped = trimmed.map(item => {
     if (item.role === 'assistant') return { role: 'assistant', content: item.content }
     return { role: 'user', content: item.content }
   })
+  if (systemPrompt) mapped.unshift({ role: 'system', content: systemPrompt })
+  return mapped
 }
 
 function detectStopFromText(text) {
@@ -2585,6 +2653,7 @@ async function runHostedAgentStep() {
   if (!wsClient.gatewayReady || !_sessionKey) {
     _hostedRuntime.status = HOSTED_STATUS.PAUSED
     _hostedRuntime.lastError = 'Gateway 未就绪或 sessionKey 缺失'
+    _hostedRuntime.lastAction = 'paused'
     persistHostedRuntime()
     updateHostedBadge()
     appendHostedOutput(`需要人工介入: Gateway 未就绪或 sessionKey 缺失${formatHostedSummary()}`)
@@ -2599,6 +2668,7 @@ async function runHostedAgentStep() {
   }
   if (_hostedRuntime.stepCount >= _hostedSessionConfig.maxSteps) {
     _hostedRuntime.status = HOSTED_STATUS.IDLE
+    _hostedRuntime.lastAction = ''
     persistHostedRuntime()
     updateHostedBadge()
     return
@@ -2608,6 +2678,7 @@ async function runHostedAgentStep() {
   _hostedRuntime.status = HOSTED_STATUS.RUNNING
   _hostedRuntime.lastRunAt = Date.now()
   _hostedRuntime.lastRunId = uuid()
+  _hostedRuntime.lastAction = ''
   _currentRunId = _hostedRuntime.lastRunId
   persistHostedRuntime()
   updateHostedBadge()
@@ -2639,6 +2710,7 @@ async function runHostedAgentStep() {
 
     const rendered = renderHostedTemplate(parsed)
     _hostedSessionConfig.history.push({ role: 'assistant', content: rendered, ts: Date.now() })
+    trimHostedHistoryByTokens()
     persistHostedRuntime()
 
     appendHostedOutput(`${rendered}${formatHostedSummary()}`)
@@ -2648,8 +2720,9 @@ async function runHostedAgentStep() {
     persistHostedRuntime()
     updateHostedBadge()
 
-    if (_hostedSessionConfig.stopPolicy === 'self' && detectStopFromText(nextInstruction)) {
+    if (_hostedSessionConfig.stopPolicy === 'self' && detectStopFromText(rendered)) {
       _hostedRuntime.status = HOSTED_STATUS.IDLE
+      _hostedRuntime.lastAction = 'stopped'
       persistHostedRuntime()
       updateHostedBadge()
     }
@@ -2928,19 +3001,32 @@ function parseHostedTemplate(text) {
     else if (section === 'suggest') suggestions.push(line.replace(/^[\-*\d\.\s]+/, ''))
     else if (section === 'risk') risks.push(line.replace(/^[\-*\d\.\s]+/, ''))
   }
-  // risk 可为空，goal 与 suggestions 必须存在
-  if (!goals.length || !suggestions.length) return null
+
+  if (!goals.length && !suggestions.length) {
+    return {
+      goal: '',
+      suggestions: [raw],
+      risks: [],
+    }
+  }
+
   return {
     goal: goals.join(' '),
-    suggestions: suggestions.filter(Boolean),
+    suggestions: suggestions.filter(Boolean).length ? suggestions.filter(Boolean) : [raw],
     risks: risks.filter(Boolean),
   }
 }
 
 function renderHostedTemplate(parsed) {
-  const riskText = parsed.risks.length ? parsed.risks.map(r => `- ${r}`).join('\n') : '- 暂无'
-  const suggestText = parsed.suggestions.map(s => `- ${s}`).join('\n')
-  return `目标: ${parsed.goal}\n建议:\n${suggestText}\n风险:\n${riskText}`
+  const parts = []
+  if (parsed.goal) parts.push(`目标: ${parsed.goal}`)
+  const suggestText = (parsed.suggestions || []).map(s => `- ${s}`).join('\n') || '- 暂无'
+  parts.push(`建议:\n${suggestText}`)
+  if (parsed.risks && parsed.risks.length) {
+    const riskText = parsed.risks.map(r => `- ${r}`).join('\n')
+    parts.push(`风险:\n${riskText}`)
+  }
+  return parts.join('\n')
 }
 
 function appendHostedOutput(text) {
