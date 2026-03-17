@@ -70,6 +70,10 @@ export class WsClient {
   get snapshot() { return this._snapshot }
   get hello() { return this._hello }
   get sessionKey() { return this._sessionKey }
+  setSessionKey(key) {
+    if (!key) return
+    this._sessionKey = key
+  }
   get serverVersion() { return this._serverVersion }
   get state() { return this._state }
 

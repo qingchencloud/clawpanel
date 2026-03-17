@@ -756,6 +756,7 @@ async function connectGateway() {
       if (!_sessionKey) {
         const saved = localStorage.getItem(STORAGE_SESSION_KEY)
         _sessionKey = saved || sessionKey
+        wsClient.setSessionKey(_sessionKey)
         updateSessionTitle()
         loadHistory()
       }
@@ -772,6 +773,7 @@ async function connectGateway() {
     if (wsClient.connected && wsClient.gatewayReady) {
       const saved = localStorage.getItem(STORAGE_SESSION_KEY)
       _sessionKey = saved || wsClient.sessionKey
+      wsClient.setSessionKey(_sessionKey)
       updateStatusDot('ready')
       showTyping(false)  // 确保关闭加载动画
       updateSessionTitle()
@@ -883,6 +885,7 @@ function switchSession(newKey) {
   if (newKey === _sessionKey) return
   _sessionKey = newKey
   localStorage.setItem(STORAGE_SESSION_KEY, newKey)
+  wsClient.setSessionKey(newKey)
   _lastHistoryHash = ''
   resetStreamState()
   updateSessionTitle()
