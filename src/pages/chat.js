@@ -1610,6 +1610,10 @@ async function loadHistory() {
         else if (msg.role === 'assistant') {
           const images = (msg.attachments || []).filter(a => a.category === 'image').map(a => ({ mediaType: a.mimeType, data: a.content, url: a.url }))
           appendAiMessage(msg.content || '', msgTime, images, [], [], [], [])
+        } else if (msg.role === 'system') {
+          appendSystemMessage(msg.content || '', msgTime?.getTime?.() || Date.now())
+        } else {
+          appendSystemMessage(msg.content || '', msgTime?.getTime?.() || Date.now())
         }
       })
       scrollToBottom()
@@ -1653,6 +1657,10 @@ async function loadHistory() {
         appendUserMessage(msg.text, userAtts, msgTime)
       } else if (msg.role === 'assistant') {
         appendAiMessage(msg.text, msgTime, msg.images, msg.videos, msg.audios, msg.files, msg.tools)
+      } else if (msg.role === 'system') {
+        appendSystemMessage(msg.text || '', msgTime?.getTime?.() || Date.now())
+      } else {
+        appendSystemMessage(msg.text || '', msgTime?.getTime?.() || Date.now())
       }
     })
     if (hasOmittedImages) {
@@ -1783,7 +1791,10 @@ function extractContent(msg) {
     }
     return { text: stripThinkingTags(texts.join('\n')), images, videos, audios, files, tools }
   }
-  const text = typeof msg.text === 'string' ? msg.text : (typeof msg.content === 'string' ? msg.content : '')
+  let text = ''
+  if (typeof msg.text === 'string') text = msg.text
+  else if (typeof msg.content === 'string') text = msg.content
+  else if (msg.content && typeof msg.content === 'object') text = safeStringify(msg.content)
   return { text: stripThinkingTags(text), images: [], videos: [], audios: [], files: [], tools }
 }
 
