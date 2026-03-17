@@ -112,7 +112,7 @@ async function fetchJobs(page, state) {
   renderList(page, state)
 
   try {
-    const cfg = await api.readPanelConfig()
+    const cfg = (await api.readPanelConfig()) || {}
     const jobs = Array.isArray(cfg?.[LOCAL_CRON_KEY]) ? cfg[LOCAL_CRON_KEY] : []
     state.jobs = jobs.map(j => ({
       id: j.id,
@@ -420,7 +420,7 @@ async function openTaskDialog(job, page, state) {
 // ── 本地调度辅助 ──
 
 async function loadLocalJobs() {
-  const cfg = await api.readPanelConfig()
+  const cfg = (await api.readPanelConfig()) || {}
   if (!cfg[LOCAL_CRON_KEY] || !Array.isArray(cfg[LOCAL_CRON_KEY])) {
     cfg[LOCAL_CRON_KEY] = []
     await api.writePanelConfig(cfg)
@@ -429,7 +429,7 @@ async function loadLocalJobs() {
 }
 
 async function saveLocalJobs(jobs) {
-  const cfg = await api.readPanelConfig()
+  const cfg = (await api.readPanelConfig()) || {}
   cfg[LOCAL_CRON_KEY] = jobs
   await api.writePanelConfig(cfg)
 }
