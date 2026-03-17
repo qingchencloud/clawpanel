@@ -34,6 +34,7 @@ const HOSTED_DEFAULTS = {
   enabled: false,
   prompt: '',
   systemPrompt: '',
+  contextTokenLimit: 200000,
   autoRunAfterTarget: true,
   stopPolicy: 'self',
   maxSteps: 50,
@@ -55,8 +56,9 @@ const HOSTED_RUNTIME_DEFAULT = {
   lastAction: '',
 }
 
-const HOSTED_CONTEXT_MAX = 30
-const HOSTED_CONTEXT_TOKEN_LIMIT = 4000
+const HOSTED_CONTEXT_MAX = 0
+const HOSTED_CONTEXT_TOKEN_LIMIT = 200000
+let _hostedSeeded = false
 
 const COMMANDS = [
   { title: '会话', commands: [
@@ -101,7 +103,7 @@ let _sendBtn = null, _statusDot = null, _typingEl = null, _scrollBtn = null
 let _sessionListEl = null, _cmdPanelEl = null, _attachPreviewEl = null, _fileInputEl = null
 let _modelSelectEl = null
 let _hostedBtn = null, _hostedPanelEl = null, _hostedBadgeEl = null
-let _hostedPromptEl = null, _hostedEnableEl = null, _hostedMaxStepsEl = null, _hostedStepDelayEl = null, _hostedRetryLimitEl = null
+let _hostedPromptEl = null, _hostedEnableEl = null, _hostedMaxStepsEl = null, _hostedStepDelayEl = null, _hostedRetryLimitEl = null, _hostedContextLimitEl = null
 let _hostedSaveBtn = null, _hostedPauseBtn = null, _hostedStopBtn = null, _hostedCloseBtn = null
 let _hostedGlobalSyncEl = null
 let _hostedDefaults = null
@@ -257,6 +259,10 @@ export async function render() {
                 <label class="form-label">重试次数</label>
                 <input class="form-input" id="hosted-agent-retry" type="number" min="0" max="5" step="1">
               </div>
+              <div class="form-group">
+                <label class="form-label">上下文上限 (tokens)</label>
+                <input class="form-input" id="hosted-agent-context-limit" type="number" min="1000" max="2000000" step="1000">
+              </div>
             </div>
           </div>
           <label class="hosted-agent-switch">
@@ -309,6 +315,7 @@ export async function render() {
   _hostedMaxStepsEl = page.querySelector('#hosted-agent-max-steps')
   _hostedStepDelayEl = page.querySelector('#hosted-agent-step-delay')
   _hostedRetryLimitEl = page.querySelector('#hosted-agent-retry')
+  _hostedContextLimitEl = page.querySelector('#hosted-agent-context-limit')
   _hostedSaveBtn = page.querySelector('#hosted-agent-save')
   _hostedPauseBtn = page.querySelector('#hosted-agent-pause')
   _hostedStopBtn = page.querySelector('#hosted-agent-stop')
@@ -1650,6 +1657,24 @@ function applyHistoryResult(result, hasExisting) {
   if (hash === _lastHistoryHash && hasExisting) return
   _lastHistoryHash = hash
 
+  if (!_hostedSeeded && _hostedSessionConfig && (!_hostedSessionConfig.history || _hostedSessionConfig.history.length === 0)) {
+    const seeded = deduped
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .slice(-50)
+      .map(m => ({
+        role: m.role === 'user' ? 'assistant' : 'target',
+        content: m.text || '',
+        ts: m.timestamp || Date.now(),
+      }))
+      .filter(m => m.content)
+    if (seeded.length) {
+      _hostedSessionConfig.history = seeded
+      trimHostedHistoryByTokens()
+      persistHostedRuntime()
+    }
+    _hostedSeeded = true
+  }
+
   // 正在发送/流式输出时不全量重绘，避免覆盖本地乐观渲染
   if (hasExisting && (_isSending || _isStreaming || _messageQueue.length > 0)) {
     saveMessages(result.messages.map(m => {
@@ -1718,7 +1743,7 @@ async function loadHistory() {
   }
   if (!wsClient.gatewayReady) { _isLoadingHistory = false; return }
   try {
-    const result = await wsClient.chatHistory(_sessionKey, 200)
+    const result = await wsClient.chatHistory(_sessionKey, 50)
     applyHistoryResult(result, hasExisting)
   } catch (e) {
     console.error('[chat] loadHistory error:', e)
@@ -2374,20 +2399,21 @@ function estimateTokens(text) {
   return Math.max(1, Math.ceil((text || '').length / 4))
 }
 
-function trimHostedHistoryByTokens(limit = HOSTED_CONTEXT_TOKEN_LIMIT) {
+function trimHostedHistoryByTokens(limit) {
   if (!_hostedSessionConfig?.history) return
   const systemPrompt = resolveHostedSystemPrompt()
   const items = _hostedSessionConfig.history.filter(m => m.role !== 'system')
+  const maxLimit = limit || _hostedSessionConfig.contextTokenLimit || HOSTED_DEFAULTS.contextTokenLimit || HOSTED_CONTEXT_TOKEN_LIMIT
   let tokens = systemPrompt ? estimateTokens(systemPrompt) : 0
   for (const item of items) tokens += estimateTokens(item.content)
 
-  if (tokens <= limit) {
+  if (tokens <= maxLimit) {
     _hostedRuntime.contextTokens = tokens
     return
   }
 
   let trimmed = [...items]
-  while (trimmed.length && tokens > limit) {
+  while (trimmed.length && tokens > maxLimit) {
     const removed = trimmed.shift()
     tokens -= estimateTokens(removed?.content)
   }
@@ -2430,10 +2456,14 @@ function loadHostedSessionConfig() {
   if (!_hostedSessionConfig.prompt && _hostedSessionConfig.systemPrompt) {
     _hostedSessionConfig.prompt = _hostedSessionConfig.systemPrompt
   }
+  if (!_hostedSessionConfig.contextTokenLimit) {
+    _hostedSessionConfig.contextTokenLimit = _hostedDefaults?.contextTokenLimit || HOSTED_DEFAULTS.contextTokenLimit
+  }
   if (!_hostedSessionConfig.state) _hostedSessionConfig.state = { ...HOSTED_RUNTIME_DEFAULT }
   if (!_hostedSessionConfig.history) _hostedSessionConfig.history = []
   _hostedSessionConfig.history = _hostedSessionConfig.history.filter(m => m.role !== 'system')
   _hostedRuntime = { ...HOSTED_RUNTIME_DEFAULT, ..._hostedSessionConfig.state }
+  _hostedSeeded = _hostedSessionConfig.history.length > 0
   trimHostedHistoryByTokens()
   updateHostedBadge()
 }
@@ -2487,6 +2517,7 @@ function renderHostedPanel() {
   if (_hostedMaxStepsEl) _hostedMaxStepsEl.value = _hostedSessionConfig.maxSteps || HOSTED_DEFAULTS.maxSteps
   if (_hostedStepDelayEl) _hostedStepDelayEl.value = _hostedSessionConfig.stepDelayMs || HOSTED_DEFAULTS.stepDelayMs
   if (_hostedRetryLimitEl) _hostedRetryLimitEl.value = _hostedSessionConfig.retryLimit ?? HOSTED_DEFAULTS.retryLimit
+  if (_hostedContextLimitEl) _hostedContextLimitEl.value = _hostedSessionConfig.contextTokenLimit || HOSTED_DEFAULTS.contextTokenLimit
   const statusEl = _hostedPanelEl.querySelector('#hosted-agent-status')
   if (statusEl) {
     let msg = '状态正常'
@@ -2505,6 +2536,7 @@ async function saveHostedConfig() {
   const maxSteps = Math.max(1, parseInt(_hostedMaxStepsEl?.value || HOSTED_DEFAULTS.maxSteps, 10))
   const stepDelayMs = Math.max(200, parseInt(_hostedStepDelayEl?.value || HOSTED_DEFAULTS.stepDelayMs, 10))
   const retryLimit = Math.max(0, parseInt(_hostedRetryLimitEl?.value || HOSTED_DEFAULTS.retryLimit, 10))
+  const contextTokenLimit = Math.max(1000, parseInt(_hostedContextLimitEl?.value || HOSTED_DEFAULTS.contextTokenLimit, 10))
 
   if (!prompt && enabled) { toast('请输入初始提示词', 'warning'); return }
 
@@ -2512,6 +2544,7 @@ async function saveHostedConfig() {
     ..._hostedSessionConfig,
     prompt,
     systemPrompt: prompt,
+    contextTokenLimit,
     enabled,
     autoRunAfterTarget: true,
     stopPolicy: 'self',
@@ -2548,6 +2581,7 @@ async function saveHostedConfig() {
         ...HOSTED_DEFAULTS,
         prompt,
         systemPrompt: prompt,
+        contextTokenLimit,
         enabled,
         maxSteps,
         stepDelayMs,
@@ -2587,6 +2621,7 @@ function stopHostedAgent() {
   _hostedRuntime.lastRunAt = 0
   _hostedRuntime.lastAction = 'stopped'
   _hostedSessionConfig.history = []
+  _hostedSeeded = false
   persistHostedRuntime()
   updateHostedBadge()
   toast('托管 Agent 已停止', 'info')
@@ -2631,9 +2666,8 @@ function maybeTriggerHostedRun() {
 function buildHostedMessages() {
   trimHostedHistoryByTokens()
   const history = _hostedSessionConfig?.history || []
-  const trimmed = history.slice(-HOSTED_CONTEXT_MAX)
   const systemPrompt = resolveHostedSystemPrompt()
-  const mapped = trimmed.map(item => {
+  const mapped = history.map(item => {
     if (item.role === 'assistant') return { role: 'assistant', content: item.content }
     return { role: 'user', content: item.content }
   })
@@ -3079,6 +3113,7 @@ export function cleanup() {
   _hostedMaxStepsEl = null
   _hostedStepDelayEl = null
   _hostedRetryLimitEl = null
+  _hostedContextLimitEl = null
   _hostedSaveBtn = null
   _hostedPauseBtn = null
   _hostedStopBtn = null
@@ -3088,6 +3123,7 @@ export function cleanup() {
   _hostedDefaults = null
   _hostedRuntime = { ...HOSTED_RUNTIME_DEFAULT }
   _hostedBusy = false
+  _hostedSeeded = false
   _toolEventTimes.clear()
   _toolEventData.clear()
   _toolRunIndex.clear()
