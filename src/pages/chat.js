@@ -18,6 +18,40 @@ const STORAGE_MODEL_KEY = 'clawpanel-chat-selected-model'
 const STORAGE_SIDEBAR_KEY = 'clawpanel-chat-sidebar-open'
 const STORAGE_SESSION_NAMES_KEY = 'clawpanel-chat-session-names'
 
+const HOSTED_STATUS = {
+  IDLE: 'idle',
+  RUNNING: 'running',
+  WAITING: 'waiting_reply',
+  PAUSED: 'paused',
+  ERROR: 'error',
+}
+const HOSTED_SESSIONS_KEY = 'clawpanel-hosted-agent-sessions'
+const HOSTED_GLOBAL_KEY = 'hostedAgent.default'
+
+// { enabled, prompt, autoRunAfterTarget, stopPolicy, maxSteps, stepDelayMs, retryLimit, toolPolicy, state, history }
+// history roles: system | assistant | target
+const HOSTED_DEFAULTS = {
+  enabled: false,
+  prompt: '',
+  autoRunAfterTarget: true,
+  stopPolicy: 'self',
+  maxSteps: 50,
+  stepDelayMs: 1200,
+  retryLimit: 2,
+  toolPolicy: 'inherit',
+}
+
+const HOSTED_RUNTIME_DEFAULT = {
+  status: HOSTED_STATUS.IDLE,
+  stepCount: 0,
+  lastRunAt: 0,
+  lastError: '',
+  pending: false,
+  errorCount: 0,
+}
+
+const HOSTED_CONTEXT_MAX = 30
+
 const COMMANDS = [
   { title: '会话', commands: [
     { cmd: '/new', desc: '新建会话', action: 'exec' },
@@ -60,6 +94,16 @@ let _sessionKey = null, _page = null, _messagesEl = null, _textarea = null
 let _sendBtn = null, _statusDot = null, _typingEl = null, _scrollBtn = null
 let _sessionListEl = null, _cmdPanelEl = null, _attachPreviewEl = null, _fileInputEl = null
 let _modelSelectEl = null
+let _hostedBtn = null, _hostedPanelEl = null, _hostedBadgeEl = null
+let _hostedPromptEl = null, _hostedEnableEl = null, _hostedMaxStepsEl = null, _hostedStepDelayEl = null, _hostedRetryLimitEl = null
+let _hostedSaveBtn = null, _hostedPauseBtn = null, _hostedStopBtn = null, _hostedCloseBtn = null
+let _hostedGlobalSyncEl = null
+let _hostedDefaults = null
+let _hostedSessionConfig = null
+let _hostedRuntime = { ...HOSTED_RUNTIME_DEFAULT }
+let _hostedAutoTimer = null
+let _hostedLastTargetTs = 0
+let _hostedBusy = false
 let _currentAiBubble = null, _currentAiText = '', _currentAiImages = [], _currentAiVideos = [], _currentAiAudios = [], _currentAiFiles = [], _currentAiTools = [], _currentRunId = null
 let _isStreaming = false, _isSending = false, _messageQueue = [], _streamStartTime = 0
 let _lastRenderTime = 0, _renderPending = false, _lastHistoryHash = ''
@@ -159,6 +203,65 @@ export async function render() {
         <button class="chat-send-btn" id="chat-send-btn" disabled>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
         </button>
+        <button class="chat-hosted-btn" id="chat-hosted-btn" title="托管 Agent">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>
+          <span class="chat-hosted-label">托管</span>
+          <span class="chat-hosted-badge" id="chat-hosted-badge">未启用</span>
+        </button>
+      </div>
+      <div class="hosted-agent-panel" id="hosted-agent-panel" style="display:none">
+        <div class="hosted-agent-header">
+          <div class="hosted-agent-title">托管 Agent</div>
+          <button class="hosted-agent-close" id="hosted-agent-close" title="关闭">×</button>
+        </div>
+        <div class="hosted-agent-body">
+          <div class="form-group">
+            <label class="form-label">初始提示词</label>
+            <textarea class="form-input hosted-agent-prompt" id="hosted-agent-prompt" rows="3" placeholder="请输入托管 Agent 的初始提示词..." ></textarea>
+            <div class="form-hint">托管 Agent 仅基于该提示词 + 对面回复自动生成下一步指令</div>
+          </div>
+          <label class="hosted-agent-switch">
+            <span>启用托管 Agent</span>
+            <input type="checkbox" id="hosted-agent-enabled">
+            <span class="hosted-agent-track"></span>
+          </label>
+          <div class="hosted-agent-row">
+            <div class="hosted-agent-tag">运行模式</div>
+            <div class="hosted-agent-value">对面回复后自动继续</div>
+          </div>
+          <div class="hosted-agent-row">
+            <div class="hosted-agent-tag">停止策略</div>
+            <div class="hosted-agent-value">托管 Agent 自评停止</div>
+          </div>
+          <div class="hosted-agent-advanced">
+            <div class="hosted-agent-advanced-title">高级选项</div>
+            <div class="hosted-agent-grid">
+              <div class="form-group">
+                <label class="form-label">最大步数</label>
+                <input class="form-input" id="hosted-agent-max-steps" type="number" min="1" max="200" step="1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">步间隔 (ms)</label>
+                <input class="form-input" id="hosted-agent-step-delay" type="number" min="200" max="10000" step="100">
+              </div>
+              <div class="form-group">
+                <label class="form-label">重试次数</label>
+                <input class="form-input" id="hosted-agent-retry" type="number" min="0" max="5" step="1">
+              </div>
+            </div>
+          </div>
+          <label class="hosted-agent-switch">
+            <span>同步为全局默认</span>
+            <input type="checkbox" id="hosted-agent-sync-global">
+            <span class="hosted-agent-track"></span>
+          </label>
+          <div class="hosted-agent-actions">
+            <button class="btn btn-primary btn-sm" id="hosted-agent-save">保存并启用</button>
+            <button class="btn btn-secondary btn-sm" id="hosted-agent-pause">暂停</button>
+            <button class="btn btn-ghost btn-sm" id="hosted-agent-stop">立即停止</button>
+          </div>
+        </div>
+        <div class="hosted-agent-footer" id="hosted-agent-status"></div>
       </div>
       <div class="chat-disconnect-bar" id="chat-disconnect-bar" style="display:none">连接已断开，正在重连...</div>
       <div class="chat-connect-overlay" id="chat-connect-overlay" style="display:none">
@@ -189,6 +292,19 @@ export async function render() {
   _attachPreviewEl = page.querySelector('#chat-attachments-preview')
   _fileInputEl = page.querySelector('#chat-file-input')
   _modelSelectEl = page.querySelector('#chat-model-select')
+  _hostedBtn = page.querySelector('#chat-hosted-btn')
+  _hostedBadgeEl = page.querySelector('#chat-hosted-badge')
+  _hostedPanelEl = page.querySelector('#hosted-agent-panel')
+  _hostedPromptEl = page.querySelector('#hosted-agent-prompt')
+  _hostedEnableEl = page.querySelector('#hosted-agent-enabled')
+  _hostedMaxStepsEl = page.querySelector('#hosted-agent-max-steps')
+  _hostedStepDelayEl = page.querySelector('#hosted-agent-step-delay')
+  _hostedRetryLimitEl = page.querySelector('#hosted-agent-retry')
+  _hostedSaveBtn = page.querySelector('#hosted-agent-save')
+  _hostedPauseBtn = page.querySelector('#hosted-agent-pause')
+  _hostedStopBtn = page.querySelector('#hosted-agent-stop')
+  _hostedCloseBtn = page.querySelector('#hosted-agent-close')
+  _hostedGlobalSyncEl = page.querySelector('#hosted-agent-sync-global')
   page.querySelector('#chat-sidebar')?.classList.toggle('open', getSidebarOpen())
 
   bindEvents(page)
@@ -196,6 +312,12 @@ export async function render() {
 
   // 首次使用引导提示
   showPageGuide(_messagesEl)
+
+  loadHostedDefaults().then(() => {
+    loadHostedSessionConfig()
+    renderHostedPanel()
+    updateHostedBadge()
+  })
 
   loadModelOptions()
   // 非阻塞：先返回 DOM，后台连接 Gateway
@@ -261,6 +383,25 @@ function bindEvents(page) {
     else sendMessage()
   })
 
+  if (_hostedBtn) {
+    _hostedBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      toggleHostedPanel()
+    })
+  }
+  if (_hostedCloseBtn) {
+    _hostedCloseBtn.addEventListener('click', () => hideHostedPanel())
+  }
+  if (_hostedSaveBtn) {
+    _hostedSaveBtn.addEventListener('click', () => saveHostedConfig())
+  }
+  if (_hostedPauseBtn) {
+    _hostedPauseBtn.addEventListener('click', () => pauseHostedAgent())
+  }
+  if (_hostedStopBtn) {
+    _hostedStopBtn.addEventListener('click', () => stopHostedAgent())
+  }
+
   const toggleSidebar = () => {
     const sidebar = page.querySelector('#chat-sidebar')
     if (!sidebar) return
@@ -302,7 +443,7 @@ function bindEvents(page) {
     _autoScrollEnabled = true
     scrollToBottom(true)
   })
-  _messagesEl.addEventListener('click', () => hideCmdPanel())
+  _messagesEl.addEventListener('click', () => { hideCmdPanel(); hideHostedPanel() })
   _messagesEl.addEventListener('click', (e) => {
     const target = e.target?.closest?.('.msg-spoiler')
     if (!target) return
@@ -561,6 +702,11 @@ async function connectGateway() {
         _hasEverConnected = true
         if (bar) bar.style.display = 'none'
         if (overlay) overlay.style.display = 'none'
+        if (_hostedRuntime.status === HOSTED_STATUS.PAUSED) {
+          _hostedRuntime.status = HOSTED_STATUS.IDLE
+          persistHostedRuntime()
+          updateHostedBadge()
+        }
       } else if (status === 'error') {
         // 连接错误：显示引导遮罩而非底部条
         if (bar) bar.style.display = 'none'
@@ -568,12 +714,22 @@ async function connectGateway() {
           overlay.style.display = 'flex'
           if (desc) desc.textContent = errorMsg || '连接 Gateway 失败'
         }
+        if (_hostedRuntime.status !== HOSTED_STATUS.PAUSED) {
+          _hostedRuntime.status = HOSTED_STATUS.PAUSED
+          persistHostedRuntime()
+          updateHostedBadge()
+        }
       } else if (status === 'reconnecting' || status === 'disconnected') {
         // 首次连接或多次重连失败时，显示引导遮罩而非底部小条
         if (!_hasEverConnected) {
           if (overlay) { overlay.style.display = 'flex'; if (desc) desc.textContent = '正在连接 Gateway...' }
         } else {
           if (bar) { bar.textContent = '连接已断开，正在重连...'; bar.style.display = 'flex' }
+        }
+        if (_hostedRuntime.status !== HOSTED_STATUS.PAUSED) {
+          _hostedRuntime.status = HOSTED_STATUS.PAUSED
+          persistHostedRuntime()
+          updateHostedBadge()
         }
       } else {
         if (bar) bar.style.display = 'none'
@@ -730,6 +886,9 @@ function switchSession(newKey) {
   clearMessages()
   loadHistory()
   refreshSessionList()
+  loadHostedSessionConfig()
+  renderHostedPanel()
+  updateHostedBadge()
 }
 
 async function showNewSessionDialog() {
@@ -890,6 +1049,17 @@ function hideCmdPanel() {
   if (_cmdPanelEl) _cmdPanelEl.style.display = 'none'
 }
 
+function toggleHostedPanel() {
+  if (!_hostedPanelEl) return
+  const next = _hostedPanelEl.style.display !== 'block'
+  _hostedPanelEl.style.display = next ? 'block' : 'none'
+  if (next) renderHostedPanel()
+}
+
+function hideHostedPanel() {
+  if (_hostedPanelEl) _hostedPanelEl.style.display = 'none'
+}
+
 function toggleCmdPanel() {
   if (_cmdPanelEl?.style.display === 'block') hideCmdPanel()
   else { _textarea.value = '/'; showCmdPanel(); _textarea.focus() }
@@ -980,6 +1150,14 @@ function handleEvent(msg) {
 
   if (event === 'chat') handleChatEvent(payload)
 
+  if ((event === 'status' || event === 'gateway.status') && payload?.state === 'disconnected') {
+    if (_hostedRuntime.status !== HOSTED_STATUS.PAUSED) {
+      _hostedRuntime.status = HOSTED_STATUS.PAUSED
+      persistHostedRuntime()
+      updateHostedBadge()
+    }
+  }
+
   // Compaction 状态指示：上游 2026.3.12 新增 status_reaction 事件
   if (event === 'chat.status_reaction' || event === 'status_reaction') {
     const reaction = payload.reaction || payload.emoji || ''
@@ -1054,6 +1232,14 @@ function handleChatEvent(payload) {
     if (!finalTools.length && runId) {
       const ids = _toolRunIndex.get(runId) || []
       finalTools = ids.map(id => mergeToolEventData({ id, name: '工具' })).filter(Boolean)
+    }
+
+    // 托管 Agent：记录对面回复并触发下一步
+    if (payload.sessionKey === _sessionKey || !_sessionKey) {
+      if (finalText && shouldCaptureHostedTarget(payload)) {
+        appendHostedTarget(finalText, payload.timestamp || Date.now())
+        maybeTriggerHostedRun()
+      }
     }
     if (finalImages.length) _currentAiImages = finalImages
     if (finalVideos.length) _currentAiVideos = finalVideos
@@ -2108,6 +2294,502 @@ function updateStatusDot(status) {
   else _statusDot.classList.add('offline')
 }
 
+async function loadHostedDefaults() {
+  _hostedDefaults = { ...HOSTED_DEFAULTS }
+  try {
+    const panel = await api.readPanelConfig()
+    const stored = panel?.hostedAgent?.default || null
+    if (stored) _hostedDefaults = { ..._hostedDefaults, ...stored }
+  } catch (e) {
+    console.warn('[chat][hosted] 读取 panel 配置失败:', e)
+  }
+}
+
+function getHostedSessionKey() {
+  return _sessionKey || localStorage.getItem(STORAGE_SESSION_KEY) || 'agent:main:main'
+}
+
+function loadHostedSessionConfig() {
+  let data = {}
+  try { data = JSON.parse(localStorage.getItem(HOSTED_SESSIONS_KEY) || '{}') } catch { data = {} }
+  const key = getHostedSessionKey()
+  const current = data[key] || {}
+  _hostedSessionConfig = { ...HOSTED_DEFAULTS, ..._hostedDefaults, ...current }
+  if (!_hostedSessionConfig.state) _hostedSessionConfig.state = { ...HOSTED_RUNTIME_DEFAULT }
+  if (!_hostedSessionConfig.history) _hostedSessionConfig.history = []
+  _hostedRuntime = { ...HOSTED_RUNTIME_DEFAULT, ..._hostedSessionConfig.state }
+  updateHostedBadge()
+}
+
+function saveHostedSessionConfig(nextConfig) {
+  let data = {}
+  try { data = JSON.parse(localStorage.getItem(HOSTED_SESSIONS_KEY) || '{}') } catch { data = {} }
+  data[getHostedSessionKey()] = nextConfig
+  localStorage.setItem(HOSTED_SESSIONS_KEY, JSON.stringify(data))
+}
+
+function persistHostedRuntime() {
+  if (!_hostedSessionConfig) return
+  _hostedSessionConfig.state = { ..._hostedRuntime }
+  saveHostedSessionConfig(_hostedSessionConfig)
+}
+
+function updateHostedBadge() {
+  if (!_hostedBadgeEl || !_hostedSessionConfig) return
+  const status = _hostedRuntime.status || HOSTED_STATUS.IDLE
+  const enabled = _hostedSessionConfig.enabled
+  let text = '未启用'
+  let cls = 'chat-hosted-badge'
+  if (!enabled) {
+    text = '未启用'
+    cls += ' idle'
+  } else if (status === HOSTED_STATUS.RUNNING) {
+    text = '运行中'
+    cls += ' running'
+  } else if (status === HOSTED_STATUS.WAITING) {
+    text = '等待回复'
+    cls += ' waiting'
+  } else if (status === HOSTED_STATUS.PAUSED) {
+    text = '已暂停'
+    cls += ' paused'
+  } else if (status === HOSTED_STATUS.ERROR) {
+    text = '异常'
+    cls += ' error'
+  } else {
+    text = '待命'
+    cls += ' idle'
+  }
+  _hostedBadgeEl.className = cls
+  _hostedBadgeEl.textContent = text
+}
+
+function renderHostedPanel() {
+  if (!_hostedPanelEl || !_hostedSessionConfig) return
+  if (_hostedPromptEl) _hostedPromptEl.value = _hostedSessionConfig.prompt || ''
+  if (_hostedEnableEl) _hostedEnableEl.checked = !!_hostedSessionConfig.enabled
+  if (_hostedMaxStepsEl) _hostedMaxStepsEl.value = _hostedSessionConfig.maxSteps || HOSTED_DEFAULTS.maxSteps
+  if (_hostedStepDelayEl) _hostedStepDelayEl.value = _hostedSessionConfig.stepDelayMs || HOSTED_DEFAULTS.stepDelayMs
+  if (_hostedRetryLimitEl) _hostedRetryLimitEl.value = _hostedSessionConfig.retryLimit ?? HOSTED_DEFAULTS.retryLimit
+  const statusEl = _hostedPanelEl.querySelector('#hosted-agent-status')
+  if (statusEl) {
+    const msg = _hostedRuntime.lastError ? `上次错误: ${_hostedRuntime.lastError}` : '状态正常'
+    statusEl.textContent = msg
+  }
+}
+
+async function saveHostedConfig() {
+  if (!_hostedSessionConfig) return
+  const prompt = (_hostedPromptEl?.value || '').trim()
+  if (!prompt) { toast('请输入初始提示词', 'warning'); return }
+  const enabled = !!_hostedEnableEl?.checked
+  const maxSteps = Math.max(1, parseInt(_hostedMaxStepsEl?.value || HOSTED_DEFAULTS.maxSteps, 10))
+  const stepDelayMs = Math.max(200, parseInt(_hostedStepDelayEl?.value || HOSTED_DEFAULTS.stepDelayMs, 10))
+  const retryLimit = Math.max(0, parseInt(_hostedRetryLimitEl?.value || HOSTED_DEFAULTS.retryLimit, 10))
+
+  _hostedSessionConfig = {
+    ..._hostedSessionConfig,
+    prompt,
+    enabled,
+    autoRunAfterTarget: true,
+    stopPolicy: 'self',
+    maxSteps,
+    stepDelayMs,
+    retryLimit,
+  }
+
+  if (!_hostedSessionConfig.history || !_hostedSessionConfig.history.length) {
+    _hostedSessionConfig.history = [{ role: 'system', content: prompt }]
+  } else if (_hostedSessionConfig.history[0]?.role !== 'system') {
+    _hostedSessionConfig.history.unshift({ role: 'system', content: prompt })
+  } else {
+    _hostedSessionConfig.history[0].content = prompt
+  }
+
+  if (!_hostedSessionConfig.state) _hostedSessionConfig.state = { ...HOSTED_RUNTIME_DEFAULT }
+  _hostedRuntime = { ...HOSTED_RUNTIME_DEFAULT, ..._hostedSessionConfig.state }
+  if (enabled && _hostedRuntime.status === HOSTED_STATUS.PAUSED) _hostedRuntime.status = HOSTED_STATUS.IDLE
+  persistHostedRuntime()
+  renderHostedPanel()
+  updateHostedBadge()
+
+  if (_hostedGlobalSyncEl?.checked) {
+    try {
+      const panel = await api.readPanelConfig()
+      const nextPanel = { ...(panel || {}) }
+      if (!nextPanel.hostedAgent) nextPanel.hostedAgent = {}
+      nextPanel.hostedAgent.default = {
+        ...HOSTED_DEFAULTS,
+        prompt,
+        enabled,
+        maxSteps,
+        stepDelayMs,
+        retryLimit,
+      }
+      await api.writePanelConfig(nextPanel)
+      toast('已同步为全局默认', 'success')
+    } catch (e) {
+      toast('同步全局默认失败: ' + (e.message || e), 'error')
+    }
+  }
+
+  if (enabled) toast('托管 Agent 已启用', 'success')
+  else toast('托管 Agent 已保存', 'info')
+}
+
+function pauseHostedAgent() {
+  if (!_hostedSessionConfig) return
+  _hostedRuntime.status = HOSTED_STATUS.PAUSED
+  _hostedRuntime.pending = false
+  persistHostedRuntime()
+  updateHostedBadge()
+  toast('托管 Agent 已暂停', 'info')
+}
+
+function stopHostedAgent() {
+  if (!_hostedSessionConfig) return
+  _hostedRuntime.status = HOSTED_STATUS.IDLE
+  _hostedRuntime.pending = false
+  _hostedRuntime.stepCount = 0
+  _hostedRuntime.lastError = ''
+  _hostedRuntime.errorCount = 0
+  persistHostedRuntime()
+  updateHostedBadge()
+  toast('托管 Agent 已停止', 'info')
+}
+
+function shouldCaptureHostedTarget(payload) {
+  if (!_hostedSessionConfig?.enabled) return false
+  if (_hostedRuntime.status === HOSTED_STATUS.PAUSED || _hostedRuntime.status === HOSTED_STATUS.ERROR) return false
+  if (payload?.message?.role && payload.message.role !== 'assistant') return false
+  const ts = payload?.timestamp || Date.now()
+  if (ts && ts === _hostedLastTargetTs) return false
+  _hostedLastTargetTs = ts
+  return true
+}
+
+function appendHostedTarget(text, ts) {
+  if (!_hostedSessionConfig) return
+  if (!_hostedSessionConfig.history) _hostedSessionConfig.history = []
+  _hostedSessionConfig.history.push({ role: 'target', content: text, ts: ts || Date.now() })
+  persistHostedRuntime()
+}
+
+function maybeTriggerHostedRun() {
+  if (!_hostedSessionConfig?.enabled) return
+  if (!_hostedSessionConfig.autoRunAfterTarget) return
+  if (_hostedRuntime.pending || _hostedRuntime.status === HOSTED_STATUS.RUNNING) return
+  if (_hostedRuntime.status === HOSTED_STATUS.PAUSED || _hostedRuntime.status === HOSTED_STATUS.ERROR) return
+  if (!wsClient.gatewayReady) {
+    _hostedRuntime.status = HOSTED_STATUS.PAUSED
+    persistHostedRuntime()
+    updateHostedBadge()
+    return
+  }
+  if (_hostedRuntime.status === HOSTED_STATUS.WAITING) {
+    _hostedRuntime.status = HOSTED_STATUS.IDLE
+  }
+  runHostedAgentStep()
+}
+
+function buildHostedMessages() {
+  const history = _hostedSessionConfig?.history || []
+  const trimmed = history.slice(-HOSTED_CONTEXT_MAX)
+  return trimmed.map(item => {
+    if (item.role === 'system') return { role: 'system', content: item.content }
+    if (item.role === 'assistant') return { role: 'assistant', content: item.content }
+    return { role: 'user', content: item.content }
+  })
+}
+
+function detectStopFromText(text) {
+  if (!text) return false
+  return /\b(完成|无需继续|结束|停止|done|stop|final)\b/i.test(text)
+}
+
+async function runHostedAgentStep() {
+  if (_hostedBusy || !_hostedSessionConfig?.enabled) return
+  const prompt = (_hostedSessionConfig.prompt || '').trim()
+  if (!prompt) return
+  if (_hostedRuntime.stepCount >= _hostedSessionConfig.maxSteps) {
+    _hostedRuntime.status = HOSTED_STATUS.IDLE
+    persistHostedRuntime()
+    updateHostedBadge()
+    return
+  }
+  _hostedBusy = true
+  _hostedRuntime.pending = true
+  _hostedRuntime.status = HOSTED_STATUS.RUNNING
+  _hostedRuntime.lastRunAt = Date.now()
+  persistHostedRuntime()
+  updateHostedBadge()
+
+  const delay = _hostedSessionConfig.stepDelayMs || HOSTED_DEFAULTS.stepDelayMs
+  if (delay > 0) {
+    await new Promise(r => setTimeout(r, delay))
+  }
+
+  try {
+    const messages = buildHostedMessages()
+    let resultText = ''
+    await callHostedAI(messages, (chunk) => {
+      resultText += chunk
+    })
+    const nextInstruction = resultText.trim()
+    if (!nextInstruction) throw new Error('托管 Agent 未生成指令')
+
+    _hostedRuntime.stepCount += 1
+    _hostedRuntime.errorCount = 0
+    _hostedRuntime.lastError = ''
+
+    _hostedSessionConfig.history.push({ role: 'assistant', content: nextInstruction, ts: Date.now() })
+    persistHostedRuntime()
+
+    appendHostedOutput(`[托管 Agent] 下一步指令: ${nextInstruction}`)
+    await wsClient.chatSend(_sessionKey, nextInstruction)
+
+    _hostedRuntime.status = HOSTED_STATUS.WAITING
+    _hostedRuntime.pending = false
+    persistHostedRuntime()
+    updateHostedBadge()
+
+    if (_hostedSessionConfig.stopPolicy === 'self' && detectStopFromText(nextInstruction)) {
+      _hostedRuntime.status = HOSTED_STATUS.IDLE
+      persistHostedRuntime()
+      updateHostedBadge()
+    }
+  } catch (e) {
+    _hostedRuntime.errorCount = (_hostedRuntime.errorCount || 0) + 1
+    _hostedRuntime.lastError = e.message || String(e)
+    _hostedRuntime.pending = false
+    if (_hostedRuntime.errorCount > _hostedSessionConfig.retryLimit) {
+      _hostedRuntime.status = HOSTED_STATUS.ERROR
+      updateHostedBadge()
+      persistHostedRuntime()
+      return
+    }
+    persistHostedRuntime()
+    updateHostedBadge()
+    const delay = _hostedSessionConfig.stepDelayMs || HOSTED_DEFAULTS.stepDelayMs
+    setTimeout(() => {
+      _hostedBusy = false
+      runHostedAgentStep()
+    }, delay)
+    return
+  } finally {
+    _hostedBusy = false
+  }
+}
+
+async function callHostedAI(messages, onChunk) {
+  const config = await loadHostedAssistantConfig()
+  const apiType = normalizeApiType(config.apiType)
+  if (!config.baseUrl || !config.model || (requiresApiKey(apiType) && !config.apiKey)) {
+    throw new Error('托管 Agent 未配置模型（请在 AI 助手页面配置）')
+  }
+  const base = cleanBaseUrl(config.baseUrl, apiType)
+  const systemPrompt = messages.find(m => m.role === 'system')?.content || ''
+  const chatMessages = messages.filter(m => m.role !== 'system')
+
+  if (apiType === 'anthropic-messages') {
+    await callAnthropicHosted(base, systemPrompt, chatMessages, config, onChunk)
+    return
+  }
+  if (apiType === 'google-gemini') {
+    await callGeminiHosted(base, systemPrompt, chatMessages, config, onChunk)
+    return
+  }
+  await callChatCompletionsHosted(base, systemPrompt, chatMessages, config, onChunk)
+}
+
+async function loadHostedAssistantConfig() {
+  try {
+    const raw = localStorage.getItem('clawpanel-assistant')
+    const stored = raw ? JSON.parse(raw) : {}
+    return {
+      baseUrl: stored.baseUrl || '',
+      apiKey: stored.apiKey || '',
+      model: stored.model || '',
+      temperature: stored.temperature || 0.7,
+      apiType: stored.apiType || 'openai-completions',
+    }
+  } catch {
+    return { baseUrl: '', apiKey: '', model: '', temperature: 0.7, apiType: 'openai-completions' }
+  }
+}
+
+function normalizeApiType(raw) {
+  const type = (raw || '').trim()
+  if (type === 'anthropic' || type === 'anthropic-messages') return 'anthropic-messages'
+  if (type === 'google-gemini') return 'google-gemini'
+  if (type === 'openai' || type === 'openai-completions' || type === 'openai-responses') return 'openai-completions'
+  return 'openai-completions'
+}
+
+function requiresApiKey(apiType) {
+  const type = normalizeApiType(apiType)
+  return type === 'anthropic-messages' || type === 'google-gemini'
+}
+
+function cleanBaseUrl(raw, apiType) {
+  let base = (raw || '').replace(/\/+$/, '')
+  base = base.replace(/\/api\/chat\/?$/, '')
+  base = base.replace(/\/api\/generate\/?$/, '')
+  base = base.replace(/\/api\/tags\/?$/, '')
+  base = base.replace(/\/api\/?$/, '')
+  base = base.replace(/\/chat\/completions\/?$/, '')
+  base = base.replace(/\/completions\/?$/, '')
+  base = base.replace(/\/responses\/?$/, '')
+  base = base.replace(/\/messages\/?$/, '')
+  base = base.replace(/\/models\/?$/, '')
+  const type = normalizeApiType(apiType)
+  if (type === 'anthropic-messages') {
+    if (!base.endsWith('/v1')) base += '/v1'
+    return base
+  }
+  if (type === 'google-gemini') return base
+  if (/:(11434)$/i.test(base) && !base.endsWith('/v1')) return `${base}/v1`
+  return base
+}
+
+function authHeaders(apiType, apiKey) {
+  const type = normalizeApiType(apiType)
+  if (type === 'anthropic-messages') {
+    const headers = {
+      'Content-Type': 'application/json',
+      'anthropic-version': '2023-06-01',
+    }
+    if (apiKey) headers['x-api-key'] = apiKey
+    return headers
+  }
+  const headers = { 'Content-Type': 'application/json' }
+  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+  return headers
+}
+
+async function fetchWithRetry(url, options, retries = 2) {
+  const delays = [800, 1600, 3200]
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const resp = await fetch(url, options)
+      if (resp.ok || resp.status < 500 || i >= retries) return resp
+      await new Promise(r => setTimeout(r, delays[i]))
+    } catch (err) {
+      if (i >= retries) throw err
+      await new Promise(r => setTimeout(r, delays[i]))
+    }
+  }
+}
+
+async function readSSEStream(resp, onEvent) {
+  const reader = resp.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      if (!trimmed.startsWith('data:')) continue
+      const data = trimmed.slice(5).trim()
+      if (data === '[DONE]') return
+      try { onEvent(JSON.parse(data)) } catch {}
+    }
+  }
+}
+
+async function callChatCompletionsHosted(base, systemPrompt, messages, config, onChunk) {
+  const body = {
+    model: config.model,
+    messages: [systemPrompt ? { role: 'system', content: systemPrompt } : null, ...messages].filter(Boolean),
+    stream: true,
+    temperature: config.temperature || 0.7,
+  }
+  const resp = await fetchWithRetry(base + '/chat/completions', {
+    method: 'POST',
+    headers: authHeaders(config.apiType, config.apiKey),
+    body: JSON.stringify(body),
+  })
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => '')
+    let errMsg = `API 错误 ${resp.status}`
+    try { errMsg = JSON.parse(errText).error?.message || errMsg } catch {}
+    throw new Error(errMsg)
+  }
+  await readSSEStream(resp, (json) => {
+    const delta = json.choices?.[0]?.delta
+    if (delta?.content) onChunk(delta.content)
+  })
+}
+
+async function callAnthropicHosted(base, systemPrompt, messages, config, onChunk) {
+  const body = {
+    model: config.model,
+    max_tokens: 4096,
+    stream: true,
+    temperature: config.temperature || 0.7,
+    messages,
+  }
+  if (systemPrompt) body.system = systemPrompt
+  const resp = await fetchWithRetry(base + '/messages', {
+    method: 'POST',
+    headers: authHeaders(config.apiType, config.apiKey),
+    body: JSON.stringify(body),
+  })
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => '')
+    let errMsg = `API 错误 ${resp.status}`
+    try { errMsg = JSON.parse(errText).error?.message || errMsg } catch {}
+    throw new Error(errMsg)
+  }
+  await readSSEStream(resp, (json) => {
+    if (json.type === 'content_block_delta') {
+      const delta = json.delta
+      if (delta?.type === 'text_delta' && delta.text) onChunk(delta.text)
+    }
+  })
+}
+
+async function callGeminiHosted(base, systemPrompt, messages, config, onChunk) {
+  const contents = messages.map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }],
+  }))
+  const body = {
+    contents,
+    generationConfig: { temperature: config.temperature || 0.7 },
+  }
+  if (systemPrompt) body.systemInstruction = { parts: [{ text: systemPrompt }] }
+  const url = `${base}/models/${config.model}:streamGenerateContent?alt=sse&key=${config.apiKey}`
+  const resp = await fetchWithRetry(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => '')
+    let errMsg = `API 错误 ${resp.status}`
+    try { errMsg = JSON.parse(errText).error?.message || errMsg } catch {}
+    throw new Error(errMsg)
+  }
+  await readSSEStream(resp, (json) => {
+    const text = json.candidates?.[0]?.content?.parts?.[0]?.text
+    if (text) onChunk(text)
+  })
+}
+
+function appendHostedOutput(text) {
+  if (!text) return
+  const wrap = document.createElement('div')
+  wrap.className = 'msg msg-system msg-hosted'
+  wrap.textContent = text
+  insertMessageByTime(wrap, Date.now())
+  scrollToBottom()
+}
+
 // ── 页面离开清理 ──
 
 export function cleanup() {
@@ -2139,4 +2821,21 @@ export function cleanup() {
   _isSending = false
   _messageQueue = []
   _lastHistoryHash = ''
+  _hostedBtn = null
+  _hostedPanelEl = null
+  _hostedBadgeEl = null
+  _hostedPromptEl = null
+  _hostedEnableEl = null
+  _hostedMaxStepsEl = null
+  _hostedStepDelayEl = null
+  _hostedRetryLimitEl = null
+  _hostedSaveBtn = null
+  _hostedPauseBtn = null
+  _hostedStopBtn = null
+  _hostedCloseBtn = null
+  _hostedGlobalSyncEl = null
+  _hostedSessionConfig = null
+  _hostedDefaults = null
+  _hostedRuntime = { ...HOSTED_RUNTIME_DEFAULT }
+  _hostedBusy = false
 }
