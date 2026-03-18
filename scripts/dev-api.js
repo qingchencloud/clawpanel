@@ -1532,7 +1532,17 @@ const handlers = {
       if (isMac) {
         cliInstalled = fs.existsSync('/opt/homebrew/bin/openclaw') || fs.existsSync('/usr/local/bin/openclaw')
       } else if (isWindows) {
-        try { cliInstalled = fs.existsSync(path.join(process.env.APPDATA || '', 'npm', 'openclaw.cmd')) }
+        try {
+          // 检查多个可能的安装位置
+          const paths = [
+            path.join(process.env.APPDATA || '', 'npm', 'openclaw.cmd'),
+            path.join(process.env.APPDATA || '', 'npm', 'openclaw'),
+            path.join(process.env.ProgramFiles || '', 'nodejs', 'openclaw.cmd'),
+            path.join(process.env.ProgramFiles || '', 'nodejs', 'openclaw'),
+            'C:\\WINDOWS\\system32\\openclaw',
+          ]
+          cliInstalled = paths.some(p => fs.existsSync(p))
+        }
         catch { cliInstalled = false }
       } else {
         cliInstalled = !!findOpenclawBin()
