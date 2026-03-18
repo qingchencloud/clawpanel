@@ -523,7 +523,17 @@ const CRITICAL_PATTERNS = [
   /curl\s+.*\|\s*(sudo\s+)?bash/i,             // curl | bash
   /wget\s+.*\|\s*(sudo\s+)?bash/i,             // wget | bash
   /npm\s+publish/i,                             // npm publish
+  /git\s+push\s+.*--force-with-lease/i,         // git push --force-with-lease
   /git\s+push\s+.*--force/i,                    // git push --force
+  /git\s+push\s+.*\s-f(\s|$)/i,                // git push -f
+  /remove-item\s+.*-recurse.*-force.*[a-z]:\\/i, // Remove-Item -Recurse -Force C:\
+  /remove-item\s+-recurse/i,                    // Remove-Item -Recurse
+  /rmdir\s+\/s\s+\/q/i,                         // rmdir /s /q
+  /rd\s+\/s\s+\/q/i,                            // rd /s /q
+  /del\s+\/s\s+\/q/i,                           // del /s /q
+  /diskpart/i,                                   // diskpart
+  /bcdedit/i,                                    // bcdedit
+  /reg\s+delete/i,                               // reg delete
 ]
 
 function isCriticalCommand(command) {
@@ -1962,24 +1972,38 @@ function convertToolsForGemini(tools) {
 // 上下文裁剪：保留图片消息，避免多模态丢失
 function trimContextPreserveImages(messages, maxTokens) {
   const trimmed = trimContextCore(messages, maxTokens)
-  const trimmedSet = new Set(trimmed)
   const imageMessages = messages.filter(m => Array.isArray(m.content) && m.content.some(b => b?.type === 'image_url' || b?.type === 'image'))
   if (!imageMessages.length) return trimmed
+  const maxPinned = Math.min(4, maxTokens)
+  const pinnedList = imageMessages.slice(-maxPinned)
+  const pinnedSet = new Set(pinnedList)
+  const trimmedSet = new Set(trimmed)
   const merged = [...trimmed]
-  imageMessages.forEach(msg => {
+  pinnedList.forEach(msg => {
     if (trimmedSet.has(msg)) return
     merged.push(msg)
   })
   if (merged.length <= maxTokens) return merged
-  const pinned = new Set(imageMessages)
   const compact = []
   for (let i = merged.length - 1; i >= 0; i--) {
     const msg = merged[i]
-    if (compact.length >= maxTokens && !pinned.has(msg)) continue
+    if (compact.length >= maxTokens && !pinnedSet.has(msg)) continue
     compact.unshift(msg)
-    if (compact.length >= maxTokens && pinned.has(msg)) continue
   }
   return compact
+}
+
+function buildContextMessages(session) {
+  return trimContextPreserveImages(
+    session.messages
+      .filter(m => {
+        if (m.role === 'user') return true
+        if (m.role === 'assistant') return m.content && m.content.length > 0
+        return false
+      })
+      .map(m => ({ role: m.role, content: m.content })),
+    MAX_CONTEXT_TOKENS
+  )
 }
 
 // 工具调用执行（共用逻辑）
@@ -3310,16 +3334,7 @@ async function sendMessageDirect(text) {
 
   // 准备 AI 上下文（只保留 role + content，剔除内部字段）
   // 过滤掉空的 AI 回复，避免污染上下文导致模型也返回空
-  const contextMessages = trimContextPreserveImages(
-    session.messages
-      .filter(m => {
-        if (m.role === 'user') return true
-        if (m.role === 'assistant') return m.content && m.content.length > 0
-        return false
-      })
-      .map(m => ({ role: m.role, content: m.content })),
-    MAX_CONTEXT_TOKENS
-  )
+  const contextMessages = buildContextMessages(session)
 
   // 添加空 AI 消息占位
   const aiMsg = { role: 'assistant', content: '', ts: Date.now() }
@@ -3462,10 +3477,7 @@ async function retryAIResponse(session) {
   if (!session?.id) return
   if (getStreaming(session.id)) return
 
-  const contextMessages = trimContextPreserveImages(
-    session.messages.filter(m => m.role === 'user' || m.role === 'assistant'),
-    MAX_CONTEXT_TOKENS
-  )
+  const contextMessages = buildContextMessages(session)
 
   const aiMsg = { role: 'assistant', content: '', ts: Date.now() }
   session.messages.push(aiMsg)
