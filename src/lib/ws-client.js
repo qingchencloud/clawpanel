@@ -187,7 +187,8 @@ export class WsClient {
         this._setConnected(false, WS_STATE.ERROR, e.reason || 'origin not allowed，请点击「修复并重连」')
         return
       }
-      this._setConnected(false, WS_STATE.DISCONNECTED)
+      if (this._intentionalClose) this._setConnected(false, WS_STATE.DISCONNECTED)
+      else this._setConnected(false, WS_STATE.RECONNECTING)
       this._gatewayReady = false
       this._handshaking = false
       this._stopPing()
@@ -430,7 +431,9 @@ export class WsClient {
         try {
           const id = uuid()
           this._ws.send(JSON.stringify({ type: 'req', id, method: 'node.list', params: {} }))
-          this.request('chat.history', { sessionKey: this._sessionKey, limit: 10 }, { emitEvent: true }).catch(() => {})
+          if (this._sessionKey) {
+            this.request('chat.history', { sessionKey: this._sessionKey, limit: 10 }, { emitEvent: true }).catch(() => {})
+          }
         } catch {}
       }
     }, PING_INTERVAL)

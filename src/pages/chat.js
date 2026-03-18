@@ -11,6 +11,8 @@ import { saveMessage, saveMessages, getLocalMessages, isStorageAvailable } from 
 import { toast } from '../components/toast.js'
 import { showModal, showConfirm, showContentModal } from '../components/modal.js'
 import { icon as svgIcon } from '../lib/icons.js'
+import { callAIWithTools, getEnabledTools } from '../lib/assistant-core.js'
+import { OPENCLAW_KB } from '../lib/openclaw-kb.js'
 
 const RENDER_THROTTLE = 30
 const STORAGE_SESSION_KEY = 'clawpanel-last-session'
@@ -114,8 +116,9 @@ const HOSTED_RUNTIME_DEFAULT = {
   lastAction: '',
 }
 
-const HOSTED_CONTEXT_MAX = 0
+const HOSTED_CONTEXT_MAX = 100
 const HOSTED_CONTEXT_TOKEN_LIMIT = 200000
+const HOSTED_RECONNECT_GRACE_MS = 12000
 let _hostedSeeded = false
 
 const COMMANDS = [
@@ -168,11 +171,13 @@ let _hostedDefaults = null
 let _hostedSessionConfig = null
 let _hostedRuntime = { ...HOSTED_RUNTIME_DEFAULT }
 let _hostedAutoTimer = null
+let _hostedDisconnectTimer = null
 let _hostedLastTargetTs = 0
 let _hostedBusy = false
 let _hostedAbort = null
 let _hostedLastCompletionRunId = ''
 let _hostedLastSentHash = ''
+let _hostedNeedsHistoryRefresh = false
 const _hostedStates = new Map()
 let _askUserBlockedNotice = false
 const _askUserToolHandled = new Set()
@@ -224,6 +229,47 @@ function getSessionState(sessionKey) {
   }
   return _sessionStates.get(key)
 }
+
+function clearHostedDisconnectTimer() {
+  if (_hostedDisconnectTimer) {
+    clearTimeout(_hostedDisconnectTimer)
+    _hostedDisconnectTimer = null
+  }
+}
+
+function pauseHostedForDisconnect(reason = 'disconnected') {
+  if (!_hostedSessionConfig?.enabled) return
+  const active = _hostedRuntime.status === HOSTED_STATUS.RUNNING || _hostedRuntime.status === HOSTED_STATUS.WAITING
+  const alreadyDisconnectedPause = _hostedRuntime.status === HOSTED_STATUS.PAUSED && _hostedRuntime.lastAction === 'disconnected'
+  if (!active && !alreadyDisconnectedPause) return
+  clearHostedDisconnectTimer()
+  _hostedDisconnectTimer = setTimeout(() => {
+    _hostedDisconnectTimer = null
+    if (!wsClient.gatewayReady && _hostedSessionConfig?.enabled) {
+      _hostedRuntime.status = HOSTED_STATUS.PAUSED
+      _hostedRuntime.pending = false
+      _hostedRuntime.lastAction = 'disconnected'
+      persistHostedRuntime()
+      updateHostedBadge()
+      markHostedHistoryStale()
+      updateHostedInputLock()
+    }
+  }, HOSTED_RECONNECT_GRACE_MS)
+}
+
+function resumeHostedFromReconnect() {
+  clearHostedDisconnectTimer()
+  if (!_hostedSessionConfig?.enabled) return
+  if (_hostedRuntime.status === HOSTED_STATUS.PAUSED && _hostedRuntime.lastAction === 'disconnected') {
+    _hostedRuntime.status = HOSTED_STATUS.IDLE
+    _hostedRuntime.lastAction = ''
+    persistHostedRuntime()
+    updateHostedBadge()
+    refreshHostedHistoryIfNeeded({ limit: 100, force: true })
+  }
+  updateHostedInputLock()
+}
+
 let _hasEverConnected = false
 let _availableModels = []
 let _primaryModel = ''
@@ -793,14 +839,9 @@ async function connectGateway() {
         _hasEverConnected = true
         if (bar) bar.style.display = 'none'
         if (overlay) overlay.style.display = 'none'
-        if (_hostedRuntime.status === HOSTED_STATUS.PAUSED) {
-          _hostedRuntime.status = HOSTED_STATUS.IDLE
-          _hostedRuntime.lastAction = ''
-          persistHostedRuntime()
-          updateHostedBadge()
-        }
-        updateHostedInputLock()
+        resumeHostedFromReconnect()
       } else if (status === 'error') {
+        clearHostedDisconnectTimer()
         // 连接错误：显示引导遮罩而非底部条
         if (bar) bar.style.display = 'none'
         if (overlay) {
@@ -809,10 +850,12 @@ async function connectGateway() {
         }
         if (_hostedRuntime.status !== HOSTED_STATUS.PAUSED) {
           _hostedRuntime.status = HOSTED_STATUS.PAUSED
+          _hostedRuntime.pending = false
           _hostedRuntime.lastAction = 'paused'
           persistHostedRuntime()
           updateHostedBadge()
         }
+        markHostedHistoryStale()
         updateHostedInputLock()
       } else if (status === 'reconnecting' || status === 'disconnected') {
         // 首次连接或多次重连失败时，显示引导遮罩而非底部小条
@@ -821,12 +864,8 @@ async function connectGateway() {
         } else {
           if (bar) { bar.textContent = '连接已断开，正在重连...'; bar.style.display = 'flex' }
         }
-        if (_hostedRuntime.status !== HOSTED_STATUS.PAUSED) {
-          _hostedRuntime.status = HOSTED_STATUS.PAUSED
-          _hostedRuntime.lastAction = 'paused'
-          persistHostedRuntime()
-          updateHostedBadge()
-        }
+        pauseHostedForDisconnect(status)
+        markHostedHistoryStale()
         updateHostedInputLock()
       } else {
         if (bar) bar.style.display = 'none'
@@ -1232,7 +1271,7 @@ function stopGeneration() {
 function handleEvent(msg) {
   const { event, payload } = msg
   if (!payload) return
-  const sessionKey = _normalizeSessionKey(payload?.sessionKey || payload?._req?.sessionKey)
+  const sessionKey = _normalizeSessionKey(payload?.sessionKey || payload?._req?.sessionKey || _sessionKey)
   const state = getSessionState(sessionKey)
 
   if (event === 'agent' && payload?.stream === 'tool' && payload?.data?.toolCallId) {
@@ -1257,30 +1296,33 @@ function handleEvent(msg) {
   }
 
   if (event === 'chat.history') {
-    const reqKey = payload?._req?.sessionKey || ''
-    if (reqKey && _sessionKey && reqKey !== _sessionKey) return
-    if (!_messagesEl) {
-      state.pendingHistoryPayload = payload
-      state.pendingHistoryTs = Date.now()
+    const { sessionKey: historyKey, result: historyResult } = normalizeHistoryPayload(payload, sessionKey)
+    const boundKey = getHostedBoundSessionKey()
+    const isUiHistory = !!(historyKey && historyKey === _sessionKey)
+    const isBoundHistory = !!(historyKey && boundKey && historyKey === boundKey)
+    if (!historyKey || !historyResult || (!isUiHistory && !isBoundHistory)) return
+    const historyState = getSessionState(historyKey)
+    if (!_messagesEl || !isUiHistory) {
+      historyState.pendingHistoryPayload = historyResult
+      historyState.pendingHistoryTs = Date.now()
       return
     }
+    const hasExisting = !!_messagesEl?.querySelector?.('.msg')
     if (_isSending || _isStreaming || _messageQueue.length > 0) {
-      state.pendingHistoryPayload = payload
-      state.pendingHistoryTs = Date.now()
+      historyState.pendingHistoryPayload = historyResult
+      historyState.pendingHistoryTs = Date.now()
       return
     }
-    const hasExisting = _messagesEl?.querySelector?.('.msg')
-    applyHistoryResult(payload, hasExisting, _sessionKey)
+    if (hasExisting) applyIncrementalHistoryResult(historyResult, historyKey)
+    else applyHistoryResult(historyResult, false, historyKey)
+    return
   }
 
   if (event === 'chat') handleChatEvent(payload)
 
   if ((event === 'status' || event === 'gateway.status') && payload?.state === 'disconnected') {
-    if (_hostedRuntime.status !== HOSTED_STATUS.PAUSED) {
-      _hostedRuntime.status = HOSTED_STATUS.PAUSED
-      persistHostedRuntime()
-      updateHostedBadge()
-    }
+    pauseHostedForDisconnect('disconnected')
+    markHostedHistoryStale()
   }
 
   // Compaction 状态指示：上游 2026.3.12 新增 status_reaction 事件
@@ -1785,15 +1827,137 @@ function buildHistoryHash(messages) {
   }).join('|')
 }
 
-function flushPendingHistory() {
-  const state = getSessionState(_sessionKey)
+function normalizeHistoryPayload(payload, fallbackKey) {
+  const key = _normalizeSessionKey(payload?.sessionKey || payload?._req?.sessionKey || fallbackKey)
+  const messages = extractHistoryMessages(payload)
+  if (!messages || !messages.length) return { sessionKey: key, result: null }
+  return { sessionKey: key, result: { messages } }
+}
+
+function extractHistoryMessages(source) {
+  if (!source) return null
+  if (Array.isArray(source)) return source
+  if (Array.isArray(source.messages)) return source.messages
+  if (Array.isArray(source.result?.messages)) return source.result.messages
+  if (Array.isArray(source.value?.messages)) return source.value.messages
+  if (Array.isArray(source.data?.messages)) return source.data.messages
+  if (Array.isArray(source.messages?.value)) return source.messages.value
+  if (Array.isArray(source.messages?.data)) return source.messages.data
+  if (Array.isArray(source.result)) return source.result
+  if (Array.isArray(source.value)) return source.value
+  if (Array.isArray(source.data)) return source.data
+  if (Array.isArray(source.payload)) return source.payload
+  return null
+}
+
+function flushPendingHistory(sessionKey = _sessionKey) {
+  const key = _normalizeSessionKey(sessionKey)
+  const state = getSessionState(key)
   if (!state.pendingHistoryPayload || !_messagesEl) return
   if (_isSending || _isStreaming || _messageQueue.length > 0) return
   const payload = state.pendingHistoryPayload
   state.pendingHistoryPayload = null
   state.pendingHistoryTs = 0
-  const hasExisting = _messagesEl?.querySelector?.('.msg')
-  applyHistoryResult(payload, hasExisting, _sessionKey)
+  applyIncrementalHistoryResult(payload, key)
+}
+
+function buildHistoryEntryKey(msg) {
+  const role = msg?.role || 'system'
+  const ts = Number(msg?.timestamp || 0)
+  const text = (msg?.text || '').trim()
+  const mediaCount = (msg?.images?.length || 0) + (msg?.videos?.length || 0) + (msg?.audios?.length || 0) + (msg?.files?.length || 0)
+  const toolCount = msg?.tools?.length || 0
+  const statusTag = role === 'system' ? (msg?.statusKey || msg?.statusType || '') : ''
+  return `${role}:${statusTag}:${ts}:${text}:${mediaCount}:${toolCount}`
+}
+
+function getRenderedHistoryKeys() {
+  const keys = new Set()
+  if (!_messagesEl) return keys
+  _messagesEl.querySelectorAll('.msg[data-history-key]').forEach(node => {
+    if (node.dataset.historyKey) keys.add(node.dataset.historyKey)
+  })
+  return keys
+}
+
+function stampHistoryNode(node, msg) {
+  if (!node) return
+  node.dataset.historyKey = buildHistoryEntryKey(msg)
+  node.dataset.historyRole = msg?.role || 'system'
+  if (msg?.statusKey || msg?.statusType) node.dataset.statusKey = msg?.statusKey || msg?.statusType || ''
+  node.dataset.ts = String(Number(msg?.timestamp || Date.now()))
+}
+
+function upsertStableSystemBubble({
+  statusKey,
+  text,
+  statusType = 'system',
+  sessionKey = _sessionKey,
+  ts = Date.now(),
+  active = true,
+}) {
+  if (!_messagesEl || !statusKey || sessionKey !== _sessionKey) return null
+  let node = _messagesEl.querySelector(`.msg-system[data-status-key="${statusKey}"]`)
+  if (!active) {
+    node?.remove()
+    return null
+  }
+  if (!node) {
+    node = document.createElement('div')
+    node.className = 'msg msg-system msg-hosted'
+    node.dataset.statusKey = statusKey
+    insertMessageByTime(node, ts)
+  }
+  node.dataset.statusType = statusType
+  node.dataset.historyRole = 'system'
+  node.dataset.historyKey = buildHistoryEntryKey({ role: 'system', text, timestamp: ts, statusKey, statusType })
+  node.dataset.ts = String(Number(ts || Date.now()))
+  node.textContent = text || ''
+  return node
+}
+
+function applyIncrementalHistoryResult(result, sessionKey) {
+  if (!_messagesEl || !result?.messages?.length) return
+  const deduped = dedupeHistory(result.messages, sessionKey)
+  const renderedKeys = getRenderedHistoryKeys()
+  let appended = 0
+  let hasOmittedImages = false
+
+  deduped.forEach(msg => {
+    const entryKey = buildHistoryEntryKey(msg)
+    if (renderedKeys.has(entryKey)) return
+    const msgTime = msg.timestamp ? new Date(msg.timestamp) : new Date()
+    let wrap = null
+    if (msg.role === 'user') {
+      const userAtts = msg.images?.length ? msg.images.map(i => ({
+        mimeType: i.mediaType || i.media_type || 'image/png',
+        content: i.data || i.source?.data || '',
+        category: 'image',
+      })).filter(a => a.content) : []
+      if (msg.images?.length && !userAtts.length) hasOmittedImages = true
+      wrap = appendUserMessage(msg.text, userAtts, msgTime)
+    } else if (msg.role === 'assistant') {
+      wrap = appendAiMessage(msg.text, msgTime, msg.images, msg.videos, msg.audios, msg.files, msg.tools, sessionKey)
+    } else {
+      wrap = appendSystemMessage(msg.text || '', msgTime?.getTime?.() || Date.now())
+    }
+    stampHistoryNode(wrap, msg)
+    renderedKeys.add(entryKey)
+    appended += 1
+  })
+
+  if (hasOmittedImages) {
+    const notice = appendSystemMessage('部分历史图片无法显示（Gateway 不保留图片原始数据，仅当前会话内可见）')
+    if (notice) notice.dataset.historyKey = 'system:omitted-images'
+  }
+
+  saveMessages(result.messages.map(m => {
+    const c = extractContent(m, sessionKey)
+    const role = (m.role === 'tool' || m.role === 'toolResult') ? 'assistant' : m.role
+    return { id: m.id || uuid(), sessionKey, role, content: c?.text || '', timestamp: m.timestamp || Date.now() }
+  }))
+
+  if (appended > 0) scrollToBottom()
 }
 
 function applyHistoryResult(result, hasExisting, sessionKey) {
@@ -1828,9 +1992,9 @@ function applyHistoryResult(result, hasExisting, sessionKey) {
   // 正在发送/流式输出时不全量重绘，避免覆盖本地乐观渲染
   if (hasExisting && (_isSending || _isStreaming || _messageQueue.length > 0)) {
     saveMessages(result.messages.map(m => {
-      const c = extractContent(m)
+      const c = extractContent(m, sessionKey)
       const role = (m.role === 'tool' || m.role === 'toolResult') ? 'assistant' : m.role
-      return { id: m.id || uuid(), sessionKey: _sessionKey, role, content: c?.text || '', timestamp: m.timestamp || Date.now() }
+      return { id: m.id || uuid(), sessionKey, role, content: c?.text || '', timestamp: m.timestamp || Date.now() }
     }))
     return
   }
@@ -1840,6 +2004,7 @@ function applyHistoryResult(result, hasExisting, sessionKey) {
   deduped.forEach(msg => {
     if (!msg.text && !msg.images?.length && !msg.videos?.length && !msg.audios?.length && !msg.files?.length && !msg.tools?.length) return
     const msgTime = msg.timestamp ? new Date(msg.timestamp) : new Date()
+    let wrap = null
     if (msg.role === 'user') {
       const userAtts = msg.images?.length ? msg.images.map(i => ({
         mimeType: i.mediaType || i.media_type || 'image/png',
@@ -1847,22 +2012,24 @@ function applyHistoryResult(result, hasExisting, sessionKey) {
         category: 'image',
       })).filter(a => a.content) : []
       if (msg.images?.length && !userAtts.length) hasOmittedImages = true
-      appendUserMessage(msg.text, userAtts, msgTime)
+      wrap = appendUserMessage(msg.text, userAtts, msgTime)
     } else if (msg.role === 'assistant') {
-      appendAiMessage(msg.text, msgTime, msg.images, msg.videos, msg.audios, msg.files, msg.tools)
+      wrap = appendAiMessage(msg.text, msgTime, msg.images, msg.videos, msg.audios, msg.files, msg.tools, sessionKey)
     } else if (msg.role === 'system') {
-      appendSystemMessage(msg.text || '', msgTime?.getTime?.() || Date.now())
+      wrap = appendSystemMessage(msg.text || '', msgTime?.getTime?.() || Date.now())
     } else {
-      appendSystemMessage(msg.text || '', msgTime?.getTime?.() || Date.now())
+      wrap = appendSystemMessage(msg.text || '', msgTime?.getTime?.() || Date.now())
     }
+    stampHistoryNode(wrap, msg)
   })
   if (hasOmittedImages) {
-    appendSystemMessage('部分历史图片无法显示（Gateway 不保留图片原始数据，仅当前会话内可见）')
+    const notice = appendSystemMessage('部分历史图片无法显示（Gateway 不保留图片原始数据，仅当前会话内可见）')
+    if (notice) notice.dataset.historyKey = 'system:omitted-images'
   }
   saveMessages(result.messages.map(m => {
-    const c = extractContent(m)
+    const c = extractContent(m, sessionKey)
     const role = (m.role === 'tool' || m.role === 'toolResult') ? 'assistant' : m.role
-    return { id: m.id || uuid(), sessionKey: _sessionKey, role, content: c?.text || '', timestamp: m.timestamp || Date.now() }
+    return { id: m.id || uuid(), sessionKey, role, content: c?.text || '', timestamp: m.timestamp || Date.now() }
   }))
   scrollToBottom()
 }
@@ -2083,16 +2250,17 @@ function appendUserMessage(text, attachments = [], msgTime) {
 
   wrap.appendChild(bubble)
   wrap.appendChild(meta)
-  _messagesEl.insertBefore(wrap, _typingEl)
+  insertMessageByTime(wrap, msgTime?.getTime?.() || Date.now())
   scrollToBottom()
+  return wrap
 }
 
-function appendAiMessage(text, msgTime, images, videos, audios, files, tools) {
+function appendAiMessage(text, msgTime, images, videos, audios, files, tools, sessionKey = _sessionKey) {
   const wrap = document.createElement('div')
   wrap.className = 'msg msg-ai'
   const bubble = document.createElement('div')
   bubble.className = 'msg-bubble'
-  appendToolsToEl(bubble, tools, _sessionKey)
+  appendToolsToEl(bubble, tools, sessionKey)
   const textEl = document.createElement('div')
   textEl.className = 'msg-text'
   textEl.innerHTML = renderMarkdown(text || '')
@@ -2110,8 +2278,9 @@ function appendAiMessage(text, msgTime, images, videos, audios, files, tools) {
 
   wrap.appendChild(bubble)
   wrap.appendChild(meta)
-  _messagesEl.insertBefore(wrap, _typingEl)
+  insertMessageByTime(wrap, msgTime?.getTime?.() || Date.now())
   scrollToBottom()
+  return wrap
 }
 
 /** 渲染图片到消息气泡（支持 Anthropic/OpenAI/直接格式） */
@@ -2407,6 +2576,7 @@ function appendSystemMessage(text, ts) {
   wrap.textContent = text
   insertMessageByTime(wrap, ts)
   scrollToBottom()
+  return wrap
 }
 
 function clearMessages() {
@@ -2589,23 +2759,25 @@ function estimateTokens(text) {
 function trimHostedHistoryByTokens(limit) {
   if (!_hostedSessionConfig?.history) return
   const systemPrompt = resolveHostedSystemPrompt()
-  const items = _hostedSessionConfig.history.filter(m => m.role !== 'system')
+  let items = _hostedSessionConfig.history.filter(m => m.role !== 'system')
+  const maxItems = HOSTED_CONTEXT_MAX || 100
+  if (items.length > maxItems) {
+    items = items.slice(-maxItems)
+  }
   const maxLimit = limit || _hostedSessionConfig.contextTokenLimit || HOSTED_DEFAULTS.contextTokenLimit || HOSTED_CONTEXT_TOKEN_LIMIT
   let tokens = systemPrompt ? estimateTokens(systemPrompt) : 0
   for (const item of items) tokens += estimateTokens(item.content)
 
-  if (tokens <= maxLimit) {
-    _hostedRuntime.contextTokens = tokens
-    return
+  if (tokens > maxLimit) {
+    let trimmed = [...items]
+    while (trimmed.length && tokens > maxLimit) {
+      const removed = trimmed.shift()
+      tokens -= estimateTokens(removed?.content)
+    }
+    items = trimmed
   }
 
-  let trimmed = [...items]
-  while (trimmed.length && tokens > maxLimit) {
-    const removed = trimmed.shift()
-    tokens -= estimateTokens(removed?.content)
-  }
-
-  _hostedSessionConfig.history = trimmed
+  _hostedSessionConfig.history = items
   _hostedRuntime.contextTokens = tokens
   _hostedRuntime.lastTrimAt = Date.now()
 }
@@ -2753,6 +2925,24 @@ function getHostedState(sessionKey) {
   return state
 }
 
+function markHostedHistoryStale() {
+  _hostedNeedsHistoryRefresh = true
+}
+
+async function refreshHostedHistoryIfNeeded(options = {}) {
+  const { limit = 100, force = false } = options
+  if (!force && !_hostedNeedsHistoryRefresh) return
+  const key = getHostedBoundSessionKey()
+  if (!key || !wsClient.gatewayReady) return
+  try {
+    await ensureHostedHistorySeeded(key, limit, true)
+    _hostedNeedsHistoryRefresh = false
+  } catch (e) {
+    console.warn('[chat][hosted] 刷新历史失败:', e)
+    _hostedNeedsHistoryRefresh = true
+  }
+}
+
 function loadHostedSessionConfig() {
   const key = getHostedSessionKey()
   const state = getHostedState(key)
@@ -2801,6 +2991,37 @@ function updateHostedBadge() {
   }
   _hostedBadgeEl.className = cls
   _hostedBadgeEl.textContent = text
+  syncHostedStatusBubble(text)
+}
+
+function syncHostedStatusBubble(label) {
+  if (!_hostedSessionConfig?.enabled || getHostedBoundSessionKey() !== _sessionKey) {
+    if (_messagesEl) upsertStableSystemBubble({ statusKey: 'hosted-status', active: false })
+    return
+  }
+  const status = _hostedRuntime.status || HOSTED_STATUS.IDLE
+  const active = status === HOSTED_STATUS.RUNNING || status === HOSTED_STATUS.WAITING || status === HOSTED_STATUS.ERROR || status === HOSTED_STATUS.PAUSED
+  if (!active) {
+    upsertStableSystemBubble({ statusKey: 'hosted-status', active: false })
+    return
+  }
+  const reasons = []
+  if (_hostedRuntime.stepCount) reasons.push(`步数 ${_hostedRuntime.stepCount}`)
+  if (_hostedRuntime.lastAction) reasons.push(`最近动作 ${_hostedRuntime.lastAction}`)
+  if (_hostedRuntime.pending) reasons.push('等待下一步触发')
+  if (status === HOSTED_STATUS.WAITING) reasons.push('等待对面回复')
+  if (_hostedRuntime.lastError && status === HOSTED_STATUS.ERROR) reasons.push(`错误 ${_hostedRuntime.lastError}`)
+  let text = `托管 Agent 状态：${label}`
+  if (reasons.length) text += ` | ${reasons.join(' | ')}`
+  const node = upsertStableSystemBubble({
+    statusKey: 'hosted-status',
+    text,
+    statusType: 'hosted-status',
+    ts: _hostedRuntime.lastRunAt || Date.now(),
+    active: true,
+  })
+  if (node) node.dataset.hostedStatus = status
+  scrollToBottom()
 }
 
 function renderHostedPanel() {
@@ -2863,6 +3084,7 @@ async function saveHostedConfig() {
     if (!wsClient.gatewayReady || !_sessionKey) {
       toast('Gateway 未就绪，暂不启动', 'warning')
     } else {
+      await refreshHostedHistoryIfNeeded({ limit: 100, force: true })
       runHostedAgentStepForSession(getHostedBoundSessionKey())
     }
   }
@@ -2900,6 +3122,7 @@ function pauseHostedAgent() {
   _hostedRuntime.lastAction = 'paused'
   persistHostedRuntime()
   updateHostedBadge()
+  markHostedHistoryStale()
   updateHostedInputLock()
   toast('托管 Agent 已暂停', 'info')
 }
@@ -2989,17 +3212,17 @@ function detectStopFromText(text) {
   return /\b(完成|无需继续|结束|停止|done|stop|final)\b/i.test(text)
 }
 
-async function ensureHostedHistorySeeded(sessionKey) {
+async function ensureHostedHistorySeeded(sessionKey, limit = 200, force = false) {
   const key = sessionKey || getHostedBoundSessionKey()
   if (!key || !wsClient.gatewayReady) return
-  if (_hostedSeeded && _hostedSessionConfig?.history?.length) return
+  if (!force && _hostedSeeded && _hostedSessionConfig?.history?.length) return
   try {
-    const result = await wsClient.chatHistory(key, 200)
+    const result = await wsClient.chatHistory(key, limit)
     const messages = result?.messages || []
     const deduped = dedupeHistory(messages)
     const seeded = deduped
       .filter(m => m.role === 'user' || m.role === 'assistant')
-      .slice(-200)
+      .slice(-(HOSTED_CONTEXT_MAX || 100))
       .map(m => ({
         role: m.role,
         content: m.text || '',
@@ -3021,6 +3244,7 @@ async function runHostedAgentStepForSession(sessionKey) {
   const key = sessionKey || getHostedBoundSessionKey()
   if (!key) return
   if (key === getHostedSessionKey()) {
+    await refreshHostedHistoryIfNeeded({ limit: 100, force: true })
     await ensureHostedHistorySeeded(key)
     return runHostedAgentStep()
   }
@@ -3028,6 +3252,7 @@ async function runHostedAgentStepForSession(sessionKey) {
     if (_hostedSessionConfig?.boundSessionKey !== key) {
       _hostedSessionConfig.boundSessionKey = key
     }
+    await refreshHostedHistoryIfNeeded({ limit: 100, force: true })
     await ensureHostedHistorySeeded(key)
     return runHostedAgentStep()
   })
@@ -3082,10 +3307,8 @@ async function runHostedAgentStep() {
 
   try {
     const messages = buildHostedMessages()
-    let resultText = ''
-    await callHostedAI(messages, (chunk) => {
-      resultText += chunk
-    })
+    const result = await callHostedAI(messages)
+    const resultText = result?.text || ''
     const parsed = parseHostedTemplate(resultText)
     if (!parsed) {
       _hostedRuntime.errorCount = (_hostedRuntime.errorCount || 0) + 1
@@ -3150,40 +3373,229 @@ async function runHostedAgentStep() {
   }
 }
 
-async function callHostedAI(messages, onChunk) {
+function resolveHostedTools(config) {
+  const policy = _hostedSessionConfig?.toolPolicy || 'inherit'
+  if (policy === 'off') return []
+  const mode = policy === 'readonly' ? 'plan' : 'execute'
+  return getEnabledTools({ config, mode })
+}
+
+async function hostedExecTool({ name, args }) {
+  switch (name) {
+    case 'run_command':
+      return await api.assistantExec(args.command, args.cwd)
+    case 'read_file':
+      return await api.assistantReadFile(args.path)
+    case 'write_file':
+      return await api.assistantWriteFile(args.path, args.content)
+    case 'list_directory':
+      return await api.assistantListDir(args.path)
+    case 'get_system_info':
+      return await api.assistantSystemInfo()
+    case 'list_processes':
+      return await api.assistantListProcesses(args.filter)
+    case 'check_port':
+      return await api.assistantCheckPort(args.port)
+    case 'web_search':
+      return await api.assistantWebSearch(args.query, args.max_results)
+    case 'fetch_url':
+      return await api.assistantFetchUrl(args.url)
+    case 'skills_list': {
+      const data = await api.skillsList()
+      const skills = data?.skills || []
+      const eligible = skills.filter(s => s.eligible && !s.disabled)
+      const missing = skills.filter(s => !s.eligible && !s.disabled)
+      const disabled = skills.filter(s => s.disabled)
+      let summary = `共 ${skills.length} 个 Skills: ${eligible.length} 可用, ${missing.length} 缺依赖, ${disabled.length} 已禁用\n\n`
+      if (eligible.length) summary += `## 可用 (${eligible.length})\n` + eligible.map(s => `- ${s.emoji || ''} **${s.name}**: ${s.description || ''}${s.bundled ? ' [内置]' : ''}`.trim()).join('\n') + '\n\n'
+      if (missing.length) summary += `## 缺依赖 (${missing.length})\n` + missing.map(s => {
+        const m = s.missing || {}
+        const deps = [...(m.bins||[]), ...(m.env||[]).map(e=>'$'+e), ...(m.config||[])].join(', ')
+        const installs = (s.install||[]).map(i => i.label).join(' / ')
+        return `- ${s.emoji || ''} **${s.name}**: 缺少 ${deps}${installs ? ' · 可用安装: ' + installs : ''}`.trim()
+      }).join('\n') + '\n\n'
+      if (disabled.length) summary += `## 已禁用 (${disabled.length})\n` + disabled.map(s => `- ${s.emoji || ''} **${s.name}**: ${s.description || ''}`.trim()).join('\n') + '\n'
+      return summary
+    }
+    case 'skills_info':
+      return JSON.stringify(await api.skillsInfo(args.name), null, 2)
+    case 'skills_check':
+      return JSON.stringify(await api.skillsCheck(), null, 2)
+    case 'skills_install_dep':
+      return JSON.stringify(await api.skillsInstallDep(args.kind, args.spec), null, 2)
+    case 'skills_clawhub_search':
+      return JSON.stringify(await api.skillsClawhubSearch(args.query), null, 2)
+    default:
+      return `未支持的工具: ${name}`
+  }
+}
+
+function appendHostedUserReplyToHistory(answer, ts = Date.now()) {
+  if (!_hostedSessionConfig) return
+  if (!_hostedSessionConfig.history) _hostedSessionConfig.history = []
+  _hostedSessionConfig.history.push({ role: 'user', content: answer || '', ts })
+  trimHostedHistoryByTokens()
+  persistHostedRuntime(getHostedBoundSessionKey())
+}
+
+async function commitHostedUserReply(answer, sessionKey, ts = Date.now()) {
+  const targetSessionKey = sessionKey || getHostedBoundSessionKey() || _sessionKey
+  const finalAnswer = answer || ''
+  const optimisticMsg = {
+    role: 'user',
+    text: finalAnswer,
+    content: finalAnswer,
+    timestamp: ts,
+  }
+  const optimisticWrap = appendUserMessage(finalAnswer, [], new Date(ts))
+  stampHistoryNode(optimisticWrap, optimisticMsg)
+  if (targetSessionKey) {
+    saveMessage({
+      id: uuid(),
+      sessionKey: targetSessionKey,
+      role: 'user',
+      content: finalAnswer,
+      timestamp: ts,
+    })
+  }
+  appendHostedUserReplyToHistory(finalAnswer, ts)
+  if (targetSessionKey && wsClient.gatewayReady) {
+    try {
+      await wsClient.chatSend(targetSessionKey, finalAnswer)
+    } catch {}
+  }
+}
+
+function createAskUserBubble({ question, type, options, placeholder, toolId, sessionKey, skipLabel = '跳过', skipValue = '用户跳过了该问题', onSubmit }) {
+  return new Promise((resolve) => {
+    if (!_messagesEl) { resolve(''); return }
+    if (toolId && _askUserToolHandled.has(toolId)) { resolve(''); return }
+    if (toolId) _askUserToolHandled.add(toolId)
+    const targetSessionKey = sessionKey || _sessionKey
+    const ts = Date.now()
+    const promptWrap = appendAiMessage(question || '请提供信息', new Date(ts), [], [], [], [], [], targetSessionKey)
+    promptWrap.classList.add('msg-hosted')
+    const bubble = promptWrap.querySelector('.msg-bubble') || promptWrap
+    const cardId = 'chat-ask-user-' + ts
+    const optionsHtml = (options || []).map((opt) => {
+      const inputType = type === 'multiple' ? 'checkbox' : 'radio'
+      return `<label class="ast-ask-option"><input type="${inputType}" name="${cardId}" value="${escapeHtml(opt)}"><span>${escapeHtml(opt)}</span></label>`
+    }).join('')
+    const textHtml = type === 'text' || !options?.length
+      ? `<textarea class="ast-ask-text" placeholder="${escapeHtml(placeholder || '请输入...')}" rows="2"></textarea>`
+      : ''
+    const customHtml = type !== 'text' && options?.length
+      ? `<div class="ast-ask-custom"><input type="text" class="ast-ask-custom-input" placeholder="请输入自定义内容..."></div>`
+      : ''
+    const card = document.createElement('div')
+    card.className = 'ast-ask-card'
+    card.id = cardId
+    card.innerHTML = `
+      ${optionsHtml ? `<div class="ast-ask-options">${optionsHtml}</div>` : ''}
+      ${customHtml}
+      ${textHtml}
+      <div class="ast-ask-actions">
+        <button class="ast-ask-submit btn btn-primary btn-sm">确认</button>
+        <button class="ast-ask-skip btn btn-secondary btn-sm">${escapeHtml(skipLabel)}</button>
+      </div>
+    `
+    bubble.appendChild(card)
+    scrollToBottom()
+    const buildAnswer = () => {
+      if (type === 'text' || (!options?.length)) {
+        return card.querySelector('.ast-ask-text')?.value?.trim() || ''
+      }
+      if (type === 'multiple') {
+        const checked = [...card.querySelectorAll('input[type="checkbox"]:checked')].map(el => el.value)
+        const custom = card.querySelector('.ast-ask-custom-input')?.value?.trim()
+        if (custom) checked.push(custom)
+        return checked.join('、') || '未选择'
+      }
+      const checked = card.querySelector('input[type="radio"]:checked')
+      const custom = card.querySelector('.ast-ask-custom-input')?.value?.trim()
+      return custom || checked?.value || '未选择'
+    }
+    const submit = async (answer) => {
+      const finalAnswer = answer || ''
+      card.remove()
+      try {
+        await commitHostedUserReply(finalAnswer, targetSessionKey, Date.now())
+        if (typeof onSubmit === 'function') {
+          await onSubmit({ answer: finalAnswer, sessionKey: targetSessionKey, wrap: promptWrap, card: bubble })
+        }
+      } finally {
+        resolve(finalAnswer)
+      }
+    }
+    card.querySelector('.ast-ask-submit').addEventListener('click', () => { void submit(buildAnswer()) })
+    card.querySelector('.ast-ask-skip').addEventListener('click', () => { void submit(skipValue) })
+  })
+}
+
+function showAskUserCardChatAsync({ question, type, options, placeholder, toolId, sessionKey, skipLabel = '跳过', skipValue = '用户跳过了该问题', onSubmit }) {
+  return createAskUserBubble({ question, type, options, placeholder, toolId, sessionKey, skipLabel, skipValue, onSubmit })
+}
+
+async function callHostedAI(messages) {
   const config = await loadHostedAssistantConfig()
   const apiType = normalizeApiType(config.apiType)
   if (!config.baseUrl || !config.model || (requiresApiKey(apiType) && !config.apiKey)) {
     throw new Error('托管 Agent 未配置模型（请在 AI 助手页面配置）')
   }
-  const base = cleanBaseUrl(config.baseUrl, apiType)
-  const systemPrompt = messages.find(m => m.role === 'system')?.content || ''
-  let chatMessages = messages.filter(m => m.role !== 'system')
-
-  if (apiType === 'anthropic-messages' || apiType === 'google-gemini') {
-    chatMessages = chatMessages.map(m => ({
-      ...m,
-      role: m.role === 'developer' ? 'assistant' : m.role,
-    }))
+  const tools = resolveHostedTools(config)
+  const adapters = {
+    execTool: hostedExecTool,
+    confirm: async (text) => {
+      const prev = _hostedRuntime.status
+      _hostedRuntime.status = HOSTED_STATUS.WAITING
+      persistHostedRuntime()
+      updateHostedBadge()
+      updateHostedInputLock()
+      const answer = await showAskUserCardChatAsync({
+        question: text || '请确认是否继续',
+        type: 'single',
+        options: ['确认', '取消'],
+        placeholder: '',
+        sessionKey: getHostedBoundSessionKey(),
+        toolId: `hosted-confirm:${getHostedBoundSessionKey()}:${text || ''}`,
+        skipLabel: '取消',
+        skipValue: '取消',
+      })
+      _hostedRuntime.status = prev === HOSTED_STATUS.WAITING ? HOSTED_STATUS.RUNNING : prev
+      persistHostedRuntime()
+      updateHostedBadge()
+      updateHostedInputLock()
+      return String(answer || '').includes('确认')
+    },
+    askUser: async (args) => {
+      const prev = _hostedRuntime.status
+      _hostedRuntime.status = HOSTED_STATUS.WAITING
+      persistHostedRuntime()
+      updateHostedBadge()
+      updateHostedInputLock()
+      const answer = await showAskUserCardChatAsync({
+        question: args.question || args.prompt || '请提供信息',
+        type: args.type || 'text',
+        options: args.options || [],
+        placeholder: args.placeholder || '',
+        sessionKey: getHostedBoundSessionKey(),
+      })
+      const finalAnswer = answer || ''
+      _hostedRuntime.status = prev === HOSTED_STATUS.WAITING ? HOSTED_STATUS.RUNNING : prev
+      persistHostedRuntime()
+      updateHostedBadge()
+      updateHostedInputLock()
+      return { message: finalAnswer }
+    },
+    knowledgeBase: OPENCLAW_KB,
   }
-
   if (_hostedAbort) { _hostedAbort.abort(); _hostedAbort = null }
   _hostedAbort = new AbortController()
-  const signal = _hostedAbort.signal
   const timeout = setTimeout(() => {
     if (_hostedAbort) _hostedAbort.abort()
   }, 120000)
-
   try {
-    if (apiType === 'anthropic-messages') {
-      await callAnthropicHosted(base, systemPrompt, chatMessages, config, onChunk, signal)
-      return
-    }
-    if (apiType === 'google-gemini') {
-      await callGeminiHosted(base, systemPrompt, chatMessages, config, onChunk, signal)
-      return
-    }
-    await callChatCompletionsHosted(base, systemPrompt, chatMessages, config, onChunk, signal)
+    return await callAIWithTools({ config, messages, tools, adapters, mode: 'execute' })
   } finally {
     clearTimeout(timeout)
     _hostedAbort = null
@@ -3470,76 +3882,16 @@ function updateHostedInputLock() {
 }
 
 function showAskUserCardChat({ question, type, options, placeholder, toolId, sessionKey }) {
-  if (!_messagesEl) return
-  if (toolId && _askUserToolHandled.has(toolId)) return
-  if (toolId) _askUserToolHandled.add(toolId)
-  const targetSessionKey = sessionKey || _sessionKey
-
-  const cardId = 'chat-ask-user-' + Date.now()
-  const optionsHtml = (options || []).map((opt) => {
-    const inputType = type === 'multiple' ? 'checkbox' : 'radio'
-    return `<label class="ast-ask-option">
-      <input type="${inputType}" name="${cardId}" value="${escapeHtml(opt)}">
-      <span>${escapeHtml(opt)}</span>
-    </label>`
-  }).join('')
-
-  const textHtml = type === 'text' || !options?.length
-    ? `<textarea class="ast-ask-text" placeholder="${escapeHtml(placeholder || '请输入...')}" rows="2"></textarea>`
-    : ''
-
-  const customHtml = type !== 'text' && options?.length
-    ? `<div class="ast-ask-custom"><input type="text" class="ast-ask-custom-input" placeholder="或输入自定义内容..."></div>`
-    : ''
-
-  const card = document.createElement('div')
-  card.className = 'ast-ask-card'
-  card.id = cardId
-  card.innerHTML = `
-    <div class="ast-ask-question">${escapeHtml(question || '请提供信息')}</div>
-    ${optionsHtml ? `<div class="ast-ask-options">${optionsHtml}</div>` : ''}
-    ${customHtml}
-    ${textHtml}
-    <div class="ast-ask-actions">
-      <button class="ast-ask-submit btn btn-primary btn-sm">确认</button>
-      <button class="ast-ask-skip btn btn-secondary btn-sm">跳过</button>
-    </div>
-  `
-
-  const wrap = document.createElement('div')
-  wrap.className = 'msg msg-system'
-  wrap.appendChild(card)
-  insertMessageByTime(wrap, Date.now())
-  _messagesEl.scrollTop = _messagesEl.scrollHeight
-
-  const buildAnswer = () => {
-    if (type === 'text' || (!options?.length)) {
-      return card.querySelector('.ast-ask-text')?.value?.trim() || ''
-    }
-    if (type === 'multiple') {
-      const checked = [...card.querySelectorAll('input[type="checkbox"]:checked')].map(el => el.value)
-      const custom = card.querySelector('.ast-ask-custom-input')?.value?.trim()
-      if (custom) checked.push(custom)
-      return checked.join('、') || '未选择'
-    }
-    const checked = card.querySelector('input[type="radio"]:checked')
-    const custom = card.querySelector('.ast-ask-custom-input')?.value?.trim()
-    return custom || checked?.value || '未选择'
-  }
-
-  const submit = (answer) => {
-    card.innerHTML = `<div class="ast-ask-answered">
-      <div class="ast-ask-question">${escapeHtml(question || '请提供信息')}</div>
-      <div class="ast-ask-answer">${escapeHtml(answer || '未选择')}</div>
-    </div>`
-    card.classList.add('answered')
-    if (targetSessionKey && wsClient.gatewayReady) {
-      wsClient.chatSend(targetSessionKey, answer || '').catch(() => {})
-    }
-  }
-
-  card.querySelector('.ast-ask-submit').addEventListener('click', () => submit(buildAnswer()))
-  card.querySelector('.ast-ask-skip').addEventListener('click', () => submit('用户跳过了此问题'))
+  void createAskUserBubble({
+    question,
+    type,
+    options,
+    placeholder,
+    toolId,
+    sessionKey,
+    skipLabel: '跳过',
+    skipValue: '用户跳过了此问题',
+  })
 }
 
 function extractHostedInstruction(text) {
@@ -3585,10 +3937,13 @@ function appendHostedOutput(text) {
   if (!displayText.startsWith('[托管 Agent]')) displayText = `[托管 Agent] ${displayText}`
   const boundKey = getHostedBoundSessionKey()
   if (boundKey === _sessionKey) {
-    const wrap = document.createElement('div')
-    wrap.className = 'msg msg-system msg-hosted'
-    wrap.textContent = displayText
-    insertMessageByTime(wrap, Date.now())
+    upsertStableSystemBubble({
+      statusKey: 'hosted-special',
+      text: displayText,
+      statusType: 'hosted-special',
+      ts: Date.now(),
+      active: true,
+    })
     scrollToBottom()
     if (extracted.askUser) {
       const ask = extracted.askUser || {}
@@ -3623,6 +3978,7 @@ export function cleanup() {
   if (_unsubStatus) { _unsubStatus(); _unsubStatus = null }
   clearTimeout(_streamSafetyTimer)
   if (_hostedAbort) { _hostedAbort.abort(); _hostedAbort = null }
+  if (_hostedDisconnectTimer) { clearTimeout(_hostedDisconnectTimer); _hostedDisconnectTimer = null }
   // 不断开 wsClient —— 它是全局单例，保持连接供下次进入复用
   _sessionKey = null
   _page = null
