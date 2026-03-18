@@ -52,8 +52,8 @@ let _days = 7
 
 async function loadUsage(page) {
   const el = page.querySelector('#usage-content')
-  el.innerHTML = `<div class="stat-card loading-placeholder" style="height:120px"></div>
-    <div class="stat-card loading-placeholder" style="height:200px;margin-top:var(--space-md)"></div>`
+  el.innerHTML = `<div class="usage-loading-stack"><div class="stat-card loading-placeholder" style="height:120px"></div>
+    <div class="stat-card loading-placeholder" style="height:200px"></div></div>`
 
   if (!wsClient.connected) {
     el.innerHTML = `<div class="usage-empty">
@@ -77,9 +77,9 @@ async function loadUsage(page) {
     renderUsage(el, data)
   } catch (e) {
     el.innerHTML = `<div class="usage-empty">
-      <div style="color:var(--error);margin-bottom:8px">加载失败: ${esc(e?.message || e)}</div>
+      <div class="usage-error-title">加载失败: ${esc(e?.message || e)}</div>
       <div class="form-hint">可能需要更新 OpenClaw 到 2026.3.11+ 以支持 Usage API</div>
-      <button class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="this.closest('.page').querySelector('#btn-usage-refresh').click()">重试</button>
+      <button class="btn btn-secondary btn-sm usage-retry-btn" onclick="this.closest('.page').querySelector('#btn-usage-refresh').click()">重试</button>
     </div>`
   }
 }
@@ -145,9 +145,9 @@ function renderUsage(el, data) {
   const renderTop = (title, items, keyFn, valueFn, metaFn) => {
     if (!items || !items.length) return ''
     const rows = items.slice(0, 5).map(item => `
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border-primary)">
-        <span style="font-size:var(--font-size-sm);color:var(--text-primary);font-weight:500">${esc(keyFn(item))}</span>
-        <span style="font-size:var(--font-size-sm);color:var(--text-secondary);font-family:var(--font-mono)">${valueFn(item)}</span>
+      <div class="usage-top-row">
+        <span class="usage-top-key">${esc(keyFn(item))}</span>
+        <span class="usage-top-value">${valueFn(item)}</span>
       </div>
     `).join('')
     return `
@@ -173,13 +173,13 @@ function renderUsage(el, data) {
 
   // ── Token 分类 ──
   const tokenBreakdownHtml = `
-    <div class="config-section" style="margin-top:var(--space-lg)">
+    <div class="config-section usage-section">
       <div class="config-section-title">Token 分类</div>
-      <div style="display:flex;gap:var(--space-lg);flex-wrap:wrap;padding:var(--space-md)">
-        <div><span style="display:inline-block;width:10px;height:10px;background:var(--error);border-radius:2px;margin-right:6px"></span>输出 ${fmtTokens(t.output)}</div>
-        <div><span style="display:inline-block;width:10px;height:10px;background:var(--accent);border-radius:2px;margin-right:6px"></span>输入 ${fmtTokens(t.input)}</div>
-        <div><span style="display:inline-block;width:10px;height:10px;background:var(--success);border-radius:2px;margin-right:6px"></span>缓存读取 ${fmtTokens(t.cacheRead)}</div>
-        <div><span style="display:inline-block;width:10px;height:10px;background:var(--warning);border-radius:2px;margin-right:6px"></span>缓存写入 ${fmtTokens(t.cacheWrite)}</div>
+      <div class="usage-token-breakdown">
+        <div class="usage-token-item"><span class="usage-token-dot" style="background:var(--error)"></span>输出 ${fmtTokens(t.output)}</div>
+        <div class="usage-token-item"><span class="usage-token-dot" style="background:var(--accent)"></span>输入 ${fmtTokens(t.input)}</div>
+        <div class="usage-token-item"><span class="usage-token-dot" style="background:var(--success)"></span>缓存读取 ${fmtTokens(t.cacheRead)}</div>
+        <div class="usage-token-item"><span class="usage-token-dot" style="background:var(--warning)"></span>缓存写入 ${fmtTokens(t.cacheWrite)}</div>
       </div>
     </div>
   `
@@ -225,8 +225,8 @@ function renderUsage(el, data) {
       </div>`
     }).join('')
     sessionsHtml = `
-      <div class="config-section" style="margin-top:var(--space-lg)">
-        <div class="config-section-title">会话明细 <span style="font-weight:normal;color:var(--text-tertiary);font-size:var(--font-size-xs)">最近 ${sessions.length} 个</span></div>
+      <div class="config-section usage-section-block">
+        <div class="config-section-title">会话明细 <span class="usage-section-note">最近 ${sessions.length} 个</span></div>
         <div class="session-list">${rows}</div>
       </div>
     `

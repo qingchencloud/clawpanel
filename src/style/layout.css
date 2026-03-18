@@ -308,7 +308,8 @@
 
 .page {
   padding: var(--space-xl) var(--space-2xl);
-  max-width: 1200px;
+  width: 100%;
+  max-width: none;
   animation: pageIn 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -324,15 +325,20 @@
 }
 
 .page-title {
-  font-size: var(--font-size-2xl);
+  font-size: clamp(26px, 2vw, 32px);
+  line-height: 1.15;
   font-weight: 700;
+  letter-spacing: -0.02em;
   color: var(--text-primary);
-  margin-bottom: var(--space-xs);
+  margin-bottom: 6px;
 }
 
 .page-desc {
-  font-size: var(--font-size-sm);
-  color: var(--text-tertiary);
+  font-size: 15px;
+  line-height: 1.6;
+  font-weight: 500;
+  color: var(--text-secondary);
+  max-width: 760px;
 }
 
 @keyframes pageIn {

@@ -36,12 +36,12 @@ export async function render() {
 
 function renderSkeleton(container) {
   const item = () => `
-    <div class="agent-card" style="pointer-events:none">
+    <div class="agent-card agent-card-skeleton">
       <div class="agent-card-header">
-        <div class="skeleton" style="width:40px;height:40px;border-radius:50%"></div>
-        <div style="flex:1;display:flex;flex-direction:column;gap:6px">
-          <div class="skeleton" style="width:45%;height:16px;border-radius:4px"></div>
-          <div class="skeleton" style="width:60%;height:12px;border-radius:4px"></div>
+        <div class="skeleton agent-skeleton-avatar"></div>
+        <div class="agent-skeleton-copy">
+          <div class="skeleton agent-skeleton-line agent-skeleton-line-title"></div>
+          <div class="skeleton agent-skeleton-line agent-skeleton-line-meta"></div>
         </div>
       </div>
     </div>`
@@ -61,7 +61,7 @@ async function loadAgents(page, state) {
       state.eventsAttached = true
     }
   } catch (e) {
-    container.innerHTML = '<div style="color:var(--error);padding:20px">加载失败: ' + e + '</div>'
+    container.innerHTML = '<div class="agent-error">加载失败: ' + e + '</div>'
     toast('加载 Agent 列表失败: ' + e, 'error')
   }
 }
@@ -69,7 +69,7 @@ async function loadAgents(page, state) {
 function renderAgents(page, state) {
   const container = page.querySelector('#agents-list')
   if (!state.agents.length) {
-    container.innerHTML = '<div style="color:var(--text-tertiary);padding:20px;text-align:center">暂无 Agent</div>'
+    container.innerHTML = '<div class="agent-empty">暂无 Agent</div>'
     return
   }
 
@@ -100,7 +100,7 @@ function renderAgents(page, state) {
           </div>
           <div class="agent-info-row">
             <span class="agent-info-label">工作区:</span>
-            <span class="agent-info-value" style="font-family:var(--font-mono);font-size:var(--font-size-xs)">${a.workspace || '未设置'}</span>
+            <span class="agent-info-value agent-workspace">${a.workspace || '未设置'}</span>
           </div>
         </div>
       </div>

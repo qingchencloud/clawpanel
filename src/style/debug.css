@@ -5,24 +5,26 @@
 .debug-table {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 8px;
+  margin-top: 10px;
 }
 
 .debug-table td {
-  padding: 6px 8px;
+  padding: 9px 10px;
   border-bottom: 1px solid var(--border);
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 .debug-table td:first-child {
   color: var(--text-secondary);
-  width: 200px;
-  font-weight: 500;
+  width: 220px;
+  font-weight: 600;
 }
 
 .debug-table td:last-child {
   color: var(--text-primary);
-  font-family: monospace;
+  font-family: var(--font-mono);
+  font-size: 12px;
 }
 
 .debug-table tr:last-child td {
@@ -30,18 +32,235 @@
 }
 
 /* 状态概览卡片 */
-.config-section {
+.debug-page .config-section {
   background: var(--bg-secondary);
-  border-radius: 6px;
-  padding: 12px;
-  margin-bottom: 12px;
+  border: 1px solid var(--border-primary);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 14px;
 }
 
-.config-section-title {
-  font-size: 14px;
-  font-weight: 600;
+.debug-page .config-section-title {
+  font-size: 15px;
+  font-weight: 700;
   color: var(--text-primary);
+  margin-bottom: 10px;
+}
+
+.debug-toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.debug-log-panel {
+  display: none;
+  margin-top: 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.debug-log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.debug-log-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.debug-log-button {
+  padding: 5px 9px;
+  font-size: 12px;
+}
+
+.debug-log-content,
+.debug-network-content {
+  font-size: 12px;
+  line-height: 1.65;
+  max-height: 400px;
+  overflow: auto;
+  color: var(--text-primary);
+}
+
+.debug-summary {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.debug-status-error {
+  color: var(--error);
+}
+
+.debug-status-success {
+  color: var(--success);
   margin-bottom: 8px;
+}
+
+.debug-details {
+  margin-top: 8px;
+}
+
+.debug-details-summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.debug-json-preview {
+  background: var(--bg-secondary);
+  padding: 8px;
+  border-radius: 4px;
+  overflow: auto;
+  max-height: 300px;
+  font-size: 11px;
+}
+
+.debug-advice-list {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.debug-advice-item {
+  margin-bottom: 6px;
+}
+
+.debug-advice-list li {
+  margin-bottom: 6px;
+}
+
+.debug-device-value {
+  font-size: 10px;
+  word-break: break-all;
+}
+
+.debug-summary-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.debug-summary-subtitle {
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.debug-footnote {
+  margin-top: 16px;
+  padding: 12px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 12px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.debug-log-line {
+  display: flex;
+  gap: 4px;
+  align-items: flex-start;
+  padding: 1px 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.debug-log-time {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.debug-network-empty {
+  color: var(--text-secondary);
+  padding: 8px;
+}
+
+.debug-network-summary {
+  padding: 8px;
+  background: var(--bg-primary);
+  border-radius: 4px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.debug-network-stats {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.debug-network-table {
+  width: 100%;
+  font-size: 11px;
+}
+
+.debug-network-head-row {
+  background: var(--bg-primary);
+}
+
+.debug-network-table th {
+  padding: 6px;
+  text-align: left;
+}
+
+.debug-col-time {
+  width: 80px;
+}
+
+.debug-col-args {
+  max-width: 200px;
+}
+
+.debug-col-duration {
+  width: 80px;
+  text-align: right;
+}
+
+.debug-col-cache {
+  width: 60px;
+  text-align: center;
+}
+
+.debug-network-time {
+  padding: 4px;
+  color: var(--text-tertiary);
+}
+
+.debug-network-command {
+  padding: 4px;
+  font-family: var(--font-mono);
+}
+
+.debug-network-args {
+  padding: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.debug-network-duration {
+  padding: 4px;
+  text-align: right;
+}
+
+.debug-network-cache {
+  padding: 4px;
+  text-align: center;
 }
 
 /* 成功/警告背景色 */

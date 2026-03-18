@@ -82,10 +82,11 @@
   gap: var(--space-sm);
 }
 .session-row {
-  padding: var(--space-sm) var(--space-md);
+  padding: 14px 16px;
   background: var(--bg-card);
   border: 1px solid var(--border-primary);
-  border-radius: var(--radius-md);
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
 }
 .session-row-header {
   display: flex;
@@ -155,10 +156,31 @@
   padding: var(--space-md);
 }
 .usage-top-title {
-  font-size: var(--font-size-sm);
+  font-size: 15px;
   font-weight: 700;
   color: var(--text-primary);
   margin-bottom: var(--space-sm);
+}
+.usage-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-primary);
+}
+.usage-top-row:last-child {
+  border-bottom: none;
+}
+.usage-top-key {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.usage-top-value {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
 }
 .usage-daily-chart {
   display: flex;
@@ -184,10 +206,71 @@
   transition: height 0.3s ease;
 }
 .usage-daily-label {
-  font-size: 9px;
+  font-size: 11px;
+  font-weight: 500;
   color: var(--text-tertiary);
-  margin-top: 4px;
+  margin-top: 6px;
   white-space: nowrap;
+}
+.usage-loading-stack {
+  display: grid;
+  gap: var(--space-md);
+}
+.usage-empty-title {
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.usage-error-title {
+  color: var(--error);
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.usage-retry-btn {
+  margin-top: 8px;
+}
+.usage-token-breakdown {
+  display: flex;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+  padding: var(--space-md);
+}
+.usage-token-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.usage-token-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.usage-token-dot-output {
+  background: var(--error);
+}
+
+.usage-token-dot-input {
+  background: var(--accent);
+}
+
+.usage-token-dot-cache-read {
+  background: var(--success);
+}
+
+.usage-token-dot-cache-write {
+  background: var(--warning);
+}
+.usage-section-note {
+  font-weight: 500;
+  color: var(--text-tertiary);
+  font-size: 12px;
 }
 
 /* 服务卡片 */
@@ -1201,6 +1284,7 @@
   animation: shimmer 1.5s infinite;
   border-radius: var(--radius-lg);
 }
+
 @keyframes shimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
