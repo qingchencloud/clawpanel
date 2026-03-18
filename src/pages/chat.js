@@ -168,6 +168,7 @@ let _hostedLastTargetTs = 0
 let _hostedBusy = false
 let _hostedAbort = null
 let _hostedLastCompletionRunId = ''
+let _hostedLastSentHash = ''
 let _askUserBlockedNotice = false
 const _askUserToolHandled = new Set()
 let _currentAiBubble = null, _currentAiText = '', _currentAiImages = [], _currentAiVideos = [], _currentAiAudios = [], _currentAiFiles = [], _currentAiTools = [], _currentRunId = null
@@ -3336,6 +3337,13 @@ function appendHostedOutput(text) {
   wrap.textContent = text
   insertMessageByTime(wrap, Date.now())
   scrollToBottom()
+
+  const hash = `${text.length}:${text.slice(0, 120)}`
+  if (hash === _hostedLastSentHash) return
+  _hostedLastSentHash = hash
+  if (_sessionKey && wsClient.gatewayReady) {
+    wsClient.chatSend(_sessionKey, text).catch(() => {})
+  }
 }
 
 // ── 页面离开清理 ──
@@ -3388,6 +3396,7 @@ export function cleanup() {
   _hostedBusy = false
   _hostedSeeded = false
   _hostedLastCompletionRunId = ''
+  _hostedLastSentHash = ''
   _toolEventTimes.clear()
   _toolEventData.clear()
   _toolRunIndex.clear()
