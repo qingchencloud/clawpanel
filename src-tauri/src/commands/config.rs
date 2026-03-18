@@ -66,6 +66,7 @@ struct VersionPolicyEntry {
     chinese: VersionPolicySource,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, Default)]
 struct R2Config {
     #[serde(default)]
@@ -135,6 +136,7 @@ fn load_version_policy() -> VersionPolicy {
     serde_json::from_str(include_str!("../../../openclaw-version-policy.json")).unwrap_or_default()
 }
 
+#[allow(dead_code)]
 fn r2_config() -> R2Config {
     load_version_policy().r2
 }
@@ -1096,6 +1098,7 @@ pub async fn upgrade_openclaw(
 }
 
 /// 检测当前平台标识（用于 R2 归档文件名）
+#[allow(dead_code)]
 fn r2_platform_key() -> &'static str {
     #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
     {
@@ -1130,6 +1133,7 @@ fn r2_platform_key() -> &'static str {
 }
 
 /// npm 全局 node_modules 目录
+#[allow(dead_code)]
 fn npm_global_modules_dir() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
     {
@@ -1349,11 +1353,12 @@ async fn try_standalone_install(
         // 归档内可能有 openclaw/ 子目录，需要提升一层
         let nested = install_dir.join("openclaw");
         if nested.exists() && nested.join("node.exe").exists() {
-            for entry in std::fs::read_dir(&nested).map_err(|e| format!("读取目录失败: {e}"))? {
-                if let Ok(entry) = entry {
-                    let dest = install_dir.join(entry.file_name());
-                    let _ = std::fs::rename(entry.path(), &dest);
-                }
+            for entry in std::fs::read_dir(&nested)
+                .map_err(|e| format!("读取目录失败: {e}"))?
+                .flatten()
+            {
+                let dest = install_dir.join(entry.file_name());
+                let _ = std::fs::rename(entry.path(), &dest);
             }
             let _ = std::fs::remove_dir_all(&nested);
         }
@@ -1466,6 +1471,7 @@ async fn try_standalone_install(
 
 /// 尝试从 R2 CDN 下载预装归档安装 OpenClaw（跳过 npm 依赖解析）
 /// 成功返回 Ok(版本号)，失败返回 Err(原因) 供 caller 降级到 npm install
+#[allow(dead_code)]
 async fn try_r2_install(
     app: &tauri::AppHandle,
     version: &str,
