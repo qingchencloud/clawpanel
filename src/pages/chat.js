@@ -773,6 +773,7 @@ async function connectGateway() {
           persistHostedRuntime()
           updateHostedBadge()
         }
+        updateHostedInputLock()
       } else if (status === 'error') {
         // 连接错误：显示引导遮罩而非底部条
         if (bar) bar.style.display = 'none'
@@ -786,6 +787,7 @@ async function connectGateway() {
           persistHostedRuntime()
           updateHostedBadge()
         }
+        updateHostedInputLock()
       } else if (status === 'reconnecting' || status === 'disconnected') {
         // 首次连接或多次重连失败时，显示引导遮罩而非底部小条
         if (!_hasEverConnected) {
@@ -799,8 +801,10 @@ async function connectGateway() {
           persistHostedRuntime()
           updateHostedBadge()
         }
+        updateHostedInputLock()
       } else {
         if (bar) bar.style.display = 'none'
+        updateHostedInputLock()
       }
     })
 
@@ -2203,12 +2207,13 @@ function appendToolsToEl(el, tools) {
   } else if (askUserTools.length) {
     askUserTools.forEach(tool => {
       const input = tool.input || {}
+      const fallbackId = `${tool.runId || ''}:${tool.messageTimestamp || ''}:${input.question || input.prompt || ''}`
       showAskUserCardChat({
         question: input.question || input.prompt || '请提供信息',
         type: input.type || 'text',
         options: input.options || [],
         placeholder: input.placeholder || '',
-        toolId: tool.id || tool.tool_call_id || tool.tool_use_id || tool.toolUseId,
+        toolId: tool.id || tool.tool_call_id || tool.tool_use_id || tool.toolUseId || fallbackId,
       })
     })
     filtered = tools.filter(t => (t.name || '').toLowerCase() !== 'ask_user')
@@ -2461,7 +2466,8 @@ function updateSendState() {
     _sendBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>'
     _sendBtn.title = '停止生成'
   } else {
-    _sendBtn.disabled = !_textarea.value.trim() && !_attachments.length
+    const locked = !!_hostedSessionConfig?.enabled && _hostedRuntime?.status !== HOSTED_STATUS.PAUSED
+    _sendBtn.disabled = locked || (!_textarea.value.trim() && !_attachments.length)
     _sendBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>'
     _sendBtn.title = '发送'
   }
@@ -2743,6 +2749,7 @@ function maybeTriggerHostedRun() {
     _hostedRuntime.status = HOSTED_STATUS.PAUSED
     persistHostedRuntime()
     updateHostedBadge()
+    updateHostedInputLock()
     return
   }
   if (_hostedRuntime.status === HOSTED_STATUS.WAITING) {
@@ -3194,14 +3201,14 @@ function showHostedCompletionModal(summary, content) {
 }
 
 function updateHostedInputLock() {
-  const enabled = !!_hostedSessionConfig?.enabled
+  const locked = !!_hostedSessionConfig?.enabled && _hostedRuntime?.status !== HOSTED_STATUS.PAUSED
   if (_textarea) {
-    _textarea.disabled = enabled
-    _textarea.placeholder = enabled ? '托管 Agent 已启用，用户输入已锁定' : '输入消息，Enter 发送，/ 打开指令'
+    _textarea.disabled = locked
+    _textarea.placeholder = locked ? '托管 Agent 已启用，用户输入已锁定' : '输入消息，Enter 发送，/ 打开指令'
   }
-  if (_sendBtn) _sendBtn.disabled = enabled || (!_textarea?.value?.trim() && !_attachments.length)
-  if (_attachBtnEl) _attachBtnEl.disabled = enabled
-  if (_fileInputEl) _fileInputEl.disabled = enabled
+  if (_sendBtn && !_isStreaming) _sendBtn.disabled = locked || (!_textarea?.value?.trim() && !_attachments.length)
+  if (_attachBtnEl) _attachBtnEl.disabled = locked
+  if (_fileInputEl) _fileInputEl.disabled = locked
 }
 
 function showAskUserCardChat({ question, type, options, placeholder, toolId }) {
@@ -3240,7 +3247,10 @@ function showAskUserCardChat({ question, type, options, placeholder, toolId }) {
     </div>
   `
 
-  _messagesEl.appendChild(card)
+  const wrap = document.createElement('div')
+  wrap.className = 'msg msg-system'
+  wrap.appendChild(card)
+  insertMessageByTime(wrap, Date.now())
   _messagesEl.scrollTop = _messagesEl.scrollHeight
 
   const buildAnswer = () => {
