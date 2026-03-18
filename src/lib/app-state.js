@@ -97,12 +97,14 @@ export async function switchInstance(id) {
   await api.instanceSetActive(id)
   const data = await api.instanceList()
   _activeInstance = data.instances.find(i => i.id === id) || data.instances[0]
+  const wasRunning = _gatewayRunning
   _gatewayRunning = false
   _gwStopCount = 0
   _autoRestartCount = 0
   _lastRestartTime = 0
   _gatewayRunningSince = 0
   _userStopped = false
+  _emit(_gwListeners, false)
   _emit(_instanceListeners, _activeInstance)
 }
 

@@ -71,13 +71,15 @@ async function runDetect(page) {
 
   const node = nodeRes.status === 'fulfilled' ? nodeRes.value : { installed: false }
   const git = gitRes.status === 'fulfilled' ? gitRes.value : { installed: false }
-  const cliOk = clawRes.status === 'fulfilled'
-    && clawRes.value?.length > 0
-    && clawRes.value[0]?.cli_installed !== false
+  const services = (clawRes.status === 'fulfilled' && Array.isArray(clawRes.value)) ? clawRes.value : []
+  const service = services.find(s => {
+    const id = s?.id || s?.name || s?.label || ''
+    return id === 'ai.openclaw.gateway' || id === 'openclaw'
+  }) || services[0] || null
+  const cliOk = !!service && service?.cli_installed !== false
   let config = configRes.status === 'fulfilled' ? configRes.value : { installed: false }
   const version = versionRes.status === 'fulfilled' ? versionRes.value : null
   const panelCfg = await api.readPanelConfig().catch(() => ({}))
-  const service = (clawRes.status === 'fulfilled' && Array.isArray(clawRes.value)) ? clawRes.value[0] : null
   const cliInfo = {
     path: service?.cli_path || '',
     version: service?.cli_version || '',

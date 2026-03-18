@@ -309,12 +309,16 @@ function bindConfigEvents(el) {
 async function saveConfig(page, state) {
   const portValue = page.querySelector('#gw-port')?.value
   const port = parseInt(portValue, 10)
-  if (!Number.isFinite(port) || port < 1 || port > 65535) {
-    toast('端口号无效，请输入 1-65535 的数字', 'error')
+  if (!Number.isFinite(port) || port < 1024 || port > 65535) {
+    toast('端口号无效，请输入 1024-65535 的数字', 'error')
     return
   }
   const bindRadio = page.querySelector('input[name="gw-bind"]:checked')
   const bind = bindRadio?.value || 'loopback'
+  if (!['loopback', 'lan', 'all'].includes(bind)) {
+    toast('访问范围无效，请重新选择', 'error')
+    return
+  }
   const mode = 'local'
   const authModeRadio = page.querySelector('input[name="gw-auth-mode"]:checked')
   const authMode = authModeRadio?.value || 'token'
@@ -330,9 +334,17 @@ async function saveConfig(page, state) {
   if (authMode === 'password') {
     resolvedToken = ''
   }
+  if (authMode === 'password' && !authPassword.trim()) {
+    toast('密码不能为空，请填写后保存', 'error')
+    return
+  }
+  if (authMode !== 'password' && !resolvedToken) {
+    toast('Token 不能为空，请填写后保存', 'error')
+    return
+  }
   const auth = authMode === 'password'
     ? { mode: 'password', password: authPassword }
-    : resolvedToken ? { mode: 'token', token: resolvedToken } : {}
+    : { mode: 'token', token: resolvedToken }
 
   const toolsProfile = page.querySelector('input[name="gw-tools-profile"]:checked')?.value || 'full'
   const sessionsVisibility = page.querySelector('#gw-sessions-visibility')?.value || 'all'
