@@ -146,15 +146,25 @@ fn standalone_config() -> StandaloneConfig {
 /// standalone 包的平台 key（与 CI 构建矩阵一致）
 fn standalone_platform_key() -> &'static str {
     #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-    { "win-x64" }
+    {
+        "win-x64"
+    }
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    { "mac-arm64" }
+    {
+        "mac-arm64"
+    }
     #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-    { "mac-x64" }
+    {
+        "mac-x64"
+    }
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    { "linux-x64" }
+    {
+        "linux-x64"
+    }
     #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-    { "linux-arm64" }
+    {
+        "linux-arm64"
+    }
     #[cfg(not(any(
         all(target_os = "windows", target_arch = "x86_64"),
         all(target_os = "macos", target_arch = "aarch64"),
@@ -162,15 +172,21 @@ fn standalone_platform_key() -> &'static str {
         all(target_os = "linux", target_arch = "x86_64"),
         all(target_os = "linux", target_arch = "aarch64"),
     )))]
-    { "unknown" }
+    {
+        "unknown"
+    }
 }
 
 /// standalone 包的文件扩展名
 fn standalone_archive_ext() -> &'static str {
     #[cfg(target_os = "windows")]
-    { "zip" }
+    {
+        "zip"
+    }
     #[cfg(not(target_os = "windows"))]
-    { "tar.gz" }
+    {
+        "tar.gz"
+    }
 }
 
 /// standalone 安装目录
@@ -178,7 +194,9 @@ fn standalone_install_dir() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
     {
         // Inno Setup PrivilegesRequired=lowest 默认安装到 %LOCALAPPDATA%\Programs
-        std::env::var("LOCALAPPDATA").ok().map(|d| PathBuf::from(d).join("Programs").join("OpenClaw"))
+        std::env::var("LOCALAPPDATA")
+            .ok()
+            .map(|d| PathBuf::from(d).join("Programs").join("OpenClaw"))
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -1019,7 +1037,13 @@ pub async fn upgrade_openclaw(
     let app2 = app.clone();
     tauri::async_runtime::spawn(async move {
         use tauri::Emitter;
-        let result = upgrade_openclaw_inner(app2.clone(), source, version, method.unwrap_or_else(|| "auto".into())).await;
+        let result = upgrade_openclaw_inner(
+            app2.clone(),
+            source,
+            version,
+            method.unwrap_or_else(|| "auto".into()),
+        )
+        .await;
         match result {
             Ok(msg) => {
                 let _ = app2.emit("upgrade-done", &msg);
@@ -1142,7 +1166,11 @@ async fn try_standalone_install(
     version: &str,
     override_base_url: Option<&str>,
 ) -> Result<String, String> {
-    let source_label = if override_base_url.is_some() { "GitHub" } else { "CDN" };
+    let source_label = if override_base_url.is_some() {
+        "GitHub"
+    } else {
+        "CDN"
+    };
     use tauri::Emitter;
 
     let cfg = standalone_config();
@@ -1157,7 +1185,10 @@ async fn try_standalone_install(
     let install_dir = standalone_install_dir().ok_or("无法确定 standalone 安装目录")?;
 
     // 1. 动态查询最新版本
-    let _ = app.emit("upgrade-log", "\u{1F4E6} 尝试 standalone 独立安装包（汉化版专属，自带 Node.js 运行时，无需 npm）");
+    let _ = app.emit(
+        "upgrade-log",
+        "\u{1F4E6} 尝试 standalone 独立安装包（汉化版专属，自带 Node.js 运行时，无需 npm）",
+    );
     let _ = app.emit("upgrade-log", "查询最新版本...");
     let manifest_url = format!("{base_url}/latest.json");
     let client = crate::commands::build_http_client(std::time::Duration::from_secs(10), None)
@@ -1168,7 +1199,10 @@ async fn try_standalone_install(
         .await
         .map_err(|e| format!("standalone 清单获取失败: {e}"))?;
     if !manifest_resp.status().is_success() {
-        return Err(format!("standalone 清单不可用 (HTTP {})", manifest_resp.status()));
+        return Err(format!(
+            "standalone 清单不可用 (HTTP {})",
+            manifest_resp.status()
+        ));
     }
     let manifest: Value = manifest_resp
         .json()
@@ -1202,18 +1236,14 @@ async fn try_standalone_install(
     let filename = format!("openclaw-{remote_version}-{platform}.{ext}");
     let download_url = format!("{remote_base}/{filename}");
 
-    let _ = app.emit(
-        "upgrade-log",
-        format!("从 {source_label} 下载: {filename}"),
-    );
+    let _ = app.emit("upgrade-log", format!("从 {source_label} 下载: {filename}"));
     let _ = app.emit("upgrade-progress", 15);
 
     // 3. 流式下载
     let tmp_dir = std::env::temp_dir();
     let archive_path = tmp_dir.join(&filename);
-    let dl_client =
-        crate::commands::build_http_client(std::time::Duration::from_secs(600), None)
-            .map_err(|e| format!("下载客户端创建失败: {e}"))?;
+    let dl_client = crate::commands::build_http_client(std::time::Duration::from_secs(600), None)
+        .map_err(|e| format!("下载客户端创建失败: {e}"))?;
     let dl_resp = dl_client
         .get(&download_url)
         .send()
@@ -1268,24 +1298,24 @@ async fn try_standalone_install(
     if install_dir.exists() {
         let _ = std::fs::remove_dir_all(&install_dir);
     }
-    std::fs::create_dir_all(&install_dir)
-        .map_err(|e| format!("创建安装目录失败: {e}"))?;
+    std::fs::create_dir_all(&install_dir).map_err(|e| format!("创建安装目录失败: {e}"))?;
 
     // 5. 解压
     #[cfg(target_os = "windows")]
     {
         // Windows: zip 解压
-        let archive_file = std::fs::File::open(&archive_path)
-            .map_err(|e| format!("打开归档失败: {e}"))?;
-        let mut zip_archive = zip::ZipArchive::new(archive_file)
-            .map_err(|e| format!("ZIP 解析失败: {e}"))?;
+        let archive_file =
+            std::fs::File::open(&archive_path).map_err(|e| format!("打开归档失败: {e}"))?;
+        let mut zip_archive =
+            zip::ZipArchive::new(archive_file).map_err(|e| format!("ZIP 解析失败: {e}"))?;
         zip_archive
             .extract(&install_dir)
             .map_err(|e| format!("ZIP 解压失败: {e}"))?;
         // 归档内可能有 openclaw/ 子目录，需要提升一层
         let nested = install_dir.join("openclaw");
         if nested.exists() && nested.join("node.exe").exists() {
-            for entry in std::fs::read_dir(&nested).map_err(|e| format!("读取目录失败: {e}"))? {
+            for entry in std::fs::read_dir(&nested).map_err(|e| format!("读取目录失败: {e}"))?
+            {
                 if let Ok(entry) = entry {
                     let dest = install_dir.join(entry.file_name());
                     let _ = std::fs::rename(entry.path(), &dest);
@@ -1372,10 +1402,8 @@ async fn try_standalone_install(
                             let _ = Command::new("chmod")
                                 .args(["+x", &openclaw_bin.to_string_lossy()])
                                 .status();
-                            let _ = app.emit(
-                                "upgrade-log",
-                                format!("symlink 已创建: {}", link.display()),
-                            );
+                            let _ = app
+                                .emit("upgrade-log", format!("symlink 已创建: {}", link.display()));
                             break;
                         }
                     }
@@ -1735,7 +1763,11 @@ async fn upgrade_openclaw_inner(
                 let _ = app.emit("upgrade-progress", 100);
                 super::refresh_enhanced_path();
                 crate::commands::service::invalidate_cli_detection_cache();
-                let label = if method == "standalone-github" { "GitHub" } else { "CDN" };
+                let label = if method == "standalone-github" {
+                    "GitHub"
+                } else {
+                    "CDN"
+                };
                 let msg = format!("✅ standalone ({label}) 安装完成，当前版本: {installed_ver}");
                 let _ = app.emit("upgrade-log", &msg);
                 return Ok(msg);
@@ -2064,9 +2096,15 @@ async fn uninstall_openclaw_inner(
     // 3. 清理 standalone 安装（所有可能的位置）
     for sa_dir in &all_standalone_dirs() {
         if sa_dir.exists() {
-            let _ = app.emit("upgrade-log", format!("清理 standalone 安装: {}", sa_dir.display()));
+            let _ = app.emit(
+                "upgrade-log",
+                format!("清理 standalone 安装: {}", sa_dir.display()),
+            );
             if let Err(e) = std::fs::remove_dir_all(sa_dir) {
-                let _ = app.emit("upgrade-log", format!("⚠️ 清理 standalone 失败: {e}（可能需要管理员权限）"));
+                let _ = app.emit(
+                    "upgrade-log",
+                    format!("⚠️ 清理 standalone 失败: {e}（可能需要管理员权限）"),
+                );
             } else {
                 let _ = app.emit("upgrade-log", "standalone 安装已清理 ✓");
             }

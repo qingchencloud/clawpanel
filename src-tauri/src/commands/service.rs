@@ -656,8 +656,17 @@ mod platform {
         // standalone 安装目录（优先检测，覆盖所有可能位置）
         if let Ok(localappdata) = env::var("LOCALAPPDATA") {
             // Inno Setup PrivilegesRequired=lowest 默认路径
-            candidates.push(Path::new(&localappdata).join("Programs").join("OpenClaw").join("openclaw.cmd"));
-            candidates.push(Path::new(&localappdata).join("OpenClaw").join("openclaw.cmd"));
+            candidates.push(
+                Path::new(&localappdata)
+                    .join("Programs")
+                    .join("OpenClaw")
+                    .join("openclaw.cmd"),
+            );
+            candidates.push(
+                Path::new(&localappdata)
+                    .join("OpenClaw")
+                    .join("openclaw.cmd"),
+            );
         }
         if let Ok(pf) = env::var("ProgramFiles") {
             candidates.push(Path::new(&pf).join("OpenClaw").join("openclaw.cmd"));
