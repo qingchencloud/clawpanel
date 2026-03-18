@@ -146,7 +146,7 @@ async function showAddAgentDialog(page, state) {
     fields: [
       { name: 'id', label: 'Agent ID', value: '', placeholder: '例如：translator（小写字母、数字、下划线、连字符）' },
       { name: 'name', label: '名称', value: '', placeholder: '例如：翻译助手' },
-      { name: 'emoji', label: 'Emoji', value: '', placeholder: '例如：🌐（可选）' },
+      { name: 'emoji', label: 'Emoji', value: '', placeholder: '例如：globe（可选）' },
       { name: 'model', label: '模型', type: 'select', value: models[0]?.value || '', options: models },
       { name: 'workspace', label: '工作区路径', value: '', placeholder: '留空则自动创建（可选，绝对路径）' },
     ],
@@ -201,7 +201,7 @@ async function showEditAgentDialog(page, state, id) {
 
   const fields = [
     { name: 'name', label: '名称', value: name, placeholder: '例如：翻译助手' },
-    { name: 'emoji', label: 'Emoji', value: agent.identityEmoji || '', placeholder: '例如：🌐' },
+    { name: 'emoji', label: 'Emoji', value: agent.identityEmoji || '', placeholder: '例如：globe' },
   ]
 
   if (models.length) {

@@ -66,7 +66,7 @@ export function tryShowEngagement() {
   _showing = true
   localStorage.setItem(KEYS.lastShown, String(Date.now()))
 
-  const shareText = '推荐一个开源的 OpenClaw 管理面板 — ClawPanel，一键搭建、便捷管理模型和 Agent，还内置 AI 助手帮你排查问题，小白也能轻松上手 👉 https://claw.qt.cool'
+  const shareText = '推荐一个开源的 OpenClaw 管理面板 — ClawPanel，一键搭建、便捷管理模型和 Agent，还内置 AI 助手帮你排查问题，小白也能轻松上手：https://claw.qt.cool'
 
   const overlay = document.createElement('div')
   overlay.className = 'engage-overlay'

@@ -101,12 +101,33 @@ async function invoke(cmd, args = {}) {
 }
 
 // Web 模式：通过 Vite 开发服务器的 API 端点调用真实后端
+const COMMAND_TIMEOUTS = {
+  'get_status_summary': 30000,
+  'list_agents': 20000,
+  'read_log_tail': 15000,
+  'get_services_status': 15000,
+  'read_openclaw_config': 15000,
+  'list_backups': 15000,
+}
+
 async function webInvoke(cmd, args) {
-  const resp = await fetch(`/__api/${cmd}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(args),
-  })
+  const controller = new AbortController()
+  const timeoutMs = COMMAND_TIMEOUTS[cmd] || 20000
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  let resp
+  try {
+    resp = await fetch(`/__api/${cmd}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(args),
+      signal: controller.signal,
+    })
+  } catch (e) {
+    if (controller.signal.aborted) throw new Error('后端请求超时')
+    throw e
+  } finally {
+    clearTimeout(timeout)
+  }
   if (resp.status === 401) {
     // Tauri 模式下不触发登录浮层（Tauri 有自己的认证流程）
     if (!isTauri && window.__clawpanel_show_login) window.__clawpanel_show_login()
@@ -166,10 +187,11 @@ export const api = {
   guardianStatus: () => invoke('guardian_status'),
 
   // 配置（读缓存，写清缓存）
-  getVersionInfo: () => cachedInvoke('get_version_info', {}, 30000),
+  getVersionInfo: () => invoke('get_version_info'),
   getStatusSummary: () => cachedInvoke('get_status_summary', {}, 60000),
   readOpenclawConfig: () => cachedInvoke('read_openclaw_config'),
   writeOpenclawConfig: (config) => { invalidate('read_openclaw_config'); return invoke('write_openclaw_config', { config }) },
+  importOpenclawAiConfig: () => invoke('import_openclaw_ai_config'),
   readMcpConfig: () => cachedInvoke('read_mcp_config'),
   writeMcpConfig: (config) => { invalidate('read_mcp_config'); return invoke('write_mcp_config', { config }) },
   reloadGateway: () => invoke('reload_gateway'),
@@ -218,6 +240,13 @@ export const api = {
   readPanelConfig: () => invoke('read_panel_config'),
   writePanelConfig: (config) => invoke('write_panel_config', { config }),
   testProxy: (url) => invoke('test_proxy', { url: url || null }),
+
+  // Cloudflared
+  cloudflaredGetStatus: () => invoke('cloudflared_get_status'),
+  cloudflaredInstall: () => invoke('cloudflared_install'),
+  cloudflaredLogin: () => invoke('cloudflared_login'),
+  cloudflaredStart: (config) => invoke('cloudflared_start', { config }),
+  cloudflaredStop: () => invoke('cloudflared_stop'),
 
   // 安装/部署
   checkInstallation: () => cachedInvoke('check_installation', {}, 60000),

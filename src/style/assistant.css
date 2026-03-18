@@ -242,12 +242,54 @@
 }
 
 .ast-msg-bubble-ai pre {
-  background: var(--bg-tertiary);
-  border-radius: var(--radius-sm);
-  padding: 10px 12px;
-  overflow-x: auto;
-  font-size: 13px;
+  background: var(--bg-primary, #1a1a2e);
+  border-radius: var(--radius-md, 8px);
+  padding: 0;
   margin: 8px 0;
+  overflow: hidden;
+  position: relative;
+  font-size: 13px;
+}
+
+.ast-msg-bubble-ai pre code {
+  display: block;
+  padding: 12px 14px;
+  overflow-x: auto;
+  line-height: 1.5;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+
+.ast-msg-bubble-ai pre .code-lang {
+  position: absolute;
+  top: 6px;
+  left: 12px;
+  font-size: 11px;
+  color: var(--text-muted, #888);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ast-msg-bubble-ai pre .code-copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.ast-msg-bubble-ai pre:hover .code-copy-btn {
+  opacity: 1;
+}
+
+.ast-msg-bubble-ai pre .code-copy-btn:hover {
+  background: var(--bg-hover);
 }
 
 .ast-msg-bubble-ai code {
@@ -353,6 +395,31 @@
   cursor: pointer;
   flex-shrink: 0;
   transition: background var(--transition-fast);
+}
+
+.ast-optimize-btn,
+.ast-restore-btn {
+  height: 36px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.ast-optimize-btn:hover,
+.ast-restore-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.ast-optimize-btn:disabled,
+.ast-restore-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .ast-send-btn:hover {

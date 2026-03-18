@@ -296,7 +296,7 @@ fn npm_command() -> Command {
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         let mut cmd = Command::new("cmd");
         cmd.args(["/c", "npm", "--registry", &registry]);
-        cmd.env("PATH", super::enhanced_path());
+        crate::commands::apply_system_env(&mut cmd);
         crate::commands::apply_proxy_env(&mut cmd);
         cmd.creation_flags(CREATE_NO_WINDOW);
         cmd
@@ -305,7 +305,7 @@ fn npm_command() -> Command {
     {
         let mut cmd = Command::new("npm");
         cmd.args(["--registry", &registry]);
-        cmd.env("PATH", super::enhanced_path());
+        crate::commands::apply_system_env(&mut cmd);
         crate::commands::apply_proxy_env(&mut cmd);
         cmd
     }
@@ -322,7 +322,7 @@ fn npm_command() -> Command {
             c.args(["--registry", &registry]);
             c
         };
-        cmd.env("PATH", super::enhanced_path());
+        crate::commands::apply_system_env(&mut cmd);
         crate::commands::apply_proxy_env(&mut cmd);
         cmd
     }
@@ -378,7 +378,7 @@ fn backups_dir() -> PathBuf {
 
 #[tauri::command]
 pub fn read_openclaw_config() -> Result<Value, String> {
-    let path = super::openclaw_dir().join("openclaw.json");
+    let path = super::openclaw_config_path();
     let raw = fs::read(&path).map_err(|e| format!("读取配置失败: {e}"))?;
 
     // 自愈：自动剥离 UTF-8 BOM（EF BB BF），防止 JSON 解析失败
@@ -399,7 +399,7 @@ pub fn read_openclaw_config() -> Result<Value, String> {
         }
         Err(e) => {
             // JSON 解析失败，尝试从备份恢复
-            let bak = super::openclaw_dir().join("openclaw.json.bak");
+            let bak = path.with_extension("json.bak");
             if bak.exists() {
                 let bak_raw = fs::read(&bak).map_err(|e2| format!("备份也读取失败: {e2}"))?;
                 let bak_content = if bak_raw.starts_with(&[0xEF, 0xBB, 0xBF]) {
@@ -422,7 +422,7 @@ pub fn read_openclaw_config() -> Result<Value, String> {
     if has_ui_fields(&config) {
         config = strip_ui_fields(config);
         // 静默写回清理后的配置
-        let bak = super::openclaw_dir().join("openclaw.json.bak");
+        let bak = path.with_extension("json.bak");
         let _ = fs::copy(&path, &bak);
         let json = serde_json::to_string_pretty(&config).map_err(|e| format!("序列化失败: {e}"))?;
         let _ = fs::write(&path, json);
@@ -431,12 +431,54 @@ pub fn read_openclaw_config() -> Result<Value, String> {
     Ok(config)
 }
 
-/// 供其他模块复用：读取 openclaw.json 为 JSON Value
+/// 供其他模块复用：读取配置文件为 JSON Value
 pub fn load_openclaw_json() -> Result<Value, String> {
     read_openclaw_config()
 }
 
-/// 供其他模块复用：将 JSON Value 写回 openclaw.json（含备份和清理）
+#[tauri::command]
+pub fn import_openclaw_ai_config() -> Result<Value, String> {
+    let config = read_openclaw_config()?;
+    let primary = config
+        .get("agents")
+        .and_then(|v| v.get("defaults"))
+        .and_then(|v| v.get("model"))
+        .and_then(|v| v.get("primary"))
+        .and_then(|v| v.as_str())
+        .ok_or("缺少默认模型")?
+        .to_string();
+
+    let parts: Vec<&str> = primary.split('/').collect();
+    if parts.len() < 2 {
+        return Err("默认模型格式错误".to_string());
+    }
+    let provider_key = parts[0];
+    let model_id = parts[1..].join("/");
+
+    let provider = config
+        .get("models")
+        .and_then(|v| v.get("providers"))
+        .and_then(|v| v.get(provider_key))
+        .ok_or("未找到模型提供商配置")?;
+
+    let api_type = provider.get("api").and_then(|v| v.as_str()).unwrap_or("openai-completions");
+    let api_key = provider.get("apiKey").and_then(|v| v.as_str()).unwrap_or("");
+    let base_url = provider.get("baseUrl").and_then(|v| v.as_str()).unwrap_or("");
+    let temperature = provider.get("temperature").and_then(|v| v.as_f64());
+    let top_p = provider.get("top_p").and_then(|v| v.as_f64());
+
+    Ok(serde_json::json!({
+        "provider": provider_key,
+        "model": model_id,
+        "apiType": api_type,
+        "apiKey": api_key,
+        "baseUrl": base_url,
+        "temperature": temperature,
+        "topP": top_p
+    }))
+}
+
+/// 供其他模块复用：将 JSON Value 写回配置文件（含备份和清理）
 pub fn save_openclaw_json(config: &Value) -> Result<(), String> {
     write_openclaw_config(config.clone())
 }
@@ -449,7 +491,7 @@ pub async fn do_reload_gateway(app: &tauri::AppHandle) -> Result<String, String>
 
 #[tauri::command]
 pub fn write_openclaw_config(config: Value) -> Result<(), String> {
-    let path = super::openclaw_dir().join("openclaw.json");
+    let path = super::openclaw_config_path();
     // 备份
     let bak = super::openclaw_dir().join("openclaw.json.bak");
     let _ = fs::copy(&path, &bak);
@@ -1104,6 +1146,7 @@ fn npm_global_modules_dir() -> Option<PathBuf> {
 }
 
 /// npm 全局 bin 目录
+#[allow(dead_code)]
 fn npm_global_bin_dir() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
     {
@@ -2151,11 +2194,11 @@ async fn uninstall_openclaw_inner(
     Ok(msg.into())
 }
 
-/// 自动初始化配置文件（CLI 已装但 openclaw.json 不存在时）
+/// 自动初始化配置文件（CLI 已装但配置不存在时）
 #[tauri::command]
 pub fn init_openclaw_config() -> Result<Value, String> {
     let dir = super::openclaw_dir();
-    let config_path = dir.join("openclaw.json");
+    let config_path = super::openclaw_config_path();
     let mut result = serde_json::Map::new();
 
     if config_path.exists() {
@@ -2172,7 +2215,7 @@ pub fn init_openclaw_config() -> Result<Value, String> {
     let last_touched_version =
         recommended_version_for("chinese").unwrap_or_else(|| "2026.1.1".to_string());
     let default_config = serde_json::json!({
-        "$schema": "https://openclaw.ai/schema/config.json",
+        "$schema": "https://openclaw.ai/schema/openclaw.json",
         "meta": { "lastTouchedVersion": last_touched_version },
         "models": { "providers": {} },
         "gateway": {
@@ -2196,11 +2239,16 @@ pub fn init_openclaw_config() -> Result<Value, String> {
 #[tauri::command]
 pub fn check_installation() -> Result<Value, String> {
     let dir = super::openclaw_dir();
-    let installed = dir.join("openclaw.json").exists();
+    let config_path = super::openclaw_config_path();
+    let installed = config_path.exists();
     let mut result = serde_json::Map::new();
     result.insert("installed".into(), Value::Bool(installed));
     result.insert(
         "path".into(),
+        Value::String(config_path.to_string_lossy().to_string()),
+    );
+    result.insert(
+        "dir".into(),
         Value::String(dir.to_string_lossy().to_string()),
     );
     Ok(Value::Object(result))
@@ -2212,7 +2260,7 @@ pub fn check_node() -> Result<Value, String> {
     let mut result = serde_json::Map::new();
     let mut cmd = Command::new("node");
     cmd.arg("--version");
-    cmd.env("PATH", super::enhanced_path());
+    crate::commands::apply_system_env(&mut cmd);
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     match cmd.output() {

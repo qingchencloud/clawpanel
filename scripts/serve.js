@@ -184,7 +184,7 @@ async function main() {
     console.log('')
     console.log('  ┌─────────────────────────────────────────┐')
     console.log('  │                                         │')
-    console.log('  │   🦀 ClawPanel Web Server (Headless)    │')
+    console.log('  │   ClawPanel Web Server (Headless)      │')
     console.log('  │                                         │')
     console.log(`  │   http://${host === '0.0.0.0' ? 'localhost' : host}:${port}/`.padEnd(44) + '│')
     if (host === '0.0.0.0') {
@@ -198,8 +198,8 @@ async function main() {
   })
 
   // 优雅退出
-  process.on('SIGINT', () => { console.log('\n  👋 服务已停止'); process.exit(0) })
-  process.on('SIGTERM', () => { console.log('\n  👋 服务已停止'); process.exit(0) })
+  process.on('SIGINT', () => { console.log('\n  服务已停止'); process.exit(0) })
+  process.on('SIGTERM', () => { console.log('\n  服务已停止'); process.exit(0) })
 }
 
 main().catch(e => { console.error('启动失败:', e); process.exit(1) })

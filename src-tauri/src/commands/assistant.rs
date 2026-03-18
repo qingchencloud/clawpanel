@@ -149,11 +149,20 @@ pub async fn assistant_exec(command: String, cwd: Option<String>) -> Result<Stri
     #[cfg(target_os = "windows")]
     {
         const CREATE_NO_WINDOW: u32 = 0x08000000;
-        output = tokio::process::Command::new("cmd")
-            .args(["/c", &command])
-            .current_dir(&work_dir)
-            .env("PATH", super::enhanced_path())
-            .creation_flags(CREATE_NO_WINDOW)
+        let shell = detect_windows_shell().await;
+        let mut cmd = if shell == "cmd" {
+            let mut c = tokio::process::Command::new("cmd");
+            c.args(["/c", &command]);
+            c
+        } else {
+            let mut c = tokio::process::Command::new(&shell);
+            c.args(["-NoProfile", "-Command", &command]);
+            c
+        };
+        cmd.current_dir(&work_dir).creation_flags(CREATE_NO_WINDOW);
+        super::apply_system_env_tokio(&mut cmd);
+        super::apply_proxy_env_tokio(&mut cmd);
+        output = cmd
             .output()
             .await
             .map_err(|e| format!("执行失败: {e}"))?;
@@ -161,10 +170,12 @@ pub async fn assistant_exec(command: String, cwd: Option<String>) -> Result<Stri
 
     #[cfg(not(target_os = "windows"))]
     {
-        output = tokio::process::Command::new("sh")
-            .args(["-c", &command])
-            .current_dir(&work_dir)
-            .env("PATH", super::enhanced_path())
+        let mut cmd = tokio::process::Command::new("sh");
+        cmd.args(["-c", &command])
+            .current_dir(&work_dir);
+        super::apply_system_env_tokio(&mut cmd);
+        super::apply_proxy_env_tokio(&mut cmd);
+        output = cmd
             .output()
             .await
             .map_err(|e| format!("执行失败: {e}"))?;
@@ -265,6 +276,23 @@ pub async fn assistant_system_info() -> Result<String, String> {
         shell,
         std::path::MAIN_SEPARATOR
     ))
+}
+
+#[cfg(target_os = "windows")]
+async fn detect_windows_shell() -> String {
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    for candidate in ["pwsh", "powershell"] {
+        let mut cmd = tokio::process::Command::new("cmd");
+        cmd.args(["/c", "where", candidate])
+            .creation_flags(CREATE_NO_WINDOW);
+        super::apply_system_env_tokio(&mut cmd);
+        if let Ok(out) = cmd.output().await {
+            if out.status.success() && !String::from_utf8_lossy(&out.stdout).trim().is_empty() {
+                return candidate.to_string();
+            }
+        }
+    }
+    "cmd".to_string()
 }
 
 /// 列出运行中的进程（按名称过滤）

@@ -98,8 +98,8 @@ function renderConfig(page, state) {
         谁能访问
       </div>
       <div class="gw-option-cards">
-        <label class="gw-option-card ${(gw.bind === 'lan' || gw.bind === 'all') ? '' : 'selected'}" data-bind="loopback">
-          <input type="radio" name="gw-bind" value="loopback" ${(gw.bind === 'lan' || gw.bind === 'all') ? '' : 'checked'} hidden>
+        <label class="gw-option-card ${(!gw.bind || gw.bind === 'loopback') ? 'selected' : ''}" data-bind="loopback">
+          <input type="radio" name="gw-bind" value="loopback" ${(!gw.bind || gw.bind === 'loopback') ? 'checked' : ''} hidden>
           <div class="gw-option-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
           </div>
@@ -108,14 +108,24 @@ function renderConfig(page, state) {
             <div class="gw-option-desc">只有这台电脑上的应用能访问，最安全</div>
           </div>
         </label>
-        <label class="gw-option-card ${(gw.bind === 'lan' || gw.bind === 'all') ? 'selected' : ''}" data-bind="lan">
-          <input type="radio" name="gw-bind" value="lan" ${(gw.bind === 'lan' || gw.bind === 'all') ? 'checked' : ''} hidden>
+        <label class="gw-option-card ${gw.bind === 'lan' ? 'selected' : ''}" data-bind="lan">
+          <input type="radio" name="gw-bind" value="lan" ${gw.bind === 'lan' ? 'checked' : ''} hidden>
           <div class="gw-option-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="6" width="7" height="10" rx="1"/><rect x="9" y="3" width="6" height="14" rx="1"/><rect x="16" y="6" width="7" height="10" rx="1"/><line x1="8" y1="12" x2="9" y2="12"/><line x1="15" y1="12" x2="16" y2="12"/></svg>
           </div>
           <div class="gw-option-text">
             <div class="gw-option-title">局域网共享</div>
             <div class="gw-option-desc">同一网络下的手机、平板等设备也能用</div>
+          </div>
+        </label>
+        <label class="gw-option-card ${gw.bind === 'all' ? 'selected' : ''}" data-bind="all">
+          <input type="radio" name="gw-bind" value="all" ${gw.bind === 'all' ? 'checked' : ''} hidden>
+          <div class="gw-option-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+          </div>
+          <div class="gw-option-text">
+            <div class="gw-option-title">所有网络</div>
+            <div class="gw-option-desc">允许全部网络访问，风险最高</div>
           </div>
         </label>
       </div>
@@ -154,10 +164,10 @@ function renderConfig(page, state) {
       <div class="form-group" id="gw-auth-token-group" style="${gw.auth?.mode === 'password' ? 'display:none' : ''}">
         <label class="form-label">访问密钥（Token）</label>
         <div style="display:flex;gap:8px">
-          <input class="form-input" id="gw-token" type="password" value="${_tokenDisplayStr(gw.auth?.token || gw.authToken)}" placeholder="不设置则任何人都能调用" style="flex:1" ${_isSecretRef(gw.auth?.token) ? 'readonly' : ''}>
+          <input class="form-input" id="gw-token" type="password" value="${_isSecretRef(gw.auth?.token) ? '' : _tokenDisplayStr(gw.auth?.token || gw.authToken)}" placeholder="${_isSecretRef(gw.auth?.token) ? '已使用 SecretRef，清空后可改为明文' : '不设置则任何人都能调用'}" style="flex:1">
           <button class="btn btn-sm btn-secondary" id="btn-toggle-token">显示</button>
         </div>
-        <div class="form-hint">${_isSecretRef(gw.auth?.token) ? '当前 Token 通过环境变量/引用配置，如需改为明文请清空后输入' : '设置后，应用调用时需要带上这个密钥才能通过。如果选了「局域网共享」，强烈建议设置'}</div>
+        <div class="form-hint">${_isSecretRef(gw.auth?.token) ? '当前 Token 通过环境变量/引用配置。如需改为明文，请清空后输入新 Token。' : '设置后，应用调用时需要带上这个密钥才能通过。如果选了「局域网共享」，强烈建议设置'}</div>
       </div>
       <div class="form-group" id="gw-auth-password-group" style="${gw.auth?.mode === 'password' ? '' : 'display:none'}">
         <label class="form-label">密码</label>
@@ -277,8 +287,12 @@ function bindConfigEvents(el) {
       const mode = radio.value
       const tokenGroup = el.querySelector('#gw-auth-token-group')
       const passwordGroup = el.querySelector('#gw-auth-password-group')
+      const tokenInput = el.querySelector('#gw-token')
+      const passwordInput = el.querySelector('#gw-password')
       if (tokenGroup) tokenGroup.style.display = mode === 'token' ? '' : 'none'
       if (passwordGroup) passwordGroup.style.display = mode === 'password' ? '' : 'none'
+      if (mode === 'token' && passwordInput) passwordInput.value = ''
+      if (mode === 'password' && tokenInput) tokenInput.value = ''
     })
   })
 
@@ -293,9 +307,18 @@ function bindConfigEvents(el) {
 }
 
 async function saveConfig(page, state) {
-  const port = parseInt(page.querySelector('#gw-port')?.value) || 18789
+  const portValue = page.querySelector('#gw-port')?.value
+  const port = parseInt(portValue, 10)
+  if (!Number.isFinite(port) || port < 1024 || port > 65535) {
+    toast('端口号无效，请输入 1024-65535 的数字', 'error')
+    return
+  }
   const bindRadio = page.querySelector('input[name="gw-bind"]:checked')
   const bind = bindRadio?.value || 'loopback'
+  if (!['loopback', 'lan', 'all'].includes(bind)) {
+    toast('访问范围无效，请重新选择', 'error')
+    return
+  }
   const mode = 'local'
   const authModeRadio = page.querySelector('input[name="gw-auth-mode"]:checked')
   const authMode = authModeRadio?.value || 'token'
@@ -305,12 +328,23 @@ async function saveConfig(page, state) {
 
   // 兼容 SecretRef：如果用户没改 token 显示值，保留原始对象
   let resolvedToken = authToken
-  if (_isSecretRef(state._origToken) && authToken === _tokenDisplayStr(state._origToken)) {
+  if (_isSecretRef(state._origToken) && !authToken) {
     resolvedToken = state._origToken
+  }
+  if (authMode === 'password') {
+    resolvedToken = ''
+  }
+  if (authMode === 'password' && !authPassword.trim()) {
+    toast('密码不能为空，请填写后保存', 'error')
+    return
+  }
+  if (authMode !== 'password' && !resolvedToken) {
+    toast('Token 不能为空，请填写后保存', 'error')
+    return
   }
   const auth = authMode === 'password'
     ? { mode: 'password', password: authPassword }
-    : resolvedToken ? { mode: 'token', token: resolvedToken } : {}
+    : { mode: 'token', token: resolvedToken }
 
   const toolsProfile = page.querySelector('input[name="gw-tools-profile"]:checked')?.value || 'full'
   const sessionsVisibility = page.querySelector('#gw-sessions-visibility')?.value || 'all'

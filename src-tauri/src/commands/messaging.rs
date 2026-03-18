@@ -1,6 +1,6 @@
 /// 消息渠道管理
 /// 负责 Telegram / Discord / QQ Bot 等消息渠道的配置持久化与凭证校验
-/// 配置写入 openclaw.json 的 channels / plugins 节点
+/// 配置写入配置文件的 channels / plugins 节点
 use serde_json::{json, Map, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -58,7 +58,7 @@ fn gateway_auth_value(cfg: &Value, key: &str) -> Option<String> {
         .map(|v| v.to_string())
 }
 
-/// 读取指定平台的当前配置（从 openclaw.json 中提取表单可用的值）
+/// 读取指定平台的当前配置（从配置文件中提取表单可用的值）
 #[tauri::command]
 pub async fn read_platform_config(platform: String) -> Result<Value, String> {
     let cfg = super::config::load_openclaw_json()?;
@@ -72,19 +72,27 @@ pub async fn read_platform_config(platform: String) -> Result<Value, String> {
         .unwrap_or(Value::Null);
 
     let mut form = Map::new();
-    let exists = !saved.is_null();
+    let mut account_id: Option<String> = None;
+    let mut saved_entry = saved.clone();
+    if let Some(accounts) = saved.get("accounts").and_then(|v| v.as_object()) {
+        if let Some((acct, entry)) = accounts.iter().next() {
+            account_id = Some(acct.clone());
+            saved_entry = entry.clone();
+        }
+    }
+    let exists = !saved.is_null() && !saved_entry.is_null();
 
     match platform.as_str() {
         "discord" => {
-            if saved.is_null() {
+            if saved_entry.is_null() {
                 return Ok(json!({ "exists": false }));
             }
             // Discord 配置在 openclaw.json 中是展开的 guilds 结构
             // 需要反向提取成表单字段：token, guildId, channelId
-            if let Some(t) = saved.get("token").and_then(|v| v.as_str()) {
+            if let Some(t) = saved_entry.get("token").and_then(|v| v.as_str()) {
                 form.insert("token".into(), Value::String(t.into()));
             }
-            if let Some(guilds) = saved.get("guilds").and_then(|v| v.as_object()) {
+            if let Some(guilds) = saved_entry.get("guilds").and_then(|v| v.as_object()) {
                 if let Some(gid) = guilds.keys().next() {
                     form.insert("guildId".into(), Value::String(gid.clone()));
                     if let Some(channels) = guilds[gid].get("channels").and_then(|v| v.as_object())
@@ -99,24 +107,24 @@ pub async fn read_platform_config(platform: String) -> Result<Value, String> {
             }
         }
         "telegram" => {
-            if saved.is_null() {
+            if saved_entry.is_null() {
                 return Ok(json!({ "exists": false }));
             }
             // Telegram: botToken 直接保存, allowFrom 数组需要拼回逗号字符串
-            if let Some(t) = saved.get("botToken").and_then(|v| v.as_str()) {
+            if let Some(t) = saved_entry.get("botToken").and_then(|v| v.as_str()) {
                 form.insert("botToken".into(), Value::String(t.into()));
             }
-            if let Some(arr) = saved.get("allowFrom").and_then(|v| v.as_array()) {
+            if let Some(arr) = saved_entry.get("allowFrom").and_then(|v| v.as_array()) {
                 let users: Vec<&str> = arr.iter().filter_map(|v| v.as_str()).collect();
                 form.insert("allowedUsers".into(), Value::String(users.join(", ")));
             }
         }
         "qqbot" => {
-            if saved.is_null() {
+            if saved_entry.is_null() {
                 return Ok(json!({ "exists": false }));
             }
             // QQ Bot: token 格式为 "AppID:AppSecret"，拆分回表单字段
-            if let Some(t) = saved.get("token").and_then(|v| v.as_str()) {
+            if let Some(t) = saved_entry.get("token").and_then(|v| v.as_str()) {
                 if let Some((app_id, app_secret)) = t.split_once(':') {
                     form.insert("appId".into(), Value::String(app_id.into()));
                     form.insert("appSecret".into(), Value::String(app_secret.into()));
@@ -124,31 +132,31 @@ pub async fn read_platform_config(platform: String) -> Result<Value, String> {
             }
         }
         "feishu" => {
-            if saved.is_null() {
+            if saved_entry.is_null() {
                 return Ok(json!({ "exists": false }));
             }
             // 飞书: appId, appSecret, domain 直接保存
-            if let Some(v) = saved.get("appId").and_then(|v| v.as_str()) {
+            if let Some(v) = saved_entry.get("appId").and_then(|v| v.as_str()) {
                 form.insert("appId".into(), Value::String(v.into()));
             }
-            if let Some(v) = saved.get("appSecret").and_then(|v| v.as_str()) {
+            if let Some(v) = saved_entry.get("appSecret").and_then(|v| v.as_str()) {
                 form.insert("appSecret".into(), Value::String(v.into()));
             }
-            if let Some(v) = saved.get("domain").and_then(|v| v.as_str()) {
+            if let Some(v) = saved_entry.get("domain").and_then(|v| v.as_str()) {
                 form.insert("domain".into(), Value::String(v.into()));
             }
         }
         "dingtalk" | "dingtalk-connector" => {
-            if let Some(v) = saved.get("clientId").and_then(|v| v.as_str()) {
+            if let Some(v) = saved_entry.get("clientId").and_then(|v| v.as_str()) {
                 form.insert("clientId".into(), Value::String(v.into()));
             }
-            if let Some(v) = saved.get("clientSecret").and_then(|v| v.as_str()) {
+            if let Some(v) = saved_entry.get("clientSecret").and_then(|v| v.as_str()) {
                 form.insert("clientSecret".into(), Value::String(v.into()));
             }
-            if let Some(v) = saved.get("gatewayToken").and_then(|v| v.as_str()) {
+            if let Some(v) = saved_entry.get("gatewayToken").and_then(|v| v.as_str()) {
                 form.insert("gatewayToken".into(), Value::String(v.into()));
             }
-            if let Some(v) = saved.get("gatewayPassword").and_then(|v| v.as_str()) {
+            if let Some(v) = saved_entry.get("gatewayPassword").and_then(|v| v.as_str()) {
                 form.insert("gatewayPassword".into(), Value::String(v.into()));
             }
             match gateway_auth_mode(&cfg) {
@@ -168,11 +176,11 @@ pub async fn read_platform_config(platform: String) -> Result<Value, String> {
             }
         }
         _ => {
-            if saved.is_null() {
+            if saved_entry.is_null() {
                 return Ok(json!({ "exists": false }));
             }
             // 通用：原样返回字符串类型字段
-            if let Some(obj) = saved.as_object() {
+            if let Some(obj) = saved_entry.as_object() {
                 for (k, v) in obj {
                     if k == "enabled" {
                         continue;
@@ -185,7 +193,7 @@ pub async fn read_platform_config(platform: String) -> Result<Value, String> {
         }
     }
 
-    Ok(json!({ "exists": exists, "values": Value::Object(form) }))
+    Ok(json!({ "exists": exists, "values": Value::Object(form), "accountId": account_id }))
 }
 
 /// 保存平台配置到 openclaw.json

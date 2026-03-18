@@ -71,8 +71,8 @@ async function saveConfig() {
   const btn = _page?.querySelector('#btn-comm-save')
   if (btn) { btn.disabled = true; btn.textContent = '保存中...' }
   try {
-    // 从当前表单收集值到 _config
-    collectCurrentTab()
+    // 从全部表单收集值到 _config
+    collectAllTabs()
     await api.writeOpenclawConfig(_config)
     _dirty = false
     toast('配置已保存，正在重载 Gateway...', 'info')
@@ -92,6 +92,15 @@ function collectCurrentTab() {
   else if (activeTab === 'commands') collectCommands()
   else if (activeTab === 'hooks') collectHooks()
   else if (activeTab === 'approvals') collectApprovals()
+}
+
+function collectAllTabs() {
+  if (!_page) return
+  collectMessages()
+  collectBroadcast()
+  collectCommands()
+  collectHooks()
+  collectApprovals()
 }
 
 // ── Tab 渲染 ──
@@ -119,9 +128,9 @@ function renderMessages(el) {
         <div class="form-hint">每条 AI 回复开头自动加的前缀。支持 {model}、{provider}、{thinkingLevel} 等变量。设为 auto 则显示 Agent 名称</div>
       </div>
       <div class="form-group">
-        <label class="form-label">确认反应 Emoji</label>
-        <input class="form-input" id="msg-ackReaction" value="${esc(m.ackReaction || '')}" placeholder="如 👀 或留空禁用" style="max-width:200px">
-        <div class="form-hint">收到消息时自动添加的 emoji 反应（确认已收到）</div>
+        <label class="form-label">确认反应标记</label>
+        <input class="form-input" id="msg-ackReaction" value="${esc(m.ackReaction || '')}" placeholder="如 seen 或留空禁用" style="max-width:200px">
+        <div class="form-hint">收到消息时自动添加的确认标记（确认已收到）</div>
       </div>
       <div class="form-group">
         <label class="form-label">确认反应范围</label>
@@ -198,29 +207,51 @@ function collectMessages() {
 
   if (!_config.messages) _config.messages = {}
   const m = _config.messages
-  m.responsePrefix = v('msg-responsePrefix')
-  m.ackReaction = v('msg-ackReaction')
-  m.ackReactionScope = v('msg-ackReactionScope') || undefined
-  m.removeAckAfterReply = c('msg-removeAckAfterReply') || undefined
-  m.suppressToolErrors = c('msg-suppressToolErrors') || undefined
+  const responsePrefix = v('msg-responsePrefix')
+  const ackReaction = v('msg-ackReaction')
+  const ackScope = v('msg-ackReactionScope') || undefined
+  const removeAck = c('msg-removeAckAfterReply')
+  const suppressErrors = c('msg-suppressToolErrors')
+  const srEnabled = c('msg-sr-enabled')
 
-  if (!m.statusReactions) m.statusReactions = {}
-  m.statusReactions.enabled = c('msg-sr-enabled') || undefined
+  if (responsePrefix) m.responsePrefix = responsePrefix
+  else delete m.responsePrefix
+  if (ackReaction) m.ackReaction = ackReaction
+  else delete m.ackReaction
+  if (ackScope) m.ackReactionScope = ackScope
+  else delete m.ackReactionScope
+  if (removeAck === true) m.removeAckAfterReply = true
+  else delete m.removeAckAfterReply
+  if (suppressErrors === true) m.suppressToolErrors = true
+  else delete m.suppressToolErrors
+
+  if (srEnabled === true) {
+    if (!m.statusReactions) m.statusReactions = {}
+    m.statusReactions.enabled = true
+  } else if (m.statusReactions) {
+    delete m.statusReactions.enabled
+  }
 
   const debounceMs = n('msg-debounceMs')
   if (debounceMs != null) {
     if (!m.inbound) m.inbound = {}
     m.inbound.debounceMs = debounceMs
+  } else if (m.inbound) {
+    delete m.inbound.debounceMs
   }
   const cap = n('msg-queueCap')
   if (cap != null) {
     if (!m.queue) m.queue = {}
     m.queue.cap = cap
+  } else if (m.queue) {
+    delete m.queue.cap
   }
   const groupHistoryLimit = n('msg-groupHistoryLimit')
   if (groupHistoryLimit != null) {
     if (!m.groupChat) m.groupChat = {}
     m.groupChat.historyLimit = groupHistoryLimit
+  } else if (m.groupChat) {
+    delete m.groupChat.historyLimit
   }
 }
 
@@ -249,10 +280,9 @@ function renderBroadcast(el) {
 function collectBroadcast() {
   if (!_config) return
   const strategy = _page?.querySelector('#bc-strategy')?.value
-  if (strategy) {
-    if (!_config.broadcast) _config.broadcast = {}
-    _config.broadcast.strategy = strategy
-  }
+  if (!_config.broadcast) _config.broadcast = {}
+  if (strategy) _config.broadcast.strategy = strategy
+  else delete _config.broadcast.strategy
 }
 
 // ── 命令配置 ──
@@ -291,11 +321,16 @@ function collectCommands() {
   const c = (id) => _page?.querySelector('#' + id)?.checked
   if (!_config.commands) _config.commands = {}
   const cmd = _config.commands
-  cmd.text = c('cmd-text') === false ? false : undefined
-  cmd.bash = c('cmd-bash') || undefined
-  cmd.config = c('cmd-config') || undefined
-  cmd.debug = c('cmd-debug') || undefined
-  cmd.restart = c('cmd-restart') === false ? false : undefined
+  const textEnabled = c('cmd-text')
+  const bashEnabled = c('cmd-bash')
+  const configEnabled = c('cmd-config')
+  const debugEnabled = c('cmd-debug')
+  const restartEnabled = c('cmd-restart')
+  cmd.text = textEnabled === false ? false : undefined
+  cmd.bash = bashEnabled === true ? true : undefined
+  cmd.config = configEnabled === true ? true : undefined
+  cmd.debug = debugEnabled === true ? true : undefined
+  cmd.restart = restartEnabled === false ? false : undefined
   const native = _page?.querySelector('#cmd-native')?.value
   cmd.native = native === 'true' ? true : native === 'false' ? false : 'auto'
 }
@@ -342,11 +377,20 @@ function collectHooks() {
   const c = (id) => _page?.querySelector('#' + id)?.checked
   if (!_config.hooks) _config.hooks = {}
   const h = _config.hooks
-  h.enabled = c('hooks-enabled') || undefined
-  h.path = v('hooks-path')
-  h.token = v('hooks-token')
-  h.defaultSessionKey = v('hooks-defaultSessionKey')
-  h.maxBodyBytes = n('hooks-maxBodyBytes')
+  const enabled = c('hooks-enabled')
+  h.enabled = enabled === true ? true : undefined
+  const path = v('hooks-path')
+  if (path) h.path = path
+  else delete h.path
+  const token = v('hooks-token')
+  if (token) h.token = token
+  else delete h.token
+  const defaultKey = v('hooks-defaultSessionKey')
+  if (defaultKey) h.defaultSessionKey = defaultKey
+  else delete h.defaultSessionKey
+  const maxBody = n('hooks-maxBodyBytes')
+  if (maxBody != null) h.maxBodyBytes = maxBody
+  else delete h.maxBodyBytes
 }
 
 // ── 执行审批 ──
@@ -366,7 +410,7 @@ function renderApprovals(el) {
           <option value="both" ${a.mode === 'both' ? 'selected' : ''}>两者都发（both）</option>
         </select>
       </div>
-      ${toggleRow('approvals-forwardExec', '转发执行请求', '将 exec 审批请求转发到渠道（默认关闭，低风险场景可开启）', !!a.enabled)}
+      ${toggleRow('approvals-forwardExec', '转发执行请求', '将 exec 审批请求转发到渠道（默认关闭，低风险场景可开启）', !!a.forwardExec)}
     </div>
   `
   el.querySelectorAll('input, select').forEach(inp => {
@@ -381,8 +425,13 @@ function collectApprovals() {
   if (!_config.approvals) _config.approvals = {}
   if (!_config.approvals.exec) _config.approvals.exec = {}
   const a = _config.approvals.exec
-  a.enabled = c('approvals-enabled') || undefined
-  a.mode = v('approvals-mode') || undefined
+  const enabled = c('approvals-enabled')
+  const mode = v('approvals-mode')
+  const forwardExec = c('approvals-forwardExec')
+  a.enabled = enabled === true ? true : undefined
+  if (mode) a.mode = mode
+  else delete a.mode
+  a.forwardExec = forwardExec === true ? true : undefined
 }
 
 // ── 工具函数 ──

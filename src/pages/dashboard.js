@@ -89,8 +89,8 @@ async function loadDashboardData(page, fullRefresh = false) {
 
   // 第一波：服务状态 + 配置 + 版本 → 立即渲染统计卡片
   const [servicesRes, configRes, versionRes] = await coreP
-  const services = servicesRes.status === 'fulfilled' ? servicesRes.value : []
-  const version = versionRes.status === 'fulfilled' ? versionRes.value : {}
+  const services = servicesRes.status === 'fulfilled' ? (Array.isArray(servicesRes.value) ? servicesRes.value : []) : []
+  const version = versionRes.status === 'fulfilled' ? (versionRes.value || {}) : {}
   const config = configRes.status === 'fulfilled' ? configRes.value : null
   if (servicesRes.status === 'rejected') toast('服务状态加载失败', 'error')
   if (versionRes.status === 'rejected') toast('版本信息加载失败', 'error')
@@ -140,6 +140,8 @@ async function loadDashboardData(page, fullRefresh = false) {
 }
 
 function renderStatCards(page, services, version, agents, config) {
+  services = Array.isArray(services) ? services : []
+  version = version || {}
   const cardsEl = page.querySelector('#stat-cards')
   const gw = services.find(s => s.label === 'ai.openclaw.gateway')
   const runningCount = services.filter(s => s.running).length
@@ -200,6 +202,7 @@ function renderStatCards(page, services, version, agents, config) {
 }
 
 function renderOverview(page, services, mcpConfig, backups, config, agents, statusSummary) {
+  services = Array.isArray(services) ? services : []
   const containerEl = page.querySelector('#dashboard-overview-container')
   const gw = services.find(s => s.label === 'ai.openclaw.gateway')
   const mcpCount = mcpConfig?.mcpServers ? Object.keys(mcpConfig.mcpServers).length : 0
@@ -504,3 +507,4 @@ function bindActions(page) {
 function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
+

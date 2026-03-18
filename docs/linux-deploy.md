@@ -145,7 +145,7 @@ npm run serve -- --port 8080
 
 ```
   ┌─────────────────────────────────────────┐
-  │   🦀 ClawPanel Web Server (Headless)    │
+  │   ClawPanel Web Server (Headless)      │
   │   http://localhost:1420/                │
   └─────────────────────────────────────────┘
   [api] API 已启动，配置目录: /root/.openclaw
@@ -157,7 +157,7 @@ npm run serve -- --port 8080
 
 ## 方式三：Docker 部署
 
-> 📖 Docker 完整教程（Compose、自定义镜像、数据持久化等）见 [Docker 部署指南](docker-deploy.md)
+> Docker 完整教程（Compose、自定义镜像、数据持久化等）见 [Docker 部署指南](docker-deploy.md)
 
 快速启动：
 

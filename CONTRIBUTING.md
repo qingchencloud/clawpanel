@@ -2,7 +2,7 @@
 
 感谢你对 ClawPanel 项目的关注！本文档同时作为**贡献指南**和**项目维护手册**，涵盖开发、构建、发版、部署的完整工作流。
 
-> 🌐 **官网**: [claw.qt.cool](https://claw.qt.cool/)  |  📦 **仓库**: [github.com/qingchencloud/clawpanel](https://github.com/qingchencloud/clawpanel)
+> **官网**: [claw.qt.cool](https://claw.qt.cool/)  |  **仓库**: [github.com/qingchencloud/clawpanel](https://github.com/qingchencloud/clawpanel)
 
 ---
 
@@ -114,7 +114,7 @@ clawpanel/
 │   ├── src/
 │   │   ├── lib.rs              #   入口 + 命令注册
 │   │   ├── commands/           #   Tauri 命令（按功能模块拆分）
-│   │   │   ├── mod.rs          #     模块注册 + enhanced_path()
+│   │   │   ├── mod.rs          #     模块注册 + 环境变量构建
 │   │   │   ├── config.rs       #     配置读写 + 版本管理 + 面板配置
 │   │   │   ├── service.rs      #     Gateway 服务管理（跨平台）
 │   │   │   ├── agent.rs        #     Agent CRUD
@@ -414,9 +414,12 @@ if (isTauri) {
 }
 ```
 
-### PATH 问题
+### PATH 与环境变量
 
-Tauri 桌面应用启动时 PATH 可能不完整（macOS Finder 启动、Windows 非默认安装路径）。所有需要调用外部命令的地方必须使用 `super::enhanced_path()` 设置环境变量。
+Tauri 桌面应用启动时 PATH 可能不完整（macOS Finder 启动、Windows 非默认安装路径）。现在 ClawPanel 会在启动时构建并注入完整系统环境变量（用户 + 系统 + 进程），并在 PATH 中追加 `enhanced_path` 的补充路径。
+
+- **默认规则**：外部命令直接继承系统环境（无需手动设置 PATH）
+- **特殊情况**：如需补充 PATH，可使用 `super::enhanced_path()` 或 `apply_system_env` 辅助函数
 
 ---
 

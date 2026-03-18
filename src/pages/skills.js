@@ -118,7 +118,7 @@ function renderSkills(el, data) {
 
     ${disabled.length ? `
     <div class="clawhub-panel" style="margin-bottom:var(--space-lg)">
-      <div class="clawhub-panel-title" style="color:var(--text-tertiary)">⏸ 已禁用 (${disabled.length})</div>
+      <div class="clawhub-panel-title" style="color:var(--text-tertiary)">已禁用 (${disabled.length})</div>
       <div class="clawhub-list skills-scroll-area skills-search-scroll" id="skills-disabled">
         ${disabled.map(s => renderSkillCard(s, 'disabled')).join('')}
       </div>
@@ -126,7 +126,7 @@ function renderSkills(el, data) {
 
     ${blocked.length ? `
     <div class="clawhub-panel" style="margin-bottom:var(--space-lg)">
-      <div class="clawhub-panel-title" style="color:var(--text-tertiary)">🚫 白名单阻止 (${blocked.length})</div>
+      <div class="clawhub-panel-title" style="color:var(--text-tertiary)">白名单阻止 (${blocked.length})</div>
       <div class="clawhub-list">
         ${blocked.map(s => renderSkillCard(s, 'blocked')).join('')}
       </div>
@@ -158,7 +158,7 @@ function renderSkills(el, data) {
 }
 
 function renderSkillCard(skill, status) {
-  const emoji = skill.emoji || '📦'
+  const emoji = skill.emoji || ''
   const name = skill.name || ''
   const desc = skill.description || ''
   const source = skill.bundled ? '捆绑' : (skill.source || '自定义')
@@ -234,7 +234,7 @@ async function handleInfo(page, name) {
 
     detail.innerHTML = `
       <div class="clawhub-detail-card">
-        <div class="clawhub-detail-title">${esc(s.emoji || '📦')} ${esc(s.name || name)}</div>
+        <div class="clawhub-detail-title">${esc(s.emoji || '')} ${esc(s.name || name)}</div>
         <div class="clawhub-detail-meta">
           来源: ${esc(s.source || '')} · 路径: <code>${esc(s.filePath || '')}</code>
           ${s.homepage ? ` · <a href="${esc(s.homepage)}" target="_blank" rel="noopener">${esc(s.homepage)}</a>` : ''}
@@ -362,13 +362,13 @@ async function handleSkillHubSetup(page) {
   try {
     await api.skillsSkillHubSetup(true)
     toast('SkillHub CLI 安装成功', 'success')
-    if (statusEl) statusEl.textContent = '✅ 已安装'
+    if (statusEl) statusEl.textContent = '已安装'
     // 隐藏安装按钮
     const setupBtn = page.querySelector('#btn-skillhub-setup')
     if (setupBtn) setupBtn.style.display = 'none'
   } catch (e) {
     toast(`SkillHub CLI 安装失败: ${e?.message || e}`, 'error')
-    if (statusEl) statusEl.textContent = '❌ 安装失败'
+    if (statusEl) statusEl.textContent = '安装失败'
   }
 }
 
@@ -380,10 +380,25 @@ async function checkSkillHubStatus(page) {
     const info = await api.skillsSkillHubCheck()
     _skillhubInstalled = !!info.installed
     if (info.installed) {
-      statusEl.innerHTML = `<span style="color:var(--success)">✅ v${info.version}</span>`
+      const version = info.version ? `v${info.version}` : '已安装'
+      statusEl.textContent = ''
+      const main = document.createElement('span')
+      main.style.color = 'var(--success)'
+      main.textContent = version
+      statusEl.appendChild(main)
+      if (info.path) {
+        const pathEl = document.createElement('div')
+        pathEl.className = 'form-hint'
+        pathEl.textContent = `路径: ${info.path}`
+        statusEl.appendChild(pathEl)
+      }
       if (setupBtn) setupBtn.style.display = 'none'
     } else {
-      statusEl.innerHTML = '<span style="color:var(--warning)">⚠️ 未安装 CLI</span>'
+      statusEl.textContent = ''
+      const warn = document.createElement('span')
+      warn.style.color = 'var(--warning)'
+      warn.textContent = '未安装 CLI'
+      statusEl.appendChild(warn)
       if (setupBtn && _installSource === 'skillhub') setupBtn.style.display = ''
     }
   } catch {

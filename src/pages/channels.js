@@ -173,33 +173,33 @@ function renderConfigured(page, state) {
     <div class="config-section">
       <div class="config-section-title">已接入</div>
       <div class="platforms-grid">
-        ${state.configured.map(p => {
+        ${state.configured.flatMap(p => {
           const reg = PLATFORM_REGISTRY[p.id]
           const label = reg?.label || p.id
           const ic = icon(reg?.iconName || 'radio', 22)
           const channelKey = getChannelBindingKey(p.id)
           const allBindings = (state.bindings || []).filter(b => b.match?.channel === channelKey)
-          const boundAgents = allBindings.map(b => b.agentId || 'main')
-          // 只有一个 main 绑定时不显示标签（默认行为），多绑定时全部显示
-          const showAll = boundAgents.length > 1 || (boundAgents.length === 1 && boundAgents[0] !== 'main')
-          const agentBadges = showAll ? boundAgents.map(a =>
-            `<span style="font-size:var(--font-size-xs);color:var(--accent);background:var(--accent-muted);padding:1px 6px;border-radius:10px;white-space:nowrap">→ ${escapeAttr(a)}</span>`
-          ).join(' ') : ''
-          return `
-            <div class="platform-card ${p.enabled ? 'active' : 'inactive'}" data-pid="${p.id}">
-              <div class="platform-card-header">
-                <span class="platform-emoji">${ic}</span>
-                <span class="platform-name">${label}</span>
-                ${agentBadges}
-                <span class="platform-status-dot ${p.enabled ? 'on' : 'off'}"></span>
+          const boundAgents = allBindings.length ? allBindings.map(b => b.agentId || 'main') : ['main']
+          return boundAgents.map(agentId => {
+            const badge = agentId !== 'main'
+              ? `<span style="font-size:var(--font-size-xs);color:var(--accent);background:var(--accent-muted);padding:1px 6px;border-radius:10px;white-space:nowrap">→ ${escapeAttr(agentId)}</span>`
+              : ''
+            return `
+              <div class="platform-card ${p.enabled ? 'active' : 'inactive'}" data-pid="${p.id}" data-agent="${escapeAttr(agentId)}">
+                <div class="platform-card-header">
+                  <span class="platform-emoji">${ic}</span>
+                  <span class="platform-name">${label}</span>
+                  ${badge}
+                  <span class="platform-status-dot ${p.enabled ? 'on' : 'off'}"></span>
+                </div>
+                <div class="platform-card-actions">
+                  <button class="btn btn-sm btn-secondary" data-action="edit">${icon('edit', 14)} 编辑</button>
+                  <button class="btn btn-sm btn-secondary" data-action="toggle">${p.enabled ? icon('pause', 14) + ' 禁用' : icon('play', 14) + ' 启用'}</button>
+                  <button class="btn btn-sm btn-danger" data-action="remove">${icon('trash', 14)}</button>
+                </div>
               </div>
-              <div class="platform-card-actions">
-                <button class="btn btn-sm btn-secondary" data-action="edit">${icon('edit', 14)} 编辑</button>
-                <button class="btn btn-sm btn-secondary" data-action="toggle">${p.enabled ? icon('pause', 14) + ' 禁用' : icon('play', 14) + ' 启用'}</button>
-                <button class="btn btn-sm btn-danger" data-action="remove">${icon('trash', 14)}</button>
-              </div>
-            </div>
-          `
+            `
+          })
         }).join('')}
       </div>
     </div>
@@ -320,10 +320,14 @@ async function openConfigDialog(pid, page, state) {
   let isEdit = false
   let agents = []
   let currentBinding = ''
+  let existingAccountId = ''
   try {
     const res = await api.readPlatformConfig(pid)
     if (res?.values) {
       existing = res.values
+    }
+    if (res?.accountId) {
+      existingAccountId = res.accountId
     }
     if (res?.exists) {
       isEdit = true
@@ -337,7 +341,11 @@ async function openConfigDialog(pid, page, state) {
     const config = await api.readOpenclawConfig()
     const bindings = config?.bindings || []
     const channelKey = getChannelBindingKey(pid)
-    const found = bindings.find(b => b.match?.channel === channelKey)
+    const found = bindings.find(b => {
+      if (b.match?.channel !== channelKey) return false
+      if (existingAccountId) return (b.match?.accountId || '') === existingAccountId
+      return !b.match?.accountId
+    })
     if (found) currentBinding = found.agentId || ''
   } catch {}
 
@@ -352,7 +360,7 @@ async function openConfigDialog(pid, page, state) {
   const accountIdHtml = supportsMultiAccount ? `
     <div class="form-group">
       <label class="form-label">账号标识（多账号模式）</label>
-      <input class="form-input" name="__accountId" placeholder="如 sales、support（留空则为默认账号）" value="">
+      <input class="form-input" name="__accountId" placeholder="如 sales、support（留空则为默认账号）" value="${escapeAttr(existingAccountId)}">
       <div class="form-hint">为同一平台接入多个应用时，每个应用需要一个唯一的账号标识。不同账号可绑定不同 Agent</div>
     </div>
   ` : ''

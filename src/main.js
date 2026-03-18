@@ -28,6 +28,9 @@ initTheme()
 
 // === 访问密码保护（Web + 桌面端通用） ===
 const isTauri = !!window.__TAURI_INTERNALS__
+let _forceSetup = false
+let _skipSetup = false
+
 
 async function checkAuth() {
   if (isTauri) {
@@ -348,7 +351,10 @@ async function boot() {
   // Tauri 模式：确保 web session 存在（页面刷新后 cookie 可能丢失），然后加载实例和检测状态
   const ensureWebSession = isTauri
     ? api.readPanelConfig().then(cfg => {
-        if (cfg.accessPassword) {
+        _forceSetup = cfg.forceSetup === true
+        _skipSetup = cfg.skipSetup === true
+        const shouldAutoLogin = !!cfg.accessPassword && !cfg.mustChangePassword && cfg.forceSetup !== true
+        if (shouldAutoLogin) {
           return fetch('/__api/auth_login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -361,11 +367,11 @@ async function boot() {
   ensureWebSession.then(() => loadActiveInstance()).then(() => detectOpenclawStatus()).then(() => {
     // 重新渲染侧边栏（检测完成后 isOpenclawReady 状态已更新）
     renderSidebar(sidebar)
-    if (!isOpenclawReady()) {
+    const wantsSetup = window.location.hash.startsWith('#/setup') || _forceSetup || (!isOpenclawReady() && !_skipSetup)
+    if (wantsSetup) {
       setDefaultRoute('/setup')
       navigate('/setup')
     } else {
-      if (window.location.hash === '#/setup') navigate('/dashboard')
       setupGatewayBanner()
       startGatewayPoll()
 
@@ -419,11 +425,8 @@ async function boot() {
           await detectOpenclawStatus()
           renderSidebar(sidebar)
           // 如果安装完成后变为就绪，跳转到仪表盘
-          if (isOpenclawReady() && window.location.hash === '#/setup') {
-            navigate('/dashboard')
-          }
           // 如果卸载后变为未就绪，跳转到 setup
-          if (!isOpenclawReady() && !isUpgrading()) {
+          if ((_forceSetup || (!isOpenclawReady() && !_skipSetup)) && !isUpgrading()) {
             setDefaultRoute('/setup')
             navigate('/setup')
           }
@@ -730,7 +733,14 @@ function startUpdateChecker() {
   }
 
   const auth = await checkAuth()
-  if (!auth.ok) await showLoginOverlay(auth.defaultPw)
+  if (!auth.ok) {
+    await showLoginOverlay(auth.defaultPw)
+    const authRetry = await checkAuth()
+    if (!authRetry.ok) {
+      _hideSplash()
+      return
+    }
+  }
   try {
     await boot()
   } catch (bootErr) {

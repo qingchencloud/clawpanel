@@ -21,8 +21,20 @@ export function uuid() {
 
 const REQUEST_TIMEOUT = 30000
 const MAX_RECONNECT_DELAY = 30000
-const PING_INTERVAL = 25000
+const PING_INTERVAL = 5000
 const CHALLENGE_TIMEOUT = 5000
+const WS_DEBUG = typeof window !== 'undefined' && localStorage.getItem('clawpanel-ws-debug') === '1'
+
+const WS_STATE = {
+  DISCONNECTED: 'disconnected',
+  CONNECTING: 'connecting',
+  CONNECTED: 'connected',
+  READY: 'ready',
+  HANDSHAKING: 'handshaking',
+  RECONNECTING: 'reconnecting',
+  ERROR: 'error',
+  AUTH_FAILED: 'auth_failed',
+}
 
 export class WsClient {
   constructor() {
@@ -45,9 +57,13 @@ export class WsClient {
     this._sessionKey = null
     this._pingTimer = null
     this._challengeTimer = null
+    this._connectSent = false
     this._wsId = 0
     this._autoPairAttempts = 0
+    this._autoPairing = false
     this._serverVersion = null
+    this._state = WS_STATE.DISCONNECTED
+    this._stateStats = {}
   }
 
   get connected() { return this._connected }
@@ -56,7 +72,12 @@ export class WsClient {
   get snapshot() { return this._snapshot }
   get hello() { return this._hello }
   get sessionKey() { return this._sessionKey }
+  setSessionKey(key) {
+    if (!key) return
+    this._sessionKey = key
+  }
   get serverVersion() { return this._serverVersion }
+  get state() { return this._state }
 
   onStatusChange(fn) {
     this._statusListeners.push(fn)
@@ -90,7 +111,7 @@ export class WsClient {
     this._clearChallengeTimer()
     this._flushPending()
     this._closeWs()
-    this._setConnected(false)
+    this._setConnected(false, WS_STATE.DISCONNECTED)
     this._gatewayReady = false
     this._handshaking = false
   }
@@ -105,15 +126,18 @@ export class WsClient {
     this._clearChallengeTimer()
     this._flushPending()
     this._closeWs()
+    this._setConnected(false, WS_STATE.CONNECTING)
     this._doConnect()
   }
 
   _doConnect() {
+    if (this._connecting) return
     this._connecting = true
     this._closeWs()
     this._gatewayReady = false
     this._handshaking = false
-    this._setConnected(false, 'connecting')
+    this._connectSent = false
+    this._setConnected(false, WS_STATE.CONNECTING)
     const wsId = ++this._wsId
     let ws
     try { ws = new WebSocket(this._url) } catch { this._scheduleReconnect(); return }
@@ -122,14 +146,14 @@ export class WsClient {
     ws.onopen = () => {
       if (wsId !== this._wsId) return
       this._connecting = false
-      this._reconnectAttempts = 0
-      this._setConnected(true)
+      this._setConnected(true, WS_STATE.CONNECTED)
       this._startPing()
-      // 等 Gateway 发 connect.challenge，超时则主动发
+      // 等 Gateway 发 connect.challenge，超时则重连
       this._challengeTimer = setTimeout(() => {
         if (!this._handshaking && !this._gatewayReady) {
-          console.log('[ws] 未收到 challenge，主动发 connect')
-          this._sendConnectFrame('')
+          console.log('[ws] 未收到 challenge，重连中...')
+          this._closeWs()
+          this._scheduleReconnect()
         }
       }, CHALLENGE_TIMEOUT)
     }
@@ -147,7 +171,7 @@ export class WsClient {
       this._connecting = false
       this._clearChallengeTimer()
       if (e.code === 4001 || e.code === 4003 || e.code === 4004) {
-        this._setConnected(false, 'auth_failed', e.reason || 'Token 认证失败')
+        this._setConnected(false, WS_STATE.AUTH_FAILED, e.reason || 'Token 认证失败')
         this._intentionalClose = true
         this._flushPending()
         return
@@ -155,15 +179,15 @@ export class WsClient {
       if (e.code === 1008 && !this._intentionalClose) {
         if (this._autoPairAttempts < 1) {
           console.log('[ws] origin not allowed (1008)，尝试自动修复...')
-          this._setConnected(false, 'reconnecting', 'origin not allowed，修复中...')
+          this._setConnected(false, WS_STATE.RECONNECTING, 'origin not allowed，修复中...')
           this._autoPairAndReconnect()
           return
         }
         console.warn('[ws] origin 1008 自动修复已尝试过，显示错误')
-        this._setConnected(false, 'error', e.reason || 'origin not allowed，请点击「修复并重连」')
+        this._setConnected(false, WS_STATE.ERROR, e.reason || 'origin not allowed，请点击「修复并重连」')
         return
       }
-      this._setConnected(false)
+      this._setConnected(false, WS_STATE.DISCONNECTED)
       this._gatewayReady = false
       this._handshaking = false
       this._stopPing()
@@ -203,10 +227,12 @@ export class WsClient {
           console.warn('[ws] 自动修复已尝试过，不再重试')
         }
 
-        this._setConnected(false, 'error', errMsg)
+        this._setConnected(false, WS_STATE.ERROR, errMsg)
         this._readyCallbacks.forEach(fn => {
           try { fn(null, null, { error: true, message: errMsg }) } catch {}
         })
+        this._closeWs()
+        this._scheduleReconnect()
         return
       }
       // 握手成功，提取 snapshot
@@ -220,8 +246,17 @@ export class WsClient {
       if (cb) {
         this._pending.delete(msg.id)
         clearTimeout(cb.timer)
-        if (msg.ok) cb.resolve(msg.payload)
-        else cb.reject(new Error(msg.error?.message || msg.error?.code || 'request failed'))
+        if (msg.ok) {
+          cb.resolve(msg.payload)
+          if (cb.emitEvent) {
+            const base = (msg.payload && typeof msg.payload === 'object') ? { ...msg.payload } : { value: msg.payload }
+            const payload = { ...base, _req: cb.params, _method: cb.method }
+            const evt = { type: 'event', event: cb.method, payload }
+            this._eventListeners.forEach(fn => {
+              try { fn(evt) } catch (e) { console.error('[ws] handler error:', e) }
+            })
+          }
+        } else cb.reject(new Error(msg.error?.message || msg.error?.code || 'request failed'))
       }
       return
     }
@@ -235,7 +270,11 @@ export class WsClient {
   }
 
   async _autoPairAndReconnect() {
+    if (this._autoPairing) return
+    this._autoPairing = true
     this._autoPairAttempts++
+    this._flushPending()
+    this._clearReconnectTimer()
     try {
       console.log('[ws] 执行自动配对（第', this._autoPairAttempts, '次）...')
       const result = await api.autoPairDevice()
@@ -257,12 +296,17 @@ export class WsClient {
       }, 2000)
     } catch (e) {
       console.error('[ws] 自动配对失败:', e)
-      this._setConnected(false, 'error', `配对失败: ${e}`)
+      this._setConnected(false, WS_STATE.ERROR, `配对失败: ${e}`)
+    } finally {
+      this._autoPairing = false
     }
   }
 
   async _sendConnectFrame(nonce) {
+    if (this._connectSent) return
+    this._connectSent = true
     this._handshaking = true
+    this._setConnected(false, WS_STATE.HANDSHAKING)
     try {
       const frame = await api.createConnectFrame(nonce, this._token)
       if (this._ws && this._ws.readyState === WebSocket.OPEN) {
@@ -272,11 +316,16 @@ export class WsClient {
     } catch (e) {
       console.error('[ws] 生成 connect frame 失败:', e)
       this._handshaking = false
+      this._setConnected(false, WS_STATE.ERROR, '生成握手失败')
+      this._closeWs()
+      this._scheduleReconnect()
     }
   }
 
   _handleConnectSuccess(payload) {
     this._autoPairAttempts = 0
+    this._reconnectAttempts = 0
+    this._connectSent = false
     this._hello = payload || null
     this._snapshot = payload?.snapshot || null
     this._serverVersion = payload?.serverVersion || null
@@ -289,7 +338,7 @@ export class WsClient {
     }
     this._gatewayReady = true
     console.log('[ws] Gateway 就绪, sessionKey:', this._sessionKey)
-    this._setConnected(true, 'ready')
+    this._setConnected(true, WS_STATE.READY)
     this._readyCallbacks.forEach(fn => {
       try { fn(this._hello, this._sessionKey) } catch (e) {
         console.error('[ws] ready cb error:', e)
@@ -297,12 +346,40 @@ export class WsClient {
     })
   }
 
-  _setConnected(val, status, errorMsg) {
-    this._connected = val
-    const s = status || (val ? 'connected' : 'disconnected')
+  _transition(status, errorMsg) {
+    const prev = this._state
+    this._state = status
+    this._connected = status === WS_STATE.CONNECTED || status === WS_STATE.READY
+    if (WS_DEBUG && prev !== status) {
+      const allowed = this._isAllowedTransition(prev, status)
+      if (!allowed) console.warn('[ws] unexpected state transition', prev, '->', status)
+      this._stateStats[status] = (this._stateStats[status] || 0) + 1
+      console.log('[ws] state', prev, '->', status, 'count=' + this._stateStats[status], errorMsg || '')
+    }
     this._statusListeners.forEach(fn => {
-      try { fn(s, errorMsg) } catch (e) { console.error('[ws] status listener error:', e) }
+      try { fn(status, errorMsg) } catch (e) { console.error('[ws] status listener error:', e) }
     })
+  }
+
+  _isAllowedTransition(from, to) {
+    if (!from) return true
+    const map = {
+      [WS_STATE.DISCONNECTED]: [WS_STATE.CONNECTING, WS_STATE.RECONNECTING],
+      [WS_STATE.CONNECTING]: [WS_STATE.HANDSHAKING, WS_STATE.ERROR, WS_STATE.DISCONNECTED, WS_STATE.RECONNECTING],
+      [WS_STATE.HANDSHAKING]: [WS_STATE.READY, WS_STATE.ERROR, WS_STATE.DISCONNECTED],
+      [WS_STATE.READY]: [WS_STATE.RECONNECTING, WS_STATE.DISCONNECTED, WS_STATE.ERROR],
+      [WS_STATE.CONNECTED]: [WS_STATE.HANDSHAKING, WS_STATE.READY, WS_STATE.RECONNECTING, WS_STATE.DISCONNECTED],
+      [WS_STATE.RECONNECTING]: [WS_STATE.CONNECTING, WS_STATE.HANDSHAKING, WS_STATE.READY, WS_STATE.ERROR],
+      [WS_STATE.ERROR]: [WS_STATE.CONNECTING, WS_STATE.RECONNECTING, WS_STATE.DISCONNECTED],
+      [WS_STATE.AUTH_FAILED]: [WS_STATE.CONNECTING, WS_STATE.DISCONNECTED],
+    }
+    const next = map[from] || []
+    return next.includes(to)
+  }
+
+  _setConnected(val, status, errorMsg) {
+    const s = status || (val ? WS_STATE.CONNECTED : WS_STATE.DISCONNECTED)
+    this._transition(s, errorMsg)
   }
 
   _closeWs() {
@@ -342,15 +419,19 @@ export class WsClient {
       ? 1000
       : Math.min(1000 * Math.pow(2, this._reconnectAttempts - 2), MAX_RECONNECT_DELAY)
     this._reconnectAttempts++
-    this._setConnected(false, 'reconnecting')
+    this._setConnected(false, WS_STATE.RECONNECTING)
     this._reconnectTimer = setTimeout(() => this._doConnect(), delay)
   }
 
   _startPing() {
     this._stopPing()
     this._pingTimer = setInterval(() => {
-      if (this._ws && this._ws.readyState === WebSocket.OPEN) {
-        try { this._ws.send('{"type":"ping"}') } catch {}
+      if (this._ws && this._ws.readyState === WebSocket.OPEN && this._gatewayReady) {
+        try {
+          const id = uuid()
+          this._ws.send(JSON.stringify({ type: 'req', id, method: 'node.list', params: {} }))
+        } catch {}
+        // ping 只保活，不拉取历史
       }
     }, PING_INTERVAL)
   }
@@ -362,7 +443,7 @@ export class WsClient {
     }
   }
 
-  request(method, params = {}) {
+  request(method, params = {}, options = {}) {
     return new Promise((resolve, reject) => {
       if (!this._ws || this._ws.readyState !== WebSocket.OPEN || !this._gatewayReady) {
         if (!this._intentionalClose && (this._reconnectAttempts > 0 || !this._gatewayReady)) {
@@ -370,7 +451,7 @@ export class WsClient {
           const unsub = this.onReady((hello, sessionKey, err) => {
             clearTimeout(waitTimeout); unsub()
             if (err?.error) { reject(new Error(err.message || 'Gateway 握手失败')); return }
-            this.request(method, params).then(resolve, reject)
+            this.request(method, params, options).then(resolve, reject)
           })
           return
         }
@@ -378,8 +459,14 @@ export class WsClient {
       }
       const id = uuid()
       const timer = setTimeout(() => { this._pending.delete(id); reject(new Error('请求超时')) }, REQUEST_TIMEOUT)
-      this._pending.set(id, { resolve, reject, timer })
-      this._ws.send(JSON.stringify({ type: 'req', id, method, params }))
+      this._pending.set(id, { resolve, reject, timer, method, params, emitEvent: !!options.emitEvent })
+      try {
+        this._ws.send(JSON.stringify({ type: 'req', id, method, params }))
+      } catch (e) {
+        this._pending.delete(id)
+        clearTimeout(timer)
+        reject(e instanceof Error ? e : new Error('请求发送失败'))
+      }
     })
   }
 

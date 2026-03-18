@@ -4,11 +4,15 @@ mod tray;
 mod utils;
 
 use commands::{
-    agent, assistant, config, device, extensions, logs, memory, messaging, pairing, service,
-    skills, update,
+    agent, assistant, cloudflared, config, device, extensions, logs, memory,
+    messaging, pairing, service, skills, update,
 };
 
 pub fn run() {
+    for (k, v) in commands::build_system_env() {
+        std::env::set_var(k, v);
+    }
+
     let hot_update_dir = commands::openclaw_dir()
         .join("clawpanel")
         .join("web-update");
@@ -64,6 +68,7 @@ pub fn run() {
             // 配置
             config::read_openclaw_config,
             config::write_openclaw_config,
+            config::import_openclaw_ai_config,
             config::read_mcp_config,
             config::write_mcp_config,
             config::get_version_info,
@@ -106,6 +111,12 @@ pub fn run() {
             pairing::check_pairing_status,
             pairing::pairing_list_channel,
             pairing::pairing_approve_channel,
+            // Cloudflared
+            cloudflared::cloudflared_get_status,
+            cloudflared::cloudflared_install,
+            cloudflared::cloudflared_login,
+            cloudflared::cloudflared_start,
+            cloudflared::cloudflared_stop,
             // 服务
             service::get_services_status,
             service::start_service,

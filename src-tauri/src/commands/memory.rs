@@ -34,7 +34,7 @@ fn is_unsafe_path(path: &str) -> bool {
         || (path.len() >= 2 && path.as_bytes()[1] == b':') // Windows 绝对路径 C:\
 }
 
-/// 根据 agent_id 获取 workspace 路径（直接读 openclaw.json，带缓存）
+/// 根据 agent_id 获取 workspace 路径（直接读配置文件，带缓存）
 /// 不再调用 CLI，毫秒级响应
 async fn agent_workspace(agent_id: &str) -> Result<PathBuf, String> {
     // 先查缓存
@@ -50,10 +50,10 @@ async fn agent_workspace(agent_id: &str) -> Result<PathBuf, String> {
         }
     }
 
-    // 缓存过期或为空，从 openclaw.json 读取
-    let config_path = super::openclaw_dir().join("openclaw.json");
+    // 缓存过期或为空，从配置文件读取
+    let config_path = super::openclaw_config_path();
     let content =
-        fs::read_to_string(&config_path).map_err(|e| format!("读取 openclaw.json 失败: {e}"))?;
+        fs::read_to_string(&config_path).map_err(|e| format!("读取配置失败: {e}"))?;
     let config: serde_json::Value =
         serde_json::from_str(&content).map_err(|e| format!("解析 JSON 失败: {e}"))?;
 

@@ -9,6 +9,11 @@ import { setUpgrading, isMacPlatform } from '../lib/app-state.js'
 import { diagnoseInstallError } from '../lib/error-diagnosis.js'
 import { icon, statusIcon } from '../lib/icons.js'
 
+function escapeHtml(str) {
+  if (!str) return ''
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
 export async function render() {
   const page = document.createElement('div')
   page.className = 'page'
@@ -25,16 +30,22 @@ export async function render() {
 
       <div id="setup-steps"></div>
 
-      <div style="margin-top:var(--space-lg)">
+      <div style="margin-top:var(--space-lg);display:flex;gap:8px;justify-content:center">
         <button class="btn btn-secondary btn-sm" id="btn-recheck" style="min-width:120px">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="margin-right:4px"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
           重新检测
         </button>
+        <button class="btn btn-ghost btn-sm" id="btn-skip-setup" style="min-width:120px">不再提示</button>
       </div>
     </div>
   `
 
   page.querySelector('#btn-recheck').addEventListener('click', () => runDetect(page))
+  page.querySelector('#btn-skip-setup').addEventListener('click', async () => {
+    const cfg = await api.readPanelConfig().catch(() => ({}))
+    await api.writePanelConfig({ ...cfg, Setup: true, skipSetup: true, forceSetup: false }).catch(() => {})
+    window.location.hash = '#/dashboard'
+  })
   runDetect(page)
   return page
 }
@@ -60,11 +71,20 @@ async function runDetect(page) {
 
   const node = nodeRes.status === 'fulfilled' ? nodeRes.value : { installed: false }
   const git = gitRes.status === 'fulfilled' ? gitRes.value : { installed: false }
-  const cliOk = clawRes.status === 'fulfilled'
-    && clawRes.value?.length > 0
-    && clawRes.value[0]?.cli_installed !== false
+  const services = (clawRes.status === 'fulfilled' && Array.isArray(clawRes.value)) ? clawRes.value : []
+  const service = services.find(s => {
+    const id = s?.id || s?.name || s?.label || ''
+    return id === 'ai.openclaw.gateway' || id === 'openclaw'
+  }) || services[0] || null
+  const cliOk = !!service && service?.cli_installed !== false
   let config = configRes.status === 'fulfilled' ? configRes.value : { installed: false }
   const version = versionRes.status === 'fulfilled' ? versionRes.value : null
+  const panelCfg = await api.readPanelConfig().catch(() => ({}))
+  const cliInfo = {
+    path: service?.cli_path || '',
+    version: service?.cli_version || '',
+    source: service?.cli_source || '',
+  }
 
   // CLI 已装但配置缺失 → 自动创建默认配置
   if (cliOk && !config.installed) {
@@ -78,12 +98,18 @@ async function runDetect(page) {
     }
   }
 
+  // 兼容：仅配置存在也视为可用
+  if (!cliOk && config.installed) {
+    // 保持流程可继续，不强制安装 CLI
+  }
+
   // Git 已安装时，自动配置 HTTPS 替代 SSH（静默执行）
   if (git.installed) {
     api.configureGitHttps().catch(() => {})
   }
 
-  renderSteps(page, { node, git, cliOk, config, version })
+  renderSteps(page, { node, git, cliOk, config, version, cliInfo })
+
 }
 
 function stepIcon(ok) {
@@ -91,11 +117,11 @@ function stepIcon(ok) {
   return `<span style="color:${color};font-weight:700;width:18px;display:inline-block">${ok ? '✓' : '✗'}</span>`
 }
 
-function renderSteps(page, { node, git, cliOk, config, version }) {
+function renderSteps(page, { node, git, cliOk, config, version, cliInfo }) {
   const stepsEl = page.querySelector('#setup-steps')
   const nodeOk = node.installed
   const gitOk = git?.installed || false
-  const allOk = nodeOk && cliOk && config.installed
+  const allOk = cliOk && config.installed
 
   let html = ''
 
@@ -106,7 +132,7 @@ function renderSteps(page, { node, git, cliOk, config, version }) {
         ${stepIcon(nodeOk)} Node.js 环境
       </div>
       ${nodeOk
-        ? `<p style="color:var(--success);font-size:var(--font-size-sm)">已安装 ${node.version || ''}</p>`
+        ? `<p style="color:var(--success);font-size:var(--font-size-sm)">已安装 ${escapeHtml(node.version || '')}</p>`
         : `<p style="color:var(--text-secondary);font-size:var(--font-size-sm);margin-bottom:var(--space-sm)">
             OpenClaw 基于 Node.js 运行，请先安装。
           </p>
@@ -136,12 +162,12 @@ function renderSteps(page, { node, git, cliOk, config, version }) {
 
   // 第二步：Git
   html += `
-    <div class="config-section" style="text-align:left;${nodeOk ? '' : 'opacity:0.4;pointer-events:none'}">
+    <div class="config-section" style="text-align:left">
       <div class="config-section-title" style="display:flex;align-items:center;gap:4px">
         ${stepIcon(gitOk)} Git 版本管理
       </div>
       ${gitOk
-        ? `<p style="color:var(--success);font-size:var(--font-size-sm)">已安装 ${git.version || ''}</p>
+        ? `<p style="color:var(--success);font-size:var(--font-size-sm)">已安装 ${escapeHtml(git.version || '')}</p>
            <p style="font-size:var(--font-size-xs);color:var(--text-tertiary);margin-top:4px">✅ 已自动配置 Git 使用 HTTPS（避免 SSH 连接问题）</p>`
         : `<p style="color:var(--text-secondary);font-size:var(--font-size-sm);margin-bottom:var(--space-sm);line-height:1.5">
             部分依赖需要 Git 下载源码。点击下方按钮自动安装，如果失败请手动安装。
@@ -160,18 +186,29 @@ function renderSteps(page, { node, git, cliOk, config, version }) {
 
   // 第三步：OpenClaw CLI
   html += `
-    <div class="config-section" style="text-align:left;${nodeOk ? '' : 'opacity:0.4;pointer-events:none'}">
+    <div class="config-section" style="text-align:left">
       <div class="config-section-title" style="display:flex;align-items:center;gap:4px">
         ${stepIcon(cliOk)} OpenClaw CLI
       </div>
       ${cliOk
         ? `<p style="color:var(--success);font-size:var(--font-size-sm)">CLI 可用</p>
+           ${cliInfo?.path
+             ? `<div style="margin-top:6px;font-size:var(--font-size-xs);color:var(--text-tertiary)">
+                  路径：<span style="font-family:monospace;word-break:break-all">${escapeHtml(cliInfo.path)}</span>
+                </div>`
+             : ''}
+           ${cliInfo?.version
+             ? `<div style="margin-top:4px;font-size:var(--font-size-xs);color:var(--text-tertiary)">版本：${escapeHtml(cliInfo.version)}</div>`
+             : ''}
+           ${cliInfo?.source
+             ? `<div style="margin-top:4px;font-size:var(--font-size-xs);color:var(--text-tertiary)">来源：${escapeHtml(cliInfo.source)}</div>`
+             : ''}
            ${version?.ahead_of_recommended && version?.recommended
              ? `<div style="margin-top:8px;padding:8px 12px;background:var(--bg-tertiary);border-radius:var(--radius-sm);font-size:var(--font-size-xs);color:var(--warning,#f59e0b);line-height:1.6">
-                  检测到当前本地 OpenClaw ${version.current || ''} 高于当前面板推荐稳定版 ${version.recommended}，可能存在兼容或稳定性风险。建议稍后到「关于」页回退到推荐版。
+                  检测到当前本地 OpenClaw ${escapeHtml(version.current || '')} 高于当前面板推荐稳定版 ${escapeHtml(version.recommended)}，可能存在兼容或稳定性风险。建议稍后到「关于」页回退到推荐版。
                 </div>`
              : ''}`
-        : renderInstallSection()
+        : (config.installed ? `<p style="color:var(--warning,#f59e0b);font-size:var(--font-size-sm)">已检测到配置文件，但 CLI 未安装</p>` : renderInstallSection())
       }
     </div>
   `
@@ -182,11 +219,15 @@ function renderSteps(page, { node, git, cliOk, config, version }) {
         ${stepIcon(config.installed)} 配置文件
       </div>
       ${config.installed
-        ? `<p style="color:var(--success);font-size:var(--font-size-sm)">配置文件位于 ${config.path || ''}</p>`
+        ? `<p style="color:var(--success);font-size:var(--font-size-sm)">配置文件位于 ${escapeHtml(config.path || '')}</p>`
         : `<p style="color:var(--text-secondary);font-size:var(--font-size-sm);margin-bottom:var(--space-sm)">
             配置文件不存在，点击下方按钮自动创建默认配置。
           </p>
           <button class="btn btn-primary btn-sm" id="btn-init-config">一键初始化配置</button>`
+      }
+      ${config.installed && !cliOk
+        ? `<p style="margin-top:6px;color:var(--text-tertiary);font-size:var(--font-size-xs)">仅检测到配置文件，未检测到 CLI。你仍可继续使用，但部分功能可能受限。</p>`
+        : ''
       }
     </div>
   `
@@ -233,7 +274,8 @@ function renderSteps(page, { node, git, cliOk, config, version }) {
           <button class="btn btn-secondary btn-sm" id="btn-goto-channels">消息渠道</button>
         </div>
       </div>
-      <div style="margin-top:var(--space-lg)">
+      <div style="margin-top:var(--space-lg);display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+        ${cliOk && config.installed ? '<button class="btn btn-secondary" id="btn-use-existing" style="min-width:200px">使用已有 OpenClaw</button>' : ''}
         <button class="btn btn-primary" id="btn-enter" style="min-width:200px">进入面板</button>
       </div>
     `
@@ -381,6 +423,13 @@ function bindEvents(page, nodeOk, detectState) {
     window.location.hash = '/assistant'
   })
 
+  // 使用已有 OpenClaw
+  page.querySelector('#btn-use-existing')?.addEventListener('click', async () => {
+    const cfg = await api.readPanelConfig().catch(() => ({}))
+    await api.writePanelConfig({ ...cfg, skipSetup: true, forceSetup: false }).catch(() => {})
+    window.location.hash = '/dashboard'
+  })
+
   // 进入面板
   page.querySelector('#btn-enter')?.addEventListener('click', () => {
     window.location.hash = '/dashboard'
@@ -468,9 +517,9 @@ function bindEvents(page, nodeOk, detectState) {
         resultEl.innerHTML = results.map(r =>
           `<div style="display:flex;align-items:center;gap:6px;margin-top:4px">
             <span style="color:var(--success)">✓</span>
-            <code style="flex:1;background:var(--bg-secondary);padding:2px 6px;border-radius:3px;font-size:11px">${r.path}</code>
-            <span style="font-size:11px;color:var(--text-tertiary)">${r.version}</span>
-            <button class="btn btn-primary btn-sm btn-use-path" data-path="${r.path}" style="font-size:10px;padding:2px 8px">使用</button>
+            <code style="flex:1;background:var(--bg-secondary);padding:2px 6px;border-radius:3px;font-size:11px">${escapeHtml(r.path)}</code>
+            <span style="font-size:11px;color:var(--text-tertiary)">${escapeHtml(r.version)}</span>
+            <button class="btn btn-primary btn-sm btn-use-path" data-path="${escapeHtml(r.path)}" style="font-size:10px;padding:2px 8px">使用</button>
           </div>`
         ).join('')
         resultEl.querySelectorAll('.btn-use-path').forEach(b => {
@@ -501,7 +550,7 @@ function bindEvents(page, nodeOk, detectState) {
       const result = await api.checkNodeAtPath(dir)
       if (result.installed) {
         await api.saveCustomNodePath(dir)
-        resultEl.innerHTML = `<span style="color:var(--success)">✓ 找到 Node.js ${result.version}，路径已保存</span>`
+        resultEl.innerHTML = `<span style="color:var(--success)">✓ 找到 Node.js ${escapeHtml(result.version)}，路径已保存</span>`
         toast('Node.js 路径已保存，正在重新检测...', 'success')
         setTimeout(() => runDetect(page), 300)
       } else {
@@ -545,11 +594,15 @@ function bindEvents(page, nodeOk, detectState) {
 
   // 一键安装
   const installBtn = page.querySelector('#btn-install')
-  if (!installBtn || !nodeOk) return
+  if (!installBtn) return
 
   installBtn.addEventListener('click', async () => {
     const source = page.querySelector('input[name="install-source"]:checked')?.value || 'chinese'
     const method = (source === 'official') ? 'npm' : (page.querySelector('#install-method')?.value || 'auto')
+    if (method === 'npm' && !nodeOk) {
+      toast('需要先安装 Node.js 才能使用 npm 安装', 'warning')
+      return
+    }
     const registry = page.querySelector('#registry-select')?.value
     const modal = showUpgradeModal('安装 OpenClaw')
     let unlistenLog, unlistenProgress

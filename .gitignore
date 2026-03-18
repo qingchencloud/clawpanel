@@ -52,4 +52,9 @@ docs/promo-video.mp4
 
 # Rust 开发工具
 src-tauri/.cargo/
-.codex/
+.codex/docs/plans/
+docs/superpowers/plans/
+docs/*-plan.md
+docs/plan/
+docs/pr/
+docs/plans/

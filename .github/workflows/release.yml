@@ -231,13 +231,13 @@ jobs:
 
           CHANGELOG_BODY=""
           if [ -n "$FEATS" ]; then
-            CHANGELOG_BODY="${CHANGELOG_BODY}"$'\n### ✨ 新功能\n'"${FEATS}"$'\n'
+            CHANGELOG_BODY="${CHANGELOG_BODY}"$'\n### 新功能\n'"${FEATS}"$'\n'
           fi
           if [ -n "$FIXES" ]; then
-            CHANGELOG_BODY="${CHANGELOG_BODY}"$'\n### 🐛 修复\n'"${FIXES}"$'\n'
+            CHANGELOG_BODY="${CHANGELOG_BODY}"$'\n### 修复\n'"${FIXES}"$'\n'
           fi
           if [ -n "$OTHERS" ]; then
-            CHANGELOG_BODY="${CHANGELOG_BODY}"$'\n### 📦 其他\n'"${OTHERS}"$'\n'
+            CHANGELOG_BODY="${CHANGELOG_BODY}"$'\n### 其他\n'"${OTHERS}"$'\n'
           fi
           if [ -z "$CHANGELOG_BODY" ]; then
             CHANGELOG_BODY=$'\n- 常规更新与优化\n'
@@ -245,16 +245,16 @@ jobs:
 
           # ── 构建状态 ──
           if [ "$BUILD_RESULT" = "success" ]; then
-            STATUS_BADGE="✅ 全部平台构建成功"
+            STATUS_BADGE="全部平台构建成功"
           else
-            STATUS_BADGE="⚠️ 部分平台构建失败，请查看 [Actions 日志](https://github.com/${REPO}/actions)"
+            STATUS_BADGE="部分平台构建失败，请查看 [Actions 日志](https://github.com/${REPO}/actions)"
           fi
 
           # ── 写入 Release Notes ──
           {
             echo "${STATUS_BADGE}"
             echo ""
-            echo "## 📥 下载安装"
+            echo "## 下载安装"
             echo ""
             echo "根据你的操作系统选择对应安装包，点击文件名即可下载："
             echo ""
@@ -264,7 +264,7 @@ jobs:
             echo "| Apple Silicon (M1/M2/M3/M4) | [ClawPanel_${VERSION}_aarch64.dmg](${DL}/ClawPanel_${VERSION}_aarch64.dmg) |"
             echo "| Intel | [ClawPanel_${VERSION}_x64.dmg](${DL}/ClawPanel_${VERSION}_x64.dmg) |"
             echo ""
-            echo '> **⚠️ 首次打开提示"无法验证开发者"？** 在终端执行：`sudo xattr -rd com.apple.quarantine /Applications/ClawPanel.app`，或前往 **系统设置 → 隐私与安全性** 点击「仍要打开」。'
+            echo '> **首次打开提示"无法验证开发者"？** 在终端执行：`sudo xattr -rd com.apple.quarantine /Applications/ClawPanel.app`，或前往 **系统设置 → 隐私与安全性** 点击「仍要打开」。'
             echo ""
             echo "### Windows"
             echo "| 格式 | 安装包 |"
@@ -281,7 +281,7 @@ jobs:
             echo ""
             echo "---"
             echo ""
-            echo "## 🚀 首次使用"
+            echo "## 首次使用"
             echo ""
             echo "1. 安装并打开 ClawPanel"
             echo "2. 首次运行会自动检测 Node.js 环境和 OpenClaw CLI"
@@ -296,7 +296,7 @@ jobs:
             echo "${CHANGELOG_BODY}"
             echo "---"
             echo ""
-            echo "📖 [项目主页](https://github.com/${REPO}) · 💬 [反馈问题](https://github.com/${REPO}/issues) · 📣 [QQ 群](https://qt.cool/c/OpenClaw)"
+            echo "[项目主页](https://github.com/${REPO}) · [反馈问题](https://github.com/${REPO}/issues) · [QQ 群](https://qt.cool/c/OpenClaw)"
           } > release_body.md
 
           gh release edit "$TAG_NAME" --notes-file release_body.md

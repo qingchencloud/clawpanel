@@ -10,6 +10,7 @@ import { api } from '../lib/tauri-api.js'
 import { OPENCLAW_KB } from '../lib/openclaw-kb.js'
 import { icon, statusIcon } from '../lib/icons.js'
 import { QTCOOL, PROVIDER_PRESETS, API_TYPES as SHARED_API_TYPES, fetchQtcoolModels } from '../lib/model-presets.js'
+import { buildSystemPrompt as buildSystemPromptCore, getEnabledTools as getEnabledToolsCore, callAIWithTools as callAIWithToolsCore, callAI as callAICore, trimContext as trimContextCore } from '../lib/assistant-core.js'
 
 // ── 常量 ──
 const STORAGE_KEY = 'clawpanel-assistant'
@@ -522,7 +523,17 @@ const CRITICAL_PATTERNS = [
   /curl\s+.*\|\s*(sudo\s+)?bash/i,             // curl | bash
   /wget\s+.*\|\s*(sudo\s+)?bash/i,             // wget | bash
   /npm\s+publish/i,                             // npm publish
+  /git\s+push\s+.*--force-with-lease/i,         // git push --force-with-lease
   /git\s+push\s+.*--force/i,                    // git push --force
+  /git\s+push\s+.*\s-f(\s|$)/i,                // git push -f
+  /remove-item\s+.*-recurse.*-force.*[a-z]:\\/i, // Remove-Item -Recurse -Force C:\
+  /remove-item\s+-recurse/i,                    // Remove-Item -Recurse
+  /rmdir\s+\/s\s+\/q/i,                         // rmdir /s /q
+  /rd\s+\/s\s+\/q/i,                            // rd /s /q
+  /del\s+\/s\s+\/q/i,                           // del /s /q
+  /diskpart/i,                                   // diskpart
+  /bcdedit/i,                                    // bcdedit
+  /reg\s+delete/i,                               // reg delete
 ]
 
 function isCriticalCommand(command) {
@@ -714,35 +725,7 @@ function currentMode() {
 }
 
 function getEnabledTools() {
-  const mode = MODES[currentMode()]
-  if (!mode.tools) return [] // 聊天模式：无工具
-
-  const t = _config.tools || {}
-  const tools = [...TOOL_DEFS.system, ...TOOL_DEFS.process, ...TOOL_DEFS.interaction]
-
-  // 终端工具：受设置开关控制（优先级高于模式）
-  if (t.terminal !== false) tools.push(...TOOL_DEFS.terminal)
-
-  // 联网搜索工具：受设置开关控制
-  if (t.webSearch !== false) tools.push(...TOOL_DEFS.webSearch)
-
-  // 文件工具：受设置开关控制 + 规划模式排除写入
-  if (t.fileOps !== false) {
-    if (mode.readOnly) {
-      tools.push(...TOOL_DEFS.fileOps.filter(td => td.function.name !== 'write_file'))
-    } else {
-      tools.push(...TOOL_DEFS.fileOps)
-    }
-  }
-
-  // Skills 管理工具：始终启用（规划模式下排除安装操作）
-  if (mode.readOnly) {
-    tools.push(...TOOL_DEFS.skills.filter(td => !['skills_install_dep', 'skills_clawhub_install'].includes(td.function.name)))
-  } else {
-    tools.push(...TOOL_DEFS.skills)
-  }
-
-  return tools
+  return getEnabledToolsCore({ config: _config, mode: currentMode() })
 }
 
 function applyModeStyle(page, modeKey) {
@@ -837,60 +820,8 @@ function playModeTransition(page, modeKey) {
 }
 
 function buildSystemPrompt() {
-  let prompt = ''
-
-  // 灵魂移植模式：用 OpenClaw Agent 的身份替代默认人设
-  if (_config?.soulSource?.startsWith('openclaw:') && _soulCache) {
-    prompt += '# 你的身份\n'
-    if (_soulCache.identity) prompt += _soulCache.identity + '\n\n'
-    if (_soulCache.soul) prompt += '# 灵魂\n' + _soulCache.soul + '\n\n'
-    if (_soulCache.user) prompt += '# 你的用户\n' + _soulCache.user + '\n\n'
-    if (_soulCache.agents) {
-      // 截断 AGENTS.md 到约 4000 字符以节省 token
-      const agentsContent = _soulCache.agents.length > 4000 ? _soulCache.agents.slice(0, 4000) + '\n\n[...已截断]' : _soulCache.agents
-      prompt += '# 操作规则\n' + agentsContent + '\n\n'
-    }
-    if (_soulCache.tools) prompt += '# 工具笔记\n' + _soulCache.tools + '\n\n'
-    if (_soulCache.memory) {
-      const memContent = _soulCache.memory.length > 3000 ? _soulCache.memory.slice(-3000) : _soulCache.memory
-      prompt += '# 长期记忆\n' + memContent + '\n\n'
-    }
-    if (_soulCache.recentMemories?.length) {
-      prompt += '# 最近记忆\n'
-      for (const m of _soulCache.recentMemories) {
-        const content = m.content.length > 800 ? m.content.slice(0, 800) + '...' : m.content
-        prompt += `## ${m.date}\n${content}\n\n`
-      }
-    }
-    // 追加 ClawPanel 特有的产品知识和工具说明
-    prompt += '\n# ClawPanel 工具能力\n你同时是 ClawPanel 内置助手，拥有以下额外能力：\n'
-    prompt += '- 执行终端命令、读写文件、浏览目录\n'
-    prompt += '- 联网搜索和网页抓取\n'
-    prompt += '- 管理 OpenClaw 配置和服务\n'
-    prompt += '- 你精通 OpenClaw 的架构、配置、Gateway、Agent 管理\n'
-  } else {
-    prompt += getSystemPromptBase()
-  }
-
-  const modeKey = currentMode()
-  const mode = MODES[modeKey]
-
-  // 模式说明
-  prompt += `\n\n## 当前模式：${mode.label}模式`
-
-  if (modeKey === 'chat') {
-    prompt += '\n你处于纯聊天模式，没有任何工具可用。请通过文字回答问题，给出具体的命令建议供用户手动执行。'
-    prompt += '\n如果用户需要你执行操作，建议用户切换到「执行」或「规划」模式。'
-  } else {
-    // 规划模式特殊指令
-    if (modeKey === 'plan') {
-      prompt += '\n**你处于规划模式**：可以调用工具读取信息、分析问题，但 **绝对不能修改任何文件**（write_file 已禁用）。'
-      prompt += '\n你的任务是：分析问题 → 制定方案 → 输出详细步骤，让用户确认后再切换到执行模式操作。'
-      prompt += '\n即使使用 run_command，也只能执行只读命令（查看、检查、列出），不要执行任何修改操作。'
-    }
-    if (modeKey === 'unlimited') {
-      prompt += '\n**你处于无限模式**：所有工具调用无需用户确认，请高效完成任务。'
-    }
+  return buildSystemPromptCore({ config: _config, soulCache: _soulCache, knowledgeBase: OPENCLAW_KB })
+}
 
     prompt += '\n\n### 可用工具'
     prompt += '\n- **用户交互**: ask_user — 向用户提问（单选/多选/文本），获取结构化回答。需要用户做决定时优先用此工具。'
@@ -916,43 +847,6 @@ function buildSystemPrompt() {
     prompt += '\n- **Linux**: bash，标准 Unix 命令'
     prompt += '\n- **绝对禁止** cmd.exe 语法（dir、type、findstr、netstat）'
     prompt += '\n- **一次只执行一条命令**，等结果出来再决定下一步'
-    prompt += '\n- **不要重复执行相同的命令**'
-    prompt += '\n\n### 跨平台路径'
-    prompt += '\n- Windows: `$env:USERPROFILE\\.openclaw\\`'
-    prompt += '\n- macOS/Linux: `~/.openclaw/`'
-    prompt += '\n\n### 工具使用原则'
-    prompt += '\n- 先 get_system_info，再根据 OS 执行正确命令'
-    prompt += '\n- 优先用 read_file / list_directory / list_processes / check_port 等专用工具，减少 run_command 使用'
-    prompt += '\n- 主动使用工具，不要只建议用户手动操作'
-    if (mode.confirmDanger) {
-      prompt += '\n- 执行破坏性操作前先告知用户'
-    }
-  }
-
-  // 注入内置技能列表
-  prompt += '\n\n## 内置技能卡片'
-  prompt += '\n用户可以在欢迎页点击技能卡片快速触发操作。当用户遇到问题时，你也可以主动推荐合适的技能：'
-  for (const s of BUILTIN_SKILLS) {
-    prompt += `\n- **${s.name}**（${s.desc}）`
-  }
-  prompt += '\n\n当用户的需求匹配某个技能时，可以建议用户点击对应的技能卡片，或者你直接按技能的步骤操作。'
-
-  // 注入内置 OpenClaw 知识库
-  prompt += '\n\n' + OPENCLAW_KB
-
-  // 注入用户自定义知识库内容
-  const kbEnabled = (_config.knowledgeFiles || []).filter(f => f.enabled !== false && f.content)
-  if (kbEnabled.length > 0) {
-    prompt += '\n\n## 用户自定义知识库'
-    prompt += '\n以下是用户提供的参考知识，回答问题时请优先参考这些内容：'
-    for (const kb of kbEnabled) {
-      const content = kb.content.length > 5000 ? kb.content.slice(0, 5000) + '\n\n[...内容已截断]' : kb.content
-      prompt += `\n\n### ${kb.name}\n${content}`
-    }
-  }
-
-  return prompt
-}
 
 // ── 灵魂移植：扫描可用 Agent ──
 async function scanOpenClawAgents() {
@@ -1099,12 +993,17 @@ function renderSoulStats(soul) {
 // ── 状态 ──
 let _page = null, _messagesEl = null, _textarea = null, _sendBtn = null
 let _sessionListEl = null, _settingsPanel = null, _queueEl = null
+let _optimizeBtn = null, _restoreBtn = null
+let _optOriginalText = null, _optOptimizedText = null
+let _optBusy = false
 let _isStreaming = false, _abortController = null
 let _config = null, _sessions = [], _currentSessionId = null
 let _lastRenderTime = 0
 let _saveThrottleTimer = null
 const _sessionStatus = new Map() // sessionId → 'idle' | 'streaming' | 'waiting' | 'error'
-let _messageQueue = [] // [{ id, text, ts }]
+const _streamingBySession = new Map() // sessionId → boolean
+const _abortBySession = new Map() // sessionId → AbortController
+const _queueBySession = new Map() // sessionId → [{ id, text, ts }]
 let _streamRefreshTimer = null // 后台流式刷新定时器
 let _pendingImages = [] // [{ id, dataUrl, name, size }] 待发送图片
 let _errorContext = null // 待处理的错误上下文 { scene, title, hint, error, ts }
@@ -1119,6 +1018,37 @@ function throttledSave() {
   }, 500)
 }
 
+function getStreaming(sessionId) {
+  return _streamingBySession.get(sessionId) === true
+}
+
+function setStreaming(sessionId, value) {
+  if (!sessionId) return
+  if (value) _streamingBySession.set(sessionId, true)
+  else _streamingBySession.delete(sessionId)
+}
+
+function getAbortController(sessionId) {
+  return _abortBySession.get(sessionId) || null
+}
+
+function setAbortController(sessionId, controller) {
+  if (!sessionId) return
+  if (controller) _abortBySession.set(sessionId, controller)
+  else _abortBySession.delete(sessionId)
+}
+
+function getQueue(sessionId) {
+  if (!sessionId) return []
+  if (!_queueBySession.has(sessionId)) _queueBySession.set(sessionId, [])
+  return _queueBySession.get(sessionId)
+}
+
+function setQueue(sessionId, queue) {
+  if (!sessionId) return
+  _queueBySession.set(sessionId, queue)
+}
+
 function flushSave() {
   if (_saveThrottleTimer) {
     clearTimeout(_saveThrottleTimer)
@@ -1130,7 +1060,7 @@ function flushSave() {
 // ── 后台流式刷新 ──
 // 当用户切页面再回来时，轮询刷新最后一个 AI 气泡内容
 function refreshStreamingBubble() {
-  if (!_messagesEl || !_isStreaming) return
+  if (!_messagesEl || !_currentSessionId || !getStreaming(_currentSessionId)) return
   const session = getCurrentSession()
   if (!session) return
   const lastMsg = session.messages[session.messages.length - 1]
@@ -1158,13 +1088,17 @@ function stopStreamRefresh() {
 
 // ── 发送队列 ──
 function enqueueMessage(text) {
-  _messageQueue.push({ id: Date.now().toString(), text, ts: Date.now() })
+  if (!_currentSessionId) return
+  const queue = getQueue(_currentSessionId)
+  queue.push({ id: Date.now().toString(), text, ts: Date.now() })
+  setQueue(_currentSessionId, queue)
   renderQueue()
 }
 
 function renderQueue() {
-  if (!_queueEl) return
-  if (_messageQueue.length === 0) {
+  if (!_queueEl || !_currentSessionId) return
+  const queue = getQueue(_currentSessionId)
+  if (queue.length === 0) {
     _queueEl.innerHTML = ''
     _queueEl.style.display = 'none'
     return
@@ -1175,8 +1109,8 @@ function renderQueue() {
   const editSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>'
   const delSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
 
-  _queueEl.innerHTML = `<div class="ast-queue-header">${queueSvg} 发送队列 (${_messageQueue.length})</div>` +
-    _messageQueue.map((item, i) => `
+  _queueEl.innerHTML = `<div class="ast-queue-header">${queueSvg} 发送队列 (${queue.length})</div>` +
+    queue.map((item, i) => `
       <div class="ast-queue-item" data-queue-id="${item.id}">
         <span class="ast-queue-num">${i + 1}</span>
         <span class="ast-queue-text" data-queue-edit="${item.id}" title="点击编辑">${escHtml(item.text)}</span>
@@ -1190,8 +1124,12 @@ function renderQueue() {
 }
 
 function processQueue() {
-  if (_isStreaming || _messageQueue.length === 0) return
-  const next = _messageQueue.shift()
+  if (!_currentSessionId) return
+  if (getStreaming(_currentSessionId)) return
+  const queue = getQueue(_currentSessionId)
+  if (queue.length === 0) return
+  const next = queue.shift()
+  setQueue(_currentSessionId, queue)
   renderQueue()
   sendMessageDirect(next.text)
 }
@@ -1458,21 +1396,33 @@ const TIMEOUT_TOTAL = 120_000    // 总超时 120 秒
 const TIMEOUT_CHUNK = 30_000     // 流式 chunk 间隔超时 30 秒
 const TIMEOUT_CONNECT = 30_000   // 连接超时 30 秒
 
-async function callAI(messages, onChunk) {
+async function callAI(sessionId, messages, onChunk) {
+  const { text } = await callAICore({
+    config: _config,
+    messages,
+    adapters: { soulCache: _soulCache, knowledgeBase: OPENCLAW_KB },
+    mode: currentMode(),
+  })
+  if (typeof onChunk === 'function' && text) onChunk(text)
+  return
+
   const apiType = normalizeApiType(_config.apiType)
   if (!_config.baseUrl || !_config.model || (requiresApiKey(apiType) && !_config.apiKey)) {
     throw new Error('请先配置 AI 模型（点击右上角设置按钮）')
   }
 
   const base = cleanBaseUrl(_config.baseUrl, apiType)
-  _abortController = new AbortController()
+  const controller = new AbortController()
+  _abortController = controller
+  if (sessionId) setAbortController(sessionId, controller)
   const allMessages = [{ role: 'system', content: buildSystemPrompt() }, ...messages]
 
   // 总超时保护
   let _timedOut = false
   const totalTimer = setTimeout(() => {
     _timedOut = true
-    if (_abortController) _abortController.abort()
+    const active = sessionId ? getAbortController(sessionId) : controller
+    if (active) active.abort()
   }, TIMEOUT_TOTAL)
 
   try {
@@ -1499,7 +1449,9 @@ async function callAI(messages, onChunk) {
       const msg = err.message || ''
       if (msg.includes('legacy protocol') || msg.includes('/v1/responses') || msg.includes('not supported')) {
         console.log('[assistant] Chat Completions 不支持此模型，自动切换到 Responses API')
-        _abortController = new AbortController()
+        const nextController = new AbortController()
+        _abortController = nextController
+        if (sessionId) setAbortController(sessionId, nextController)
         await callResponsesAPI(base, allMessages, onChunk)
         return
       }
@@ -1507,6 +1459,9 @@ async function callAI(messages, onChunk) {
     }
   } finally {
     clearTimeout(totalTimer)
+    if (sessionId && getAbortController(sessionId) === controller) {
+      setAbortController(sessionId, null)
+    }
   }
 }
 
@@ -1857,14 +1812,14 @@ async function executeTool(name, args) {
       const missing = skills.filter(s => !s.eligible && !s.disabled)
       const disabled = skills.filter(s => s.disabled)
       let summary = `共 ${skills.length} 个 Skills: ${eligible.length} 可用, ${missing.length} 缺依赖, ${disabled.length} 已禁用\n\n`
-      if (eligible.length) summary += `## 可用 (${eligible.length})\n` + eligible.map(s => `- ${s.emoji || '📦'} **${s.name}**: ${s.description || ''}${s.bundled ? ' [捆绑]' : ''}`).join('\n') + '\n\n'
+      if (eligible.length) summary += `## 可用 (${eligible.length})\n` + eligible.map(s => `- ${s.emoji || ''} **${s.name}**: ${s.description || ''}${s.bundled ? ' [捆绑]' : ''}`.trim()).join('\n') + '\n\n'
       if (missing.length) summary += `## 缺依赖 (${missing.length})\n` + missing.map(s => {
         const m = s.missing || {}
         const deps = [...(m.bins||[]), ...(m.env||[]).map(e=>'$'+e), ...(m.config||[])].join(', ')
         const installs = (s.install||[]).map(i => i.label).join(' / ')
-        return `- ${s.emoji || '📦'} **${s.name}**: 缺少 ${deps}${installs ? ' → 可通过: ' + installs : ''}`
+        return `- ${s.emoji || ''} **${s.name}**: 缺少 ${deps}${installs ? ' → 可通过: ' + installs : ''}`.trim()
       }).join('\n') + '\n\n'
-      if (disabled.length) summary += `## 已禁用 (${disabled.length})\n` + disabled.map(s => `- ${s.emoji || '📦'} **${s.name}**: ${s.description || ''}`).join('\n') + '\n'
+      if (disabled.length) summary += `## 已禁用 (${disabled.length})\n` + disabled.map(s => `- ${s.emoji || ''} **${s.name}**: ${s.description || ''}`.trim()).join('\n') + '\n'
       return summary
     }
     case 'skills_info':
@@ -2014,6 +1969,43 @@ function convertToolsForGemini(tools) {
   }))}]
 }
 
+// 上下文裁剪：保留图片消息，避免多模态丢失
+function trimContextPreserveImages(messages, maxTokens) {
+  const trimmed = trimContextCore(messages, maxTokens)
+  const imageMessages = messages.filter(m => Array.isArray(m.content) && m.content.some(b => b?.type === 'image_url' || b?.type === 'image'))
+  if (!imageMessages.length) return trimmed
+  const maxPinned = Math.min(4, maxTokens)
+  const pinnedList = imageMessages.slice(-maxPinned)
+  const pinnedSet = new Set(pinnedList)
+  const trimmedSet = new Set(trimmed)
+  const merged = [...trimmed]
+  pinnedList.forEach(msg => {
+    if (trimmedSet.has(msg)) return
+    merged.push(msg)
+  })
+  if (merged.length <= maxTokens) return merged
+  const compact = []
+  for (let i = merged.length - 1; i >= 0; i--) {
+    const msg = merged[i]
+    if (compact.length >= maxTokens && !pinnedSet.has(msg)) continue
+    compact.unshift(msg)
+  }
+  return compact
+}
+
+function buildContextMessages(session) {
+  return trimContextPreserveImages(
+    session.messages
+      .filter(m => {
+        if (m.role === 'user') return true
+        if (m.role === 'assistant') return m.content && m.content.length > 0
+        return false
+      })
+      .map(m => ({ role: m.role, content: m.content })),
+    MAX_CONTEXT_TOKENS
+  )
+}
+
 // 工具调用执行（共用逻辑）
 async function executeToolWithSafety(toolName, args, tcForConfirm) {
   let result = '', approved = true
@@ -2034,215 +2026,50 @@ async function executeToolWithSafety(toolName, args, tcForConfirm) {
 }
 
 // 带工具调用的 AI 请求（非流式，用于 tool_calls 检测循环）
-async function callAIWithTools(messages, onStatus, onToolProgress) {
-  const apiType = normalizeApiType(_config.apiType)
-  if (!_config.baseUrl || !_config.model || (requiresApiKey(apiType) && !_config.apiKey)) {
-    throw new Error('请先配置 AI 模型（点击右上角设置按钮）')
-  }
-
-  const base = cleanBaseUrl(_config.baseUrl, apiType)
-  const tools = getEnabledTools()
-  let currentMessages = [{ role: 'system', content: buildSystemPrompt() }, ...messages]
+async function callAIWithTools(sessionId, messages, onStatus, onToolProgress) {
   const toolHistory = []
-
-  const autoRounds = _config.autoRounds ?? 8  // 0 = 无限制
-  let nextPauseAt = autoRounds   // 下一次暂停的轮次阈值
-  for (let round = 0; ; round++) {
-    // 检查是否已被用户中止
-    if (!_isStreaming || _abortController?.signal?.aborted) {
-      throw new DOMException('Aborted', 'AbortError')
-    }
-    if (autoRounds > 0 && round >= nextPauseAt) {
-      const answer = await showAskUserCard({
-        question: `AI 已连续调用工具 ${round} 轮，可能陷入循环。你希望怎么做？`,
-        type: 'single',
-        options: [`继续执行 ${autoRounds} 轮`, '不再中断，一直执行', '让 AI 换个思路', '停止并总结'],
-      })
-      if (answer.includes('停止')) {
-        return { content: '用户要求停止工具调用，以下是目前的执行情况摘要。', toolHistory }
-      } else if (answer.includes('换个思路')) {
-        currentMessages.push({ role: 'user', content: '请换一种方法来解决这个问题，不要重复之前失败的操作。' })
-        nextPauseAt = round + autoRounds
-      } else if (answer.includes('不再中断')) {
-        nextPauseAt = Infinity
-      } else {
-        nextPauseAt = round + autoRounds
+  const adapters = {
+    soulCache: _soulCache,
+    knowledgeBase: OPENCLAW_KB,
+    confirm: async (text) => {
+      const session = getCurrentSession()
+      if (session) setSessionStatus(session.id, 'waiting')
+      const result = await showConfirm(text)
+      if (session) setSessionStatus(session.id, 'streaming')
+      return result
+    },
+    askUser: async (args) => {
+      const session = getCurrentSession()
+      if (session) setSessionStatus(session.id, 'waiting')
+      const result = await showAskUserCard(args)
+      if (session) setSessionStatus(session.id, 'streaming')
+      return result
+    },
+    execTool: async ({ name, args }) => {
+      const entry = { name, args, result: null, approved: true, pending: true }
+      toolHistory.push(entry)
+      if (typeof onToolProgress === 'function') onToolProgress(toolHistory)
+      const execResult = await executeToolWithSafety(name, args, { function: { name, arguments: JSON.stringify(args || {}) } })
+      const last = toolHistory[toolHistory.length - 1]
+      if (last) {
+        last.result = execResult.result
+        last.approved = execResult.approved
+        last.pending = false
       }
-    }
-
-    _abortController = new AbortController()
-    onStatus(round === 0 ? 'AI 思考中...' : `AI 处理工具结果 (第${round + 1}轮)...`)
-
-    // ── Anthropic 工具调用 ──
-    if (apiType === 'anthropic-messages') {
-      const systemMsg = currentMessages.find(m => m.role === 'system')?.content || ''
-      const chatMsgs = currentMessages.filter(m => m.role !== 'system')
-      const body = {
-        model: _config.model,
-        max_tokens: 8192,
-        temperature: _config.temperature || 0.7,
-        messages: chatMsgs,
-      }
-      if (systemMsg) body.system = systemMsg
-      if (tools.length > 0) body.tools = convertToolsForAnthropic(tools)
-
-      const resp = await fetchWithRetry(base + '/messages', {
-        method: 'POST', headers: authHeaders(), body: JSON.stringify(body),
-        signal: _abortController.signal,
-      })
-      if (!resp.ok) {
-        const errText = await resp.text().catch(() => '')
-        let errMsg = `API 错误 ${resp.status}`
-        try { errMsg = JSON.parse(errText).error?.message || errMsg } catch {}
-        throw new Error(errMsg)
-      }
-
-      const data = await resp.json()
-      const contentBlocks = data.content || []
-      const toolUses = contentBlocks.filter(b => b.type === 'tool_use')
-      const textContent = contentBlocks.filter(b => b.type === 'text').map(b => b.text).join('')
-
-      if (toolUses.length > 0) {
-        // 将 assistant 消息加入上下文
-        currentMessages.push({ role: 'assistant', content: contentBlocks })
-
-        const toolResults = []
-        for (const tu of toolUses) {
-          const args = tu.input || {}
-          toolHistory.push({ name: tu.name, args, result: null, approved: true, pending: true })
-          onToolProgress(toolHistory)
-
-          const { result, approved } = await executeToolWithSafety(tu.name, args)
-          const last = toolHistory[toolHistory.length - 1]
-          last.result = result; last.approved = approved; last.pending = false
-          onToolProgress(toolHistory)
-
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: tu.id,
-            content: typeof result === 'string' ? result : JSON.stringify(result),
-          })
-        }
-        currentMessages.push({ role: 'user', content: toolResults })
-        continue
-      }
-
-      return { content: textContent, toolHistory }
-    }
-
-    // ── Gemini 工具调用 ──
-    if (apiType === 'google-gemini') {
-      const systemMsg = currentMessages.find(m => m.role === 'system')?.content || ''
-      const chatMsgs = currentMessages.filter(m => m.role !== 'system')
-      const contents = chatMsgs.map(m => ({
-        role: m.role === 'assistant' ? 'model' : m.role === 'tool' ? 'function' : 'user',
-        parts: m.functionResponse
-          ? [{ functionResponse: m.functionResponse }]
-          : [{ text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }],
-      }))
-      const body = { contents, generationConfig: { temperature: _config.temperature || 0.7 } }
-      if (systemMsg) body.systemInstruction = { parts: [{ text: systemMsg }] }
-      if (tools.length > 0) body.tools = convertToolsForGemini(tools)
-
-      const url = `${base}/models/${_config.model}:generateContent?key=${_config.apiKey}`
-      const resp = await fetchWithRetry(url, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body), signal: _abortController.signal,
-      })
-      if (!resp.ok) {
-        const errText = await resp.text().catch(() => '')
-        let errMsg = `API 错误 ${resp.status}`
-        try { errMsg = JSON.parse(errText).error?.message || errMsg } catch {}
-        throw new Error(errMsg)
-      }
-
-      const data = await resp.json()
-      const parts = data.candidates?.[0]?.content?.parts || []
-      const funcCalls = parts.filter(p => p.functionCall)
-      const textParts = parts.filter(p => p.text).map(p => p.text).join('')
-
-      if (funcCalls.length > 0) {
-        currentMessages.push({ role: 'assistant', content: textParts, _geminiParts: parts })
-
-        for (const fc of funcCalls) {
-          const args = fc.functionCall.args || {}
-          toolHistory.push({ name: fc.functionCall.name, args, result: null, approved: true, pending: true })
-          onToolProgress(toolHistory)
-
-          const { result, approved } = await executeToolWithSafety(fc.functionCall.name, args)
-          const last = toolHistory[toolHistory.length - 1]
-          last.result = result; last.approved = approved; last.pending = false
-          onToolProgress(toolHistory)
-
-          currentMessages.push({
-            role: 'tool',
-            content: typeof result === 'string' ? result : JSON.stringify(result),
-            functionResponse: { name: fc.functionCall.name, response: { result: typeof result === 'string' ? result : JSON.stringify(result) } },
-          })
-        }
-        continue
-      }
-
-      return { content: textParts, toolHistory }
-    }
-
-    // ── OpenAI 工具调用 ──
-    const body = {
-      model: _config.model,
-      messages: currentMessages,
-      temperature: _config.temperature || 0.7,
-    }
-    if (tools.length > 0) body.tools = tools
-
-    const resp = await fetchWithRetry(base + '/chat/completions', {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify(body),
-      signal: _abortController.signal,
-    })
-
-    if (!resp.ok) {
-      const errText = await resp.text().catch(() => '')
-      let errMsg = `API 错误 ${resp.status}`
-      try { errMsg = JSON.parse(errText).error?.message || errMsg } catch {}
-      throw new Error(errMsg)
-    }
-
-    const data = await resp.json()
-    const choice = data.choices?.[0]
-    const assistantMsg = choice?.message
-
-    if (!assistantMsg) throw new Error('AI 未返回有效响应')
-
-    if (assistantMsg.tool_calls && assistantMsg.tool_calls.length > 0) {
-      currentMessages.push(assistantMsg)
-
-      for (const tc of assistantMsg.tool_calls) {
-        let args
-        try { args = JSON.parse(tc.function.arguments) } catch { args = {} }
-        const toolName = tc.function.name
-
-        toolHistory.push({ name: toolName, args, result: null, approved: true, pending: true })
-        onToolProgress(toolHistory)
-
-        const { result, approved } = await executeToolWithSafety(toolName, args, tc)
-        const last = toolHistory[toolHistory.length - 1]
-        last.result = result; last.approved = approved; last.pending = false
-        onToolProgress(toolHistory)
-
-        currentMessages.push({
-          role: 'tool',
-          tool_call_id: tc.id,
-          content: typeof result === 'string' ? result : JSON.stringify(result),
-        })
-      }
-
-      continue
-    }
-
-    const content = assistantMsg.content || assistantMsg.reasoning_content || ''
-    return { content, toolHistory }
+      if (typeof onToolProgress === 'function') onToolProgress(toolHistory)
+      return execResult.result
+    },
   }
+  if (typeof onStatus === 'function') onStatus('AI 思考中...')
+  const tools = getEnabledTools()
+  const result = await callAIWithToolsCore({
+    config: _config,
+    messages,
+    tools,
+    adapters,
+    mode: currentMode(),
+  })
+  return { content: result.text || '', toolHistory }
 }
 
 // ── 渲染 ──
@@ -2517,7 +2344,10 @@ function showSettings() {
       <div class="ast-settings-form">
         <div class="ast-tab-panel active" data-panel="api">
           <div class="form-group" style="margin-bottom:8px">
-            <label class="form-label">快捷选择</label>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+              <label class="form-label" style="margin:0">快捷选择</label>
+              <button class="btn btn-sm btn-secondary" id="ast-import-openclaw">从 openclaw 导入</button>
+            </div>
             <div id="ast-provider-presets" style="display:flex;flex-wrap:wrap;gap:6px">
               ${PROVIDER_PRESETS.filter(p => !p.hidden).map(p => `<button class="btn btn-sm btn-secondary ast-preset-btn" data-key="${p.key}" data-url="${escHtml(p.baseUrl)}" data-api="${p.api}" style="font-size:12px;padding:3px 10px">${p.label}${p.badge ? ' <span style="font-size:9px;background:var(--accent);color:#fff;padding:1px 4px;border-radius:6px;margin-left:3px">' + p.badge + '</span>' : ''}</button>`).join('')}
             </div>
@@ -2723,6 +2553,7 @@ function showSettings() {
   const apiHintEl = overlay.querySelector('#ast-api-hint')
   const baseUrlInput = overlay.querySelector('#ast-baseurl')
   const apiKeyInput = overlay.querySelector('#ast-apikey')
+  const importBtn = overlay.querySelector('#ast-import-openclaw')
   overlay.querySelectorAll('.ast-preset-btn').forEach(btn => {
     btn.onclick = () => {
       baseUrlInput.value = btn.dataset.url
@@ -2749,6 +2580,34 @@ function showSettings() {
       }
     }
   })
+
+  if (importBtn) {
+    importBtn.addEventListener('click', async () => {
+      try {
+        importBtn.disabled = true
+        const result = await api.importOpenclawAiConfig()
+        if (!result || !result.model) {
+          toast('未找到可导入的 AI 配置', 'warning')
+          return
+        }
+        if (result.baseUrl) baseUrlInput.value = result.baseUrl
+        if (result.apiKey) apiKeyInput.value = result.apiKey
+        if (result.model) overlay.querySelector('#ast-model').value = result.model
+        if (result.apiType) {
+          apiTypeSelect.value = normalizeApiType(result.apiType)
+          apiTypeSelect.dispatchEvent(new Event('change'))
+        }
+        if (result.temperature && overlay.querySelector('#ast-temp')) {
+          overlay.querySelector('#ast-temp').value = result.temperature
+        }
+        toast('已导入 openclaw 配置', 'success')
+      } catch (e) {
+        toast('导入失败: ' + (e?.message || e), 'error')
+      } finally {
+        importBtn.disabled = false
+      }
+    })
+  }
 
   // API 类型切换时更新提示文本和 placeholder
   apiTypeSelect.addEventListener('change', () => {
@@ -3419,7 +3278,7 @@ function sendMessage(text) {
   const hasContent = text.trim() || _pendingImages.length > 0
   if (!hasContent) return
   // 流式中 → 排队（图片不排队，提示用户）
-  if (_isStreaming) {
+  if (_currentSessionId && getStreaming(_currentSessionId)) {
     if (_pendingImages.length > 0) {
       toast('AI 正在回复中，图片消息请等待完成后再发送', 'info')
       return
@@ -3427,6 +3286,7 @@ function sendMessage(text) {
     enqueueMessage(text.trim())
     return
   }
+  clearOptimizeSnapshot()
   sendMessageDirect(text)
 }
 
@@ -3434,11 +3294,13 @@ function sendMessage(text) {
 async function sendMessageDirect(text) {
   const hasContent = text.trim() || _pendingImages.length > 0
   if (!hasContent) return
-  if (_isStreaming) {
+  if (_currentSessionId && getStreaming(_currentSessionId)) {
     if (_pendingImages.length > 0) { toast('请等待 AI 回复完成', 'info'); return }
     enqueueMessage(text.trim())
     return
   }
+
+  clearOptimizeSnapshot()
 
   let session = getCurrentSession()
   if (!session) {
@@ -3472,21 +3334,17 @@ async function sendMessageDirect(text) {
 
   // 准备 AI 上下文（只保留 role + content，剔除内部字段）
   // 过滤掉空的 AI 回复，避免污染上下文导致模型也返回空
-  const contextMessages = session.messages
-    .filter(m => {
-      if (m.role === 'user') return true
-      if (m.role === 'assistant') return m.content && m.content.length > 0
-      return false
-    })
-    .slice(-MAX_CONTEXT_TOKENS)
-    .map(m => ({ role: m.role, content: m.content }))
+  const contextMessages = buildContextMessages(session)
 
   // 添加空 AI 消息占位
   const aiMsg = { role: 'assistant', content: '', ts: Date.now() }
   session.messages.push(aiMsg)
 
-  _isStreaming = true
-  _sendBtn.innerHTML = stopIcon()
+  setStreaming(session.id, true)
+  if (_currentSessionId === session.id) {
+    _isStreaming = true
+    _sendBtn.innerHTML = stopIcon()
+  }
   setSessionStatus(session.id, 'streaming')
 
   // 渲染流式 typing 状态
@@ -3503,7 +3361,7 @@ async function sendMessageDirect(text) {
       const aiMsgContainers = _messagesEl?.querySelectorAll('.ast-msg-ai')
       const lastContainer = aiMsgContainers?.[aiMsgContainers.length - 1]
 
-      const result = await callAIWithTools(contextMessages,
+      const result = await callAIWithTools(session.id, contextMessages,
         // onStatus
         (status) => {
           if (lastBubble) lastBubble.innerHTML = `<span class="ast-typing">${escHtml(status)}</span>`
@@ -3527,7 +3385,7 @@ async function sendMessageDirect(text) {
       renderMessages()
     } else {
       // ── 普通流式模式 ──
-      await callAI(contextMessages, (chunk) => {
+      await callAI(session.id, contextMessages, (chunk) => {
         aiMsg.content += chunk
         throttledSave() // 实时保存每个 chunk
         if (lastBubble) {
@@ -3592,11 +3450,14 @@ async function sendMessageDirect(text) {
       })
     }
   } finally {
-    _isStreaming = false
+    setStreaming(session.id, false)
+    if (_currentSessionId === session.id) {
+      _isStreaming = false
+      stopStreamRefresh()
+      if (_sendBtn) _sendBtn.innerHTML = sendIcon()
+      if (_textarea) _textarea.focus()
+    }
     _abortController = null
-    stopStreamRefresh()
-    if (_sendBtn) _sendBtn.innerHTML = sendIcon()
-    if (_textarea) _textarea.focus()
     session.updatedAt = Date.now()
     flushSave()
     if (getSessionStatus(session.id) !== 'error') {
@@ -3613,17 +3474,19 @@ async function sendMessageDirect(text) {
 
 // 重试 AI 响应（不重复添加用户消息）
 async function retryAIResponse(session) {
-  if (_isStreaming) return
+  if (!session?.id) return
+  if (getStreaming(session.id)) return
 
-  const contextMessages = session.messages
-    .filter(m => m.role === 'user' || m.role === 'assistant')
-    .slice(-MAX_CONTEXT_TOKENS)
+  const contextMessages = buildContextMessages(session)
 
   const aiMsg = { role: 'assistant', content: '', ts: Date.now() }
   session.messages.push(aiMsg)
 
-  _isStreaming = true
-  if (_sendBtn) _sendBtn.innerHTML = stopIcon()
+  setStreaming(session.id, true)
+  if (_currentSessionId === session.id) {
+    _isStreaming = true
+    if (_sendBtn) _sendBtn.innerHTML = stopIcon()
+  }
   setSessionStatus(session.id, 'streaming')
 
   renderMessages()
@@ -3638,7 +3501,7 @@ async function retryAIResponse(session) {
       const aiMsgContainers = _messagesEl?.querySelectorAll('.ast-msg-ai')
       const lastContainer = aiMsgContainers?.[aiMsgContainers.length - 1]
 
-      const result = await callAIWithTools(contextMessages,
+      const result = await callAIWithTools(session.id, contextMessages,
         (status) => { if (lastBubble) lastBubble.innerHTML = `<span class="ast-typing">${escHtml(status)}</span>` },
         (history) => {
           aiMsg.toolHistory = history
@@ -3654,7 +3517,7 @@ async function retryAIResponse(session) {
       if (result.toolHistory.length > 0) aiMsg.toolHistory = result.toolHistory
       renderMessages()
     } else {
-      await callAI(contextMessages, (chunk) => {
+      await callAI(session.id, contextMessages, (chunk) => {
         aiMsg.content += chunk
         throttledSave()
         if (lastBubble) {
@@ -3708,11 +3571,14 @@ async function retryAIResponse(session) {
       })
     }
   } finally {
-    _isStreaming = false
+    setStreaming(session.id, false)
+    if (_currentSessionId === session.id) {
+      _isStreaming = false
+      stopStreamRefresh()
+      if (_sendBtn) _sendBtn.innerHTML = sendIcon()
+      if (_textarea) _textarea.focus()
+    }
     _abortController = null
-    stopStreamRefresh()
-    if (_sendBtn) _sendBtn.innerHTML = sendIcon()
-    if (_textarea) _textarea.focus()
     session.updatedAt = Date.now()
     flushSave()
     if (getSessionStatus(session.id) !== 'error') {
@@ -3727,6 +3593,14 @@ async function retryAIResponse(session) {
 }
 
 function stopStreaming() {
+  if (_currentSessionId) {
+    setStreaming(_currentSessionId, false)
+    const controller = getAbortController(_currentSessionId)
+    if (controller) {
+      controller.abort()
+      setAbortController(_currentSessionId, null)
+    }
+  }
   _isStreaming = false
   if (_abortController) {
     _abortController.abort()
@@ -3902,6 +3776,8 @@ export async function render() {
           </button>
           <input type="file" id="ast-file-input" accept="image/*" multiple style="display:none"/>
           <textarea class="ast-textarea" id="ast-textarea" placeholder="描述你的问题，粘贴日志、截图或错误信息..." rows="1"></textarea>
+          <button class="ast-optimize-btn" id="ast-optimize-btn" title="优化">优化</button>
+          <button class="ast-restore-btn" id="ast-restore-btn" title="恢复原文" disabled>恢复原文</button>
           <button class="ast-send-btn" id="ast-send-btn" title="发送">${sendIcon()}</button>
         </div>
         <div class="ast-input-hint">Enter 发送 · Shift+Enter 换行 · 支持粘贴/拖拽图片 · AI 助手独立于 OpenClaw</div>
@@ -3914,6 +3790,8 @@ export async function render() {
   _queueEl = page.querySelector('#ast-queue')
   _textarea = page.querySelector('#ast-textarea')
   _sendBtn = page.querySelector('#ast-send-btn')
+  _optimizeBtn = page.querySelector('#ast-optimize-btn')
+  _restoreBtn = page.querySelector('#ast-restore-btn')
   _sessionListEl = page.querySelector('#ast-session-list')
 
   // 渲染
@@ -3925,7 +3803,8 @@ export async function render() {
   requestAnimationFrame(() => positionModeSlider(page, currentMode()))
 
   // 如果有后台流式正在进行，恢复 UI 状态
-  if (_isStreaming) {
+  if (_currentSessionId && getStreaming(_currentSessionId)) {
+    _isStreaming = true
     _sendBtn.innerHTML = stopIcon()
     startStreamRefresh()
   }
@@ -3966,11 +3845,12 @@ export async function render() {
 
   // 发送（流式中输入排队，空输入时点按钮停止流式）
   _sendBtn.addEventListener('click', () => {
-    if (_isStreaming && !_textarea.value.trim() && _pendingImages.length === 0) { stopStreaming(); return }
+    if (_currentSessionId && getStreaming(_currentSessionId) && !_textarea.value.trim() && _pendingImages.length === 0) { stopStreaming(); return }
     if (_textarea.value.trim() || _pendingImages.length > 0) {
       sendMessage(_textarea.value)
       _textarea.value = ''
       autoResize(_textarea)
+      updateOptimizeState()
     }
   })
 
@@ -3982,11 +3862,26 @@ export async function render() {
       sendMessage(_textarea.value)
       _textarea.value = ''
       autoResize(_textarea)
+      updateOptimizeState()
     }
   })
 
   // 自动高度
-  _textarea.addEventListener('input', () => autoResize(_textarea))
+  _textarea.addEventListener('input', () => {
+    autoResize(_textarea)
+    updateOptimizeState()
+  })
+
+  if (_optimizeBtn) {
+    _optimizeBtn.addEventListener('click', () => optimizeInputText())
+  }
+  if (_restoreBtn) {
+    _restoreBtn.addEventListener('click', () => {
+      restoreOriginalText()
+      updateOptimizeState()
+    })
+  }
+  updateOptimizeState()
 
   // 图片上传按钮
   const fileInput = page.querySelector('#ast-file-input')
@@ -4041,7 +3936,7 @@ export async function render() {
       if (idx === -1) return
       const item = _messageQueue.splice(idx, 1)[0]
       renderQueue()
-      if (_isStreaming) stopStreaming()
+      if (_currentSessionId && getStreaming(_currentSessionId)) stopStreaming()
       setTimeout(() => sendMessageDirect(item.text), 150)
       return
     }
@@ -4136,9 +4031,11 @@ export async function render() {
       renderSessionList()
       renderMessages()
       // 切换到正在流式的会话时，启动刷新
-      if (_isStreaming && getSessionStatus(_currentSessionId) === 'streaming') {
+      if (_currentSessionId && getStreaming(_currentSessionId) && getSessionStatus(_currentSessionId) === 'streaming') {
+        _isStreaming = true
         startStreamRefresh()
       } else {
+        _isStreaming = false
         stopStreamRefresh()
       }
     }
@@ -4173,6 +4070,75 @@ export async function render() {
   return page
 }
 
+function updateOptimizeState() {
+  if (!_optimizeBtn || !_restoreBtn || !_textarea) return
+  const hasText = _textarea.value.trim().length > 0
+  const hasSnapshot = _optOriginalText !== null
+  _optimizeBtn.style.display = hasSnapshot ? 'none' : ''
+  _restoreBtn.style.display = hasSnapshot ? '' : 'none'
+  _optimizeBtn.disabled = _optBusy || !hasText
+  _restoreBtn.disabled = _optBusy
+}
+
+function applyTextareaText(text) {
+  if (!_textarea) return
+  _textarea.focus()
+  _textarea.setRangeText(text, 0, _textarea.value.length, 'end')
+  const ev = new Event('input', { bubbles: true })
+  _textarea.dispatchEvent(ev)
+}
+
+async function optimizeInputText() {
+  if (_optBusy || !_textarea) return
+  const raw = _textarea.value.trim()
+  if (!raw) {
+    updateOptimizeState()
+    return
+  }
+  if (_currentSessionId && getStreaming(_currentSessionId)) {
+    toast('AI 正在回复中，请稍后再试', 'info')
+    return
+  }
+
+  _optBusy = true
+  updateOptimizeState()
+
+  const prompt = '请在不改变原意和语言的前提下，重写为意思更清晰、更简洁的表达。'
+  const messages = [
+    { role: 'user', content: prompt + '\n\n原文:\n' + raw }
+  ]
+
+  try {
+    let result = ''
+    await callAI(_currentSessionId || 'opt', messages, (chunk) => {
+      result += chunk
+    })
+    const next = result.trim()
+    if (next) {
+      if (_optOriginalText === null) _optOriginalText = raw
+      _optOptimizedText = next
+      applyTextareaText(next)
+    }
+  } catch (e) {
+    toast('优化失败: ' + (e?.message || e), 'error')
+  } finally {
+    _optBusy = false
+    updateOptimizeState()
+  }
+}
+
+function restoreOriginalText() {
+  if (_optOriginalText === null) return
+  applyTextareaText(_optOriginalText)
+  clearOptimizeSnapshot()
+}
+
+function clearOptimizeSnapshot() {
+  _optOriginalText = null
+  _optOptimizedText = null
+  updateOptimizeState()
+}
+
 function autoResize(textarea) {
   textarea.style.height = 'auto'
   textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px'
@@ -4180,7 +4146,6 @@ function autoResize(textarea) {
 
 export function cleanup() {
   flushSave()
-  stopStreaming()
   stopStreamRefresh()
   _pendingImages = []
   _page = null
@@ -4188,5 +4153,7 @@ export function cleanup() {
   _queueEl = null
   _textarea = null
   _sendBtn = null
+  _optimizeBtn = null
+  _restoreBtn = null
   _sessionListEl = null
 }

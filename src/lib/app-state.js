@@ -16,15 +16,23 @@ let _platform = ''  // 'macos' | 'win32' | ...
 let _deployMode = 'local' // 'local' | 'docker'
 let _inDocker = false
 let _dockerAvailable = false
-let _listeners = []
-let _gwListeners = []
+let _listeners = new Set()
+let _gwListeners = new Set()
 let _gwStopCount = 0  // 连续检测到"停止"的次数，防抖用
 let _isUpgrading = false // 升级/切换版本期间，阻止 setup 跳转
 let _userStopped = false // 用户主动停止，不自动拉起
 let _autoRestartCount = 0 // 自动重启次数
 let _lastRestartTime = 0  // 上次重启时间
 let _gatewayRunningSince = 0 // Gateway 最近一次进入稳定运行状态的时间
-let _guardianListeners = [] // 守护放弃时的回调
+let _guardianListeners = new Set() // 守护放弃时的回调
+
+function _emit(listeners, payload) {
+  listeners.forEach((fn) => {
+    queueMicrotask(() => {
+      try { fn(payload) } catch (e) { console.error('[app-state] listener error:', e) }
+    })
+  })
+}
 
 /** openclaw 是否就绪（CLI 已安装 + 配置文件存在） */
 export function isOpenclawReady() {
@@ -50,8 +58,8 @@ export function resetAutoRestart() {
 
 /** 监听守护放弃事件（连续重启失败后触发，UI 可弹出恢复选项） */
 export function onGuardianGiveUp(fn) {
-  _guardianListeners.push(fn)
-  return () => { _guardianListeners = _guardianListeners.filter(cb => cb !== fn) }
+  _guardianListeners.add(fn)
+  return () => { _guardianListeners.delete(fn) }
 }
 
 /** Gateway 是否正在运行 */
@@ -74,14 +82,14 @@ export function isDockerAvailable() { return _dockerAvailable }
 
 /** 实例管理 */
 let _activeInstance = { id: 'local', name: '本机', type: 'local' }
-let _instanceListeners = []
+let _instanceListeners = new Set()
 
 export function getActiveInstance() { return _activeInstance }
 export function isLocalInstance() { return _activeInstance.type === 'local' }
 
 export function onInstanceChange(fn) {
-  _instanceListeners.push(fn)
-  return () => { _instanceListeners = _instanceListeners.filter(cb => cb !== fn) }
+  _instanceListeners.add(fn)
+  return () => { _instanceListeners.delete(fn) }
 }
 
 export async function switchInstance(id) {
@@ -89,7 +97,15 @@ export async function switchInstance(id) {
   await api.instanceSetActive(id)
   const data = await api.instanceList()
   _activeInstance = data.instances.find(i => i.id === id) || data.instances[0]
-  _instanceListeners.forEach(fn => { try { fn(_activeInstance) } catch {} })
+  const wasRunning = _gatewayRunning
+  _gatewayRunning = false
+  _gwStopCount = 0
+  _autoRestartCount = 0
+  _lastRestartTime = 0
+  _gatewayRunningSince = 0
+  _userStopped = false
+  _emit(_gwListeners, false)
+  _emit(_instanceListeners, _activeInstance)
 }
 
 export async function loadActiveInstance() {
@@ -103,8 +119,8 @@ export async function loadActiveInstance() {
 
 /** 监听 Gateway 状态变化 */
 export function onGatewayChange(fn) {
-  _gwListeners.push(fn)
-  return () => { _gwListeners = _gwListeners.filter(cb => cb !== fn) }
+  _gwListeners.add(fn)
+  return () => { _gwListeners.delete(fn) }
 }
 
 /** 检测 openclaw 安装状态 */
@@ -134,7 +150,7 @@ export async function detectOpenclawStatus() {
   } catch {
     _openclawReady = false
   }
-  _listeners.forEach(fn => { try { fn(_openclawReady) } catch {} })
+  _emit(_listeners, _openclawReady)
   return _openclawReady
 }
 
@@ -153,7 +169,7 @@ function _setGatewayRunning(val) {
     } else if (!val) {
       _gatewayRunningSince = 0
     }
-    _gwListeners.forEach(fn => { try { fn(val) } catch {} })
+    _emit(_gwListeners, val)
   }
 }
 
@@ -169,7 +185,7 @@ async function _tryAutoRestart() {
 
   if (decision.action === 'give_up') {
     console.warn('[guardian] Gateway 已达到自动重启上限，停止守护，请手动检查')
-    _guardianListeners.forEach(fn => { try { fn() } catch {} })
+    _emit(_guardianListeners, undefined)
     return
   }
 
@@ -228,6 +244,6 @@ export function stopGatewayPoll() {
 
 /** 监听状态变化 */
 export function onReadyChange(fn) {
-  _listeners.push(fn)
-  return () => { _listeners = _listeners.filter(cb => cb !== fn) }
+  _listeners.add(fn)
+  return () => { _listeners.delete(fn) }
 }

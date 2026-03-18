@@ -29,14 +29,17 @@
     "icon:regen": "tauri icon docs/logo.png -o src-tauri/icons",
     "serve": "node scripts/serve.js",
     "version:sync": "node scripts/sync-version.js",
-    "version:set": "node scripts/sync-version.js"
+    "version:set": "node scripts/sync-version.js",
+    "test": "vitest run"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.5.0",
-    "@tauri-apps/plugin-shell": "^2.2.1"
+    "@tauri-apps/plugin-shell": "^2.2.1",
+    "markdown-it": "^14.1.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.5.0",
-    "vite": "^6.3.5"
+    "vite": "^6.3.5",
+    "vitest": "^2.1.9"
   }
 }
