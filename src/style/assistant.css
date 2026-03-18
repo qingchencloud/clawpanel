@@ -242,54 +242,74 @@
 }
 
 .ast-msg-bubble-ai pre {
-  background: var(--bg-primary, #1a1a2e);
-  border-radius: var(--radius-md, 8px);
+  background: var(--bg-primary, #111827);
+  border: 1px solid color-mix(in srgb, var(--border) 82%, white 18%);
+  border-radius: 12px;
   padding: 0;
-  margin: 8px 0;
+  margin: 12px 0;
   overflow: hidden;
-  position: relative;
   font-size: 13px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.ast-msg-bubble-ai pre .code-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 38px;
+  padding: 6px 12px;
+  background: color-mix(in srgb, var(--bg-secondary, #0f172a) 94%, white 6%);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 82%, white 18%);
 }
 
 .ast-msg-bubble-ai pre code {
   display: block;
-  padding: 12px 14px;
+  padding: 14px 16px;
   overflow-x: auto;
-  line-height: 1.5;
+  line-height: 1.65;
   font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
 }
 
 .ast-msg-bubble-ai pre .code-lang {
-  position: absolute;
-  top: 6px;
-  left: 12px;
-  font-size: 11px;
-  color: var(--text-muted, #888);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+.ast-msg-bubble-ai pre .code-lang::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 70%, white 30%);
+  margin-right: 8px;
+  flex: 0 0 auto;
+  opacity: 0.9;
 }
 
 .ast-msg-bubble-ai pre .code-copy-btn {
-  position: absolute;
-  top: 6px;
-  right: 8px;
+  flex: 0 0 auto;
   background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 4px;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 5px 8px;
+  border-radius: 8px;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-
-.ast-msg-bubble-ai pre:hover .code-copy-btn {
-  opacity: 1;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 .ast-msg-bubble-ai pre .code-copy-btn:hover {
-  background: var(--bg-hover);
+  background: color-mix(in srgb, var(--bg-hover, rgba(255,255,255,0.06)) 90%, white 10%);
+  color: var(--text-primary);
 }
 
 .ast-msg-bubble-ai code {

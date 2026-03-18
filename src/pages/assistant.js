@@ -11,6 +11,7 @@ import { OPENCLAW_KB } from '../lib/openclaw-kb.js'
 import { icon, statusIcon } from '../lib/icons.js'
 import { QTCOOL, PROVIDER_PRESETS, API_TYPES as SHARED_API_TYPES, fetchQtcoolModels } from '../lib/model-presets.js'
 import { buildSystemPrompt as buildSystemPromptCore, getEnabledTools as getEnabledToolsCore, callAIWithTools as callAIWithToolsCore, callAI as callAICore, trimContext as trimContextCore } from '../lib/assistant-core.js'
+import { renderAssistantSettingsModal, renderAssistantKnowledgeList, updateAssistantTitleFromSettings } from './assistant-settings.js'
 
 // ── 常量 ──
 const STORAGE_KEY = 'clawpanel-assistant'
@@ -972,15 +973,13 @@ let _sessionListEl = null, _settingsPanel = null, _queueEl = null
 let _optimizeBtn = null, _restoreBtn = null
 let _optOriginalText = null, _optOptimizedText = null
 let _optBusy = false
-let _isStreaming = false, _abortController = null
 let _config = null, _sessions = [], _currentSessionId = null
 let _lastRenderTime = 0
 let _saveThrottleTimer = null
-const _sessionStatus = new Map() // sessionId → 'idle' | 'streaming' | 'waiting' | 'error'
-const _streamingBySession = new Map() // sessionId → boolean
-const _abortBySession = new Map() // sessionId → AbortController
-const _queueBySession = new Map() // sessionId → [{ id, text, ts }]
+const _requestStateBySession = new Map() // sessionId → { streaming, abortController, status, queue, requestId }
 let _streamRefreshTimer = null // 后台流式刷新定时器
+let _streamRefreshSessionId = null
+let _streamRefreshToken = 0
 let _pendingImages = [] // [{ id, dataUrl, name, size }] 待发送图片
 let _errorContext = null // 待处理的错误上下文 { scene, title, hint, error, ts }
 let _soulCache = null // 灵魂移植缓存 { identity, soul, user, agents, tools, memory, recentMemories[] }
@@ -994,35 +993,88 @@ function throttledSave() {
   }, 500)
 }
 
+function ensureRequestState(sessionId) {
+  if (!sessionId) return null
+  if (!_requestStateBySession.has(sessionId)) {
+    _requestStateBySession.set(sessionId, {
+      streaming: false,
+      abortController: null,
+      status: 'idle',
+      queue: [],
+      requestId: 0,
+    })
+  }
+  return _requestStateBySession.get(sessionId)
+}
+
+function getRequestState(sessionId) {
+  return ensureRequestState(sessionId)
+}
+
+function patchRequestState(sessionId, patch = {}) {
+  const state = ensureRequestState(sessionId)
+  if (!state) return null
+  Object.assign(state, patch)
+  return state
+}
+
 function getStreaming(sessionId) {
-  return _streamingBySession.get(sessionId) === true
+  return getRequestState(sessionId)?.streaming === true
 }
 
 function setStreaming(sessionId, value) {
   if (!sessionId) return
-  if (value) _streamingBySession.set(sessionId, true)
-  else _streamingBySession.delete(sessionId)
+  patchRequestState(sessionId, { streaming: value === true })
 }
 
 function getAbortController(sessionId) {
-  return _abortBySession.get(sessionId) || null
+  return getRequestState(sessionId)?.abortController || null
 }
 
 function setAbortController(sessionId, controller) {
   if (!sessionId) return
-  if (controller) _abortBySession.set(sessionId, controller)
-  else _abortBySession.delete(sessionId)
+  patchRequestState(sessionId, { abortController: controller || null })
+}
+
+function nextRequestId(sessionId) {
+  const state = ensureRequestState(sessionId)
+  if (!state) return 0
+  state.requestId = (state.requestId || 0) + 1
+  return state.requestId
+}
+
+function getRequestId(sessionId) {
+  return getRequestState(sessionId)?.requestId || 0
+}
+
+function isActiveRequest(sessionId, requestId) {
+  const state = getRequestState(sessionId)
+  return !!state && state.requestId === requestId
+}
+
+function clearRequestState(sessionId, { keepStatus = false, requestId = null } = {}) {
+  if (sessionId) {
+    if (requestId !== null && !isActiveRequest(sessionId, requestId)) return
+    const currentStatus = getSessionStatus(sessionId)
+    patchRequestState(sessionId, { streaming: false, abortController: null })
+    stopStreamRefresh(sessionId)
+    if (!keepStatus && currentStatus !== 'error') {
+      setSessionStatus(sessionId, 'idle')
+    }
+  }
+  if ((!sessionId || _currentSessionId === sessionId) && _sendBtn) {
+    if (!sessionId) stopStreamRefresh()
+    _sendBtn.innerHTML = sendIcon()
+  }
 }
 
 function getQueue(sessionId) {
-  if (!sessionId) return []
-  if (!_queueBySession.has(sessionId)) _queueBySession.set(sessionId, [])
-  return _queueBySession.get(sessionId)
+  return getRequestState(sessionId)?.queue || []
 }
 
 function setQueue(sessionId, queue) {
   if (!sessionId) return
-  _queueBySession.set(sessionId, queue)
+  patchRequestState(sessionId, { queue: Array.isArray(queue) ? queue : [] })
 }
 
 function flushSave() {
@@ -1035,31 +1087,41 @@ function flushSave() {
 
 // ── 后台流式刷新 ──
 // 当用户切页面再回来时，轮询刷新最后一个 AI 气泡内容
-function refreshStreamingBubble() {
-  if (!_messagesEl || !_currentSessionId || !getStreaming(_currentSessionId)) return
-  const session = getCurrentSession()
+function refreshStreamingBubble(sessionId = _streamRefreshSessionId, token = _streamRefreshToken) {
+  if (!_messagesEl || !sessionId || token !== _streamRefreshToken) return
+  if (_currentSessionId !== sessionId || !getStreaming(sessionId)) return
+  const session = _sessions.find(s => s.id === sessionId)
   if (!session) return
   const lastMsg = session.messages[session.messages.length - 1]
   if (!lastMsg || lastMsg.role !== 'assistant') return
 
   const bubbles = _messagesEl.querySelectorAll('.ast-msg-bubble-ai')
   const lastBubble = bubbles[bubbles.length - 1]
-  if (lastBubble && lastMsg.content) {
-    lastBubble.innerHTML = renderMarkdown(lastMsg.content) + '<span class="ast-cursor">▊</span>'
+  if (lastBubble) {
+    lastBubble.innerHTML = lastMsg.content
+      ? renderMarkdown(lastMsg.content) + '<span class="ast-cursor">▊</span>'
+      : '<span class="ast-typing">思考中...</span>'
     _messagesEl.scrollTop = _messagesEl.scrollHeight
   }
 }
 
-function startStreamRefresh() {
-  stopStreamRefresh()
-  _streamRefreshTimer = setInterval(refreshStreamingBubble, 200)
+function startStreamRefresh(sessionId = _currentSessionId) {
+  stopStreamRefresh(sessionId)
+  if (!sessionId || _currentSessionId !== sessionId || !getStreaming(sessionId)) return
+  _streamRefreshSessionId = sessionId
+  const token = ++_streamRefreshToken
+  _streamRefreshTimer = setInterval(() => refreshStreamingBubble(sessionId, token), 200)
+  refreshStreamingBubble(sessionId, token)
 }
 
-function stopStreamRefresh() {
+function stopStreamRefresh(sessionId = null) {
+  if (sessionId && _streamRefreshSessionId && sessionId !== _streamRefreshSessionId) return
   if (_streamRefreshTimer) {
     clearInterval(_streamRefreshTimer)
     _streamRefreshTimer = null
   }
+  _streamRefreshSessionId = null
+  _streamRefreshToken++
 }
 
 // ── 发送队列 ──
@@ -1099,15 +1161,15 @@ function renderQueue() {
     `).join('')
 }
 
-function processQueue() {
-  if (!_currentSessionId) return
-  if (getStreaming(_currentSessionId)) return
-  const queue = getQueue(_currentSessionId)
+function processQueue(sessionId = _currentSessionId) {
+  if (!sessionId) return
+  if (getStreaming(sessionId)) return
+  const queue = getQueue(sessionId)
   if (queue.length === 0) return
   const next = queue.shift()
-  setQueue(_currentSessionId, queue)
-  renderQueue()
-  sendMessageDirect(next.text)
+  setQueue(sessionId, queue)
+  if (_currentSessionId === sessionId) renderQueue()
+  sendMessageDirect(next.text, { sessionId })
 }
 
 // ── 图片附件 ──
@@ -1200,16 +1262,13 @@ function buildMessageContent(text, images) {
 
 // ── 会话状态管理 ──
 function setSessionStatus(sessionId, status) {
-  if (status === 'idle') {
-    _sessionStatus.delete(sessionId)
-  } else {
-    _sessionStatus.set(sessionId, status)
-  }
+  if (!sessionId) return
+  patchRequestState(sessionId, { status: status || 'idle' })
   renderSessionList()
 }
 
 function getSessionStatus(sessionId) {
-  return _sessionStatus.get(sessionId) || 'idle'
+  return getRequestState(sessionId)?.status || 'idle'
 }
 
 // ── 带重试的 fetch ──
@@ -1258,6 +1317,11 @@ function loadSessions() {
     const raw = localStorage.getItem(SESSIONS_KEY)
     _sessions = raw ? JSON.parse(raw) : []
   } catch { _sessions = [] }
+  const validIds = new Set(_sessions.map(s => s.id).filter(Boolean))
+  for (const id of [..._requestStateBySession.keys()]) {
+    if (!validIds.has(id)) _requestStateBySession.delete(id)
+  }
+  _sessions.forEach(session => ensureRequestState(session.id))
   return _sessions
 }
 
@@ -1295,12 +1359,18 @@ function createSession() {
     updatedAt: Date.now()
   }
   _sessions.push(session)
+  ensureRequestState(session.id)
   _currentSessionId = session.id
   saveSessions()
   return session
 }
 
 function deleteSession(id) {
+  if (!id) return
+  const controller = getAbortController(id)
+  if (controller) controller.abort()
+  clearRequestState(id)
+  _requestStateBySession.delete(id)
   _sessions = _sessions.filter(s => s.id !== id)
   if (_currentSessionId === id) {
     _currentSessionId = _sessions.length > 0 ? _sessions[_sessions.length - 1].id : null
@@ -1372,80 +1442,22 @@ const TIMEOUT_TOTAL = 120_000    // 总超时 120 秒
 const TIMEOUT_CHUNK = 30_000     // 流式 chunk 间隔超时 30 秒
 const TIMEOUT_CONNECT = 30_000   // 连接超时 30 秒
 
-async function callAI(sessionId, messages, onChunk) {
+async function callAI(sessionId, messages, onChunk, signal) {
   const { text } = await callAICore({
     config: _config,
     messages,
     adapters: { soulCache: _soulCache, knowledgeBase: OPENCLAW_KB },
     mode: currentMode(),
+    signal,
   })
   if (typeof onChunk === 'function' && text) onChunk(text)
-  return
-
-  const apiType = normalizeApiType(_config.apiType)
-  if (!_config.baseUrl || !_config.model || (requiresApiKey(apiType) && !_config.apiKey)) {
-    throw new Error('请先配置 AI 模型（点击右上角设置按钮）')
-  }
-
-  const base = cleanBaseUrl(_config.baseUrl, apiType)
-  const controller = new AbortController()
-  _abortController = controller
-  if (sessionId) setAbortController(sessionId, controller)
-  const allMessages = [{ role: 'system', content: buildSystemPrompt() }, ...messages]
-
-  // 总超时保护
-  let _timedOut = false
-  const totalTimer = setTimeout(() => {
-    _timedOut = true
-    const active = sessionId ? getAbortController(sessionId) : controller
-    if (active) active.abort()
-  }, TIMEOUT_TOTAL)
-
-  try {
-    if (apiType === 'anthropic-messages') {
-      await callAnthropicMessages(base, allMessages, onChunk)
-      return
-    }
-
-    if (apiType === 'google-gemini') {
-      await callGeminiGenerate(base, allMessages, onChunk)
-      return
-    }
-
-    // OpenAI: 先尝试 Chat Completions API
-    try {
-      await callChatCompletions(base, allMessages, onChunk)
-      return
-    } catch (err) {
-      // 超时触发的 abort → 转换为超时错误
-      if (err.name === 'AbortError' && _timedOut) {
-        throw new Error(`请求超时（${TIMEOUT_TOTAL / 1000} 秒），模型响应时间过长`)
-      }
-      // 如果是 "legacy protocol" 或 "use /v1/responses" 类错误，自动切换到 Responses API
-      const msg = err.message || ''
-      if (msg.includes('legacy protocol') || msg.includes('/v1/responses') || msg.includes('not supported')) {
-        console.log('[assistant] Chat Completions 不支持此模型，自动切换到 Responses API')
-        const nextController = new AbortController()
-        _abortController = nextController
-        if (sessionId) setAbortController(sessionId, nextController)
-        await callResponsesAPI(base, allMessages, onChunk)
-        return
-      }
-      throw err
-    }
-  } finally {
-    clearTimeout(totalTimer)
-    if (sessionId && getAbortController(sessionId) === controller) {
-      setAbortController(sessionId, null)
-    }
-  }
 }
 
 // ── 调试信息 ──
 let _lastDebugInfo = null
 
 // ── Chat Completions API（/v1/chat/completions）──
-async function callChatCompletions(base, messages, onChunk) {
+async function callChatCompletions(base, messages, onChunk, signal) {
   const url = base + '/chat/completions'
   const body = {
     model: _config.model,
@@ -1466,7 +1478,7 @@ async function callChatCompletions(base, messages, onChunk) {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify(body),
-    signal: _abortController.signal,
+    signal,
   })
 
   _lastDebugInfo.status = resp.status
@@ -1509,7 +1521,7 @@ async function callChatCompletions(base, messages, onChunk) {
         reasoningChunks++
         reasoningBuf += d.reasoning_content
       }
-    }, _abortController?.signal)
+    }, signal)
 
     _lastDebugInfo.chunks = { total: chunkCount, content: contentChunks, reasoning: reasoningChunks }
 
@@ -1532,7 +1544,7 @@ async function callChatCompletions(base, messages, onChunk) {
 }
 
 // ── Responses API（/v1/responses）──
-async function callResponsesAPI(base, messages, onChunk) {
+async function callResponsesAPI(base, messages, onChunk, signal) {
   const url = base + '/responses'
   const input = messages.filter(m => m.role !== 'system')
   const instructions = messages.find(m => m.role === 'system')?.content || ''
@@ -1549,7 +1561,7 @@ async function callResponsesAPI(base, messages, onChunk) {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify(body),
-    signal: _abortController.signal,
+    signal,
   })
 
   if (!resp.ok) {
@@ -1573,11 +1585,11 @@ async function callResponsesAPI(base, messages, onChunk) {
     if (json.choices?.[0]?.delta?.content) {
       onChunk(json.choices[0].delta.content)
     }
-  }, _abortController?.signal)
+  }, signal)
 }
 
 // ── Anthropic Messages API（/v1/messages）──
-async function callAnthropicMessages(base, messages, onChunk) {
+async function callAnthropicMessages(base, messages, onChunk, signal) {
   const url = base + '/messages'
   const systemMsg = messages.find(m => m.role === 'system')?.content || ''
   const chatMessages = messages.filter(m => m.role !== 'system')
@@ -1602,7 +1614,7 @@ async function callAnthropicMessages(base, messages, onChunk) {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify(body),
-    signal: _abortController.signal,
+    signal,
   })
 
   _lastDebugInfo.status = resp.status
@@ -1639,7 +1651,7 @@ async function callAnthropicMessages(base, messages, onChunk) {
         thinkingBuf += delta.thinking
       }
     }
-  }, _abortController?.signal)
+  }, signal)
 
   _lastDebugInfo.chunks = { total: chunkCount, content: contentChunks, thinking: thinkingChunks }
 
@@ -1651,7 +1663,7 @@ async function callAnthropicMessages(base, messages, onChunk) {
 }
 
 // ── Google Gemini API ──
-async function callGeminiGenerate(base, messages, onChunk) {
+async function callGeminiGenerate(base, messages, onChunk, signal) {
   const systemMsg = messages.find(m => m.role === 'system')?.content || ''
   const chatMessages = messages.filter(m => m.role !== 'system')
 
@@ -1678,7 +1690,7 @@ async function callGeminiGenerate(base, messages, onChunk) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-    signal: _abortController.signal,
+    signal,
   })
 
   _lastDebugInfo.status = resp.status
@@ -1698,7 +1710,7 @@ async function callGeminiGenerate(base, messages, onChunk) {
     chunkCount++
     const text = json.candidates?.[0]?.content?.parts?.[0]?.text
     if (text) onChunk(text)
-  }, _abortController?.signal)
+  }, signal)
 
   _lastDebugInfo.chunks = { total: chunkCount }
 }
@@ -1821,9 +1833,9 @@ async function executeTool(name, args) {
 }
 
 // ── ask_user 交互卡片 ──
-function showAskUserCard({ question, type, options, placeholder }) {
-  const session = getCurrentSession()
-  if (session) setSessionStatus(session.id, 'waiting')
+function showAskUserCard({ question, type, options, placeholder, sessionId = _currentSessionId }) {
+  const targetSessionId = sessionId || _currentSessionId
+  if (targetSessionId) setSessionStatus(targetSessionId, 'waiting')
   return new Promise((resolve) => {
     const cardId = 'ask-user-' + Date.now()
     const optionsHtml = (options || []).map((opt, i) => {
@@ -1885,7 +1897,7 @@ function showAskUserCard({ question, type, options, placeholder }) {
       </div>`
       card.classList.add('answered')
 
-      if (session) setSessionStatus(session.id, 'streaming')
+      if (targetSessionId && getStreaming(targetSessionId)) setSessionStatus(targetSessionId, 'streaming')
       resolve(`用户回答: ${answer}`)
     })
 
@@ -1896,14 +1908,14 @@ function showAskUserCard({ question, type, options, placeholder }) {
         <div class="ast-ask-answer" style="color:var(--text-tertiary)">— 已跳过</div>
       </div>`
       card.classList.add('answered')
-      if (session) setSessionStatus(session.id, 'streaming')
+      if (targetSessionId && getStreaming(targetSessionId)) setSessionStatus(targetSessionId, 'streaming')
       resolve('用户跳过了此问题')
     })
   })
 }
 
 // 危险工具确认弹窗
-async function confirmToolCall(tc, critical = false) {
+async function confirmToolCall(tc, critical = false, sessionId = _currentSessionId) {
   const name = tc.function.name
   let args
   try { args = JSON.parse(tc.function.arguments) } catch { args = {} }
@@ -1920,10 +1932,9 @@ async function confirmToolCall(tc, critical = false) {
     ? '⛔ 安全围栏拦截 — 此命令被识别为极端危险操作！\n\n'
     : ''
 
-  const session = getCurrentSession()
-  if (session) setSessionStatus(session.id, 'waiting')
+  if (sessionId) setSessionStatus(sessionId, 'waiting')
   const result = await showConfirm(`${prefix}AI 请求执行以下操作:\n\n${desc}\n\n是否允许？`)
-  if (session) setSessionStatus(session.id, 'streaming')
+  if (sessionId && getStreaming(sessionId)) setSessionStatus(sessionId, 'streaming')
   return result
 }
 
@@ -1983,15 +1994,15 @@ function buildContextMessages(session) {
 }
 
 // 工具调用执行（共用逻辑）
-async function executeToolWithSafety(toolName, args, tcForConfirm) {
+async function executeToolWithSafety(toolName, args, tcForConfirm, sessionId = _currentSessionId) {
   let result = '', approved = true
   const mode = MODES[currentMode()]
   const isCritical = toolName === 'run_command' && isCriticalCommand(args.command)
   if (isCritical) {
-    approved = await confirmToolCall(tcForConfirm || { function: { name: toolName, arguments: JSON.stringify(args) } }, true)
+    approved = await confirmToolCall(tcForConfirm || { function: { name: toolName, arguments: JSON.stringify(args) } }, true, sessionId)
     if (!approved) result = '用户拒绝了此危险操作'
   } else if (mode.confirmDanger && DANGEROUS_TOOLS.has(toolName)) {
-    approved = await confirmToolCall(tcForConfirm || { function: { name: toolName, arguments: JSON.stringify(args) } })
+    approved = await confirmToolCall(tcForConfirm || { function: { name: toolName, arguments: JSON.stringify(args) } }, false, sessionId)
     if (!approved) result = '用户拒绝了此操作'
   }
   if (approved) {
@@ -2002,30 +2013,28 @@ async function executeToolWithSafety(toolName, args, tcForConfirm) {
 }
 
 // 带工具调用的 AI 请求（非流式，用于 tool_calls 检测循环）
-async function callAIWithTools(sessionId, messages, onStatus, onToolProgress) {
+async function callAIWithTools(sessionId, messages, onStatus, onToolProgress, signal) {
   const toolHistory = []
   const adapters = {
     soulCache: _soulCache,
     knowledgeBase: OPENCLAW_KB,
     confirm: async (text) => {
-      const session = getCurrentSession()
-      if (session) setSessionStatus(session.id, 'waiting')
+      if (sessionId) setSessionStatus(sessionId, 'waiting')
       const result = await showConfirm(text)
-      if (session) setSessionStatus(session.id, 'streaming')
+      if (sessionId && getStreaming(sessionId)) setSessionStatus(sessionId, 'streaming')
       return result
     },
     askUser: async (args) => {
-      const session = getCurrentSession()
-      if (session) setSessionStatus(session.id, 'waiting')
-      const result = await showAskUserCard(args)
-      if (session) setSessionStatus(session.id, 'streaming')
+      if (sessionId) setSessionStatus(sessionId, 'waiting')
+      const result = await showAskUserCard({ ...(args || {}), sessionId })
+      if (sessionId && getStreaming(sessionId)) setSessionStatus(sessionId, 'streaming')
       return result
     },
     execTool: async ({ name, args }) => {
       const entry = { name, args, result: null, approved: true, pending: true }
       toolHistory.push(entry)
       if (typeof onToolProgress === 'function') onToolProgress(toolHistory)
-      const execResult = await executeToolWithSafety(name, args, { function: { name, arguments: JSON.stringify(args || {}) } })
+      const execResult = await executeToolWithSafety(name, args, { function: { name, arguments: JSON.stringify(args || {}) } }, sessionId)
       const last = toolHistory[toolHistory.length - 1]
       if (last) {
         last.result = execResult.result
@@ -2044,6 +2053,7 @@ async function callAIWithTools(sessionId, messages, onStatus, onToolProgress) {
     tools,
     adapters,
     mode: currentMode(),
+    signal,
   })
   return { content: result.text || '', toolHistory }
 }
@@ -2307,211 +2317,21 @@ function showSettings() {
   const c = _config
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
-  overlay.innerHTML = `
-    <div class="modal" style="max-width:500px">
-      <div class="modal-title" style="margin-bottom:0">${c.assistantName || DEFAULT_NAME} — 设置</div>
-      <div class="ast-settings-tabs">
-        <button class="ast-tab active" data-tab="api">模型配置</button>
-        <button class="ast-tab" data-tab="tools">工具权限</button>
-        <button class="ast-tab" data-tab="persona">助手人设</button>
-        <button class="ast-tab" data-tab="knowledge">知识库</button>
-      </div>
-      <div class="modal-body">
-      <div class="ast-settings-form">
-        <div class="ast-tab-panel active" data-panel="api">
-          <div class="form-group" style="margin-bottom:8px">
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-              <label class="form-label" style="margin:0">快捷选择</label>
-              <button class="btn btn-sm btn-secondary" id="ast-import-openclaw">从 openclaw 导入</button>
-            </div>
-            <div id="ast-provider-presets" style="display:flex;flex-wrap:wrap;gap:6px">
-              ${PROVIDER_PRESETS.filter(p => !p.hidden).map(p => `<button class="btn btn-sm btn-secondary ast-preset-btn" data-key="${p.key}" data-url="${escHtml(p.baseUrl)}" data-api="${p.api}" style="font-size:12px;padding:3px 10px">${p.label}${p.badge ? ' <span style="font-size:9px;background:var(--accent);color:#fff;padding:1px 4px;border-radius:6px;margin-left:3px">' + p.badge + '</span>' : ''}</button>`).join('')}
-            </div>
-            <div id="ast-preset-detail" style="display:none;margin-top:6px;padding:8px 12px;background:var(--bg-tertiary);border-radius:var(--radius-md);font-size:12px"></div>
-          </div>
-          <div style="display:flex;gap:10px">
-            <div class="form-group" style="flex:1">
-              <label class="form-label">API Base URL</label>
-              <input class="form-input" id="ast-baseurl" value="${escHtml(c.baseUrl)}" placeholder="${escHtml(apiBasePlaceholder(c.apiType))}">
-            </div>
-            <div class="form-group" style="width:170px">
-              <label class="form-label">API 类型</label>
-              <select class="form-input" id="ast-apitype">
-                ${API_TYPES.map(t => `<option value="${t.value}" ${c.apiType === t.value ? 'selected' : ''}>${t.label}</option>`).join('')}
-              </select>
-            </div>
-          </div>
-          <div style="display:flex;gap:10px;align-items:flex-end">
-            <div class="form-group" style="flex:1;margin-bottom:0">
-              <label class="form-label">API Key</label>
-              <input class="form-input" id="ast-apikey" type="password" value="${escHtml(c.apiKey)}" placeholder="${escHtml(apiKeyPlaceholder(c.apiType))}">
-            </div>
-            <div style="display:flex;gap:6px;padding-bottom:1px">
-              <button class="btn btn-sm btn-secondary" id="ast-btn-test" title="测试连通性">测试</button>
-              <button class="btn btn-sm btn-secondary" id="ast-btn-models" title="从 API 获取可用模型">拉取</button>
-              <button class="btn btn-sm btn-secondary" id="ast-btn-import" title="从 OpenClaw 导入模型配置">${icon('download', 14)} 导入</button>
-            </div>
-          </div>
-          <div id="ast-test-result" style="margin:6px 0 2px;font-size:12px;min-height:16px"></div>
-          <div style="display:flex;gap:10px;align-items:flex-end">
-            <div class="form-group" style="flex:1">
-              <label class="form-label">模型</label>
-              <div style="position:relative">
-                <input class="form-input" id="ast-model" value="${escHtml(c.model)}" placeholder="gpt-4o / deepseek-chat" autocomplete="off">
-                <div id="ast-model-dropdown" class="ast-model-dropdown" style="display:none"></div>
-              </div>
-            </div>
-            <div class="form-group" style="width:80px">
-              <label class="form-label">温度</label>
-              <input class="form-input" id="ast-temp" type="number" value="${c.temperature || 0.7}" min="0" max="2" step="0.1">
-            </div>
-          </div>
-          <div class="form-hint" id="ast-api-hint" style="margin-top:-4px">${apiHintText(c.apiType)}</div>
-
-          <div id="ast-qtcool-promo" style="margin-top:14px;border-radius:var(--radius-lg);background:var(--bg-tertiary);border:1px solid var(--border-primary);overflow:hidden">
-            <div style="padding:14px 16px 10px">
-              <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-                ${icon('zap', 16)}
-                <span style="font-weight:600;font-size:var(--font-size-sm)">晴辰云快捷接入</span>
-                <span style="font-size:10px;background:var(--primary);color:#fff;padding:1px 6px;border-radius:8px">推荐</span>
-              </div>
-              <div style="font-size:var(--font-size-xs);color:var(--text-secondary);line-height:1.5;margin-bottom:10px">
-                面板用户免费使用部分模型，付费用户享全系列顶级模型，全部低至 2-3 折。选择模型后一键接入。
-              </div>
-              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                <select id="ast-qtcool-model" class="form-input" style="font-size:12px;padding:5px 10px;min-width:140px;flex:1">
-                  <option value="" disabled selected>加载模型列表...</option>
-                </select>
-                <button class="btn btn-sm btn-secondary" id="ast-qtcool-test">${icon('search', 12)} 测试</button>
-                <button class="btn btn-sm btn-primary" id="ast-qtcool-apply">${icon('zap', 12)} 接入</button>
-              </div>
-              <div id="ast-qtcool-status" style="margin-top:8px;font-size:11px;min-height:16px;line-height:1.5"></div>
-            </div>
-            <div style="border-top:1px solid var(--border-primary);padding:8px 16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;background:var(--bg-secondary)">
-              <label style="cursor:pointer;display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-tertiary)">
-                <input type="checkbox" id="ast-qtcool-customkey" style="accent-color:var(--primary);width:13px;height:13px"> 使用自定义密钥
-              </label>
-              <div style="display:flex;gap:12px;font-size:11px">
-                <a href="${QTCOOL.site}" target="_blank" style="color:var(--primary);text-decoration:none">${icon('external-link', 12)} 了解更多</a>
-              </div>
-            </div>
-            <div id="ast-qtcool-keyrow" style="display:none;border-top:1px solid var(--border-primary);padding:8px 16px;background:var(--bg-tertiary)">
-              <input class="form-input" id="ast-qtcool-key" placeholder="粘贴你的密钥" style="font-size:12px;padding:6px 10px">
-            </div>
-          </div>
-        </div>
-        <div class="ast-tab-panel" data-panel="tools">
-          <div class="form-hint" style="margin-bottom:10px">工具开关优先级高于模式设置。关闭的工具在任何模式下都不可用。</div>
-          <label class="ast-switch-row">
-            <span>终端工具 <span style="color:var(--text-tertiary);font-size:11px">— 允许执行 Shell 命令</span></span>
-            <input type="checkbox" id="ast-tool-terminal" ${c.tools?.terminal !== false ? 'checked' : ''}>
-            <span class="ast-switch-track"></span>
-          </label>
-          <label class="ast-switch-row">
-            <span>文件工具 <span style="color:var(--text-tertiary);font-size:11px">— 允许读写文件和浏览目录</span></span>
-            <input type="checkbox" id="ast-tool-fileops" ${c.tools?.fileOps !== false ? 'checked' : ''}>
-            <span class="ast-switch-track"></span>
-          </label>
-          <label class="ast-switch-row">
-            <span>联网搜索 <span style="color:var(--text-tertiary);font-size:11px">— 允许搜索互联网和抓取网页</span></span>
-            <input type="checkbox" id="ast-tool-websearch" ${c.tools?.webSearch !== false ? 'checked' : ''}>
-            <span class="ast-switch-track"></span>
-          </label>
-          <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-color)">
-            <div class="form-group" style="margin-bottom:4px">
-              <label class="form-label">工具连续执行轮次 <span style="color:var(--text-tertiary);font-size:11px">— 超过该轮次后暂停并询问</span></label>
-              <select class="form-input" id="ast-auto-rounds" style="width:100%">
-                <option value="0" ${(c.autoRounds ?? 8) === 0 ? 'selected' : ''}>∞ 无限制（一直执行，不中断）</option>
-                <option value="8" ${(c.autoRounds ?? 8) === 8 ? 'selected' : ''}>8 轮（默认）</option>
-                <option value="15" ${(c.autoRounds ?? 8) === 15 ? 'selected' : ''}>15 轮</option>
-                <option value="30" ${(c.autoRounds ?? 8) === 30 ? 'selected' : ''}>30 轮</option>
-                <option value="50" ${(c.autoRounds ?? 8) === 50 ? 'selected' : ''}>50 轮</option>
-              </select>
-            </div>
-            <div class="form-hint">设为「无限制」时 AI 将不会中断执行，适合复杂任务。随时可点停止按钮手动中止。</div>
-          </div>
-          <div class="form-hint" style="margin-top:10px">进程列表、端口检测、系统信息工具始终可用（非聊天模式下）。</div>
-        </div>
-        <div class="ast-tab-panel" data-panel="persona">
-          <div class="form-group">
-            <label class="form-label">身份来源</label>
-            <div style="display:flex;flex-direction:column;gap:6px">
-              <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-                <input type="radio" name="ast-soul-source" value="default" ${!c.soulSource || c.soulSource === 'default' ? 'checked' : ''}>
-                <span>ClawPanel 默认人设</span>
-              </label>
-              <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-                <input type="radio" name="ast-soul-source" value="openclaw" ${c.soulSource?.startsWith('openclaw:') ? 'checked' : ''}>
-                <span>OpenClaw Agent 身份 <span style="font-size:11px;color:var(--text-tertiary)">（借尸还魂）</span></span>
-              </label>
-            </div>
-          </div>
-          <div id="ast-soul-default" style="${c.soulSource?.startsWith('openclaw:') ? 'display:none' : ''}">
-            <div class="form-group">
-              <label class="form-label">助手名称</label>
-              <input class="form-input" id="ast-name" value="${escHtml(c.assistantName || DEFAULT_NAME)}" placeholder="${DEFAULT_NAME}">
-            </div>
-            <div class="form-group">
-              <label class="form-label">助手性格</label>
-              <textarea class="form-input" id="ast-personality" rows="3" placeholder="${DEFAULT_PERSONALITY}" style="resize:vertical">${escHtml(c.assistantPersonality || DEFAULT_PERSONALITY)}</textarea>
-              <div class="form-hint">描述助手的说话风格和行为方式，会注入到系统提示词中</div>
-            </div>
-          </div>
-          <div id="ast-soul-openclaw" style="${c.soulSource?.startsWith('openclaw:') ? '' : 'display:none'}">
-            <div class="form-group" style="margin-top:4px">
-              <label class="form-label">选择 Agent</label>
-              <div style="display:flex;gap:6px;align-items:center">
-                <select class="form-input" id="ast-soul-agent" style="flex:1;font-family:var(--font-mono);font-size:13px">
-                  <option value="" disabled>扫描中...</option>
-                </select>
-                <button class="btn btn-sm btn-primary" id="ast-btn-load-soul" style="gap:4px;white-space:nowrap">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/></svg>
-                  加载灵魂
-                </button>
-                <button class="btn btn-sm btn-ghost" id="ast-btn-refresh-soul" style="gap:4px;white-space:nowrap" title="重新扫描 Agent 列表">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                </button>
-              </div>
-            </div>
-            <div id="ast-soul-status" class="ast-soul-card" style="margin-top:8px">
-              <div style="text-align:center;padding:16px 0;color:var(--text-tertiary);font-size:12px">
-                选择 Agent 后点击「加载灵魂」读取身份文件
-              </div>
-            </div>
-            <div class="form-hint" style="margin-top:8px">附身后助手将继承 Agent 的人格、记忆和用户偏好，同时保留 ClawPanel 的工具能力。</div>
-          </div>
-        </div>
-        <div class="ast-tab-panel" data-panel="knowledge">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-            <div class="form-hint" style="margin:0">为助手添加自定义知识，对话时会自动注入到系统提示词中。</div>
-            <button class="btn btn-sm btn-primary" id="ast-kb-add" style="gap:4px;white-space:nowrap">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              添加
-            </button>
-          </div>
-          <div id="ast-kb-editor" style="display:none;margin-bottom:10px">
-            <div class="form-group" style="margin-bottom:6px">
-              <input class="form-input" id="ast-kb-name" placeholder="知识名称，如：产品文档、API参考" style="font-size:13px">
-            </div>
-            <div class="form-group" style="margin-bottom:6px">
-              <textarea class="form-input" id="ast-kb-content" rows="6" placeholder="粘贴知识内容（支持 Markdown 格式）..." style="resize:vertical;font-size:12px;font-family:var(--font-mono)"></textarea>
-            </div>
-            <div style="display:flex;gap:6px;justify-content:flex-end">
-              <button class="btn btn-sm btn-secondary" id="ast-kb-cancel">取消</button>
-              <button class="btn btn-sm btn-primary" id="ast-kb-save">保存知识</button>
-            </div>
-          </div>
-          <div class="ast-soul-card" id="ast-kb-list"></div>
-          <div class="form-hint" style="margin-top:8px" id="ast-kb-hint"></div>
-        </div>
-      </div>
-      </div>
-      <div class="modal-actions">
-        <button class="btn btn-secondary btn-sm" data-action="cancel">取消</button>
-        <button class="btn btn-primary btn-sm" data-action="confirm">保存</button>
-      </div>
-    </div>
-  `
+  overlay.innerHTML = renderAssistantSettingsModal({
+    config: c,
+    assistantName: c.assistantName,
+    apiTypes: API_TYPES,
+    providerPresets: PROVIDER_PRESETS,
+    qtcool: QTCOOL,
+    defaultName: DEFAULT_NAME,
+    defaultPersonality: DEFAULT_PERSONALITY,
+    normalizeApiType,
+    apiBasePlaceholder,
+    apiKeyPlaceholder,
+    apiHintText,
+    escHtml,
+    icon,
+  })
   document.body.appendChild(overlay)
 
   // Tab 切换
@@ -2675,35 +2495,7 @@ function showSettings() {
   let kbFiles = JSON.parse(JSON.stringify(_config.knowledgeFiles || []))
 
   const renderKBList = () => {
-    if (kbFiles.length === 0) {
-      kbListEl.innerHTML = `<div style="text-align:center;padding:20px 0;color:var(--text-tertiary);font-size:12px">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom:6px;opacity:0.4"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-        <div>点击「添加」按钮添加知识文件</div></div>`
-      kbHintEl.textContent = ''
-      return
-    }
-    const totalSize = kbFiles.reduce((s, f) => s + (f.content?.length || 0), 0)
-    const sizeStr = totalSize > 1024 ? (totalSize / 1024).toFixed(1) + ' KB' : totalSize + ' B'
-    const enabledCount = kbFiles.filter(f => f.enabled !== false).length
-    kbHintEl.textContent = `共 ${kbFiles.length} 个知识文件（${enabledCount} 个启用，${sizeStr}），保存后生效。`
-    let html = '<div class="ast-soul-files">'
-    kbFiles.forEach((f, i) => {
-      const fSize = f.content?.length > 1024 ? (f.content.length / 1024).toFixed(1) + ' KB' : (f.content?.length || 0) + ' B'
-      const enabled = f.enabled !== false
-      html += `<div class="ast-soul-file ${enabled ? 'loaded' : 'missing'}" data-kb-idx="${i}" style="cursor:pointer" title="点击编辑">
-        <button style="padding:2px;background:none;border:none;cursor:pointer;flex-shrink:0" data-kb-toggle="${i}" title="${enabled ? '点击禁用' : '点击启用'}">
-          <div class="ast-soul-file-icon">${enabled ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>' : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>'}</div>
-        </button>
-        <div class="ast-soul-file-info">
-          <span class="ast-soul-file-name">${escHtml(f.name)}</span>
-          <span class="ast-soul-file-desc">${f.content?.split('\n').length || 0} 行 · 点击编辑</span>
-        </div>
-        <span class="ast-soul-file-size">${fSize}</span>
-        <button class="btn btn-sm" style="padding:2px 6px;font-size:11px;color:var(--error);background:none;border:none;cursor:pointer" data-kb-del="${i}" title="删除">✕</button>
-      </div>`
-    })
-    html += '</div>'
-    kbListEl.innerHTML = html
+    renderAssistantKnowledgeList({ kbFiles, kbListEl, kbHintEl, escHtml })
   }
   renderKBList()
 
@@ -2787,7 +2579,7 @@ function showSettings() {
   }
   qtcoolKeyInput.oninput = () => {
     const key = qtcoolKeyInput.value.trim()
-    qtcoolUsageLink.href = QTCOOL.usageUrl + (key || QTCOOL.defaultKey)
+    if (qtcoolUsageLink) qtcoolUsageLink.href = QTCOOL.usageUrl + (key || QTCOOL.defaultKey)
   }
   const qtcoolStatus = overlay.querySelector('#ast-qtcool-status')
 
@@ -3211,20 +3003,7 @@ function showSettings() {
     saveConfig()
     overlay.remove()
     // 更新 Header 标题和欢迎页
-    const titleEl = _page.querySelector('.ast-title')
-    if (titleEl) {
-      // 灵魂移植模式下，尝试从 IDENTITY.md 提取名称
-      let displayName = _config.assistantName
-      if (_config.soulSource?.startsWith('openclaw:') && _soulCache?.identity) {
-        const nameMatch = _soulCache.identity.match(/\*\*Name:\*\*\s*(.+)/i) || _soulCache.identity.match(/名[字称][:：]\s*(.+)/i)
-        const extracted = nameMatch?.[1]?.trim()
-        // 跳过占位符文本（模板未填写时的默认值）
-        if (extracted && !extracted.startsWith('_') && !extracted.startsWith('（') && extracted.length < 30) {
-          displayName = extracted
-        }
-      }
-      titleEl.textContent = displayName
-    }
+    updateAssistantTitleFromSettings({ page: _page, config: _config, soulCache: _soulCache })
     renderMessages()
     toast('设置已保存', 'info')
     updateModelBadge()
@@ -3267,26 +3046,29 @@ function sendMessage(text) {
 }
 
 // 直接发送（内部使用，不经过队列）
-async function sendMessageDirect(text) {
-  const hasContent = text.trim() || _pendingImages.length > 0
+async function sendMessageDirect(text, { sessionId = _currentSessionId } = {}) {
+  const targetSessionId = sessionId || _currentSessionId
+  const hasContent = text.trim() || (targetSessionId === _currentSessionId && _pendingImages.length > 0)
   if (!hasContent) return
-  if (_currentSessionId && getStreaming(_currentSessionId)) {
-    if (_pendingImages.length > 0) { toast('请等待 AI 回复完成', 'info'); return }
-    enqueueMessage(text.trim())
+  if (targetSessionId && getStreaming(targetSessionId)) {
+    if (targetSessionId === _currentSessionId && _pendingImages.length > 0) { toast('请等待 AI 回复完成', 'info'); return }
+    if (targetSessionId === _currentSessionId) enqueueMessage(text.trim())
     return
   }
 
   clearOptimizeSnapshot()
 
-  let session = getCurrentSession()
+  let session = targetSessionId
+    ? _sessions.find(s => s.id === targetSessionId) || null
+    : getCurrentSession()
   if (!session) {
     session = createSession()
     renderSessionList()
   }
 
-  // 收集当前附件图片
-  const images = [..._pendingImages]
-  clearPendingImages()
+  // 收集当前附件图片（仅当前可见会话允许携带待发送图片）
+  const images = session.id === _currentSessionId ? [..._pendingImages] : []
+  if (session.id === _currentSessionId) clearPendingImages()
 
   // 添加用户消息（多模态或纯文本）
   const textContent = text.trim()
@@ -3305,7 +3087,7 @@ async function sendMessageDirect(text) {
   autoTitle(session)
   session.updatedAt = Date.now()
   saveSessions()
-  renderMessages()
+  if (_currentSessionId === session.id) renderMessages()
   renderSessionList()
 
   // 准备 AI 上下文（只保留 role + content，剔除内部字段）
@@ -3316,16 +3098,22 @@ async function sendMessageDirect(text) {
   const aiMsg = { role: 'assistant', content: '', ts: Date.now() }
   session.messages.push(aiMsg)
 
-  setStreaming(session.id, true)
+  const requestId = nextRequestId(session.id)
+  const requestController = new AbortController()
+  patchRequestState(session.id, {
+    streaming: true,
+    abortController: requestController,
+    status: 'streaming',
+  })
   if (_currentSessionId === session.id) {
-    _isStreaming = true
     _sendBtn.innerHTML = stopIcon()
+    startStreamRefresh(session.id)
   }
-  setSessionStatus(session.id, 'streaming')
+  renderSessionList()
 
   // 渲染流式 typing 状态
-  renderMessages()
-  const aiBubbles = _messagesEl?.querySelectorAll('.ast-msg-bubble-ai')
+  if (_currentSessionId === session.id) renderMessages()
+  const aiBubbles = _currentSessionId === session.id ? _messagesEl?.querySelectorAll('.ast-msg-bubble-ai') : null
   const lastBubble = aiBubbles?.[aiBubbles.length - 1]
   if (lastBubble) lastBubble.innerHTML = '<span class="ast-typing">思考中...</span>'
 
@@ -3340,10 +3128,12 @@ async function sendMessageDirect(text) {
       const result = await callAIWithTools(session.id, contextMessages,
         // onStatus
         (status) => {
+          if (!isActiveRequest(session.id, requestId)) return
           if (lastBubble) lastBubble.innerHTML = `<span class="ast-typing">${escHtml(status)}</span>`
         },
         // onToolProgress
         (history) => {
+          if (!isActiveRequest(session.id, requestId)) return
           aiMsg.toolHistory = history
           throttledSave() // 实时保存工具调用进度
           if (!lastContainer) return
@@ -3351,17 +3141,20 @@ async function sendMessageDirect(text) {
           const bubble = lastContainer.querySelector('.ast-msg-bubble-ai')
           lastContainer.innerHTML = toolHtml + (bubble ? bubble.outerHTML : '')
           if (_messagesEl) _messagesEl.scrollTop = _messagesEl.scrollHeight
-        }
+        },
+        requestController.signal
       )
 
+      if (!isActiveRequest(session.id, requestId)) return
       aiMsg.content = result.content
       if (result.toolHistory.length > 0) {
         aiMsg.toolHistory = result.toolHistory
       }
-      renderMessages()
+      if (_currentSessionId === session.id) renderMessages()
     } else {
       // ── 普通流式模式 ──
       await callAI(session.id, contextMessages, (chunk) => {
+        if (!isActiveRequest(session.id, requestId)) return
         aiMsg.content += chunk
         throttledSave() // 实时保存每个 chunk
         if (lastBubble) {
@@ -3372,8 +3165,9 @@ async function sendMessageDirect(text) {
             _lastRenderTime = now
           }
         }
-      })
+      }, requestController.signal)
 
+      if (!isActiveRequest(session.id, requestId)) return
       if (lastBubble) {
         lastBubble.innerHTML = renderMarkdown(aiMsg.content)
       }
@@ -3384,6 +3178,7 @@ async function sendMessageDirect(text) {
       _lastDebugInfo = null
     }
   } catch (err) {
+    if (!isActiveRequest(session.id, requestId) && err?.name !== 'AbortError') return
     if (err.name === 'AbortError') {
       aiMsg.content += aiMsg.content ? '\n\n*[已停止]*' : '*[已停止]*'
     } else {
@@ -3395,10 +3190,10 @@ async function sendMessageDirect(text) {
       aiMsg.content += errInfo
       aiMsg._canRetry = true
     }
-    renderMessages()
+    if (_currentSessionId === session.id) renderMessages()
 
     // 错误后插入重试按钮
-    if (aiMsg._canRetry && _messagesEl) {
+    if (aiMsg._canRetry && _messagesEl && _currentSessionId === session.id) {
       const retryBar = document.createElement('div')
       retryBar.className = 'ast-retry-bar'
       const retrySvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>'
@@ -3426,25 +3221,19 @@ async function sendMessageDirect(text) {
       })
     }
   } finally {
-    setStreaming(session.id, false)
-    if (_currentSessionId === session.id) {
-      _isStreaming = false
-      stopStreamRefresh()
-      if (_sendBtn) _sendBtn.innerHTML = sendIcon()
-      if (_textarea) _textarea.focus()
-    }
-    _abortController = null
+    clearRequestState(session.id, {
+      keepStatus: getSessionStatus(session.id) === 'error',
+      requestId,
+    })
+    if (_currentSessionId === session.id && _textarea) _textarea.focus()
     session.updatedAt = Date.now()
     flushSave()
-    if (getSessionStatus(session.id) !== 'error') {
-      setSessionStatus(session.id, 'idle')
-    }
     // 最终渲染（可能从后台回来，DOM 已重建）
-    if (_messagesEl) {
+    if (isActiveRequest(session.id, requestId) && _messagesEl && _currentSessionId === session.id) {
       renderMessages()
       _messagesEl.scrollTop = _messagesEl.scrollHeight
     }
-    setTimeout(() => processQueue(), 100)
+    setTimeout(() => processQueue(session.id), 100)
   }
 }
 
@@ -3458,15 +3247,21 @@ async function retryAIResponse(session) {
   const aiMsg = { role: 'assistant', content: '', ts: Date.now() }
   session.messages.push(aiMsg)
 
-  setStreaming(session.id, true)
+  const requestId = nextRequestId(session.id)
+  const requestController = new AbortController()
+  patchRequestState(session.id, {
+    streaming: true,
+    abortController: requestController,
+    status: 'streaming',
+  })
   if (_currentSessionId === session.id) {
-    _isStreaming = true
     if (_sendBtn) _sendBtn.innerHTML = stopIcon()
+    startStreamRefresh(session.id)
   }
-  setSessionStatus(session.id, 'streaming')
+  renderSessionList()
 
-  renderMessages()
-  const aiBubbles = _messagesEl?.querySelectorAll('.ast-msg-bubble-ai')
+  if (_currentSessionId === session.id) renderMessages()
+  const aiBubbles = _currentSessionId === session.id ? _messagesEl?.querySelectorAll('.ast-msg-bubble-ai') : null
   const lastBubble = aiBubbles?.[aiBubbles.length - 1]
   if (lastBubble) lastBubble.innerHTML = '<span class="ast-typing">重试中...</span>'
 
@@ -3478,8 +3273,12 @@ async function retryAIResponse(session) {
       const lastContainer = aiMsgContainers?.[aiMsgContainers.length - 1]
 
       const result = await callAIWithTools(session.id, contextMessages,
-        (status) => { if (lastBubble) lastBubble.innerHTML = `<span class="ast-typing">${escHtml(status)}</span>` },
+        (status) => {
+          if (!isActiveRequest(session.id, requestId)) return
+          if (lastBubble) lastBubble.innerHTML = `<span class="ast-typing">${escHtml(status)}</span>`
+        },
         (history) => {
+          if (!isActiveRequest(session.id, requestId)) return
           aiMsg.toolHistory = history
           throttledSave()
           if (!lastContainer) return
@@ -3487,13 +3286,16 @@ async function retryAIResponse(session) {
           const bubble = lastContainer.querySelector('.ast-msg-bubble-ai')
           lastContainer.innerHTML = toolHtml + (bubble ? bubble.outerHTML : '')
           if (_messagesEl) _messagesEl.scrollTop = _messagesEl.scrollHeight
-        }
+        },
+        requestController.signal
       )
+      if (!isActiveRequest(session.id, requestId)) return
       aiMsg.content = result.content
       if (result.toolHistory.length > 0) aiMsg.toolHistory = result.toolHistory
-      renderMessages()
+      if (_currentSessionId === session.id) renderMessages()
     } else {
       await callAI(session.id, contextMessages, (chunk) => {
+        if (!isActiveRequest(session.id, requestId)) return
         aiMsg.content += chunk
         throttledSave()
         if (lastBubble) {
@@ -3504,10 +3306,12 @@ async function retryAIResponse(session) {
             _lastRenderTime = now
           }
         }
-      })
+      }, requestController.signal)
+      if (!isActiveRequest(session.id, requestId)) return
       if (lastBubble) lastBubble.innerHTML = renderMarkdown(aiMsg.content)
     }
   } catch (err) {
+    if (!isActiveRequest(session.id, requestId) && err?.name !== 'AbortError') return
     if (err.name === 'AbortError') {
       aiMsg.content += aiMsg.content ? '\n\n*[已停止]*' : '*[已停止]*'
     } else {
@@ -3517,9 +3321,9 @@ async function retryAIResponse(session) {
         : err.message
       aiMsg._canRetry = true
     }
-    renderMessages()
+    if (_currentSessionId === session.id) renderMessages()
 
-    if (aiMsg._canRetry && _messagesEl) {
+    if (aiMsg._canRetry && _messagesEl && _currentSessionId === session.id) {
       const retryBar = document.createElement('div')
       retryBar.className = 'ast-retry-bar'
       const retrySvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>'
@@ -3547,41 +3351,26 @@ async function retryAIResponse(session) {
       })
     }
   } finally {
-    setStreaming(session.id, false)
-    if (_currentSessionId === session.id) {
-      _isStreaming = false
-      stopStreamRefresh()
-      if (_sendBtn) _sendBtn.innerHTML = sendIcon()
-      if (_textarea) _textarea.focus()
-    }
-    _abortController = null
+    clearRequestState(session.id, {
+      keepStatus: getSessionStatus(session.id) === 'error',
+      requestId,
+    })
+    if (_currentSessionId === session.id && _textarea) _textarea.focus()
     session.updatedAt = Date.now()
     flushSave()
-    if (getSessionStatus(session.id) !== 'error') {
-      setSessionStatus(session.id, 'idle')
-    }
-    if (_messagesEl) {
+    if (isActiveRequest(session.id, requestId) && _messagesEl && _currentSessionId === session.id) {
       renderMessages()
       _messagesEl.scrollTop = _messagesEl.scrollHeight
     }
-    setTimeout(() => processQueue(), 100)
+    setTimeout(() => processQueue(session.id), 100)
   }
 }
 
-function stopStreaming() {
-  if (_currentSessionId) {
-    setStreaming(_currentSessionId, false)
-    const controller = getAbortController(_currentSessionId)
-    if (controller) {
-      controller.abort()
-      setAbortController(_currentSessionId, null)
-    }
-  }
-  _isStreaming = false
-  if (_abortController) {
-    _abortController.abort()
-    _abortController = null
-  }
+function stopStreaming(sessionId = _currentSessionId) {
+  if (!sessionId) return
+  const controller = getAbortController(sessionId)
+  if (controller) controller.abort()
+  clearRequestState(sessionId)
 }
 
 // ── 右键调试菜单 ──
@@ -3780,7 +3569,6 @@ export async function render() {
 
   // 如果有后台流式正在进行，恢复 UI 状态
   if (_currentSessionId && getStreaming(_currentSessionId)) {
-    _isStreaming = true
     _sendBtn.innerHTML = stopIcon()
     startStreamRefresh()
   }
@@ -3908,19 +3696,23 @@ export async function render() {
     const sendBtn = e.target.closest('[data-queue-send]')
     if (sendBtn) {
       const id = sendBtn.dataset.queueSend
-      const idx = _messageQueue.findIndex(m => m.id === id)
+      const sessionId = _currentSessionId
+      const queue = getQueue(sessionId)
+      const idx = queue.findIndex(m => m.id === id)
       if (idx === -1) return
-      const item = _messageQueue.splice(idx, 1)[0]
+      const item = queue.splice(idx, 1)[0]
+      setQueue(sessionId, queue)
       renderQueue()
-      if (_currentSessionId && getStreaming(_currentSessionId)) stopStreaming()
-      setTimeout(() => sendMessageDirect(item.text), 150)
+      if (sessionId && getStreaming(sessionId)) stopStreaming(sessionId)
+      setTimeout(() => sendMessageDirect(item.text, { sessionId }), 150)
       return
     }
     // 删除
     const delBtn = e.target.closest('[data-queue-del]')
     if (delBtn) {
       const id = delBtn.dataset.queueDel
-      _messageQueue = _messageQueue.filter(m => m.id !== id)
+      const queue = getQueue(_currentSessionId).filter(m => m.id !== id)
+      setQueue(_currentSessionId, queue)
       renderQueue()
       return
     }
@@ -3928,7 +3720,8 @@ export async function render() {
     const editTarget = e.target.closest('[data-queue-edit]') || e.target.closest('[data-queue-edit-btn]')
     if (editTarget) {
       const id = editTarget.dataset.queueEdit || editTarget.dataset.queueEditBtn
-      const item = _messageQueue.find(m => m.id === id)
+      const queue = getQueue(_currentSessionId)
+      const item = queue.find(m => m.id === id)
       if (!item) return
       const queueItem = _queueEl.querySelector(`[data-queue-id="${id}"]`)
       if (!queueItem || queueItem.classList.contains('editing')) return
@@ -4008,11 +3801,11 @@ export async function render() {
       renderMessages()
       // 切换到正在流式的会话时，启动刷新
       if (_currentSessionId && getStreaming(_currentSessionId) && getSessionStatus(_currentSessionId) === 'streaming') {
-        _isStreaming = true
-        startStreamRefresh()
+        if (_sendBtn) _sendBtn.innerHTML = stopIcon()
+        startStreamRefresh(_currentSessionId)
       } else {
-        _isStreaming = false
         stopStreamRefresh()
+        if (_sendBtn) _sendBtn.innerHTML = sendIcon()
       }
     }
   })

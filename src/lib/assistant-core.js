@@ -858,7 +858,7 @@ async function callGeminiGenerate({ base, config, messages, onChunk, signal }) {
   }, signal)
 }
 
-async function callAI({ config, messages, adapters, mode }) {
+async function callAI({ config, messages, adapters, mode, signal }) {
   const cfg = config || {}
   const apiType = normalizeApiType(cfg.apiType)
   if (!cfg.baseUrl || !cfg.model || (requiresApiKey(apiType) && !cfg.apiKey)) {
@@ -868,23 +868,24 @@ async function callAI({ config, messages, adapters, mode }) {
   const base = cleanBaseUrl(cfg.baseUrl, apiType)
   const allMessages = [{ role: 'system', content: buildSystemPrompt({ config: cfg, soulCache: adapters?.soulCache, knowledgeBase: adapters?.knowledgeBase }) }, ...messages]
 
-  const controller = new AbortController()
-  const totalTimer = setTimeout(() => controller.abort(), TIMEOUT_TOTAL)
+  const timeoutController = new AbortController()
+  const totalTimer = setTimeout(() => timeoutController.abort(new DOMException('请求超时', 'AbortError')), TIMEOUT_TOTAL)
+  const activeSignal = signal ? AbortSignal.any([signal, timeoutController.signal]) : timeoutController.signal
   let buffer = ''
   const onChunk = (chunk) => { buffer += chunk }
 
   try {
     if (apiType === 'anthropic-messages') {
-      await callAnthropicMessages({ base, config: cfg, messages: allMessages, onChunk, signal: controller.signal })
+      await callAnthropicMessages({ base, config: cfg, messages: allMessages, onChunk, signal: activeSignal })
     } else if (apiType === 'google-gemini') {
-      await callGeminiGenerate({ base, config: cfg, messages: allMessages, onChunk, signal: controller.signal })
+      await callGeminiGenerate({ base, config: cfg, messages: allMessages, onChunk, signal: activeSignal })
     } else {
       try {
-        await callChatCompletions({ base, config: cfg, messages: allMessages, onChunk, signal: controller.signal })
+        await callChatCompletions({ base, config: cfg, messages: allMessages, onChunk, signal: activeSignal })
       } catch (err) {
         const msg = err.message || ''
         if (msg.includes('legacy protocol') || msg.includes('/v1/responses') || msg.includes('not supported')) {
-          await callResponsesAPI({ base, config: cfg, messages: allMessages, onChunk, signal: controller.signal })
+          await callResponsesAPI({ base, config: cfg, messages: allMessages, onChunk, signal: activeSignal })
         } else {
           throw err
         }
@@ -898,7 +899,7 @@ async function callAI({ config, messages, adapters, mode }) {
   return { text: stopRes.text, stop: stopRes.stop }
 }
 
-async function callAIWithTools({ config, messages, tools, adapters, mode }) {
+async function callAIWithTools({ config, messages, tools, adapters, mode, signal }) {
   const cfg = config || {}
   const apiType = normalizeApiType(cfg.apiType)
   if (!cfg.baseUrl || !cfg.model || (requiresApiKey(apiType) && !cfg.apiKey)) {
@@ -916,8 +917,9 @@ async function callAIWithTools({ config, messages, tools, adapters, mode }) {
       return { text: '工具调用达到上限，已停止。', stop: true }
     }
 
-    const controller = new AbortController()
-    const totalTimer = setTimeout(() => controller.abort(), TIMEOUT_TOTAL)
+    const timeoutController = new AbortController()
+    const totalTimer = setTimeout(() => timeoutController.abort(new DOMException('请求超时', 'AbortError')), TIMEOUT_TOTAL)
+    const activeSignal = signal ? AbortSignal.any([signal, timeoutController.signal]) : timeoutController.signal
 
     try {
       if (apiType === 'anthropic-messages') {
@@ -936,7 +938,7 @@ async function callAIWithTools({ config, messages, tools, adapters, mode }) {
           method: 'POST',
           headers: authHeaders(cfg.apiType, cfg.apiKey),
           body: JSON.stringify(body),
-          signal: controller.signal,
+          signal: activeSignal,
         })
         if (!resp.ok) {
           const errText = await resp.text().catch(() => '')
@@ -988,7 +990,7 @@ async function callAIWithTools({ config, messages, tools, adapters, mode }) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
-          signal: controller.signal,
+          signal: activeSignal,
         })
         if (!resp.ok) {
           const errText = await resp.text().catch(() => '')
@@ -1031,7 +1033,7 @@ async function callAIWithTools({ config, messages, tools, adapters, mode }) {
         method: 'POST',
         headers: authHeaders(cfg.apiType, cfg.apiKey),
         body: JSON.stringify(body),
-        signal: controller.signal,
+        signal: activeSignal,
       })
 
       if (!resp.ok) {
