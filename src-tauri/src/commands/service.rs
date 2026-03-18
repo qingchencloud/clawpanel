@@ -606,11 +606,9 @@ mod platform {
 
 #[cfg(target_os = "windows")]
 mod platform {
-    use std::env;
     use std::fs::{self, OpenOptions};
     use std::io::Write;
     use std::os::windows::process::CommandExt;
-    use std::path::{Path, PathBuf};
     use std::process::Stdio;
     use std::sync::Mutex;
     use tokio::process::Command as TokioCommand;
@@ -648,61 +646,23 @@ mod platform {
         }
     }
 
-    fn candidate_cli_paths() -> Vec<PathBuf> {
-        let mut candidates = Vec::new();
-
-        // standalone 安装目录（优先检测，覆盖所有可能位置）
-        if let Ok(localappdata) = env::var("LOCALAPPDATA") {
-            // Inno Setup PrivilegesRequired=lowest 默认路径
-            candidates.push(Path::new(&localappdata).join("Programs").join("OpenClaw").join("openclaw.cmd"));
-            candidates.push(Path::new(&localappdata).join("OpenClaw").join("openclaw.cmd"));
-        }
-        if let Ok(pf) = env::var("ProgramFiles") {
-            candidates.push(Path::new(&pf).join("OpenClaw").join("openclaw.cmd"));
-        }
-
-        if let Ok(appdata) = env::var("APPDATA") {
-            candidates.push(Path::new(&appdata).join("npm").join("openclaw.cmd"));
-        }
-        if let Ok(localappdata) = env::var("LOCALAPPDATA") {
-            candidates.push(
-                Path::new(&localappdata)
-                    .join("Programs")
-                    .join("nodejs")
-                    .join("node_modules")
-                    .join("@qingchencloud")
-                    .join("openclaw-zh")
-                    .join("bin")
-                    .join("openclaw.js"),
-            );
-        }
-
-        for segment in crate::commands::enhanced_path().split(';') {
-            let dir = segment.trim();
-            if dir.is_empty() {
-                continue;
-            }
-            let base = Path::new(dir);
-            candidates.push(base.join("openclaw.cmd"));
-            candidates.push(base.join("openclaw"));
-            candidates.push(
-                base.join("node_modules")
-                    .join("@qingchencloud")
-                    .join("openclaw-zh")
-                    .join("bin")
-                    .join("openclaw.js"),
-            );
-        }
-
-        candidates
+    pub fn cli_details() -> (Option<String>, Option<String>, Option<String>, Vec<String>, bool) {
+        let resolved = crate::utils::resolve_openclaw_cli();
+        (
+            resolved
+                .selected_path
+                .as_ref()
+                .map(|p| p.to_string_lossy().to_string()),
+            resolved.version,
+            resolved.path_source,
+            resolved.candidates,
+            resolved.selected_from_config,
+        )
     }
 
     fn check_cli_installed_inner() -> bool {
-        // 方式1: 检查常见文件路径（零进程，最快）
-        for path in candidate_cli_paths() {
-            if path.exists() {
-                return true;
-            }
+        if crate::utils::resolve_openclaw_cli().selected_path.is_some() {
+            return true;
         }
 
         // 方式2: 通过 where 查找（兼容 nvm、自定义 prefix 等）
@@ -891,7 +851,7 @@ mod platform {
     pub async fn start_service_impl(_label: &str) -> Result<(), String> {
         if !is_cli_installed() {
             return Err(
-                "openclaw CLI 未安装，请先通过 npm install -g @qingchencloud/openclaw-zh 安装"
+                "openclaw CLI 未安装，请先安装并确认 PATH 中可执行 openclaw.cmd"
                     .into(),
             );
         }
@@ -910,8 +870,12 @@ mod platform {
 
         let (stdout_log, stderr_log) = create_gateway_log_files()?;
 
+        let cli_path = crate::utils::resolve_openclaw_cli()
+            .selected_path
+            .ok_or_else(|| "未找到可用的 openclaw CLI 路径".to_string())?;
+
         let mut cmd = std::process::Command::new("cmd");
-        cmd.args(["/c", "openclaw", "gateway"])
+        cmd.arg("/c").arg(cli_path).arg("gateway")
             .creation_flags(CREATE_NO_WINDOW)
             .stdin(Stdio::null())
             .stdout(stdout_log)
@@ -1074,7 +1038,7 @@ mod platform {
     async fn gateway_command(action: &str) -> Result<(), String> {
         if !is_cli_installed().await {
             return Err(
-                "openclaw CLI 未安装，请先通过 npm install -g @qingchencloud/openclaw-zh 安装"
+                "openclaw CLI 未安装，请先安装并确认系统中可执行 openclaw"
                     .into(),
             );
         }
@@ -1140,12 +1104,22 @@ pub async fn get_services_status() -> Result<Vec<ServiceStatus>, String> {
     for label in labels.iter().map(String::as_str) {
         let (running, pid) = check_service_status_for_label(uid, label).await;
 
+        #[cfg(target_os = "windows")]
+        let (cli_path, cli_version, cli_source, cli_candidates, cli_selected_from_config) = platform::cli_details();
+        #[cfg(not(target_os = "windows"))]
+        let (cli_path, cli_version, cli_source, cli_candidates, cli_selected_from_config) = (None, None, None, Vec::new(), false);
+
         results.push(ServiceStatus {
             label: label.to_string(),
             pid,
             running,
             description: desc_map.get(label).unwrap_or(&"").to_string(),
             cli_installed,
+            cli_path,
+            cli_version,
+            cli_source,
+            cli_candidates,
+            cli_selected_from_config,
         });
     }
 
@@ -1180,7 +1154,7 @@ mod tests {
     #[test]
     fn 只把_openclaw_gateway_命令行识别为_gateway_进程() {
         assert!(looks_like_gateway_command_line(
-            r#""C:\Program Files\nodejs\node.exe" "C:\Users\me\AppData\Roaming\npm\node_modules\@qingchencloud\openclaw-zh\bin\openclaw.js" gateway"#,
+            r#""C:\Users\me\AppData\Roaming\npm\openclaw.cmd" gateway"#,
         ));
         assert!(!looks_like_gateway_command_line(
             r#""C:\Program Files\nodejs\node.exe" "C:\app\server.js""#,

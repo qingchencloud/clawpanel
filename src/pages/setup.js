@@ -8,6 +8,7 @@ import { toast } from '../components/toast.js'
 import { setUpgrading, isMacPlatform } from '../lib/app-state.js'
 import { diagnoseInstallError } from '../lib/error-diagnosis.js'
 import { icon, statusIcon } from '../lib/icons.js'
+import { buildOpenclawCliMeta } from '../lib/openclaw-cli-display.js'
 
 function escapeHtml(str) {
   if (!str) return ''
@@ -80,11 +81,9 @@ async function runDetect(page) {
   let config = configRes.status === 'fulfilled' ? configRes.value : { installed: false }
   const version = versionRes.status === 'fulfilled' ? versionRes.value : null
   const panelCfg = await api.readPanelConfig().catch(() => ({}))
-  const cliInfo = {
-    path: service?.cli_path || '',
-    version: service?.cli_version || '',
-    source: service?.cli_source || '',
-  }
+  const cliInfo = buildOpenclawCliMeta(service, {
+    overridePath: panelCfg?.openclawPath,
+  })
 
   // CLI 已装但配置缺失 → 自动创建默认配置
   if (cliOk && !config.installed) {
@@ -191,17 +190,19 @@ function renderSteps(page, { node, git, cliOk, config, version, cliInfo }) {
         ${stepIcon(cliOk)} OpenClaw CLI
       </div>
       ${cliOk
-        ? `<p style="color:var(--success);font-size:var(--font-size-sm)">CLI 可用</p>
+        ? `<p style="color:var(--success);font-size:var(--font-size-sm)">${escapeHtml(cliInfo.statusLabel)}</p>
            ${cliInfo?.path
              ? `<div style="margin-top:6px;font-size:var(--font-size-xs);color:var(--text-tertiary)">
-                  路径：<span style="font-family:monospace;word-break:break-all">${escapeHtml(cliInfo.path)}</span>
+                  CLI 路径：<span style="font-family:monospace;word-break:break-all">${escapeHtml(cliInfo.path)}</span>
                 </div>`
              : ''}
+           <div style="margin-top:4px;font-size:var(--font-size-xs);color:var(--text-tertiary)">路径来源：${escapeHtml(cliInfo.pathSourceLabel)}</div>
+           <div style="margin-top:4px;font-size:var(--font-size-xs);color:var(--text-tertiary)">路径策略：${escapeHtml(cliInfo.strategyLabel)}</div>
            ${cliInfo?.version
-             ? `<div style="margin-top:4px;font-size:var(--font-size-xs);color:var(--text-tertiary)">版本：${escapeHtml(cliInfo.version)}</div>`
+             ? `<div style="margin-top:4px;font-size:var(--font-size-xs);color:var(--text-tertiary)">CLI 版本：${escapeHtml(cliInfo.version)}</div>`
              : ''}
-           ${cliInfo?.source
-             ? `<div style="margin-top:4px;font-size:var(--font-size-xs);color:var(--text-tertiary)">来源：${escapeHtml(cliInfo.source)}</div>`
+           ${cliInfo?.version
+             ? `<div style="margin-top:4px;font-size:var(--font-size-xs);color:var(--text-tertiary)">版本来源：${escapeHtml(cliInfo.versionSourceLabel)}</div>`
              : ''}
            ${version?.ahead_of_recommended && version?.recommended
              ? `<div style="margin-top:8px;padding:8px 12px;background:var(--bg-tertiary);border-radius:var(--radius-sm);font-size:var(--font-size-xs);color:var(--warning,#f59e0b);line-height:1.6">

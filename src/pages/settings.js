@@ -4,6 +4,7 @@
  */
 import { api } from '../lib/tauri-api.js'
 import { toast } from '../components/toast.js'
+import { buildOpenclawCliMeta } from '../lib/openclaw-cli-display.js'
 
 const isTauri = !!window.__TAURI_INTERNALS__
 
@@ -440,40 +441,57 @@ async function loadOpenclawCli(page) {
     const svc = Array.isArray(services)
       ? services.find(s => s.label === 'ai.openclaw.gateway' || s.id === 'ai.openclaw.gateway' || s.name === 'ai.openclaw.gateway' || s.label === 'openclaw' || s.id === 'openclaw')
       : null
-    const detectedPath = svc?.cli_path || ''
-    const detectedVersion = svc?.cli_version || ''
-    const detectedSource = svc?.cli_source || ''
     const overridePath = cfg?.openclawPath || ''
+    const cliMeta = buildOpenclawCliMeta(svc, { overridePath })
+    const detectedPath = cliMeta.path || ''
+    const detectedVersion = cliMeta.version || ''
+    const candidates = Array.isArray(svc?.cli_candidates) ? svc.cli_candidates : []
+    const selectedValue = overridePath || detectedPath || ''
 
     bar.innerHTML = `
       <div style="display:flex;flex-direction:column;gap:6px">
         <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-          <span class="status-dot ${svc?.cli_installed ? 'running' : 'stopped'}"></span>
-          <span>${svc?.cli_installed ? '已检测到 OpenClaw CLI' : '未检测到 OpenClaw CLI'}</span>
-          ${detectedVersion ? `<span style="color:var(--text-tertiary)">版本: ${escapeHtml(detectedVersion)}</span>` : ''}
-          ${detectedSource ? `<span style="color:var(--text-tertiary)">来源: ${escapeHtml(detectedSource)}</span>` : ''}
+          <span class="status-dot ${cliMeta.installed ? 'running' : 'stopped'}"></span>
+          <span>${escapeHtml(cliMeta.statusLabel)}</span>
+          ${detectedVersion ? `<span style="color:var(--text-tertiary)">CLI 版本: ${escapeHtml(detectedVersion)}</span>` : ''}
+          <span style="color:var(--text-tertiary)">路径来源: ${escapeHtml(cliMeta.pathSourceLabel)}</span>
+          <span style="color:var(--text-tertiary)">路径策略: ${escapeHtml(cliMeta.strategyLabel)}</span>
         </div>
-        ${detectedPath ? `<div style="font-size:var(--font-size-xs);color:var(--text-tertiary)">检测路径: <span style="font-family:monospace;word-break:break-all">${escapeHtml(detectedPath)}</span></div>` : ''}
+        ${detectedPath ? `<div style="font-size:var(--font-size-xs);color:var(--text-tertiary)">CLI 路径: <span style="font-family:monospace;word-break:break-all">${escapeHtml(detectedPath)}</span></div>` : ''}
+        ${detectedVersion ? `<div style="font-size:var(--font-size-xs);color:var(--text-tertiary)">版本来源: ${escapeHtml(cliMeta.versionSourceLabel)}</div>` : ''}
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
-          <input class="form-input" data-name="openclaw-path" placeholder="C:\\Program Files\\OpenClaw\\openclaw.exe" value="${escapeHtml(String(overridePath))}" style="max-width:520px">
+          <select class="form-input" data-name="openclaw-candidate" style="max-width:520px">
+            <option value="">自动检测当前 PATH</option>
+            ${candidates.map(p => `<option value="${escapeHtml(p)}" ${p === selectedValue ? 'selected' : ''}>${escapeHtml(p)}</option>`).join('')}
+          </select>
+          <input class="form-input" data-name="openclaw-path" placeholder="C:\\Program Files\\OpenClaw\\openclaw.cmd" value="${escapeHtml(String(overridePath || detectedPath))}" style="max-width:520px">
           <button class="btn btn-primary btn-sm" data-action="openclaw-save">保存路径</button>
           <button class="btn btn-secondary btn-sm" data-action="openclaw-clear">清除覆盖</button>
           <button class="btn btn-secondary btn-sm" data-action="openclaw-refresh">刷新检测</button>
           <button class="btn btn-secondary btn-sm" data-action="openclaw-setup">进入初始化设置</button>
         </div>
         <div class="form-hint" style="margin-top:4px">
-          保存路径后将优先使用该路径检测与启动 Gateway。清除覆盖会回退到自动检测。
+          保存路径后将优先使用该路径检测与启动 Gateway。若检测到多条 CLI 路径，可先在下拉框中选中再保存。清除覆盖会回退到自动检测。
         </div>
       </div>
     `
+
+    const candidateSelect = bar.querySelector('[data-name="openclaw-candidate"]')
+    const pathInput = bar.querySelector('[data-name="openclaw-path"]')
+    candidateSelect?.addEventListener('change', () => {
+      if (candidateSelect.value) pathInput.value = candidateSelect.value
+    })
   } catch (e) {
     bar.innerHTML = `<div style="color:var(--error)">加载失败: ${escapeHtml(String(e))}</div>`
   }
 }
 
 async function handleOpenclawSave(page) {
+  const candidate = page.querySelector('[data-name="openclaw-candidate"]')
   const input = page.querySelector('[data-name="openclaw-path"]')
-  const value = String(input?.value || '').trim()
+  const inputValue = String(input?.value || '').trim()
+  const candidateValue = String(candidate?.value || '').trim()
+  const value = inputValue || candidateValue
   const cfg = await api.readPanelConfig()
   if (!value) {
     delete cfg.openclawPath

@@ -62,10 +62,16 @@ fn panel_config_path() -> PathBuf {
     openclaw_dir().join("clawpanel.json")
 }
 
-fn read_panel_config_value() -> Option<serde_json::Value> {
+pub(crate) fn read_panel_config_value() -> Option<serde_json::Value> {
     std::fs::read_to_string(panel_config_path())
         .ok()
         .and_then(|content| serde_json::from_str(&content).ok())
+}
+
+pub(crate) fn configured_openclaw_path() -> Option<String> {
+    let value = read_panel_config_value()?;
+    let raw = value.get("openclawPath")?.as_str()?.trim().to_string();
+    if raw.is_empty() { None } else { Some(raw) }
 }
 
 pub fn configured_proxy_url() -> Option<String> {

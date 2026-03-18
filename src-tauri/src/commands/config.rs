@@ -222,6 +222,16 @@ fn recommended_version_for(source: &str) -> Option<String> {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn resolved_cli_distribution_source() -> Option<String> {
+    crate::utils::resolve_openclaw_cli().distribution_source
+}
+
+#[cfg(not(target_os = "windows"))]
+fn resolved_cli_distribution_source() -> Option<String> {
+    None
+}
+
 fn configure_git_https_rules() -> usize {
     // Collect unique target prefixes to unset old rules
     let targets: std::collections::HashSet<&str> =
@@ -785,7 +795,14 @@ async fn get_local_version() -> Option<String> {
     // Windows: 先查 standalone 安装，再查 npm 全局目录
     #[cfg(target_os = "windows")]
     {
-        // 检查所有 standalone 安装目录
+        let resolved = crate::utils::resolve_openclaw_cli();
+        if resolved.selected_path.is_some() {
+            if let Some(version) = resolved.version {
+                return Some(version);
+            }
+        }
+
+        // 未解析到当前实际 CLI 时，再回退扫描本机常见安装目录
         for sa_dir in all_standalone_dirs() {
             let version_file = sa_dir.join("VERSION");
             if let Ok(content) = fs::read_to_string(&version_file) {
@@ -812,7 +829,6 @@ async fn get_local_version() -> Option<String> {
                 }
             }
         }
-        // npm 全局目录
         if let Ok(appdata) = std::env::var("APPDATA") {
             for pkg in &["@qingchencloud/openclaw-zh", "openclaw"] {
                 let pkg_json = PathBuf::from(&appdata)
@@ -896,10 +912,12 @@ fn detect_installed_source() -> String {
         }
         "official".into()
     }
-    // Windows: 优先通过文件系统检测，避免 npm list 阻塞
     #[cfg(target_os = "windows")]
     {
-        // 检查所有可能的 standalone 安装目录
+        if let Some(source) = resolved_cli_distribution_source() {
+            return source;
+        }
+
         for sa_dir in all_standalone_dirs() {
             let sa_zh = sa_dir
                 .join("node_modules")
@@ -908,20 +926,23 @@ fn detect_installed_source() -> String {
             if sa_zh.exists() {
                 return "chinese".into();
             }
+            let sa_official = sa_dir.join("node_modules").join("openclaw");
+            if sa_official.exists() {
+                return "official".into();
+            }
         }
-        // 检查 npm 全局目录
         if let Some(appdata) = std::env::var_os("APPDATA") {
-            let zh_dir = PathBuf::from(&appdata)
-                .join("npm")
-                .join("node_modules")
-                .join("@qingchencloud")
-                .join("openclaw-zh");
+            let npm_root = PathBuf::from(&appdata).join("npm").join("node_modules");
+            let zh_dir = npm_root.join("@qingchencloud").join("openclaw-zh");
             if zh_dir.exists() {
                 return "chinese".into();
             }
+            let official_dir = npm_root.join("openclaw");
+            if official_dir.exists() {
+                return "official".into();
+            }
         }
-        // 默认返回汉化版
-        "chinese".into()
+        "official".into()
     }
     // 所有平台通用: npm list 检测
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]

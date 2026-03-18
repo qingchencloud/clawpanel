@@ -6,16 +6,17 @@ import { api, getRequestLogs, clearRequestLogs } from '../lib/tauri-api.js'
 import { wsClient } from '../lib/ws-client.js'
 import { isOpenclawReady, isGatewayRunning } from '../lib/app-state.js'
 import { icon, statusIcon } from '../lib/icons.js'
+import { buildOpenclawCliMeta } from '../lib/openclaw-cli-display.js'
 
 export async function render() {
   const page = document.createElement('div')
-  page.className = 'page'
+  page.className = 'page debug-page'
 
   page.innerHTML = `
     <div class="page-header">
       <h1 class="page-title">系统诊断</h1>
       <p class="page-desc">全面检测系统状态，快速定位问题</p>
-      <div style="display:flex;gap:8px">
+      <div class="debug-toolbar">
         <button class="btn btn-primary btn-sm" id="btn-refresh">刷新状态</button>
         <button class="btn btn-secondary btn-sm" id="btn-test-ws">测试 WebSocket</button>
         <button class="btn btn-secondary btn-sm" id="btn-network-log">网络日志</button>
@@ -23,22 +24,22 @@ export async function render() {
       </div>
     </div>
     <div id="debug-content"></div>
-    <div id="ws-test-log" style="display:none;margin-top:16px;background:var(--bg-secondary);border-radius:6px;padding:12px">
-      <div style="font-weight:600;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+    <div id="ws-test-log" class="debug-log-panel">
+      <div class="debug-log-header">
         <span>WebSocket 连接测试</span>
-        <button class="btn btn-sm" id="btn-clear-log" style="padding:4px 8px;font-size:11px">清空</button>
+        <button class="btn btn-sm debug-log-button" id="btn-clear-log">清空</button>
       </div>
-      <pre id="ws-log-content" style="font-size:11px;line-height:1.5;max-height:400px;overflow:auto;margin:0;color:var(--text-primary)"></pre>
+      <pre id="ws-log-content" class="debug-log-content"></pre>
     </div>
-    <div id="network-log" style="display:none;margin-top:16px;background:var(--bg-secondary);border-radius:6px;padding:12px">
-      <div style="font-weight:600;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+    <div id="network-log" class="debug-log-panel">
+      <div class="debug-log-header">
         <span>网络请求日志（最近 100 条）</span>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-sm" id="btn-refresh-network" style="padding:4px 8px;font-size:11px">刷新</button>
-          <button class="btn btn-sm" id="btn-clear-network" style="padding:4px 8px;font-size:11px">清空</button>
+        <div class="debug-log-actions">
+          <button class="btn btn-sm debug-log-button" id="btn-refresh-network">刷新</button>
+          <button class="btn btn-sm debug-log-button" id="btn-clear-network">清空</button>
         </div>
       </div>
-      <div id="network-log-content" style="font-size:11px;line-height:1.5;max-height:400px;overflow:auto"></div>
+      <div id="network-log-content" class="debug-network-content"></div>
     </div>
   `
 
@@ -69,6 +70,8 @@ async function loadDebugInfo(page) {
     // 配置文件
     config: null,
     configError: null,
+    panelConfig: null,
+    panelConfigError: null,
     // 服务状态
     services: null,
     servicesError: null,
@@ -87,6 +90,7 @@ async function loadDebugInfo(page) {
   await Promise.allSettled([
     // 配置文件
     api.readOpenclawConfig().then(r => { info.config = r }).catch(e => { info.configError = String(e) }),
+    api.readPanelConfig().then(r => { info.panelConfig = r }).catch(e => { info.panelConfigError = String(e) }),
     // 服务状态
     api.getServicesStatus().then(r => { info.services = r }).catch(e => { info.servicesError = String(e) }),
     // 版本信息
@@ -109,13 +113,13 @@ async function loadDebugInfo(page) {
 }
 
 function renderDebugInfo(el, info) {
-  let html = `<div style="font-family:monospace;font-size:12px;line-height:1.6">`
+  let html = `<div class="debug-summary">`
 
   // 总体状态概览
   const allOk = info.appState.openclawReady && info.appState.gatewayRunning && info.wsClient.gatewayReady
   html += `<div class="config-section" style="background:${allOk ? 'var(--success-bg)' : 'var(--warning-bg)'};border-left:3px solid ${allOk ? 'var(--success)' : 'var(--warning)'}">
-    <div style="font-size:16px;font-weight:600;margin-bottom:8px">${allOk ? `${statusIcon('ok')} 系统正常` : `${statusIcon('warn')} 发现问题`}</div>
-    <div style="color:var(--text-secondary);font-size:13px">${allOk ? '所有核心功能运行正常' : '部分功能异常，请查看下方详情'}</div>
+    <div class="debug-summary-title">${allOk ? `${statusIcon('ok')} 系统正常` : `${statusIcon('warn')} 发现问题`}</div>
+    <div class="debug-summary-subtitle">${allOk ? '所有核心功能运行正常' : '部分功能异常，请查看下方详情'}</div>
   </div>`
 
   // 应用状态
@@ -190,11 +194,19 @@ function renderDebugInfo(el, info) {
     html += `<div style="color:var(--error)">${statusIcon('err')} ${escapeHtml(info.servicesError)}</div>`
   } else if (info.services?.length > 0) {
     const svc = info.services[0]
+    const cliMeta = buildOpenclawCliMeta(svc, { overridePath: info.panelConfig?.openclawPath })
     html += `<table class="debug-table">
-      <tr><td>CLI 安装</td><td>${svc.cli_installed !== false ? `${statusIcon('ok')} 已安装` : `${statusIcon('err')} 未安装`}</td></tr>
+      <tr><td>CLI 安装状态</td><td>${cliMeta.installed ? `${statusIcon('ok')} ${cliMeta.statusLabel}` : `${statusIcon('err')} ${cliMeta.statusLabel}`}</td></tr>
       <tr><td>运行状态</td><td>${svc.running ? `${statusIcon('ok')} 运行中` : `${statusIcon('err')} 已停止`}</td></tr>
       <tr><td>进程 PID</td><td>${svc.pid || '(无)'}</td></tr>
       <tr><td>服务标签</td><td>${svc.label || '(未知)'}</td></tr>
+      <tr><td>CLI 路径</td><td class="debug-device-value">${escapeHtml(cliMeta.path || '(未检测)')}</td></tr>
+      <tr><td>路径来源</td><td>${escapeHtml(cliMeta.pathSourceLabel)}</td></tr>
+      <tr><td>路径策略</td><td>${escapeHtml(cliMeta.strategyLabel)}</td></tr>
+      <tr><td>CLI 版本</td><td>${escapeHtml(cliMeta.version || '(未知)')}</td></tr>
+      <tr><td>版本来源</td><td>${escapeHtml(cliMeta.version ? cliMeta.versionSourceLabel : '(未检测)')}</td></tr>
+      <tr><td>固定路径配置</td><td>${info.panelConfig?.openclawPath ? `<span class="debug-device-value">${escapeHtml(info.panelConfig.openclawPath)}</span>` : '(无)'}</td></tr>
+      <tr><td>候选路径数</td><td>${Array.isArray(svc.cli_candidates) ? svc.cli_candidates.length : 0}</td></tr>
     </table>`
   }
   html += `</div>`
@@ -203,7 +215,7 @@ function renderDebugInfo(el, info) {
   html += `<div class="config-section">
     <div class="config-section-title">设备密钥 & 握手签名</div>`
   if (info.connectFrameError) {
-    html += `<div style="color:var(--error)">${statusIcon('err')} ${escapeHtml(info.connectFrameError)}</div>`
+    html += `<div class="debug-status-error">${statusIcon('err')} ${escapeHtml(info.connectFrameError)}</div>`
   } else if (info.connectFrame) {
     const device = info.connectFrame.params?.device
     html += `<div style="color:var(--success);margin-bottom:8px">${statusIcon('ok')} 设备密钥生成成功</div>
@@ -457,11 +469,11 @@ function renderNetworkLog(contentEl) {
 
     html += `
       <tr>
-        <td style="padding:4px;color:var(--text-tertiary)">${log.time}</td>
-        <td style="padding:4px;font-family:monospace">${escapeHtml(log.cmd)}</td>
-        <td style="padding:4px;font-family:monospace;font-size:10px;color:var(--text-secondary);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(log.args)}">${escapeHtml(log.args)}</td>
-        <td style="padding:4px;text-align:right;color:${durationColor}">${log.duration}</td>
-        <td style="padding:4px;text-align:center">${cachedIcon}</td>
+        <td class="debug-network-time">${log.time}</td>
+        <td class="debug-network-command">${escapeHtml(log.cmd)}</td>
+        <td class="debug-network-args" title="${escapeHtml(log.args)}">${escapeHtml(log.args)}</td>
+        <td class="debug-network-duration" style="color:${durationColor}">${log.duration}</td>
+        <td class="debug-network-cache">${cachedIcon}</td>
       </tr>
     `
   }
