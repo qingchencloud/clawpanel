@@ -366,11 +366,11 @@ async function boot() {
   ensureWebSession.then(() => loadActiveInstance()).then(() => detectOpenclawStatus()).then(() => {
     // 重新渲染侧边栏（检测完成后 isOpenclawReady 状态已更新）
     renderSidebar(sidebar)
-    if (_forceSetup || (!isOpenclawReady() && !_skipSetup)) {
+    const wantsSetup = window.location.hash === '#/setup' || _forceSetup || (!isOpenclawReady() && !_skipSetup)
+    if (wantsSetup) {
       setDefaultRoute('/setup')
       navigate('/setup')
     } else {
-      if (window.location.hash === '#/setup') navigate('/dashboard')
       setupGatewayBanner()
       startGatewayPoll()
 
@@ -424,9 +424,6 @@ async function boot() {
           await detectOpenclawStatus()
           renderSidebar(sidebar)
           // 如果安装完成后变为就绪，跳转到仪表盘
-          if (!_forceSetup && isOpenclawReady() && window.location.hash === '#/setup') {
-            navigate('/dashboard')
-          }
           // 如果卸载后变为未就绪，跳转到 setup
           if ((_forceSetup || (!isOpenclawReady() && !_skipSetup)) && !isUpgrading()) {
             setDefaultRoute('/setup')

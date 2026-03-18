@@ -47,6 +47,11 @@ export async function render() {
       <div class="config-section-title">公网访问</div>
       <div id="cloudflared-bar"><div class="stat-card loading-placeholder" style="height:48px"></div></div>
     </div>
+
+    <div class="config-section" id="openclaw-section">
+      <div class="config-section-title">OpenClaw CLI</div>
+      <div id="openclaw-bar"><div class="stat-card loading-placeholder" style="height:48px"></div></div>
+    </div>
   `
 
   bindEvents(page)
@@ -58,6 +63,7 @@ async function loadAll(page) {
   const tasks = [loadProxyConfig(page), loadModelProxyConfig(page)]
   tasks.push(loadRegistry(page))
   tasks.push(loadCloudflared(page))
+  tasks.push(loadOpenclawCli(page))
   await Promise.all(tasks)
 }
 
@@ -187,6 +193,18 @@ function bindEvents(page) {
           break
         case 'cloudflared-save':
           await handleCloudflaredSave(page)
+          break
+        case 'openclaw-save':
+          await handleOpenclawSave(page)
+          break
+        case 'openclaw-clear':
+          await handleOpenclawClear(page)
+          break
+        case 'openclaw-refresh':
+          await loadOpenclawCli(page)
+          break
+        case 'openclaw-setup':
+          await handleOpenclawSetup()
           break
       }
     } catch (e) {
@@ -407,4 +425,70 @@ async function handleCloudflaredStop(page) {
   await api.cloudflaredStop()
   await loadCloudflared(page)
   toast('Cloudflared 已停止', 'success')
+}
+
+// ===== OpenClaw CLI =====
+
+async function loadOpenclawCli(page) {
+  const bar = page.querySelector('#openclaw-bar')
+  if (!bar) return
+  try {
+    const [cfg, services] = await Promise.all([
+      api.readPanelConfig(),
+      api.getServicesStatus(),
+    ])
+    const svc = Array.isArray(services) ? services[0] : null
+    const detectedPath = svc?.cli_path || ''
+    const detectedVersion = svc?.cli_version || ''
+    const detectedSource = svc?.cli_source || ''
+    const overridePath = cfg?.openclawPath || ''
+
+    bar.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+          <span class="status-dot ${svc?.cli_installed ? 'running' : 'stopped'}"></span>
+          <span>${svc?.cli_installed ? '已检测到 OpenClaw CLI' : '未检测到 OpenClaw CLI'}</span>
+          ${detectedVersion ? `<span style="color:var(--text-tertiary)">版本: ${escapeHtml(detectedVersion)}</span>` : ''}
+          ${detectedSource ? `<span style="color:var(--text-tertiary)">来源: ${escapeHtml(detectedSource)}</span>` : ''}
+        </div>
+        ${detectedPath ? `<div style="font-size:var(--font-size-xs);color:var(--text-tertiary)">检测路径: <span style="font-family:monospace;word-break:break-all">${escapeHtml(detectedPath)}</span></div>` : ''}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+          <input class="form-input" data-name="openclaw-path" placeholder="C:\\Program Files\\OpenClaw\\openclaw.exe" value="${escapeHtml(String(overridePath))}" style="max-width:520px">
+          <button class="btn btn-primary btn-sm" data-action="openclaw-save">保存路径</button>
+          <button class="btn btn-secondary btn-sm" data-action="openclaw-clear">清除覆盖</button>
+          <button class="btn btn-secondary btn-sm" data-action="openclaw-refresh">刷新检测</button>
+          <button class="btn btn-secondary btn-sm" data-action="openclaw-setup">进入初始化设置</button>
+        </div>
+        <div class="form-hint" style="margin-top:4px">
+          保存路径后将优先使用该路径检测与启动 Gateway。清除覆盖会回退到自动检测。
+        </div>
+      </div>
+    `
+  } catch (e) {
+    bar.innerHTML = `<div style="color:var(--error)">加载失败: ${escapeHtml(String(e))}</div>`
+  }
+}
+
+async function handleOpenclawSave(page) {
+  const input = page.querySelector('[data-name="openclaw-path"]')
+  const value = String(input?.value || '').trim()
+  const cfg = await api.readPanelConfig()
+  cfg.openclawPath = value
+  await api.writePanelConfig(cfg)
+  toast('OpenClaw 路径已保存', 'success')
+  await loadOpenclawCli(page)
+}
+
+async function handleOpenclawClear(page) {
+  const cfg = await api.readPanelConfig()
+  delete cfg.openclawPath
+  await api.writePanelConfig(cfg)
+  toast('OpenClaw 路径覆盖已清除', 'success')
+  await loadOpenclawCli(page)
+}
+
+async function handleOpenclawSetup() {
+  const cfg = await api.readPanelConfig().catch(() => ({}))
+  await api.writePanelConfig({ ...cfg, forceSetup: true, skipSetup: false }).catch(() => {})
+  window.location.hash = '#/setup'
 }

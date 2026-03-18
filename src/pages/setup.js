@@ -9,6 +9,11 @@ import { setUpgrading, isMacPlatform } from '../lib/app-state.js'
 import { diagnoseInstallError } from '../lib/error-diagnosis.js'
 import { icon, statusIcon } from '../lib/icons.js'
 
+function escapeHtml(str) {
+  if (!str) return ''
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
 export async function render() {
   const page = document.createElement('div')
   page.className = 'page'
@@ -38,7 +43,7 @@ export async function render() {
   page.querySelector('#btn-recheck').addEventListener('click', () => runDetect(page))
   page.querySelector('#btn-skip-setup').addEventListener('click', async () => {
     const cfg = await api.readPanelConfig().catch(() => ({}))
-    await api.writePanelConfig({ ...cfg, Setup: true, forceSetup: false }).catch(() => {})
+    await api.writePanelConfig({ ...cfg, Setup: true, skipSetup: true, forceSetup: false }).catch(() => {})
     window.location.hash = '#/dashboard'
   })
   runDetect(page)
@@ -72,6 +77,12 @@ async function runDetect(page) {
   let config = configRes.status === 'fulfilled' ? configRes.value : { installed: false }
   const version = versionRes.status === 'fulfilled' ? versionRes.value : null
   const panelCfg = await api.readPanelConfig().catch(() => ({}))
+  const service = (clawRes.status === 'fulfilled' && Array.isArray(clawRes.value)) ? clawRes.value[0] : null
+  const cliInfo = {
+    path: service?.cli_path || '',
+    version: service?.cli_version || '',
+    source: service?.cli_source || '',
+  }
 
   // CLI 已装但配置缺失 → 自动创建默认配置
   if (cliOk && !config.installed) {
@@ -95,12 +106,8 @@ async function runDetect(page) {
     api.configureGitHttps().catch(() => {})
   }
 
-  renderSteps(page, { node, git, cliOk, config, version })
+  renderSteps(page, { node, git, cliOk, config, version, cliInfo })
 
-  if (panelCfg.forceSetup === true && node.installed && config.installed) {
-    const nextCfg = { ...panelCfg, forceSetup: false }
-    api.writePanelConfig(nextCfg).catch(() => {})
-  }
 }
 
 function stepIcon(ok) {
@@ -108,7 +115,7 @@ function stepIcon(ok) {
   return `<span style="color:${color};font-weight:700;width:18px;display:inline-block">${ok ? '✓' : '✗'}</span>`
 }
 
-function renderSteps(page, { node, git, cliOk, config, version }) {
+function renderSteps(page, { node, git, cliOk, config, version, cliInfo }) {
   const stepsEl = page.querySelector('#setup-steps')
   const nodeOk = node.installed
   const gitOk = git?.installed || false
@@ -183,6 +190,17 @@ function renderSteps(page, { node, git, cliOk, config, version }) {
       </div>
       ${cliOk
         ? `<p style="color:var(--success);font-size:var(--font-size-sm)">CLI 可用</p>
+           ${cliInfo?.path
+             ? `<div style="margin-top:6px;font-size:var(--font-size-xs);color:var(--text-tertiary)">
+                  路径：<span style="font-family:monospace;word-break:break-all">${escapeHtml(cliInfo.path)}</span>
+                </div>`
+             : ''}
+           ${cliInfo?.version
+             ? `<div style="margin-top:4px;font-size:var(--font-size-xs);color:var(--text-tertiary)">版本：${escapeHtml(cliInfo.version)}</div>`
+             : ''}
+           ${cliInfo?.source
+             ? `<div style="margin-top:4px;font-size:var(--font-size-xs);color:var(--text-tertiary)">来源：${escapeHtml(cliInfo.source)}</div>`
+             : ''}
            ${version?.ahead_of_recommended && version?.recommended
              ? `<div style="margin-top:8px;padding:8px 12px;background:var(--bg-tertiary);border-radius:var(--radius-sm);font-size:var(--font-size-xs);color:var(--warning,#f59e0b);line-height:1.6">
                   检测到当前本地 OpenClaw ${version.current || ''} 高于当前面板推荐稳定版 ${version.recommended}，可能存在兼容或稳定性风险。建议稍后到「关于」页回退到推荐版。
@@ -254,7 +272,8 @@ function renderSteps(page, { node, git, cliOk, config, version }) {
           <button class="btn btn-secondary btn-sm" id="btn-goto-channels">消息渠道</button>
         </div>
       </div>
-      <div style="margin-top:var(--space-lg)">
+      <div style="margin-top:var(--space-lg);display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+        ${cliOk && config.installed ? '<button class="btn btn-secondary" id="btn-use-existing" style="min-width:200px">使用已有 OpenClaw</button>' : ''}
         <button class="btn btn-primary" id="btn-enter" style="min-width:200px">进入面板</button>
       </div>
     `
@@ -400,6 +419,13 @@ function bindEvents(page, nodeOk, detectState) {
       sessionStorage.setItem('assistant-auto-prompt', prompt)
     }
     window.location.hash = '/assistant'
+  })
+
+  // 使用已有 OpenClaw
+  page.querySelector('#btn-use-existing')?.addEventListener('click', async () => {
+    const cfg = await api.readPanelConfig().catch(() => ({}))
+    await api.writePanelConfig({ ...cfg, skipSetup: true, forceSetup: false }).catch(() => {})
+    window.location.hash = '/dashboard'
   })
 
   // 进入面板

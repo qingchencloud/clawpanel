@@ -455,9 +455,98 @@ function detectInstalledSource() {
   return 'official'
 }
 
+function normalizeOpenclawPath(value) {
+  if (!value) return null
+  const cleaned = String(value).trim().replace(/^"|"$/g, '')
+  if (!cleaned) return null
+  if (fs.existsSync(cleaned)) return cleaned
+  if (fs.existsSync(cleaned + '.cmd')) return cleaned + '.cmd'
+  if (fs.existsSync(cleaned + '.exe')) return cleaned + '.exe'
+  return null
+}
+
+function extractOpenclawPathFromCommandLine(commandLine) {
+  if (!commandLine) return null
+  const quoted = commandLine.match(/"([^"]*openclaw(?:\.cmd|\.exe)?)"/i)
+  if (quoted && quoted[1]) return normalizeOpenclawPath(quoted[1])
+  const plain = commandLine.match(/(\S*openclaw(?:\.cmd|\.exe)?)/i)
+  if (plain && plain[1]) return normalizeOpenclawPath(plain[1])
+  return null
+}
+
+function resolveOpenclawBin() {
+  const cfg = readPanelConfig() || {}
+  const fromCfg = normalizeOpenclawPath(cfg.openclawPath)
+  if (fromCfg) return { path: fromCfg, source: 'panel' }
+
+  if (isWindows) {
+    try {
+      const port = readGatewayPort()
+      const { gatewayPids } = inspectWindowsPortOwners(port)
+      for (const pid of gatewayPids) {
+        const cmd = readWindowsProcessCommandLine(pid)
+        const p = extractOpenclawPathFromCommandLine(cmd)
+        if (p) return { path: p, source: 'process' }
+      }
+    } catch {}
+
+    try {
+      const out = execSync('where openclaw 2>NUL', { windowsHide: true }).toString().trim()
+      const first = out.split(/\r?\n/)[0]
+      const p = normalizeOpenclawPath(first)
+      if (p) return { path: p, source: 'where' }
+    } catch {}
+
+    const appdata = process.env.APPDATA
+    if (appdata) {
+      const npmCmd = path.join(appdata, 'npm', 'openclaw.cmd')
+      if (fs.existsSync(npmCmd)) return { path: npmCmd, source: 'npm' }
+    }
+    return { path: null, source: 'none' }
+  }
+
+  const bin = findOpenclawBin()
+  if (bin) return { path: bin, source: 'path' }
+  return { path: null, source: 'none' }
+}
+
+function getOpenclawBinForCmd() {
+  const info = resolveOpenclawBin()
+  return info?.path || 'openclaw'
+}
+
+function buildWindowsOpenclawCommand(args = []) {
+  const bin = getOpenclawBinForCmd()
+  const quoted = bin.includes(' ') ? `"${bin}"` : bin
+  return `${quoted} ${args.join(' ')}`.trim()
+}
+
+function runOpenclawCommandSync(args = [], options = {}) {
+  const bin = getOpenclawBinForCmd()
+  if (isWindows) {
+    const cmd = buildWindowsOpenclawCommand(args)
+    return execSync(`cmd.exe /c ${cmd}`, { windowsHide: true, ...options })
+  }
+  const quoted = bin.includes(' ') ? `"${bin}"` : bin
+  return execSync(`${quoted} ${args.join(' ')}`.trim(), { ...options })
+}
+
 function getLocalOpenclawVersion() {
   let current = null
-  if (isMac) {
+  const resolved = resolveOpenclawBin()
+  if (resolved?.path) {
+    try {
+      if (isWindows) {
+        const cmd = `"${resolved.path}" --version`
+        const out = execSync(`cmd.exe /c ${cmd} 2>&1`, { windowsHide: true }).toString().trim()
+        current = out.split(/\s+/).pop()
+      } else {
+        const out = execSync(`"${resolved.path}" --version 2>&1`, { windowsHide: true }).toString().trim()
+        current = out.split(/\s+/).pop()
+      }
+    } catch {}
+  }
+  if (!current && isMac) {
     try {
       const target = fs.readlinkSync('/opt/homebrew/bin/openclaw')
       const pkgPath = path.resolve('/opt/homebrew/bin', target, '..', 'package.json')
@@ -974,7 +1063,8 @@ function winStartGateway() {
   fs.appendFileSync(logPath, `\n[${timestamp}] [ClawPanel] Starting Gateway on Windows...\n`)
 
   // 用 cmd.exe /c 启动，不用 shell: true（避免额外 cmd.exe 进程链导致终端闪烁）
-  const child = spawn('cmd.exe', ['/c', 'openclaw', 'gateway'], {
+  const cmd = buildWindowsOpenclawCommand(['gateway'])
+  const child = spawn('cmd.exe', ['/c', cmd], {
     detached: true,
     stdio: ['ignore', out, err],
     windowsHide: true,
@@ -993,7 +1083,8 @@ async function winStopGateway() {
     return
   }
 
-  spawnSync('cmd.exe', ['/c', 'openclaw', 'gateway', 'stop'], {
+  const cmd = buildWindowsOpenclawCommand(['gateway', 'stop'])
+  spawnSync('cmd.exe', ['/c', cmd], {
     windowsHide: true,
     cwd: homedir(),
     encoding: 'utf8',
@@ -1137,7 +1228,7 @@ function linuxStartGateway() {
   const timestamp = new Date().toISOString()
   fs.appendFileSync(logPath, `\n[${timestamp}] [ClawPanel] Starting Gateway on Linux...\n`)
 
-  const bin = findOpenclawBin() || 'openclaw'
+  const bin = getOpenclawBinForCmd()
   const child = spawn(bin, ['gateway'], {
     detached: true,
     stdio: ['ignore', out, err],
@@ -1538,17 +1629,21 @@ const handlers = {
         if (portOpen) { running = true }
       }
 
-      let cliInstalled = false
-      if (isMac) {
-        cliInstalled = fs.existsSync('/opt/homebrew/bin/openclaw') || fs.existsSync('/usr/local/bin/openclaw')
-      } else if (isWindows) {
-        try { cliInstalled = fs.existsSync(path.join(process.env.APPDATA || '', 'npm', 'openclaw.cmd')) }
-        catch { cliInstalled = false }
-      } else {
-        cliInstalled = !!findOpenclawBin()
-      }
+      const cliInfo = resolveOpenclawBin()
+      const cliPath = cliInfo?.path || null
+      const cliVersion = getLocalOpenclawVersion()
+      const cliInstalled = !!cliPath
 
-      return [{ label, running, pid, description: 'OpenClaw Gateway', cli_installed: cliInstalled }]
+      return [{
+        label,
+        running,
+        pid,
+        description: 'OpenClaw Gateway',
+        cli_installed: cliInstalled,
+        cli_path: cliPath,
+        cli_version: cliVersion,
+        cli_source: cliInfo?.source || 'none',
+      }]
     })
   },
 
@@ -1777,9 +1872,8 @@ const handlers = {
   },
 
   install_qqbot_plugin() {
-    const bin = findOpenclawBin() || 'openclaw'
     try {
-      execSync(`${bin} plugins install @sliverp/qqbot@latest`, { timeout: 60000, cwd: homedir() })
+      runOpenclawCommandSync(['plugins', 'install', '@sliverp/qqbot@latest'], { timeout: 60000, cwd: homedir() })
       return '安装成功'
     } catch (e) {
       throw new Error('QQBot 插件安装失败: ' + (e.message || e))
@@ -1792,7 +1886,7 @@ const handlers = {
     const pluginDir = path.join(OPENCLAW_DIR, 'plugins', 'node_modules', pid)
     const installed = fs.existsSync(pluginDir) && fs.existsSync(path.join(pluginDir, 'package.json'))
     // 检测是否为内置插件
-    const bin = findOpenclawBin() || 'openclaw'
+    const bin = getOpenclawBinForCmd()
     let builtin = false
     try {
       const result = spawnSync(bin, ['plugins', 'list'], { timeout: 10000, encoding: 'utf8', cwd: homedir() })
@@ -1815,9 +1909,8 @@ const handlers = {
 
   install_channel_plugin({ packageName, pluginId }) {
     if (!packageName || !pluginId) throw new Error('packageName 和 pluginId 不能为空')
-    const bin = findOpenclawBin() || 'openclaw'
     try {
-      execSync(`${bin} plugins install ${packageName.trim()}`, { timeout: 120000, cwd: homedir() })
+      runOpenclawCommandSync(['plugins', 'install', packageName.trim()], { timeout: 120000, cwd: homedir() })
       return '安装成功'
     } catch (e) {
       throw new Error(`插件 ${pluginId} 安装失败: ` + (e.message || e))
@@ -1826,9 +1919,8 @@ const handlers = {
 
   async pairing_list_channel({ channel }) {
     if (!channel || !channel.trim()) throw new Error('channel 不能为空')
-    const bin = findOpenclawBin() || 'openclaw'
     try {
-      const output = execSync(`${bin} pairing list ${channel.trim()}`, { timeout: 15000, encoding: 'utf8', cwd: homedir() })
+      const output = runOpenclawCommandSync(['pairing', 'list', channel.trim()], { timeout: 15000, encoding: 'utf8', cwd: homedir() })
       return output.trim() || '暂无待审批请求'
     } catch (e) {
       throw new Error('执行 openclaw pairing list 失败: ' + (e.stderr || e.message || e))
@@ -1838,11 +1930,10 @@ const handlers = {
   async pairing_approve_channel({ channel, code, notify }) {
     if (!channel || !channel.trim()) throw new Error('channel 不能为空')
     if (!code || !code.trim()) throw new Error('配对码不能为空')
-    const bin = findOpenclawBin() || 'openclaw'
     const args = ['pairing', 'approve', channel.trim(), code.trim().toUpperCase()]
     if (notify) args.push('--notify')
     try {
-      const output = execSync(`${bin} ${args.join(' ')}`, { timeout: 15000, encoding: 'utf8', cwd: homedir() })
+      const output = runOpenclawCommandSync(args, { timeout: 15000, encoding: 'utf8', cwd: homedir() })
       return output.trim() || '操作完成'
     } catch (e) {
       throw new Error('执行 openclaw pairing approve 失败: ' + (e.stderr || e.message || e))
