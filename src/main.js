@@ -353,7 +353,8 @@ async function boot() {
     ? api.readPanelConfig().then(cfg => {
         _forceSetup = cfg.forceSetup === true
         _skipSetup = cfg.skipSetup === true
-        if (cfg.accessPassword) {
+        const shouldAutoLogin = !!cfg.accessPassword && !cfg.mustChangePassword && cfg.forceSetup !== true
+        if (shouldAutoLogin) {
           return fetch('/__api/auth_login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -366,7 +367,7 @@ async function boot() {
   ensureWebSession.then(() => loadActiveInstance()).then(() => detectOpenclawStatus()).then(() => {
     // 重新渲染侧边栏（检测完成后 isOpenclawReady 状态已更新）
     renderSidebar(sidebar)
-    const wantsSetup = window.location.hash === '#/setup' || _forceSetup || (!isOpenclawReady() && !_skipSetup)
+    const wantsSetup = window.location.hash.startsWith('#/setup') || _forceSetup || (!isOpenclawReady() && !_skipSetup)
     if (wantsSetup) {
       setDefaultRoute('/setup')
       navigate('/setup')
@@ -732,7 +733,14 @@ function startUpdateChecker() {
   }
 
   const auth = await checkAuth()
-  if (!auth.ok) await showLoginOverlay(auth.defaultPw)
+  if (!auth.ok) {
+    await showLoginOverlay(auth.defaultPw)
+    const authRetry = await checkAuth()
+    if (!authRetry.ok) {
+      _hideSplash()
+      return
+    }
+  }
   try {
     await boot()
   } catch (bootErr) {
