@@ -76,7 +76,7 @@ async function loadDashboardData(page, fullRefresh = false) {
     api.getServicesStatus(),
     api.readOpenclawConfig(),
     // 版本信息：首次加载或手动刷新时才查询（避免 ARM 设备上频繁查 npm registry）
-    (!_dashboardInitialized || fullRefresh) ? api.getVersionInfo() : Promise.resolve(null),
+    (!_dashboardInitialized || fullRefresh) ? api.getVersionInfo() : Promise.resolve({}),
   ]), 15000)
   const secondaryP = withTimeout(Promise.allSettled([
     api.listAgents(),
@@ -90,7 +90,7 @@ async function loadDashboardData(page, fullRefresh = false) {
   // 第一波：服务状态 + 配置 + 版本 → 立即渲染统计卡片
   const [servicesRes, configRes, versionRes] = await coreP
   const services = servicesRes.status === 'fulfilled' ? servicesRes.value : []
-  const version = versionRes.status === 'fulfilled' ? versionRes.value : {}
+  const version = versionRes.status === 'fulfilled' ? (versionRes.value || {}) : {}
   const config = configRes.status === 'fulfilled' ? configRes.value : null
   if (servicesRes.status === 'rejected') toast('服务状态加载失败', 'error')
   if (versionRes.status === 'rejected') toast('版本信息加载失败', 'error')
