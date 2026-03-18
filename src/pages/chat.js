@@ -261,11 +261,11 @@ export async function render() {
           <span class="chat-title" id="chat-title">聊天</span>
         </div>
         <div class="chat-header-actions">
-          <div class="chat-model-group">
-            <select class="form-input" id="chat-model-select" title="切换当前会话模型" style="width:200px;max-width:28vw;padding:6px 10px;font-size:var(--font-size-xs)">
+          <div class="chat-model-group" style="display:flex;align-items:center;gap:6px;min-width:0">
+            <select class="form-input" id="chat-model-select" title="切换当前会话模型" style="width:auto;min-width:160px;max-width:28vw;flex:1 1 auto;padding:6px 10px;font-size:var(--font-size-xs)">
               <option value="">加载模型中...</option>
             </select>
-            <button class="btn btn-sm btn-ghost" id="btn-refresh-models" title="刷新模型列表">
+            <button class="btn btn-sm btn-ghost" id="btn-refresh-models" title="刷新模型列表" style="flex:0 0 auto">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
             </button>
           </div>
