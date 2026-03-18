@@ -437,7 +437,9 @@ async function loadOpenclawCli(page) {
       api.readPanelConfig(),
       api.getServicesStatus(),
     ])
-    const svc = Array.isArray(services) ? services[0] : null
+    const svc = Array.isArray(services)
+      ? services.find(s => s.label === 'ai.openclaw.gateway' || s.id === 'ai.openclaw.gateway' || s.name === 'ai.openclaw.gateway' || s.label === 'openclaw' || s.id === 'openclaw')
+      : null
     const detectedPath = svc?.cli_path || ''
     const detectedVersion = svc?.cli_version || ''
     const detectedSource = svc?.cli_source || ''
@@ -473,6 +475,13 @@ async function handleOpenclawSave(page) {
   const input = page.querySelector('[data-name="openclaw-path"]')
   const value = String(input?.value || '').trim()
   const cfg = await api.readPanelConfig()
+  if (!value) {
+    delete cfg.openclawPath
+    await api.writePanelConfig(cfg)
+    toast('路径为空，已清除覆盖', 'info')
+    await loadOpenclawCli(page)
+    return
+  }
   cfg.openclawPath = value
   await api.writePanelConfig(cfg)
   toast('OpenClaw 路径已保存', 'success')
@@ -488,7 +497,11 @@ async function handleOpenclawClear(page) {
 }
 
 async function handleOpenclawSetup() {
-  const cfg = await api.readPanelConfig().catch(() => ({}))
-  await api.writePanelConfig({ ...cfg, forceSetup: true, skipSetup: false }).catch(() => {})
-  window.location.hash = '#/setup'
+  try {
+    const cfg = await api.readPanelConfig().catch(() => ({}))
+    await api.writePanelConfig({ ...cfg, forceSetup: true, skipSetup: false })
+    window.location.hash = '#/setup'
+  } catch (e) {
+    toast('进入初始化设置失败: ' + (e?.message || e), 'error')
+  }
 }
