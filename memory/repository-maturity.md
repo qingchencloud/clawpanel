@@ -52,6 +52,8 @@
 - `callAIWithTools(...)` 开始复用 assistant tool orchestrator helper，assistant 的 tool 调度编排开始从页面层剥离。
 - 新增 `src/lib/assistant-provider-adapters.js`，抽离多 provider API 调用、SSE 读取与工具定义格式转换逻辑。
 - `assistant.js` 开始复用 assistant provider adapters helper，assistant 的 provider-specific 调用入口开始从页面层剥离。
+- 新增 `src/lib/assistant-message-pipeline.js`，抽离用户消息构造、AI 占位消息、请求上下文初始化与重试条 HTML。
+- `assistant.js` 开始复用 assistant message pipeline helper，assistant 主发送流程的基础拼装开始从页面层剥离。
 
 ## 后续建议
 - 继续拆 `src/pages/chat.js`：history/domain、hosted runtime/service、session event adapter。

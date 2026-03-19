@@ -77,6 +77,12 @@ import {
   convertAssistantToolsForGemini,
   readAssistantSSEStream,
 } from '../lib/assistant-provider-adapters.js'
+import {
+  buildAssistantRetryBarHtml,
+  createAssistantAiPlaceholder,
+  createAssistantRequestContext,
+  createAssistantUserMessage,
+} from '../lib/assistant-message-pipeline.js'
 import { renderAssistantSettingsModal, renderAssistantKnowledgeList, updateAssistantTitleFromSettings } from './assistant-settings.js'
 
 // ── 常量 ──
@@ -2645,18 +2651,12 @@ async function sendMessageDirect(text, { sessionId = _currentSessionId } = {}) {
   if (session.id === _currentSessionId) clearPendingImages()
 
   // 添加用户消息（多模态或纯文本）
-  const textContent = text.trim()
-  const msgContent = buildMessageContent(textContent, images)
-  const userMsg = { role: 'user', content: msgContent, ts: Date.now() }
-  if (images.length > 0) {
-    // 为每张图片生成稳定 ID 并存入文件系统
-    userMsg._images = images.map(i => {
-      const dbId = 'img_' + i.id
-      saveImageToFile(dbId, i.dataUrl) // 异步存储，不阻塞
-      return { dbId, dataUrl: i.dataUrl, name: i.name, width: i.width, height: i.height }
-    })
-  }
-  if (textContent) userMsg._text = textContent
+  const userMsg = createAssistantUserMessage({
+    text,
+    images,
+    buildMessageContent,
+    persistImage: saveImageToFile,
+  })
   session.messages.push(userMsg)
   autoTitle(session)
   session.updatedAt = Date.now()
@@ -2669,16 +2669,10 @@ async function sendMessageDirect(text, { sessionId = _currentSessionId } = {}) {
   const contextMessages = buildContextMessages(session)
 
   // 添加空 AI 消息占位
-  const aiMsg = { role: 'assistant', content: '', ts: Date.now() }
+  const aiMsg = createAssistantAiPlaceholder()
   session.messages.push(aiMsg)
 
-  const requestId = nextRequestId(session.id)
-  const requestController = new AbortController()
-  patchRequestState(session.id, {
-    streaming: true,
-    abortController: requestController,
-    status: 'streaming',
-  })
+  const { requestId, requestController } = createAssistantRequestContext(session.id, nextRequestId, patchRequestState)
   if (_currentSessionId === session.id) {
     _sendBtn.innerHTML = stopIcon()
     startStreamRefresh(session.id)
@@ -2770,13 +2764,7 @@ async function sendMessageDirect(text, { sessionId = _currentSessionId } = {}) {
     if (aiMsg._canRetry && _messagesEl && _currentSessionId === session.id) {
       const retryBar = document.createElement('div')
       retryBar.className = 'ast-retry-bar'
-      const retrySvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>'
-      const continueSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>'
-      retryBar.innerHTML = `
-        <button class="btn btn-sm btn-primary ast-btn-retry">${retrySvg} 重试</button>
-        <button class="btn btn-sm btn-secondary ast-btn-continue">${continueSvg} 输入继续</button>
-        <span class="ast-retry-hint">请求失败（已自动重试 3 次）</span>
-      `
+      retryBar.innerHTML = buildAssistantRetryBarHtml()
       _messagesEl.appendChild(retryBar)
       _messagesEl.scrollTop = _messagesEl.scrollHeight
 
@@ -2818,16 +2806,10 @@ async function retryAIResponse(session) {
 
   const contextMessages = buildContextMessages(session)
 
-  const aiMsg = { role: 'assistant', content: '', ts: Date.now() }
+  const aiMsg = createAssistantAiPlaceholder()
   session.messages.push(aiMsg)
 
-  const requestId = nextRequestId(session.id)
-  const requestController = new AbortController()
-  patchRequestState(session.id, {
-    streaming: true,
-    abortController: requestController,
-    status: 'streaming',
-  })
+  const { requestId, requestController } = createAssistantRequestContext(session.id, nextRequestId, patchRequestState)
   if (_currentSessionId === session.id) {
     if (_sendBtn) _sendBtn.innerHTML = stopIcon()
     startStreamRefresh(session.id)
@@ -2900,13 +2882,7 @@ async function retryAIResponse(session) {
     if (aiMsg._canRetry && _messagesEl && _currentSessionId === session.id) {
       const retryBar = document.createElement('div')
       retryBar.className = 'ast-retry-bar'
-      const retrySvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>'
-      const continueSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>'
-      retryBar.innerHTML = `
-        <button class="btn btn-sm btn-primary ast-btn-retry">${retrySvg} 重试</button>
-        <button class="btn btn-sm btn-secondary ast-btn-continue">${continueSvg} 输入继续</button>
-        <span class="ast-retry-hint">请求失败（已自动重试 3 次）</span>
-      `
+      retryBar.innerHTML = buildAssistantRetryBarHtml()
       _messagesEl.appendChild(retryBar)
       _messagesEl.scrollTop = _messagesEl.scrollHeight
 

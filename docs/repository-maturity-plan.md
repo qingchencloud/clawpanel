@@ -153,6 +153,8 @@ scripts/
 42. `callAIWithTools(...)` 开始复用 assistant tool orchestrator helper，tool 调度编排继续从页面文件中收口。
 43. 新增 `src/lib/assistant-provider-adapters.js`，抽离多 provider API 调用、SSE 读取与工具定义格式转换逻辑。
 44. `assistant.js` 开始复用 assistant provider adapters helper，provider-specific 调用入口继续从页面文件中剥离。
+45. 新增 `src/lib/assistant-message-pipeline.js`，抽离用户消息构造、AI 占位消息、请求上下文初始化与重试条 HTML。
+46. `assistant.js` 开始复用 assistant message pipeline helper，主发送流程的基础拼装开始从页面文件中收口。
 
 ## 风险与回滚建议
 - 风险：`chat.js` 仍然较大，后续继续拆分时容易影响事件时序。
