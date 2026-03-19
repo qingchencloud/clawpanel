@@ -83,6 +83,11 @@ import {
   createAssistantRequestContext,
   createAssistantUserMessage,
 } from '../lib/assistant-message-pipeline.js'
+import {
+  appendAssistantStreamChunk,
+  finalizeAssistantStreamBubble,
+  updateAssistantToolProgress,
+} from '../lib/assistant-streaming-service.js'
 import { renderAssistantSettingsModal, renderAssistantKnowledgeList, updateAssistantTitleFromSettings } from './assistant-settings.js'
 
 // ── 常量 ──
@@ -2852,19 +2857,18 @@ async function retryAIResponse(session) {
     } else {
       await callAI(session.id, contextMessages, (chunk) => {
         if (!isActiveRequest(session.id, requestId)) return
-        aiMsg.content += chunk
-        throttledSave()
-        if (lastBubble) {
-          const now = Date.now()
-          if (now - _lastRenderTime > 50) {
-            lastBubble.innerHTML = renderMarkdown(aiMsg.content) + '<span class="ast-cursor">▊</span>'
-            if (_messagesEl) _messagesEl.scrollTop = _messagesEl.scrollHeight
-            _lastRenderTime = now
-          }
-        }
+        _lastRenderTime = appendAssistantStreamChunk({
+          aiMsg,
+          chunk,
+          throttledSave,
+          lastBubble,
+          renderMarkdown,
+          messagesEl: _messagesEl,
+          lastRenderTime: _lastRenderTime,
+        })
       }, requestController.signal)
       if (!isActiveRequest(session.id, requestId)) return
-      if (lastBubble) lastBubble.innerHTML = renderMarkdown(aiMsg.content)
+      finalizeAssistantStreamBubble(lastBubble, aiMsg.content, renderMarkdown)
     }
   } catch (err) {
     if (!isActiveRequest(session.id, requestId) && err?.name !== 'AbortError') return
