@@ -62,6 +62,11 @@ import {
   writeHostedSessionConfig,
 } from '../lib/hosted-session-service.js'
 import {
+  ensureHostedBoundSession,
+  resolveHostedSessionRunMode,
+  shouldReplaceHostedSeed,
+} from '../lib/hosted-orchestrator-service.js'
+import {
   buildHistoryEntryKey,
   buildHistoryHash,
   extractHistoryMessages,
@@ -3093,11 +3098,8 @@ async function ensureHostedHistorySeeded(sessionKey, limit = 200, force = false)
     const deduped = dedupeHistory(messages)
     const seeded = buildSeededHostedHistory(deduped, HOSTED_CONTEXT_MAX || 100)
     if (seeded.length) {
-      const remoteLastTs = seeded.reduce((max, item) => Math.max(max, Number(item.ts || 0)), 0)
       const localHistory = Array.isArray(_hostedSessionConfig.history) ? _hostedSessionConfig.history : []
-      const localLastTs = localHistory.reduce((max, item) => Math.max(max, Number(item?.ts || 0)), 0)
-      const shouldReplace = force || !localHistory.length || remoteLastTs >= localLastTs
-      if (shouldReplace) {
+      if (shouldReplaceHostedSeed(localHistory, seeded, force)) {
         _hostedSessionConfig.history = seeded
         trimHostedHistoryByTokens()
         persistHostedRuntime(key)
@@ -3111,18 +3113,17 @@ async function ensureHostedHistorySeeded(sessionKey, limit = 200, force = false)
 
 async function runHostedAgentStepForSession(sessionKey) {
   const key = sessionKey || getHostedBoundSessionKey()
-  if (!key) return
-  if (key === getHostedSessionKey()) {
-    await refreshHostedHistoryIfNeeded({ limit: 100, force: true, sessionKey: key })
-    await ensureHostedHistorySeeded(key)
+  const mode = resolveHostedSessionRunMode(key, getHostedSessionKey())
+  if (mode.kind === 'skip') return
+  if (mode.kind === 'current') {
+    await refreshHostedHistoryIfNeeded({ limit: 100, force: true, sessionKey: mode.sessionKey })
+    await ensureHostedHistorySeeded(mode.sessionKey)
     return runHostedAgentStep()
   }
-  return withHostedStateAsync(key, async () => {
-    if (_hostedSessionConfig?.boundSessionKey !== key) {
-      _hostedSessionConfig.boundSessionKey = key
-    }
-    await refreshHostedHistoryIfNeeded({ limit: 100, force: true, sessionKey: key })
-    await ensureHostedHistorySeeded(key)
+  return withHostedStateAsync(mode.sessionKey, async () => {
+    ensureHostedBoundSession(_hostedSessionConfig, mode.sessionKey)
+    await refreshHostedHistoryIfNeeded({ limit: 100, force: true, sessionKey: mode.sessionKey })
+    await ensureHostedHistorySeeded(mode.sessionKey)
     return runHostedAgentStep()
   })
 }

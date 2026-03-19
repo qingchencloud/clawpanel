@@ -32,6 +32,8 @@
 - `appendHostedOutput(...)` 与 `commitHostedUserReply(...)` 开始复用 hosted output helper，hosted 与 UI/消息发送的交互层继续从页面文件中抽离。
 - 新增 `src/lib/hosted-session-service.js`，抽离 hosted session storage 读写、state 构建与 globals 快照逻辑。
 - `saveHostedSessionConfigForKey(...)`、`buildHostedStateFromStorage(...)`、`withHostedState(...)`、`withHostedStateAsync(...)` 开始复用 hosted session helper，多 session hosted 状态管理继续从页面层剥离。
+- 新增 `src/lib/hosted-orchestrator-service.js`，抽离 hosted remote seed 覆盖判定、cross-session 运行模式判断与 boundSessionKey 对齐逻辑。
+- `ensureHostedHistorySeeded(...)` 与 `runHostedAgentStepForSession(...)` 开始复用 orchestrator helper，hosted 调度链继续摆脱页面文件内联编排。
 
 ## 后续建议
 - 继续拆 `src/pages/chat.js`：history/domain、hosted runtime/service、session event adapter。
