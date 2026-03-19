@@ -18,6 +18,11 @@ import {
   normalizeAssistantApiType,
   requiresAssistantApiKey,
 } from '../lib/assistant-api-meta.js'
+import {
+  buildAssistantAuthHeaders,
+  cleanAssistantBaseUrl,
+  fetchAssistantWithRetry,
+} from '../lib/assistant-api-client.js'
 import { renderAssistantSettingsModal, renderAssistantKnowledgeList, updateAssistantTitleFromSettings } from './assistant-settings.js'
 
 // ── 常量 ──
@@ -1244,19 +1249,7 @@ function getSessionStatus(sessionId) {
 
 // ── 带重试的 fetch ──
 async function fetchWithRetry(url, options, retries = 3) {
-  const delays = [1000, 3000, 8000]
-  for (let i = 0; i <= retries; i++) {
-    try {
-      const resp = await fetch(url, options)
-      if (resp.ok || resp.status < 500 || i >= retries) return resp
-      // 5xx 服务端错误，静默重试
-      await new Promise(r => setTimeout(r, delays[i]))
-    } catch (err) {
-      if (err.name === 'AbortError') throw err // 用户手动中止，不重试
-      if (i >= retries) throw err
-      await new Promise(r => setTimeout(r, delays[i]))
-    }
-  }
+  return fetchAssistantWithRetry(url, options, retries)
 }
 
 // ── 配置读写 ──
@@ -1365,47 +1358,11 @@ function autoTitle(session) {
 // ── AI API 调用（自动兼容 Chat Completions + Responses API）──
 
 function cleanBaseUrl(raw, apiType) {
-  let base = (raw || '').replace(/\/+$/, '')
-  base = base.replace(/\/api\/chat\/?$/, '')
-  base = base.replace(/\/api\/generate\/?$/, '')
-  base = base.replace(/\/api\/tags\/?$/, '')
-  base = base.replace(/\/api\/?$/, '')
-  base = base.replace(/\/chat\/completions\/?$/, '')
-  base = base.replace(/\/completions\/?$/, '')
-  base = base.replace(/\/responses\/?$/, '')
-  base = base.replace(/\/messages\/?$/, '')
-  base = base.replace(/\/models\/?$/, '')
-  const type = normalizeAssistantApiType(apiType || _config.apiType)
-  if (type === 'anthropic-messages') {
-    // Anthropic: https://api.anthropic.com/v1
-    if (!base.endsWith('/v1')) base += '/v1'
-    return base
-  }
-  if (type === 'google-gemini') {
-    // Gemini: https://generativelanguage.googleapis.com/v1beta
-    return base
-  }
-  if (/:(11434)$/i.test(base) && !base.endsWith('/v1')) return `${base}/v1`
-  // 不再强制追加 /v1，尊重用户填写的 URL（火山引擎等第三方用 /v3 等路径）
-  return base
+  return cleanAssistantBaseUrl(raw, apiType || _config.apiType)
 }
 
 function authHeaders(apiType, apiKey) {
-  const type = normalizeAssistantApiType(apiType || _config.apiType)
-  const key = apiKey || _config.apiKey || ''
-  if (type === 'anthropic-messages') {
-    const headers = {
-      'Content-Type': 'application/json',
-      'anthropic-version': '2023-06-01',
-    }
-    if (key) headers['x-api-key'] = key
-    return headers
-  }
-  const headers = {
-    'Content-Type': 'application/json',
-  }
-  if (key) headers['Authorization'] = `Bearer ${key}`
-  return headers
+  return buildAssistantAuthHeaders(apiType || _config.apiType, apiKey || _config.apiKey || '')
 }
 
 // 超时常量

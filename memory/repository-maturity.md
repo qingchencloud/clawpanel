@@ -36,6 +36,8 @@
 - `ensureHostedHistorySeeded(...)` 与 `runHostedAgentStepForSession(...)` 开始复用 orchestrator helper，hosted 调度链继续摆脱页面文件内联编排。
 - 新增 `src/lib/assistant-api-meta.js`，抽离 assistant API 类型归一化、鉴权要求、提示文案与输入占位元数据。
 - `assistant.js` 开始复用 assistant API meta helper，assistant 领域的第一块独立边界已经建立。
+- 新增 `src/lib/assistant-api-client.js`，抽离 assistant API base URL 规整、鉴权头构造与重试请求逻辑。
+- `assistant.js` 开始复用 assistant API client helper，assistant 页与 API client 基础细节开始解耦。
 
 ## 后续建议
 - 继续拆 `src/pages/chat.js`：history/domain、hosted runtime/service、session event adapter。
