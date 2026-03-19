@@ -129,6 +129,8 @@ scripts/
 18. `shouldCaptureHostedTarget(...)`、`pushHostedHistoryEntry(...)`、`buildHostedMessages(...)`、`ensureHostedHistorySeeded(...)` 开始复用 hosted history helper，hosted 领域边界进一步清晰。
 19. 新增 `src/lib/hosted-step-service.js`，抽离 hosted step 的启动校验、运行开始、模板错误、成功收尾、自停与失败重试状态切换。
 20. `runHostedAgentStep(...)` 开始复用 hosted step helper，hosted orchestration 从页面内联状态机继续收缩为编排层。
+21. 新增 `src/lib/hosted-output-service.js`，抽离 hosted 输出解析、instruction 去重发送前准备与 optimistic user reply 构造。
+22. `appendHostedOutput(...)` 与 `commitHostedUserReply(...)` 开始复用 hosted output helper，hosted 与 chat UI 的交互边界进一步清晰。
 
 ## 风险与回滚建议
 - 风险：`chat.js` 仍然较大，后续继续拆分时容易影响事件时序。

@@ -52,6 +52,10 @@ import {
   validateHostedStepStart,
 } from '../lib/hosted-step-service.js'
 import {
+  buildHostedOptimisticUserMessage,
+  prepareHostedOutput,
+} from '../lib/hosted-output-service.js'
+import {
   buildHistoryEntryKey,
   buildHistoryHash,
   extractHistoryMessages,
@@ -3287,21 +3291,14 @@ function appendHostedUserReplyToHistory(answer, ts = Date.now()) {
 async function commitHostedUserReply(answer, sessionKey, ts = Date.now()) {
   const targetSessionKey = sessionKey || getHostedBoundSessionKey() || _sessionKey
   const finalAnswer = answer || ''
-  const optimisticMsg = {
-    role: 'user',
-    text: finalAnswer,
-    content: finalAnswer,
-    timestamp: ts,
-  }
+  const optimistic = buildHostedOptimisticUserMessage(finalAnswer, ts)
   const optimisticWrap = appendUserMessage(finalAnswer, [], new Date(ts))
-  stampHistoryNode(optimisticWrap, optimisticMsg)
+  stampHistoryNode(optimisticWrap, optimistic.message)
   if (targetSessionKey) {
     saveMessage({
       id: uuid(),
       sessionKey: targetSessionKey,
-      role: 'user',
-      content: finalAnswer,
-      timestamp: ts,
+      ...optimistic.storage,
     })
   }
   appendHostedUserReplyToHistory(finalAnswer, ts)
@@ -3689,39 +3686,36 @@ function showAskUserCardChat({ question, type, options, placeholder, toolId, ses
 }
 
 function appendHostedOutput(text) {
-  if (!text) return
-  const rawText = String(text)
-  const extracted = extractHostedAskUser(rawText)
-  const cleanedText = extracted.text || ''
-  let displayText = cleanedText || '托管 Agent 发起用户提问'
-  if (!displayText.startsWith('[托管 Agent]')) displayText = `[托管 Agent] ${displayText}`
+  const prepared = prepareHostedOutput(text, {
+    extractHostedAskUser,
+    extractHostedInstruction,
+  }, _hostedLastSentHash)
+  if (!prepared) return
+
   const specialTs = Date.now()
-  _hostedRuntime.lastSpecialText = displayText
+  _hostedRuntime.lastSpecialText = prepared.displayText
   _hostedRuntime.lastSpecialTs = specialTs
   persistHostedRuntime(getHostedBoundSessionKey())
   const boundKey = getHostedBoundSessionKey()
   if (boundKey === _sessionKey) {
     upsertStableSystemBubble({
       statusKey: 'hosted-special',
-      text: displayText,
+      text: prepared.displayText,
       statusType: 'hosted-special',
       ts: specialTs,
       active: true,
     })
     scrollToBottom()
-    if (extracted.askUser && !_askUserBlockedNotice) {
+    if (prepared.extracted.askUser && !_askUserBlockedNotice) {
       _askUserBlockedNotice = true
       appendSystemMessage('托管模式已忽略 ask_user 交互请求，等待自动流程继续或人工手动介入。')
     }
   }
 
-  const instruction = extractHostedInstruction(cleanedText || rawText)
-  if (!instruction) return
-  const hash = `${instruction.length}:${instruction.slice(0, 240)}:${instruction.slice(-80)}`
-  if (hash === _hostedLastSentHash) return
-  _hostedLastSentHash = hash
+  if (!prepared.instruction || !prepared.shouldSendInstruction) return
+  _hostedLastSentHash = prepared.instructionHash
   if (boundKey && wsClient.gatewayReady) {
-    wsClient.chatSend(boundKey, instruction).catch(() => {})
+    wsClient.chatSend(boundKey, prepared.instruction).catch(() => {})
   }
 }
 
