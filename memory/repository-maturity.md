@@ -50,6 +50,8 @@
 - `assistant.js` 开始复用 assistant tool ui helper，assistant 的 ask_user 交互卡片与 tool progress 渲染开始从页面层剥离。
 - 新增 `src/lib/assistant-tool-orchestrator.js`，抽离 tool history entry 构造/收尾与等待态包装逻辑。
 - `callAIWithTools(...)` 开始复用 assistant tool orchestrator helper，assistant 的 tool 调度编排开始从页面层剥离。
+- 新增 `src/lib/assistant-provider-adapters.js`，抽离多 provider API 调用、SSE 读取与工具定义格式转换逻辑。
+- `assistant.js` 开始复用 assistant provider adapters helper，assistant 的 provider-specific 调用入口开始从页面层剥离。
 
 ## 后续建议
 - 继续拆 `src/pages/chat.js`：history/domain、hosted runtime/service、session event adapter。

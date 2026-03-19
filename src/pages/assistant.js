@@ -68,6 +68,15 @@ import {
   finalizeAssistantToolHistoryEntry,
   withAssistantWaitingStatus,
 } from '../lib/assistant-tool-orchestrator.js'
+import {
+  callAssistantAnthropicMessages,
+  callAssistantChatCompletions,
+  callAssistantGeminiGenerate,
+  callAssistantResponsesAPI,
+  convertAssistantToolsForAnthropic,
+  convertAssistantToolsForGemini,
+  readAssistantSSEStream,
+} from '../lib/assistant-provider-adapters.js'
 import { renderAssistantSettingsModal, renderAssistantKnowledgeList, updateAssistantTitleFromSettings } from './assistant-settings.js'
 
 // ── 常量 ──
@@ -1330,315 +1339,67 @@ let _lastDebugInfo = null
 
 // ── Chat Completions API（/v1/chat/completions）──
 async function callChatCompletions(base, messages, onChunk, signal) {
-  const url = base + '/chat/completions'
-  const body = {
-    model: _config.model,
+  return callAssistantChatCompletions({
+    base,
     messages,
-    stream: true,
-    temperature: _config.temperature || 0.7,
-  }
-
-  const reqTime = Date.now()
-  _lastDebugInfo = {
-    url,
-    method: 'POST',
-    requestBody: { ...body, messages: body.messages.map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content.slice(0, 200) + (m.content.length > 200 ? '...' : '') : '[multimodal]' })) },
-    requestTime: new Date(reqTime).toLocaleString('zh-CN'),
-  }
-
-  const resp = await fetchWithRetry(url, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(body),
+    onChunk,
     signal,
+    config: _config,
+    fetchWithRetry,
+    authHeaders,
+    setDebugInfo: (next) => {
+      _lastDebugInfo = typeof next === 'function' ? next(_lastDebugInfo) : next
+    },
   })
-
-  _lastDebugInfo.status = resp.status
-  _lastDebugInfo.contentType = resp.headers.get('content-type') || ''
-  _lastDebugInfo.responseTime = new Date().toLocaleString('zh-CN')
-  _lastDebugInfo.latency = Date.now() - reqTime + 'ms'
-
-  if (!resp.ok) {
-    const errText = await resp.text().catch(() => '')
-    _lastDebugInfo.errorBody = errText.slice(0, 500)
-    let errMsg = `API 错误 ${resp.status}`
-    try {
-      const errJson = JSON.parse(errText)
-      errMsg = errJson.error?.message || errJson.message || errMsg
-    } catch {
-      if (errText) errMsg += `: ${errText.slice(0, 200)}`
-    }
-    throw new Error(errMsg)
-  }
-
-  // 检测响应是否为 SSE 流式
-  const ct = resp.headers.get('content-type') || ''
-  if (ct.includes('text/event-stream') || ct.includes('text/plain')) {
-    _lastDebugInfo.streaming = true
-    let chunkCount = 0
-    let contentChunks = 0
-    let reasoningChunks = 0
-    let reasoningBuf = ''
-
-    await readSSEStream(resp, (json) => {
-      chunkCount++
-      const d = json.choices?.[0]?.delta
-      if (!d) return
-
-      // content 和 reasoning_content 分开处理
-      if (d.content) {
-        contentChunks++
-        onChunk(d.content)
-      } else if (d.reasoning_content) {
-        reasoningChunks++
-        reasoningBuf += d.reasoning_content
-      }
-    }, signal)
-
-    _lastDebugInfo.chunks = { total: chunkCount, content: contentChunks, reasoning: reasoningChunks }
-
-    // 如果没有 content 但有 reasoning，将推理内容作为回复（部分模型只返回 reasoning）
-    if (contentChunks === 0 && reasoningBuf) {
-      console.warn('[assistant] 无 content 块，使用 reasoning_content 作为回复')
-      onChunk(reasoningBuf)
-      _lastDebugInfo.fallbackToReasoning = true
-    }
-  } else {
-    // 非流式响应：API 忽略了 stream:true，直接返回完整 JSON
-    _lastDebugInfo.streaming = false
-    const json = await resp.json()
-    _lastDebugInfo.responseBody = { id: json.id, model: json.model, object: json.object, usage: json.usage }
-    console.log('[assistant] 非流式响应:', json)
-    const msg = json.choices?.[0]?.message
-    const content = msg?.content || msg?.reasoning_content || ''
-    if (content) onChunk(content)
-  }
 }
 
 // ── Responses API（/v1/responses）──
 async function callResponsesAPI(base, messages, onChunk, signal) {
-  const url = base + '/responses'
-  const input = messages.filter(m => m.role !== 'system')
-  const instructions = messages.find(m => m.role === 'system')?.content || ''
-
-  const body = {
-    model: _config.model,
-    input,
-    instructions,
-    stream: true,
-    temperature: _config.temperature || 0.7,
-  }
-
-  const resp = await fetchWithRetry(url, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(body),
+  return callAssistantResponsesAPI({
+    base,
+    messages,
+    onChunk,
     signal,
+    config: _config,
+    fetchWithRetry,
+    authHeaders,
   })
-
-  if (!resp.ok) {
-    const errText = await resp.text().catch(() => '')
-    let errMsg = `API 错误 ${resp.status}`
-    try {
-      const errJson = JSON.parse(errText)
-      errMsg = errJson.error?.message || errJson.message || errMsg
-    } catch {
-      if (errText) errMsg += `: ${errText.slice(0, 200)}`
-    }
-    throw new Error(errMsg)
-  }
-
-  await readSSEStream(resp, (json) => {
-    // Responses API 的流式事件格式
-    if (json.type === 'response.output_text.delta') {
-      if (json.delta) onChunk(json.delta)
-    }
-    // 兼容：有些代理会转换为 choices 格式
-    if (json.choices?.[0]?.delta?.content) {
-      onChunk(json.choices[0].delta.content)
-    }
-  }, signal)
 }
 
 // ── Anthropic Messages API（/v1/messages）──
 async function callAnthropicMessages(base, messages, onChunk, signal) {
-  const url = base + '/messages'
-  const systemMsg = messages.find(m => m.role === 'system')?.content || ''
-  const chatMessages = messages.filter(m => m.role !== 'system')
-
-  const body = {
-    model: _config.model,
-    max_tokens: 8192,
-    stream: true,
-    temperature: _config.temperature || 0.7,
-  }
-  if (systemMsg) body.system = systemMsg
-  body.messages = chatMessages
-
-  const reqTime = Date.now()
-  _lastDebugInfo = {
-    url, method: 'POST',
-    requestBody: { ...body, messages: body.messages.map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content.slice(0, 200) + (m.content.length > 200 ? '...' : '') : '[multimodal]' })) },
-    requestTime: new Date(reqTime).toLocaleString('zh-CN'),
-  }
-
-  const resp = await fetchWithRetry(url, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(body),
+  return callAssistantAnthropicMessages({
+    base,
+    messages,
+    onChunk,
     signal,
+    config: _config,
+    fetchWithRetry,
+    authHeaders,
+    setDebugInfo: (next) => {
+      _lastDebugInfo = typeof next === 'function' ? next(_lastDebugInfo) : next
+    },
   })
-
-  _lastDebugInfo.status = resp.status
-  _lastDebugInfo.contentType = resp.headers.get('content-type') || ''
-  _lastDebugInfo.responseTime = new Date().toLocaleString('zh-CN')
-  _lastDebugInfo.latency = Date.now() - reqTime + 'ms'
-
-  if (!resp.ok) {
-    const errText = await resp.text().catch(() => '')
-    _lastDebugInfo.errorBody = errText.slice(0, 500)
-    let errMsg = `API 错误 ${resp.status}`
-    try {
-      const errJson = JSON.parse(errText)
-      errMsg = errJson.error?.message || errJson.message || errMsg
-    } catch {
-      if (errText) errMsg += `: ${errText.slice(0, 200)}`
-    }
-    throw new Error(errMsg)
-  }
-
-  _lastDebugInfo.streaming = true
-  let chunkCount = 0, contentChunks = 0, thinkingChunks = 0
-  let thinkingBuf = ''
-
-  await readSSEStream(resp, (json) => {
-    chunkCount++
-    if (json.type === 'content_block_delta') {
-      const delta = json.delta
-      if (delta?.type === 'text_delta' && delta.text) {
-        contentChunks++
-        onChunk(delta.text)
-      } else if (delta?.type === 'thinking_delta' && delta.thinking) {
-        thinkingChunks++
-        thinkingBuf += delta.thinking
-      }
-    }
-  }, signal)
-
-  _lastDebugInfo.chunks = { total: chunkCount, content: contentChunks, thinking: thinkingChunks }
-
-  if (contentChunks === 0 && thinkingBuf) {
-    console.warn('[assistant] Anthropic: 无 text 块，使用 thinking 作为回复')
-    onChunk(thinkingBuf)
-    _lastDebugInfo.fallbackToThinking = true
-  }
 }
 
 // ── Google Gemini API ──
 async function callGeminiGenerate(base, messages, onChunk, signal) {
-  const systemMsg = messages.find(m => m.role === 'system')?.content || ''
-  const chatMessages = messages.filter(m => m.role !== 'system')
-
-  // Gemini 格式转换
-  const contents = chatMessages.map(m => ({
-    role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }],
-  }))
-
-  const body = {
-    contents,
-    generationConfig: { temperature: _config.temperature || 0.7 },
-  }
-  if (systemMsg) {
-    body.systemInstruction = { parts: [{ text: systemMsg }] }
-  }
-
-  const url = `${base}/models/${_config.model}:streamGenerateContent?alt=sse&key=${_config.apiKey}`
-
-  const reqTime = Date.now()
-  _lastDebugInfo = { url: url.replace(_config.apiKey, '***'), method: 'POST', requestTime: new Date(reqTime).toLocaleString('zh-CN') }
-
-  const resp = await fetchWithRetry(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+  return callAssistantGeminiGenerate({
+    base,
+    messages,
+    onChunk,
     signal,
+    config: _config,
+    fetchWithRetry,
+    setDebugInfo: (next) => {
+      _lastDebugInfo = typeof next === 'function' ? next(_lastDebugInfo) : next
+    },
   })
-
-  _lastDebugInfo.status = resp.status
-  _lastDebugInfo.latency = Date.now() - reqTime + 'ms'
-
-  if (!resp.ok) {
-    const errText = await resp.text().catch(() => '')
-    let errMsg = `API 错误 ${resp.status}`
-    try { errMsg = JSON.parse(errText).error?.message || errMsg } catch {}
-    throw new Error(errMsg)
-  }
-
-  _lastDebugInfo.streaming = true
-  let chunkCount = 0
-
-  await readSSEStream(resp, (json) => {
-    chunkCount++
-    const text = json.candidates?.[0]?.content?.parts?.[0]?.text
-    if (text) onChunk(text)
-  }, signal)
-
-  _lastDebugInfo.chunks = { total: chunkCount }
 }
 
 // ── 通用 SSE 流读取 ──
 async function readSSEStream(resp, onEvent, signal) {
-  const reader = resp.body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-
-  // 监听 abort 信号 → 取消 reader（关键：fetch abort 不会自动取消已建立的流）
-  const onAbort = () => { try { reader.cancel() } catch {} }
-  if (signal) {
-    if (signal.aborted) { reader.cancel(); throw new DOMException('Aborted', 'AbortError') }
-    signal.addEventListener('abort', onAbort, { once: true })
-  }
-
-  try {
-    while (true) {
-      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-
-      // chunk 超时：如果 30 秒内没有收到任何数据，视为超时
-      const readPromise = reader.read()
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('流式响应超时：30 秒内未收到数据')), TIMEOUT_CHUNK)
-      )
-      const { done, value } = await Promise.race([readPromise, timeoutPromise])
-      if (done) {
-        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-        break
-      }
-
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-
-      for (const line of lines) {
-        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-        const trimmed = line.trim()
-        if (!trimmed) continue
-
-        // 处理 SSE event: 行
-        if (trimmed.startsWith('event:')) continue
-
-        if (!trimmed.startsWith('data:')) continue
-        const data = trimmed.slice(5).trim()
-        if (data === '[DONE]') return
-
-        try {
-          onEvent(JSON.parse(data))
-        } catch {}
-      }
-    }
-  } finally {
-    signal?.removeEventListener('abort', onAbort)
-  }
+  return readAssistantSSEStream(resp, onEvent, signal, TIMEOUT_CHUNK)
 }
 
 // ── 工具执行 ──
@@ -1763,20 +1524,12 @@ async function confirmToolCall(tc, critical = false, sessionId = _currentSession
 
 // 将 OpenAI 格式工具定义转为 Anthropic 格式
 function convertToolsForAnthropic(tools) {
-  return tools.map(t => ({
-    name: t.function.name,
-    description: t.function.description || '',
-    input_schema: t.function.parameters || { type: 'object', properties: {} },
-  }))
+  return convertAssistantToolsForAnthropic(tools)
 }
 
 // 将 OpenAI 格式工具定义转为 Gemini 格式
 function convertToolsForGemini(tools) {
-  return [{ functionDeclarations: tools.map(t => ({
-    name: t.function.name,
-    description: t.function.description || '',
-    parameters: t.function.parameters || { type: 'object', properties: {} },
-  }))}]
+  return convertAssistantToolsForGemini(tools)
 }
 
 // 上下文裁剪：保留图片消息，避免多模态丢失
