@@ -170,6 +170,7 @@ scripts/
 59. `chat.history` 刷新链路继续收紧：全量历史应用在已有消息时不再强制 `scrollToBottom(true)`，改为 only-on-first-load 策略，降低心跳刷新导致的异常滚动。
 60. Hosted 错投链路继续修正：`createAskUserBubble(...)` 与 `commitHostedUserReply(...)` 默认优先使用 `getHostedBoundSessionKey()`，且非当前 UI 会话时不再把 optimistic 用户消息误插入当前会话 DOM。
 61. `src/lib/hosted-agent.js` 的固定提示词模板已按用户提供版本替换为变量化 Role/Profile/Variables/Skills/Rules 结构，保留简洁执行导向并支持默认值回退语义。
+62. Hosted Prompt 模板继续补完用户提供的 `Workflows` 与 `Initialization` 片段，固定四段输出结构与最小充分表达原则已一并写入模板主体。
 
 ## 风险与回滚建议
 - 风险：`chat.js` 仍然较大，后续继续拆分时容易影响事件时序。
