@@ -23,6 +23,14 @@ import {
   cleanAssistantBaseUrl,
   fetchAssistantWithRetry,
 } from '../lib/assistant-api-client.js'
+import {
+  createAssistantSession,
+  getAutoSessionTitle,
+  loadAssistantConfig,
+  loadAssistantSessions,
+  saveAssistantConfig,
+  serializeAssistantSessions,
+} from '../lib/assistant-session-store.js'
 import { renderAssistantSettingsModal, renderAssistantKnowledgeList, updateAssistantTitleFromSettings } from './assistant-settings.js'
 
 // ── 常量 ──
@@ -1254,33 +1262,21 @@ async function fetchWithRetry(url, options, retries = 3) {
 
 // ── 配置读写 ──
 function loadConfig() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    _config = raw ? JSON.parse(raw) : null
-  } catch { _config = null }
-  if (!_config) {
-    _config = { baseUrl: '', apiKey: '', model: '', temperature: 0.7, tools: { terminal: false, fileOps: false, webSearch: false }, assistantName: DEFAULT_NAME, assistantPersonality: DEFAULT_PERSONALITY }
-  }
-  if (!_config.assistantName) _config.assistantName = DEFAULT_NAME
-  if (!_config.assistantPersonality) _config.assistantPersonality = DEFAULT_PERSONALITY
-  if (!_config.tools) _config.tools = { terminal: false, fileOps: false, webSearch: false }
-  if (!_config.mode) _config.mode = DEFAULT_MODE
-  _config.apiType = normalizeAssistantApiType(_config.apiType)
-  if (_config.autoRounds === undefined) _config.autoRounds = 8
-  if (!Array.isArray(_config.knowledgeFiles)) _config.knowledgeFiles = []
+  _config = loadAssistantConfig(localStorage, STORAGE_KEY, {
+    name: DEFAULT_NAME,
+    personality: DEFAULT_PERSONALITY,
+    mode: DEFAULT_MODE,
+  })
   return _config
 }
 
 function saveConfig() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(_config))
+  saveAssistantConfig(localStorage, STORAGE_KEY, _config)
 }
 
 // ── 会话管理 ──
 function loadSessions() {
-  try {
-    const raw = localStorage.getItem(SESSIONS_KEY)
-    _sessions = raw ? JSON.parse(raw) : []
-  } catch { _sessions = [] }
+  _sessions = loadAssistantSessions(localStorage, SESSIONS_KEY)
   const validIds = new Set(_sessions.map(s => s.id).filter(Boolean))
   for (const id of [..._requestStateBySession.keys()]) {
     if (!validIds.has(id)) _requestStateBySession.delete(id)
@@ -1290,19 +1286,11 @@ function loadSessions() {
 }
 
 function saveSessions() {
-  if (_sessions.length > MAX_SESSIONS) {
-    _sessions = _sessions.slice(-MAX_SESSIONS)
-  }
-  // 保存时剥离图片 dataUrl（避免撑爆 localStorage）
-  const serialized = JSON.stringify(_sessions, (key, value) => {
-    if (key === 'dataUrl' && typeof value === 'string' && value.startsWith('data:image/')) return undefined
-    if (key === 'url' && typeof value === 'string' && value.startsWith('data:image/')) return '[image]'
-    return value
-  })
+  const serializedState = serializeAssistantSessions(_sessions, MAX_SESSIONS)
+  _sessions = serializedState.sessions
   try {
-    localStorage.setItem(SESSIONS_KEY, serialized)
+    localStorage.setItem(SESSIONS_KEY, serializedState.serialized)
   } catch (e) {
-    // QuotaExceeded: 清理最旧的会话
     if (e.name === 'QuotaExceededError' && _sessions.length > 1) {
       _sessions.shift()
       saveSessions()
@@ -1315,13 +1303,7 @@ function getCurrentSession() {
 }
 
 function createSession() {
-  const session = {
-    id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2),
-    title: '新会话',
-    messages: [],
-    createdAt: Date.now(),
-    updatedAt: Date.now()
-  }
+  const session = createAssistantSession(() => crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2))
   _sessions.push(session)
   ensureRequestState(session.id)
   _currentSessionId = session.id
@@ -1343,16 +1325,8 @@ function deleteSession(id) {
 }
 
 function autoTitle(session) {
-  if (session.messages.length >= 1 && session.title === '新会话') {
-    const firstUser = session.messages.find(m => m.role === 'user')
-    if (firstUser) {
-      const txt = firstUser._text || (typeof firstUser.content === 'string' ? firstUser.content : (firstUser.content?.find?.(p => p.type === 'text')?.text || '[图片消息]'))
-      // 取第一行或前30字作为标题（跳过空行）
-      const firstLine = txt.split('\n').find(l => l.trim()) || txt
-      const title = firstLine.slice(0, 30) + (firstLine.length > 30 ? '...' : '')
-      session.title = title
-    }
-  }
+  const title = getAutoSessionTitle(session)
+  if (title) session.title = title
 }
 
 // ── AI API 调用（自动兼容 Chat Completions + Responses API）──

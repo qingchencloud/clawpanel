@@ -38,6 +38,8 @@
 - `assistant.js` 开始复用 assistant API meta helper，assistant 领域的第一块独立边界已经建立。
 - 新增 `src/lib/assistant-api-client.js`，抽离 assistant API base URL 规整、鉴权头构造与重试请求逻辑。
 - `assistant.js` 开始复用 assistant API client helper，assistant 页与 API client 基础细节开始解耦。
+- 新增 `src/lib/assistant-session-store.js`，抽离 assistant 配置读写、session 存储读写、序列化裁剪、会话创建与自动标题规则。
+- `assistant.js` 开始复用 assistant session store helper，assistant 页与 config/session store 基础逻辑开始解耦。
 
 ## 后续建议
 - 继续拆 `src/pages/chat.js`：history/domain、hosted runtime/service、session event adapter。
