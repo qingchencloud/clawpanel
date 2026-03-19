@@ -57,6 +57,12 @@ import {
   isAssistantCriticalCommand,
   resolveAssistantToolApproval,
 } from '../lib/assistant-tool-safety.js'
+import {
+  buildAssistantAnsweredCardHtml,
+  buildAssistantAskUserCardHtml,
+  renderAssistantToolBlocks as renderAssistantToolBlocksHtml,
+  resolveAssistantAskUserAnswer,
+} from '../lib/assistant-tool-ui.js'
 import { renderAssistantSettingsModal, renderAssistantKnowledgeList, updateAssistantTitleFromSettings } from './assistant-settings.js'
 
 // ── 常量 ──
@@ -1699,75 +1705,42 @@ function showAskUserCard({ question, type, options, placeholder, sessionId = _cu
   if (targetSessionId) setSessionStatus(targetSessionId, 'waiting')
   return new Promise((resolve) => {
     const cardId = 'ask-user-' + Date.now()
-    const optionsHtml = (options || []).map((opt, i) => {
-      const inputType = type === 'multiple' ? 'checkbox' : 'radio'
-      return `<label class="ast-ask-option">
-        <input type="${inputType}" name="${cardId}" value="${escHtml(opt)}">
-        <span>${escHtml(opt)}</span>
-      </label>`
-    }).join('')
-
-    const textHtml = type === 'text' || !options?.length
-      ? `<textarea class="ast-ask-text" placeholder="${escHtml(placeholder || '请输入...')}" rows="2"></textarea>`
-      : ''
-
-    const customHtml = type !== 'text' && options?.length
-      ? `<div class="ast-ask-custom"><input type="text" class="ast-ask-custom-input" placeholder="或输入自定义内容..."></div>`
-      : ''
-
     const card = document.createElement('div')
     card.className = 'ast-ask-card'
     card.id = cardId
-    card.innerHTML = `
-      <div class="ast-ask-question">${escHtml(question)}</div>
-      ${optionsHtml ? `<div class="ast-ask-options">${optionsHtml}</div>` : ''}
-      ${customHtml}
-      ${textHtml}
-      <div class="ast-ask-actions">
-        <button class="ast-ask-submit btn btn-primary btn-sm">确认</button>
-        <button class="ast-ask-skip btn btn-secondary btn-sm">跳过</button>
-      </div>
-    `
+    card.innerHTML = buildAssistantAskUserCardHtml({
+      cardId,
+      question,
+      type,
+      options,
+      placeholder,
+      escapeHtml: escHtml,
+    })
 
-    // 插入到消息区域
     _messagesEl.appendChild(card)
     _messagesEl.scrollTop = _messagesEl.scrollHeight
 
-    // 提交处理
     card.querySelector('.ast-ask-submit').addEventListener('click', () => {
-      let answer = ''
-
-      if (type === 'text' || (!options?.length)) {
-        answer = card.querySelector('.ast-ask-text')?.value?.trim() || ''
-      } else if (type === 'multiple') {
-        const checked = [...card.querySelectorAll('input[type="checkbox"]:checked')].map(el => el.value)
-        const custom = card.querySelector('.ast-ask-custom-input')?.value?.trim()
-        if (custom) checked.push(custom)
-        answer = checked.join('、') || '未选择'
-      } else {
-        // single
-        const checked = card.querySelector('input[type="radio"]:checked')
-        const custom = card.querySelector('.ast-ask-custom-input')?.value?.trim()
-        answer = custom || checked?.value || '未选择'
-      }
-
-      // 替换卡片为已回答状态
-      card.innerHTML = `<div class="ast-ask-answered">
-        <div class="ast-ask-question">${escHtml(question)}</div>
-        <div class="ast-ask-answer">${icon('check', 14)} ${escHtml(answer)}</div>
-      </div>`
+      const answer = resolveAssistantAskUserAnswer(card, type, options)
+      card.innerHTML = buildAssistantAnsweredCardHtml({
+        question,
+        answer,
+        escapeHtml: escHtml,
+        iconHtml: icon('check', 14),
+      })
       card.classList.add('answered')
 
       if (targetSessionId && getStreaming(targetSessionId)) setSessionStatus(targetSessionId, 'streaming')
       resolve(`用户回答: ${answer}`)
     })
 
-    // 跳过处理
     card.querySelector('.ast-ask-skip').addEventListener('click', () => {
-      card.innerHTML = `<div class="ast-ask-answered">
-        <div class="ast-ask-question">${escHtml(question)}</div>
-        <div class="ast-ask-answer" style="color:var(--text-tertiary)">— 已跳过</div>
-      </div>`
+      card.innerHTML = buildAssistantAnsweredCardHtml({
+        question,
+        answer: '',
+        skip: true,
+        escapeHtml: escHtml,
+      })
       card.classList.add('answered')
       if (targetSessionId && getStreaming(targetSessionId)) setSessionStatus(targetSessionId, 'streaming')
       resolve('用户跳过了此问题')
@@ -1920,14 +1893,40 @@ function renderSessionList() {
 }
 
 function renderToolBlocks(toolHistory) {
-  if (!toolHistory || toolHistory.length === 0) return ''
-  return toolHistory.map(tc => {
-    // ask_user 工具不显示在工具块中（它有自己的交互卡片）
-    if (tc.name === 'ask_user') return ''
-
-    const tcIcon = { run_command: icon('terminal', 14), write_file: icon('edit', 14), read_file: icon('file', 14), list_directory: icon('folder', 14), get_system_info: icon('monitor', 14), list_processes: icon('list', 14), check_port: icon('plug', 14), skills_list: icon('box', 14), skills_info: icon('box', 14), skills_check: icon('box', 14), skills_install_dep: icon('download', 14), skills_clawhub_search: icon('search', 14), skills_clawhub_install: icon('download', 14) }[tc.name] || icon('wrench', 14)
-    const label = { run_command: '执行命令', read_file: '读取文件', write_file: '写入文件', list_directory: '列出目录', get_system_info: '系统信息', list_processes: '进程列表', check_port: '端口检测', skills_list: 'Skills 列表', skills_info: 'Skill 详情', skills_check: 'Skills 检查', skills_install_dep: '安装依赖', skills_clawhub_search: '搜索 ClawHub', skills_clawhub_install: '安装 Skill' }[tc.name] || tc.name
-    const argsStr = tc.name === 'run_command' ? escHtml(tc.args.command || '')
+  return renderAssistantToolBlocksHtml(toolHistory, {
+    escapeHtml: escHtml,
+    defaultToolIcon: icon('wrench', 14),
+    toolIcons: {
+      run_command: icon('terminal', 14),
+      write_file: icon('edit', 14),
+      read_file: icon('file', 14),
+      list_directory: icon('folder', 14),
+      get_system_info: icon('monitor', 14),
+      list_processes: icon('list', 14),
+      check_port: icon('plug', 14),
+      skills_list: icon('box', 14),
+      skills_info: icon('box', 14),
+      skills_check: icon('box', 14),
+      skills_install_dep: icon('download', 14),
+      skills_clawhub_search: icon('search', 14),
+      skills_clawhub_install: icon('download', 14),
+    },
+    toolLabels: {
+      run_command: '执行命令',
+      read_file: '读取文件',
+      write_file: '写入文件',
+      list_directory: '列出目录',
+      get_system_info: '系统信息',
+      list_processes: '进程列表',
+      check_port: '端口检测',
+      skills_list: 'Skills 列表',
+      skills_info: 'Skill 详情',
+      skills_check: 'Skills 检查',
+      skills_install_dep: '安装依赖',
+      skills_clawhub_search: '搜索 ClawHub',
+      skills_clawhub_install: '安装 Skill',
+    },
+    getArgsPreview: (tc) => tc.name === 'run_command' ? escHtml(tc.args.command || '')
       : tc.name === 'read_file' ? escHtml(tc.args.path || '')
       : tc.name === 'write_file' ? escHtml(tc.args.path || '')
       : tc.name === 'list_directory' ? escHtml(tc.args.path || '')
@@ -1939,22 +1938,8 @@ function renderToolBlocks(toolHistory) {
       : tc.name === 'skills_clawhub_search' ? escHtml(tc.args.query || '')
       : tc.name === 'skills_clawhub_install' ? escHtml(tc.args.slug || '')
       : ['skills_list', 'skills_check'].includes(tc.name) ? ''
-      : escHtml(JSON.stringify(tc.args))
-
-    if (tc.pending) {
-      return `<div class="ast-tool-block pending">
-        <div class="ast-tool-summary">${tcIcon} <strong>${label}</strong> <code>${argsStr}</code> <span class="ast-tool-status"><span class="ast-typing">执行中...</span></span></div>
-      </div>`
-    }
-
-    const statusClass = tc.approved === false ? 'denied' : 'ok'
-    const statusLabel = tc.approved === false ? '已拒绝' : '已执行'
-    const resultPreview = (tc.result || '').length > 500 ? tc.result.slice(0, 500) + '...' : (tc.result || '')
-    return `<details class="ast-tool-block ${statusClass}">
-      <summary class="ast-tool-summary">${tcIcon} <strong>${label}</strong> <code>${argsStr}</code> <span class="ast-tool-status">${statusLabel}</span></summary>
-      <pre class="ast-tool-result">${escHtml(resultPreview)}</pre>
-    </details>`
-  }).join('')
+      : escHtml(JSON.stringify(tc.args)),
+  })
 }
 
 // ── 错误上下文 Banner ──

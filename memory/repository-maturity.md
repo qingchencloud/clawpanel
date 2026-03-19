@@ -46,6 +46,8 @@
 - `assistant.js` 开始复用 assistant attachments helper，assistant 输入区附件逻辑开始从页面层剥离。
 - 新增 `src/lib/assistant-tool-safety.js`，抽离 assistant 工具危险级别判定、关键命令检测与确认文案生成逻辑。
 - `assistant.js` 开始复用 assistant tool safety helper，assistant 工具确认与安全围栏规则开始从页面层剥离。
+- 新增 `src/lib/assistant-tool-ui.js`，抽离 ask_user 卡片 HTML、回答解析、已回答态渲染与工具块 HTML 生成逻辑。
+- `assistant.js` 开始复用 assistant tool ui helper，assistant 的 ask_user 交互卡片与 tool progress 渲染开始从页面层剥离。
 
 ## 后续建议
 - 继续拆 `src/pages/chat.js`：history/domain、hosted runtime/service、session event adapter。

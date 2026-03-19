@@ -147,6 +147,8 @@ scripts/
 36. `assistant.js` 开始复用 assistant attachments helper，输入区附件逻辑开始从页面文件中收口。
 37. 新增 `src/lib/assistant-tool-safety.js`，抽离 assistant 工具危险级别判定、关键命令检测与确认文案生成逻辑。
 38. `assistant.js` 开始复用 assistant tool safety helper，工具确认与安全围栏规则开始从页面文件中剥离。
+39. 新增 `src/lib/assistant-tool-ui.js`，抽离 ask_user 卡片 HTML、回答解析、已回答态渲染与工具块 HTML 生成逻辑。
+40. `assistant.js` 开始复用 assistant tool ui helper，ask_user 交互卡片与 tool progress 渲染开始从页面文件中收口。
 
 ## 风险与回滚建议
 - 风险：`chat.js` 仍然较大，后续继续拆分时容易影响事件时序。
