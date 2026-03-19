@@ -51,6 +51,12 @@ import {
   createAssistantPendingImage,
   removeAssistantPendingImage,
 } from '../lib/assistant-attachments.js'
+import {
+  ASSISTANT_INTERACTIVE_TOOLS,
+  buildAssistantToolConfirmText,
+  isAssistantCriticalCommand,
+  resolveAssistantToolApproval,
+} from '../lib/assistant-tool-safety.js'
 import { renderAssistantSettingsModal, renderAssistantKnowledgeList, updateAssistantTitleFromSettings } from './assistant-settings.js'
 
 // ── 常量 ──
@@ -507,43 +513,10 @@ const TOOL_DEFS = {
 }
 
 // 危险工具（需要用户确认）
-const INTERACTIVE_TOOLS = new Set(['ask_user']) // 交互式工具，不走 confirmToolCall
-const DANGEROUS_TOOLS = new Set(['run_command', 'write_file', 'skills_install_dep', 'skills_clawhub_install'])
-
-// 安全围栏：极端危险命令模式（任何模式都必须确认，包括无限模式）
-const CRITICAL_PATTERNS = [
-  /rm\s+(-[a-zA-Z]*f[a-zA-Z]*\s+)?[\/~]/i,  // rm -rf / 或 rm -f ~/
-  /rm\s+-[a-zA-Z]*r[a-zA-Z]*\s+\//i,          // rm -r /
-  /format\s+[a-zA-Z]:/i,                       // format C:
-  /mkfs\./i,                                    // mkfs.ext4 等
-  /dd\s+.*of=\/dev\//i,                         // dd of=/dev/sda
-  />\s*\/dev\/[sh]d/i,                          // > /dev/sda
-  /DROP\s+(DATABASE|TABLE|SCHEMA)/i,            // DROP DATABASE
-  /TRUNCATE\s+TABLE/i,                          // TRUNCATE TABLE
-  /DELETE\s+FROM\s+\w+\s*;?\s*$/i,             // DELETE FROM table (无 WHERE)
-  /:(){ :\|:& };:/,                             // fork bomb
-  /shutdown|reboot|init\s+[06]/i,              // 关机/重启
-  /chmod\s+(-R\s+)?777\s+\//i,                 // chmod 777 /
-  /chown\s+(-R\s+)?.*\s+\//i,                  // chown -R ... /
-  /curl\s+.*\|\s*(sudo\s+)?bash/i,             // curl | bash
-  /wget\s+.*\|\s*(sudo\s+)?bash/i,             // wget | bash
-  /npm\s+publish/i,                             // npm publish
-  /git\s+push\s+.*--force-with-lease/i,         // git push --force-with-lease
-  /git\s+push\s+.*--force/i,                    // git push --force
-  /git\s+push\s+.*\s-f(\s|$)/i,                // git push -f
-  /remove-item\s+.*-recurse.*-force.*[a-z]:\\/i, // Remove-Item -Recurse -Force C:\
-  /remove-item\s+-recurse/i,                    // Remove-Item -Recurse
-  /rmdir\s+\/s\s+\/q/i,                         // rmdir /s /q
-  /rd\s+\/s\s+\/q/i,                            // rd /s /q
-  /del\s+\/s\s+\/q/i,                           // del /s /q
-  /diskpart/i,                                   // diskpart
-  /bcdedit/i,                                    // bcdedit
-  /reg\s+delete/i,                               // reg delete
-]
+const INTERACTIVE_TOOLS = ASSISTANT_INTERACTIVE_TOOLS // 交互式工具，不走 confirmToolCall
 
 function isCriticalCommand(command) {
-  if (!command) return false
-  return CRITICAL_PATTERNS.some(p => p.test(command))
+  return isAssistantCriticalCommand(command)
 }
 
 // ── 内置 Skills ──
@@ -1804,24 +1777,8 @@ function showAskUserCard({ question, type, options, placeholder, sessionId = _cu
 
 // 危险工具确认弹窗
 async function confirmToolCall(tc, critical = false, sessionId = _currentSessionId) {
-  const name = tc.function.name
-  let args
-  try { args = JSON.parse(tc.function.arguments) } catch { args = {} }
-
-  let desc = ''
-  if (name === 'run_command') {
-    desc = `执行命令:\n\n${args.command}${args.cwd ? '\n\n工作目录: ' + args.cwd : ''}`
-  } else if (name === 'write_file') {
-    const preview = (args.content || '').slice(0, 200)
-    desc = `写入文件:\n${args.path}\n\n内容预览:\n${preview}${(args.content || '').length > 200 ? '\n...(已截断)' : ''}`
-  }
-
-  const prefix = critical
-    ? '⛔ 安全围栏拦截 — 此命令被识别为极端危险操作！\n\n'
-    : ''
-
   if (sessionId) setSessionStatus(sessionId, 'waiting')
-  const result = await showConfirm(`${prefix}AI 请求执行以下操作:\n\n${desc}\n\n是否允许？`)
+  const result = await showConfirm(buildAssistantToolConfirmText(tc, critical))
   if (sessionId && getStreaming(sessionId)) setSessionStatus(sessionId, 'streaming')
   return result
 }
@@ -1885,13 +1842,10 @@ function buildContextMessages(session) {
 async function executeToolWithSafety(toolName, args, tcForConfirm, sessionId = _currentSessionId) {
   let result = '', approved = true
   const mode = MODES[currentMode()]
-  const isCritical = toolName === 'run_command' && isCriticalCommand(args.command)
-  if (isCritical) {
-    approved = await confirmToolCall(tcForConfirm || { function: { name: toolName, arguments: JSON.stringify(args) } }, true, sessionId)
-    if (!approved) result = '用户拒绝了此危险操作'
-  } else if (mode.confirmDanger && DANGEROUS_TOOLS.has(toolName)) {
-    approved = await confirmToolCall(tcForConfirm || { function: { name: toolName, arguments: JSON.stringify(args) } }, false, sessionId)
-    if (!approved) result = '用户拒绝了此操作'
+  const approval = resolveAssistantToolApproval(toolName, args, mode)
+  if (approval.needsConfirm) {
+    approved = await confirmToolCall(tcForConfirm || { function: { name: toolName, arguments: JSON.stringify(args) } }, approval.critical, sessionId)
+    if (!approved) result = approval.deniedText
   }
   if (approved) {
     try { result = await executeTool(toolName, args) }
