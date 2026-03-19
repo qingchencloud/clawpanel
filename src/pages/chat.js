@@ -188,7 +188,7 @@ let _isLoadingHistory = false
 
 const VIRTUAL_WINDOW = 40
 const VIRTUAL_OVERSCAN = 20
-let _virtualEnabled = true
+let _virtualEnabled = false
 let _virtualHeights = new Map()
 let _virtualAvgHeight = 64
 let _virtualRange = { start: 0, end: 0, prefix: [] }
@@ -572,9 +572,6 @@ function bindEvents(page) {
     if (!target) return
     if (target.closest('code, pre')) return
     target.classList.toggle('revealed')
-  })
-  _messagesEl.addEventListener('scroll', () => {
-    if (_virtualEnabled) requestVirtualRender()
   })
 }
 
@@ -2589,8 +2586,8 @@ function clearMessages() {
   state.toolEventData.clear()
   state.toolRunIndex.clear()
   state.toolEventSeen.clear()
-  if (_virtualTopSpacer) _virtualTopSpacer.style.height = '0px'
-  if (_virtualBottomSpacer) _virtualBottomSpacer.style.height = '0px'
+  if (_virtualTopSpacer) { _virtualTopSpacer.remove(); _virtualTopSpacer = null }
+  if (_virtualBottomSpacer) { _virtualBottomSpacer.remove(); _virtualBottomSpacer = null }
 }
 
 function showTyping(show) {
