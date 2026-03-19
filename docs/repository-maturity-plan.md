@@ -169,6 +169,7 @@ scripts/
 58. `src/lib/hosted-agent.js` 的固定提示词改为简约指引风格，减少长篇规划和冗余输出，强调短句、执行导向和简明用户回复。
 59. `chat.history` 刷新链路继续收紧：全量历史应用在已有消息时不再强制 `scrollToBottom(true)`，改为 only-on-first-load 策略，降低心跳刷新导致的异常滚动。
 60. Hosted 错投链路继续修正：`createAskUserBubble(...)` 与 `commitHostedUserReply(...)` 默认优先使用 `getHostedBoundSessionKey()`，且非当前 UI 会话时不再把 optimistic 用户消息误插入当前会话 DOM。
+61. `src/lib/hosted-agent.js` 的固定提示词模板已按用户提供版本替换为变量化 Role/Profile/Variables/Skills/Rules 结构，保留简洁执行导向并支持默认值回退语义。
 
 ## 风险与回滚建议
 - 风险：`chat.js` 仍然较大，后续继续拆分时容易影响事件时序。
