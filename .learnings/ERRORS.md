@@ -29,3 +29,38 @@ Inspect the trailing cleanup block in `src/pages/chat.js` and repair the truncat
 - Related Files: src/pages/chat.js
 
 ---
+
+## [ERR-20260319-001] git-cherry-pick-conflict
+
+**Logged**: 2026-03-19T12:53:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: backend
+
+### Summary
+Selective upstream cherry-pick 8485df7 conflicted in src-tauri/src/commands/config.rs because the local branch had already refactored the same Windows standalone extraction block.
+
+### Error
+`
+CONFLICT (content): Merge conflict in src-tauri/src/commands/config.rs
+error: could not apply 8485df7... fix: resolve clippy dead_code and manual_flatten warnings
+`
+
+### Context
+- Operation attempted: git cherry-pick -x 8485df7
+- Repository: C:\Users\34438\.openclaw\workspace\tools\clawpanel
+- Resolution: keep local logic and manually adopt the upstream .flatten() simplification inside the conflicting ead_dir loop.
+
+### Suggested Fix
+When selectively syncing small upstream fixes into a heavily diverged branch, inspect the exact conflict hunk first and manually absorb the minimal behavior change instead of retrying full merge/cherry-pick blindly.
+
+### Metadata
+- Reproducible: yes
+- Related Files: src-tauri/src/commands/config.rs
+
+### Resolution
+- **Resolved**: 2026-03-19T12:54:00+08:00
+- **Commit/PR**: selective sync of upstream commit 8485df7
+- **Notes**: conflict resolved by retaining local branch behavior and applying only the clippy-friendly iteration style.
+
+---
