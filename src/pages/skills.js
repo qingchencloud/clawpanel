@@ -101,8 +101,35 @@ function renderSkills(el, data) {
       ${!cliAvailable ? '<span class="form-hint" style="margin-left:auto;color:var(--warning)">CLI 不可用，仅显示本地扫描结果</span>' : ''}
     </div>
 
+    <div class="stat-cards" style="margin-bottom:var(--space-md)">
+      <div class="stat-card">
+        <div class="stat-card-header"><span class="stat-card-label">Skills 总数</span></div>
+        <div class="stat-card-value">${skills.length}</div>
+        <div class="stat-card-meta">已扫描本地可见技能</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-header"><span class="stat-card-label">可直接使用</span></div>
+        <div class="stat-card-value">${eligible.length}</div>
+        <div class="stat-card-meta">环境与依赖已满足</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-header"><span class="stat-card-label">待处理</span></div>
+        <div class="stat-card-value">${missing.length + blocked.length}</div>
+        <div class="stat-card-meta">${missing.length} 缺依赖 · ${blocked.length} 已阻止</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-header"><span class="stat-card-label">不可用</span></div>
+        <div class="stat-card-value">${disabled.length}</div>
+        <div class="stat-card-meta">当前已禁用</div>
+      </div>
+    </div>
+
     <div class="skills-summary" style="margin-bottom:var(--space-lg);color:var(--text-secondary);font-size:var(--font-size-sm)">
       共 ${skills.length} 个 Skills: ${summary}
+    </div>
+
+    <div class="clawhub-empty" id="skill-filter-empty" style="display:none;margin-bottom:var(--space-lg);text-align:center;padding:var(--space-lg)">
+      当前过滤条件下没有匹配的 Skills
     </div>
 
     ${eligible.length ? `
@@ -153,14 +180,19 @@ function renderSkills(el, data) {
 
   // 实时过滤
   const input = el.querySelector('#skill-filter-input')
+  const emptyEl = el.querySelector('#skill-filter-empty')
   if (input) {
     input.addEventListener('input', () => {
       const q = input.value.trim().toLowerCase()
+      let visibleCount = 0
       el.querySelectorAll('.skill-card-item').forEach(card => {
         const name = (card.dataset.name || '').toLowerCase()
         const desc = (card.dataset.desc || '').toLowerCase()
-        card.style.display = (!q || name.includes(q) || desc.includes(q)) ? '' : 'none'
+        const visible = !q || name.includes(q) || desc.includes(q)
+        card.style.display = visible ? '' : 'none'
+        if (visible) visibleCount += 1
       })
+      if (emptyEl) emptyEl.style.display = q && visibleCount === 0 ? '' : 'none'
     })
   }
 }
