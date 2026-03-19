@@ -82,6 +82,8 @@
 - `syncCloudflaredFormState(...)` 现同时负责输入禁用态：非自定义目标时禁用端口输入，非命名隧道时禁用隧道名/域名输入，降低误填和误启概率。
 - Cloudflared 操作按钮状态已继续收紧：未安装时禁用登录与启动，安装按钮切为“已安装”只读态，并通过验证提示区明确引导“先安装再登录再启动”。
 - `loadCloudflared(...)` 现将安装状态挂到页面上下文，`syncCloudflaredFormState(...)` 统一处理安装态 + 校验态双重禁用逻辑，避免未安装时触发假动作。
+- Skills 页已增加顶部统计卡：将总数、可用、待处理、已禁用四类状态前置，减少用户必须逐段滚动才能理解当前技能态势的成本。
+- Skills 过滤交互已补空态：输入过滤关键字后若无任何匹配项，显示独立空态提示而非留白。
 
 ## 后续建议
 - 继续拆 `src/pages/chat.js`：history/domain、hosted runtime/service、session event adapter。
