@@ -4,6 +4,7 @@
  */
 import { api } from '../lib/tauri-api.js'
 import { toast } from '../components/toast.js'
+import { invalidateSkillsCatalog, getCachedSkillsCatalog, loadSkillsCatalog } from '../lib/skills-catalog.js'
 
 let _loadSeq = 0
 
@@ -51,22 +52,29 @@ export async function render() {
   return page
 }
 
-async function loadSkills(page) {
+async function loadSkills(page, options = {}) {
   const el = page.querySelector('#skills-tab-installed')
   if (!el) return
   const seq = ++_loadSeq
+  const force = !!options.force
+  const cached = !force ? getCachedSkillsCatalog() : null
 
-  el.innerHTML = `<div class="skills-loading-panel">
-    <div class="stat-card loading-placeholder" style="height:96px"></div>
-    <div class="form-hint" style="margin-top:8px">正在加载 Skills...</div>
-  </div>`
+  if (cached) {
+    renderSkills(el, cached)
+  } else {
+    el.innerHTML = `<div class="skills-loading-panel">
+      <div class="stat-card loading-placeholder" style="height:96px"></div>
+      <div class="form-hint" style="margin-top:8px">正在加载 Skills...</div>
+    </div>`
+  }
 
   try {
-    const data = await api.skillsList()
+    const data = await loadSkillsCatalog({ force })
     if (seq !== _loadSeq) return
     renderSkills(el, data)
   } catch (e) {
     if (seq !== _loadSeq) return
+    if (cached) return
     el.innerHTML = `<div class="skills-load-error">
       <div style="color:var(--error);margin-bottom:8px">加载失败: ${esc(e?.message || e)}</div>
       <div class="form-hint" style="margin-bottom:10px">请确认 OpenClaw 已安装并可用</div>
@@ -83,7 +91,7 @@ function renderSkills(el, data) {
   const disabled = skills.filter(s => s.disabled)
   const blocked = skills.filter(s => s.blockedByAllowlist && !s.disabled)
 
-  const summary = `${eligible.length} 可用 / ${missing.length} 缺依赖 / ${disabled.length} 已禁用`
+  const summary = `${eligible.length} 可用 / ${missing.length} 缺依赖 / ${disabled.length} 已禁用 / ${blocked.length} 已阻止`
 
   el.innerHTML = `
     <div class="clawhub-toolbar">
@@ -431,7 +439,8 @@ function bindEvents(page) {
     if (!btn) return
     switch (btn.dataset.action) {
       case 'skill-retry':
-        await loadSkills(page)
+        invalidateSkillsCatalog()
+        await loadSkills(page, { force: true })
         break
       case 'skill-info':
         await handleInfo(page, btn.dataset.name)
