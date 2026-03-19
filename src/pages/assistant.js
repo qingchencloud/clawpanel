@@ -11,6 +11,13 @@ import { OPENCLAW_KB } from '../lib/openclaw-kb.js'
 import { icon, statusIcon } from '../lib/icons.js'
 import { QTCOOL, PROVIDER_PRESETS, API_TYPES as SHARED_API_TYPES, fetchQtcoolModels } from '../lib/model-presets.js'
 import { buildSystemPrompt as buildSystemPromptCore, getEnabledTools as getEnabledToolsCore, callAIWithTools as callAIWithToolsCore, callAI as callAICore, trimContext as trimContextCore } from '../lib/assistant-core.js'
+import {
+  getAssistantApiBasePlaceholder,
+  getAssistantApiHintText,
+  getAssistantApiKeyPlaceholder,
+  normalizeAssistantApiType,
+  requiresAssistantApiKey,
+} from '../lib/assistant-api-meta.js'
 import { renderAssistantSettingsModal, renderAssistantKnowledgeList, updateAssistantTitleFromSettings } from './assistant-settings.js'
 
 // ── 常量 ──
@@ -50,42 +57,6 @@ const DEFAULT_MODE = 'execute'
 // ── API 类型（从共享模块导入）──
 const API_TYPES = SHARED_API_TYPES
 
-function normalizeApiType(raw) {
-  const type = (raw || '').trim()
-  if (type === 'anthropic' || type === 'anthropic-messages') return 'anthropic-messages'
-  if (type === 'google-gemini') return 'google-gemini'
-  if (type === 'openai' || type === 'openai-completions' || type === 'openai-responses') return 'openai-completions'
-  return 'openai-completions'
-}
-
-function requiresApiKey(apiType) {
-  const type = normalizeApiType(apiType)
-  return type === 'anthropic-messages' || type === 'google-gemini'
-}
-
-function apiHintText(apiType) {
-  return {
-    'openai-completions': '自动兼容 Chat Completions 和 Responses API；Ollama 可留空 API Key',
-    'anthropic-messages': '使用 Anthropic Messages API（/v1/messages）',
-    'google-gemini': '使用 Gemini generateContent API',
-  }[normalizeApiType(apiType)] || '自动兼容 Chat Completions 和 Responses API；Ollama 可留空 API Key'
-}
-
-function apiBasePlaceholder(apiType) {
-  return {
-    'openai-completions': 'https://api.openai.com/v1 或 http://127.0.0.1:11434',
-    'anthropic-messages': 'https://api.anthropic.com',
-    'google-gemini': 'https://generativelanguage.googleapis.com/v1beta',
-  }[normalizeApiType(apiType)] || 'https://api.openai.com/v1'
-}
-
-function apiKeyPlaceholder(apiType) {
-  return {
-    'openai-completions': 'sk-...（Ollama 可留空）',
-    'anthropic-messages': 'sk-ant-...',
-    'google-gemini': 'AIza...',
-  }[normalizeApiType(apiType)] || 'sk-...'
-}
 
 // ── 系统提示词 ──
 const DEFAULT_NAME = '晴辰助手'
@@ -1301,7 +1272,7 @@ function loadConfig() {
   if (!_config.assistantPersonality) _config.assistantPersonality = DEFAULT_PERSONALITY
   if (!_config.tools) _config.tools = { terminal: false, fileOps: false, webSearch: false }
   if (!_config.mode) _config.mode = DEFAULT_MODE
-  _config.apiType = normalizeApiType(_config.apiType)
+  _config.apiType = normalizeAssistantApiType(_config.apiType)
   if (_config.autoRounds === undefined) _config.autoRounds = 8
   if (!Array.isArray(_config.knowledgeFiles)) _config.knowledgeFiles = []
   return _config
@@ -1404,7 +1375,7 @@ function cleanBaseUrl(raw, apiType) {
   base = base.replace(/\/responses\/?$/, '')
   base = base.replace(/\/messages\/?$/, '')
   base = base.replace(/\/models\/?$/, '')
-  const type = normalizeApiType(apiType || _config.apiType)
+  const type = normalizeAssistantApiType(apiType || _config.apiType)
   if (type === 'anthropic-messages') {
     // Anthropic: https://api.anthropic.com/v1
     if (!base.endsWith('/v1')) base += '/v1'
@@ -1420,7 +1391,7 @@ function cleanBaseUrl(raw, apiType) {
 }
 
 function authHeaders(apiType, apiKey) {
-  const type = normalizeApiType(apiType || _config.apiType)
+  const type = normalizeAssistantApiType(apiType || _config.apiType)
   const key = apiKey || _config.apiKey || ''
   if (type === 'anthropic-messages') {
     const headers = {
@@ -2388,7 +2359,7 @@ function showSettings() {
         if (result.apiKey) apiKeyInput.value = result.apiKey
         if (result.model) overlay.querySelector('#ast-model').value = result.model
         if (result.apiType) {
-          apiTypeSelect.value = normalizeApiType(result.apiType)
+          apiTypeSelect.value = normalizeAssistantApiType(result.apiType)
           apiTypeSelect.dispatchEvent(new Event('change'))
         }
         if (result.temperature && overlay.querySelector('#ast-temp')) {
@@ -2405,10 +2376,10 @@ function showSettings() {
 
   // API 类型切换时更新提示文本和 placeholder
   apiTypeSelect.addEventListener('change', () => {
-    const v = normalizeApiType(apiTypeSelect.value)
-    apiHintEl.textContent = apiHintText(v)
-    baseUrlInput.placeholder = apiBasePlaceholder(v)
-    apiKeyInput.placeholder = apiKeyPlaceholder(v)
+    const v = normalizeAssistantApiType(apiTypeSelect.value)
+    apiHintEl.textContent = getAssistantApiHintText(v)
+    baseUrlInput.placeholder = getAssistantApiBasePlaceholder(v)
+    apiKeyInput.placeholder = getAssistantApiKeyPlaceholder(v)
   })
 
   // 灵魂来源切换
@@ -2687,9 +2658,9 @@ function showSettings() {
     const baseUrl = overlay.querySelector('#ast-baseurl').value.trim()
     const apiKey = overlay.querySelector('#ast-apikey').value.trim()
     const model = overlay.querySelector('#ast-model').value.trim()
-    const selApiType = normalizeApiType(overlay.querySelector('#ast-apitype').value || 'openai-completions')
-    if (!baseUrl || (requiresApiKey(selApiType) && !apiKey)) {
-      resultEl.innerHTML = '<span style="color:var(--warning)">' + escHtml(requiresApiKey(selApiType) ? '请先填写 Base URL 和 API Key' : '请先填写 Base URL') + '</span>'
+    const selApiType = normalizeAssistantApiType(overlay.querySelector('#ast-apitype').value || 'openai-completions')
+    if (!baseUrl || (requiresAssistantApiKey(selApiType) && !apiKey)) {
+      resultEl.innerHTML = '<span style="color:var(--warning)">' + escHtml(requiresAssistantApiKey(selApiType) ? '请先填写 Base URL 和 API Key' : '请先填写 Base URL') + '</span>'
       return
     }
     if (!model) {
@@ -2778,9 +2749,9 @@ function showSettings() {
     const btn = e.target
     const baseUrl = overlay.querySelector('#ast-baseurl').value.trim()
     const apiKey = overlay.querySelector('#ast-apikey').value.trim()
-    const selApiType = normalizeApiType(overlay.querySelector('#ast-apitype').value || 'openai-completions')
-    if (!baseUrl || (requiresApiKey(selApiType) && !apiKey)) {
-      resultEl.innerHTML = '<span style="color:var(--warning)">' + escHtml(requiresApiKey(selApiType) ? '请先填写 Base URL 和 API Key' : '请先填写 Base URL') + '</span>'
+    const selApiType = normalizeAssistantApiType(overlay.querySelector('#ast-apitype').value || 'openai-completions')
+    if (!baseUrl || (requiresAssistantApiKey(selApiType) && !apiKey)) {
+      resultEl.innerHTML = '<span style="color:var(--warning)">' + escHtml(requiresAssistantApiKey(selApiType) ? '请先填写 Base URL 和 API Key' : '请先填写 Base URL') + '</span>'
       return
     }
     btn.disabled = true
@@ -2875,7 +2846,7 @@ function showSettings() {
                   name: pid,
                   baseUrl: p.baseUrl,
                   apiKey: p.apiKey || '',
-                  apiType: normalizeApiType(p.api),
+                  apiType: normalizeAssistantApiType(p.api),
                   models: (p.models || []).map(m => m.id || m.name).filter(Boolean),
                 })
               }
@@ -2895,7 +2866,7 @@ function showSettings() {
               name: pid,
               baseUrl: p.baseUrl,
               apiKey: p.apiKey || '',
-              apiType: normalizeApiType(p.api),
+              apiType: normalizeAssistantApiType(p.api),
               models: (p.models || []).map(m => m.id || m.name).filter(Boolean),
             })
           }
@@ -2981,7 +2952,7 @@ function showSettings() {
     _config.apiKey = overlay.querySelector('#ast-apikey').value.trim()
     _config.model = overlay.querySelector('#ast-model').value.trim()
     _config.temperature = parseFloat(overlay.querySelector('#ast-temp').value) || 0.7
-    _config.apiType = normalizeApiType(overlay.querySelector('#ast-apitype').value || 'openai-completions')
+    _config.apiType = normalizeAssistantApiType(overlay.querySelector('#ast-apitype').value || 'openai-completions')
     // 工具开关
     _config.tools.terminal = overlay.querySelector('#ast-tool-terminal').checked
     _config.tools.fileOps = overlay.querySelector('#ast-tool-fileops').checked

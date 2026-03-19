@@ -135,6 +135,8 @@ scripts/
 24. `saveHostedSessionConfigForKey(...)`、`buildHostedStateFromStorage(...)`、`withHostedState(...)`、`withHostedStateAsync(...)` 开始复用 hosted session helper，多 session hosted 状态管理继续脱离页面文件。
 25. 新增 `src/lib/hosted-orchestrator-service.js`，抽离 hosted remote seed 覆盖判定、cross-session 运行模式判断与 boundSessionKey 对齐逻辑。
 26. `ensureHostedHistorySeeded(...)` 与 `runHostedAgentStepForSession(...)` 开始复用 orchestrator helper，hosted session/history/step 串联调度继续从页面中抽离。
+27. 新增 `src/lib/assistant-api-meta.js`，抽离 assistant API 类型归一化、鉴权要求、提示文案与输入占位元数据。
+28. `assistant.js` 开始复用 assistant API meta helper，页面层不再内联维护 API 类型说明与占位规则。
 
 ## 风险与回滚建议
 - 风险：`chat.js` 仍然较大，后续继续拆分时容易影响事件时序。
