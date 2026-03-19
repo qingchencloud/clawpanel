@@ -35,7 +35,6 @@ import {
 } from '../lib/history-domain.js'
 import {
   toHostedSeedHistory,
-  toLocalAssistantImages,
   toStoredHistoryMessages,
 } from '../lib/history-view-model.js'
 import {
@@ -43,6 +42,10 @@ import {
   renderHistoryList,
   renderIncrementalHistoryList,
 } from '../lib/history-render-service.js'
+import {
+  renderLocalHistoryMessages,
+  takePendingHistoryPayload,
+} from '../lib/history-loader-service.js'
 
 const RENDER_THROTTLE = 30
 const STORAGE_SESSION_KEY = 'clawpanel-last-session'
@@ -1736,13 +1739,12 @@ function resetStreamState() {
 function flushPendingHistory(sessionKey = _sessionKey) {
   const key = _normalizeSessionKey(sessionKey)
   const state = getSessionState(key)
-  if (!state.pendingHistoryPayload || !_messagesEl) return
-  if (_isSending || _isStreaming || _messageQueue.length > 0) return
-  const payload = state.pendingHistoryPayload
-  const payloadTs = maxHistoryTimestamp(payload?.messages || [])
-  state.pendingHistoryPayload = null
-  state.pendingHistoryTs = 0
-  if (payloadTs && payloadTs <= Number(state.lastHistoryAppliedTs || 0)) return
+  const payload = takePendingHistoryPayload(state, {
+    hasMessagesEl: !!_messagesEl,
+    isBusy: _isSending || _isStreaming || _messageQueue.length > 0,
+    maxHistoryTimestamp,
+  })
+  if (!payload) return
   applyIncrementalHistoryResult(payload, key)
 }
 
@@ -1861,18 +1863,10 @@ async function loadHistory() {
     const local = await getLocalMessages(_sessionKey, 200)
     if (local.length) {
       clearMessages()
-      local.forEach(msg => {
-        if (!msg.content && !msg.attachments?.length) return
-        const msgTime = msg.timestamp ? new Date(msg.timestamp) : new Date()
-        if (msg.role === 'user') appendUserMessage(msg.content || '', msg.attachments || null, msgTime)
-        else if (msg.role === 'assistant') {
-          const images = toLocalAssistantImages(msg.attachments || [])
-          appendAiMessage(msg.content || '', msgTime, images, [], [], [], [])
-        } else if (msg.role === 'system') {
-          appendSystemMessage(msg.content || '', msgTime?.getTime?.() || Date.now())
-        } else {
-          appendSystemMessage(msg.content || '', msgTime?.getTime?.() || Date.now())
-        }
+      renderLocalHistoryMessages(local, {
+        appendUserMessage,
+        appendAiMessage,
+        appendSystemMessage,
       })
       scrollToBottom(true)
     }

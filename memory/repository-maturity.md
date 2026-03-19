@@ -18,6 +18,8 @@
 - `chat.js` 中 apply/render 路径开始复用 history-view-model helper，页面层重复转换逻辑继续收缩。
 - 新增 `src/lib/history-render-service.js`，抽离 history 渲染循环、增量渲染去重路径、omitted-images notice 插入。
 - `applyHistoryResult(...)` 与 `applyIncrementalHistoryResult(...)` 开始复用 render-service，history 主流程已不再完全内联在页面文件中。
+- 新增 `src/lib/history-loader-service.js`，抽离 pending payload 消费判定与本地历史回填逻辑。
+- `flushPendingHistory(...)` 与 `loadHistory(...)` 开始复用 loader helper，history loader 路径继续从页面层剥离。
 
 ## 后续建议
 - 继续拆 `src/pages/chat.js`：history/domain、hosted runtime/service、session event adapter。
