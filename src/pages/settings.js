@@ -494,6 +494,11 @@ async function handleCloudflaredInstall(page) {
 }
 
 async function handleCloudflaredLogin(page) {
+  if (page.__cloudflaredInstalled === false) {
+    toast('请先安装 Cloudflared', 'warning')
+    syncCloudflaredFormState(page)
+    return
+  }
   await api.cloudflaredLogin()
   await loadCloudflared(page)
   toast('Cloudflared 登录完成', 'success')

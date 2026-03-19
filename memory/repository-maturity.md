@@ -80,6 +80,8 @@
 - 新增 `syncCloudflaredFormState(...)`：切换 `cloudflared-mode` / `cloudflared-expose` / `cloudflared-port` 时，动态切换对应表单块可见性并实时更新实际端口展示。
 - Cloudflared 表单已继续收紧交互边界：新增 `validateCloudflaredForm(...)`，命名隧道缺少隧道名/域名、自定义端口为空时禁止启动，并通过提示文案与按钮禁用态即时反馈。
 - `syncCloudflaredFormState(...)` 现同时负责输入禁用态：非自定义目标时禁用端口输入，非命名隧道时禁用隧道名/域名输入，降低误填和误启概率。
+- Cloudflared 操作按钮状态已继续收紧：未安装时禁用登录与启动，安装按钮切为“已安装”只读态，并通过验证提示区明确引导“先安装再登录再启动”。
+- `loadCloudflared(...)` 现将安装状态挂到页面上下文，`syncCloudflaredFormState(...)` 统一处理安装态 + 校验态双重禁用逻辑，避免未安装时触发假动作。
 
 ## 后续建议
 - 继续拆 `src/pages/chat.js`：history/domain、hosted runtime/service、session event adapter。
