@@ -157,6 +157,8 @@ scripts/
 46. `assistant.js` 开始复用 assistant message pipeline helper，主发送流程的基础拼装开始从页面文件中收口。
 47. 新增 `src/lib/assistant-streaming-service.js`，抽离 tool progress 渲染、流式 chunk 更新与最终 bubble 收尾逻辑。
 48. `assistant.js` 开始复用 assistant streaming service helper，发送 / 重试流程中的重复流式渲染逻辑继续从页面文件中剥离。
+49. 新增 `src/lib/assistant-request-lifecycle.js`，抽离 retry bar 挂载与请求 finally 收尾逻辑。
+50. `assistant.js` 开始复用 assistant request lifecycle helper，发送 / 重试流程中的错误恢复与最终清理逻辑继续从页面文件中收口。
 
 ## 风险与回滚建议
 - 风险：`chat.js` 仍然较大，后续继续拆分时容易影响事件时序。

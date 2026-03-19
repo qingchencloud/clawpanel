@@ -56,6 +56,8 @@
 - `assistant.js` 开始复用 assistant message pipeline helper，assistant 主发送流程的基础拼装开始从页面层剥离。
 - 新增 `src/lib/assistant-streaming-service.js`，抽离 tool progress 渲染、流式 chunk 更新与最终 bubble 收尾逻辑。
 - `assistant.js` 开始复用 assistant streaming service helper，assistant 发送 / 重试流程中的重复流式渲染逻辑开始从页面层剥离。
+- 新增 `src/lib/assistant-request-lifecycle.js`，抽离 retry bar 挂载与请求 finally 收尾逻辑。
+- `assistant.js` 开始复用 assistant request lifecycle helper，assistant 发送 / 重试流程中的错误恢复与最终清理逻辑开始从页面层剥离。
 
 ## 后续建议
 - 继续拆 `src/pages/chat.js`：history/domain、hosted runtime/service、session event adapter。

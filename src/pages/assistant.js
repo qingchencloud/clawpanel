@@ -88,6 +88,10 @@ import {
   finalizeAssistantStreamBubble,
   updateAssistantToolProgress,
 } from '../lib/assistant-streaming-service.js'
+import {
+  finalizeAssistantRequestLifecycle,
+  mountAssistantRetryBar,
+} from '../lib/assistant-request-lifecycle.js'
 import { renderAssistantSettingsModal, renderAssistantKnowledgeList, updateAssistantTitleFromSettings } from './assistant-settings.js'
 
 // ── 常量 ──
@@ -2884,39 +2888,38 @@ async function retryAIResponse(session) {
     if (_currentSessionId === session.id) renderMessages()
 
     if (aiMsg._canRetry && _messagesEl && _currentSessionId === session.id) {
-      const retryBar = document.createElement('div')
-      retryBar.className = 'ast-retry-bar'
-      retryBar.innerHTML = buildAssistantRetryBarHtml()
-      _messagesEl.appendChild(retryBar)
-      _messagesEl.scrollTop = _messagesEl.scrollHeight
-
-      retryBar.querySelector('.ast-btn-retry').addEventListener('click', () => {
-        retryBar.remove()
-        session.messages.pop()
-        saveSessions()
-        setSessionStatus(session.id, 'idle')
-        retryAIResponse(session)
-      })
-      retryBar.querySelector('.ast-btn-continue').addEventListener('click', () => {
-        retryBar.remove()
-        setSessionStatus(session.id, 'idle')
-        renderSessionList()
-        _textarea?.focus()
+      mountAssistantRetryBar({
+        messagesEl: _messagesEl,
+        buildRetryBarHtml: buildAssistantRetryBarHtml,
+        onRetry: (retryBar) => {
+          retryBar.remove()
+          session.messages.pop()
+          saveSessions()
+          setSessionStatus(session.id, 'idle')
+          retryAIResponse(session)
+        },
+        onContinue: (retryBar) => {
+          retryBar.remove()
+          setSessionStatus(session.id, 'idle')
+          renderSessionList()
+          _textarea?.focus()
+        },
       })
     }
   } finally {
-    clearRequestState(session.id, {
-      keepStatus: getSessionStatus(session.id) === 'error',
+    finalizeAssistantRequestLifecycle({
+      session,
       requestId,
+      clearRequestState,
+      getSessionStatus,
+      currentSessionId: _currentSessionId,
+      messagesEl: _messagesEl,
+      renderMessages,
+      flushSave,
+      processQueue,
+      focusTextarea: () => _textarea?.focus(),
+      isActiveRequest,
     })
-    if (_currentSessionId === session.id && _textarea) _textarea.focus()
-    session.updatedAt = Date.now()
-    flushSave()
-    if (isActiveRequest(session.id, requestId) && _messagesEl && _currentSessionId === session.id) {
-      renderMessages()
-      _messagesEl.scrollTop = _messagesEl.scrollHeight
-    }
-    setTimeout(() => processQueue(session.id), 100)
   }
 }
 
