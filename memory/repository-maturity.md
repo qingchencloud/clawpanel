@@ -16,6 +16,8 @@
 - `src/pages/chat.js` 改为消费 history-domain 模块，开始把历史处理从页面层往 domain 层迁移。
 - 新增 `src/lib/history-view-model.js`，统一用户图片附件转换、hosted seed 转换、本地历史图片映射、history 持久化消息映射。
 - `chat.js` 中 apply/render 路径开始复用 history-view-model helper，页面层重复转换逻辑继续收缩。
+- 新增 `src/lib/history-render-service.js`，抽离 history 渲染循环、增量渲染去重路径、omitted-images notice 插入。
+- `applyHistoryResult(...)` 与 `applyIncrementalHistoryResult(...)` 开始复用 render-service，history 主流程已不再完全内联在页面文件中。
 
 ## 后续建议
 - 继续拆 `src/pages/chat.js`：history/domain、hosted runtime/service、session event adapter。

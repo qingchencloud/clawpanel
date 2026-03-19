@@ -34,13 +34,15 @@ import {
   normalizeHistoryPayload,
 } from '../lib/history-domain.js'
 import {
-  HISTORY_OMITTED_IMAGES_NOTICE,
-  hasRenderableHistoryMessage,
   toHostedSeedHistory,
   toLocalAssistantImages,
   toStoredHistoryMessages,
-  toUserHistoryAttachments,
 } from '../lib/history-view-model.js'
+import {
+  appendOmittedImagesNotice,
+  renderHistoryList,
+  renderIncrementalHistoryList,
+} from '../lib/history-render-service.js'
 
 const RENDER_THROTTLE = 30
 const STORAGE_SESSION_KEY = 'clawpanel-last-session'
@@ -1795,32 +1797,16 @@ function applyIncrementalHistoryResult(result, sessionKey) {
   const state = getSessionState(sessionKey)
   state.lastHistoryAppliedTs = Math.max(Number(state.lastHistoryAppliedTs || 0), maxHistoryTimestamp(result.messages))
   const renderedKeys = getRenderedHistoryKeys()
-  let appended = 0
-  let hasOmittedImages = false
-
-  deduped.forEach(msg => {
-    const entryKey = buildHistoryEntryKey(msg)
-    if (renderedKeys.has(entryKey)) return
-    const msgTime = msg.timestamp ? new Date(msg.timestamp) : new Date()
-    let wrap = null
-    if (msg.role === 'user') {
-      const userAtts = toUserHistoryAttachments(msg)
-      if (msg.images?.length && !userAtts.length) hasOmittedImages = true
-      wrap = appendUserMessage(msg.text, userAtts, msgTime)
-    } else if (msg.role === 'assistant') {
-      wrap = appendAiMessage(msg.text, msgTime, msg.images, msg.videos, msg.audios, msg.files, msg.tools, sessionKey)
-    } else {
-      wrap = appendSystemMessage(msg.text || '', msgTime?.getTime?.() || Date.now())
-    }
-    stampHistoryNode(wrap, msg)
-    renderedKeys.add(entryKey)
-    appended += 1
+  const { appended, hasOmittedImages } = renderIncrementalHistoryList(deduped, sessionKey, {
+    renderedKeys,
+    buildHistoryEntryKey,
+    appendUserMessage,
+    appendAiMessage,
+    appendSystemMessage,
+    stampHistoryNode,
   })
 
-  if (hasOmittedImages) {
-    const notice = appendSystemMessage(HISTORY_OMITTED_IMAGES_NOTICE)
-    if (notice) notice.dataset.historyKey = 'system:omitted-images'
-  }
+  if (hasOmittedImages) appendOmittedImagesNotice({ appendSystemMessage })
 
   saveMessages(toStoredHistoryMessages(result.messages, sessionKey, extractContent, uuid))
 
@@ -1856,28 +1842,13 @@ function applyHistoryResult(result, hasExisting, sessionKey) {
   }
 
   clearMessages()
-  let hasOmittedImages = false
-  deduped.forEach(msg => {
-    if (!hasRenderableHistoryMessage(msg)) return
-    const msgTime = msg.timestamp ? new Date(msg.timestamp) : new Date()
-    let wrap = null
-    if (msg.role === 'user') {
-      const userAtts = toUserHistoryAttachments(msg)
-      if (msg.images?.length && !userAtts.length) hasOmittedImages = true
-      wrap = appendUserMessage(msg.text, userAtts, msgTime)
-    } else if (msg.role === 'assistant') {
-      wrap = appendAiMessage(msg.text, msgTime, msg.images, msg.videos, msg.audios, msg.files, msg.tools, sessionKey)
-    } else if (msg.role === 'system') {
-      wrap = appendSystemMessage(msg.text || '', msgTime?.getTime?.() || Date.now())
-    } else {
-      wrap = appendSystemMessage(msg.text || '', msgTime?.getTime?.() || Date.now())
-    }
-    stampHistoryNode(wrap, msg)
+  const { hasOmittedImages } = renderHistoryList(deduped, sessionKey, {
+    appendUserMessage,
+    appendAiMessage,
+    appendSystemMessage,
+    stampHistoryNode,
   })
-  if (hasOmittedImages) {
-    const notice = appendSystemMessage(HISTORY_OMITTED_IMAGES_NOTICE)
-    if (notice) notice.dataset.historyKey = 'system:omitted-images'
-  }
+  if (hasOmittedImages) appendOmittedImagesNotice({ appendSystemMessage })
   saveMessages(toStoredHistoryMessages(result.messages, sessionKey, extractContent, uuid))
   scrollToBottom(true)
 }

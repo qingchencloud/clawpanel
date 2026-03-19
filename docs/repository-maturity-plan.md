@@ -117,6 +117,8 @@ scripts/
 6. `src/pages/chat.js` 开始消费 history-domain 模块，页面层继续向“渲染与编排”收口。
 7. 新增 `src/lib/history-view-model.js`，统一 history 到 UI 的附件、持久化、hosted seed 等视图转换规则。
 8. `applyHistoryResult(...)`、`applyIncrementalHistoryResult(...)` 与本地历史回填路径开始复用同一批 history view-model helper，减少页面内重复转换逻辑。
+9. 新增 `src/lib/history-render-service.js`，把 full apply / incremental apply 的共用渲染循环抽成独立 service helper。
+10. `chat.js` 中 history 渲染主流程开始通过 render-service 复用，页面层进一步收口到状态编排与依赖注入。
 
 ## 风险与回滚建议
 - 风险：`chat.js` 仍然较大，后续继续拆分时容易影响事件时序。
