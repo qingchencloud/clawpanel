@@ -262,7 +262,7 @@ function renderOverview(page, services, skillsData, backups, config, agents, sta
           <div class="overview-card-body">
             <div class="overview-card-title">Skills</div>
             <div class="overview-card-value">${skillSummary.total} 个</div>
-            <div class="overview-card-meta">${skillSummary.eligible} 可用 · ${skillSummary.missing} 缺依赖</div>
+            <div class="overview-card-meta">${skillSummary.eligible} 可用 · ${skillSummary.missing + skillSummary.blocked} 待处理 · ${skillSummary.disabled} 已禁用</div>
           </div>
         </div>
 
