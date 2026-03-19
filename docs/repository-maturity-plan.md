@@ -163,6 +163,8 @@ scripts/
 52. `assistant.js` 开始复用 assistant response runner helper，send / retry 两条主路径中的重复响应执行逻辑继续从页面文件中剥离。
 53. 新增 `src/lib/assistant-run-context.js`，抽离响应启动前的按钮状态、首帧 typing UI 与工具模式判定。
 54. `assistant.js` 开始复用 assistant run context helper，send / retry 两条主路径中的重复启动壳继续从页面文件中剥离。
+55. 第一批关键体验修复开始落地：`assistant.js` 设置入口按钮改为明确“助手设置”语义并提升点击优先级，流式/工具进度/后台刷新改为仅在接近底部时自动跟随。
+56. `chat.js` 开始修正心跳历史刷新与托管绑定兜底：`scrollToBottom(...)` 改为 near-bottom 策略，Hosted 绑定会话优先基于已启用的托管会话解析。
 
 ## 风险与回滚建议
 - 风险：`chat.js` 仍然较大，后续继续拆分时容易影响事件时序。

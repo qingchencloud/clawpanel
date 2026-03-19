@@ -62,6 +62,8 @@
 - `assistant.js` 开始复用 assistant response runner helper，assistant send / retry 两条主路径中的重复响应执行逻辑开始从页面层剥离。
 - 新增 `src/lib/assistant-run-context.js`，抽离响应启动前的按钮状态、首帧 typing UI 与工具模式判定。
 - `assistant.js` 开始复用 assistant run context helper，assistant send / retry 两条主路径中的重复启动壳开始从页面层剥离。
+- 第一批关键体验修复已开始落地：assistant 设置入口按钮改为明确“助手设置”语义并提升点击优先级，assistant 流式输出 / 工具进度 / 后台刷新改为 near-bottom 自动跟随策略。
+- `chat.js` 开始修正心跳历史刷新与托管绑定兜底：`scrollToBottom(...)` 改为 near-bottom 策略，Hosted 绑定会话解析优先参考已启用的托管会话，降低切换会话后的错投概率。
 
 ## 后续建议
 - 继续拆 `src/pages/chat.js`：history/domain、hosted runtime/service、session event adapter。

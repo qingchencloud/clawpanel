@@ -2461,8 +2461,15 @@ function showCompactionHint(show) {
   }
 }
 
+function isChatNearBottom(threshold = 96) {
+  if (!_messagesEl) return true
+  const distance = _messagesEl.scrollHeight - _messagesEl.scrollTop - _messagesEl.clientHeight
+  return distance <= threshold
+}
+
 function scrollToBottom(force = false) {
-  if (!_messagesEl || !force) return
+  if (!_messagesEl) return
+  if (!force && !isChatNearBottom()) return
   if (_virtualEnabled) requestVirtualRender(true)
   requestAnimationFrame(() => {
     if (!_messagesEl) return
@@ -2643,8 +2650,16 @@ function getHostedSessionKey() {
   return _sessionKey || localStorage.getItem(STORAGE_SESSION_KEY) || 'agent:main:main'
 }
 
+function findEnabledHostedSessionKey() {
+  const data = readHostedSessionData(localStorage, HOSTED_SESSIONS_KEY)
+  for (const [key, value] of Object.entries(data || {})) {
+    if (value?.enabled) return key
+  }
+  return null
+}
+
 function getHostedBoundSessionKey() {
-  return _hostedSessionConfig?.boundSessionKey || getHostedSessionKey()
+  return _hostedSessionConfig?.boundSessionKey || findEnabledHostedSessionKey() || getHostedSessionKey()
 }
 
 function saveHostedSessionConfigForKey(key, nextConfig) {
@@ -2774,8 +2789,10 @@ async function refreshHostedHistoryIfNeeded(options = {}) {
 }
 
 function loadHostedSessionConfig() {
-  const key = getHostedSessionKey()
-  const state = getHostedState(key)
+  const currentKey = getHostedSessionKey()
+  const currentState = getHostedState(currentKey)
+  const activeKey = currentState?.config?.enabled ? currentKey : (findEnabledHostedSessionKey() || currentKey)
+  const state = getHostedState(activeKey)
   syncHostedGlobalsFromState(state)
   trimHostedHistoryByTokens()
   updateHostedBadge()

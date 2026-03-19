@@ -1,20 +1,27 @@
+function isNearBottom(el, threshold = 96) {
+  if (!el) return true
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= threshold
+}
+
 export function updateAssistantToolProgress({ history, aiMsg, lastContainer, renderToolBlocks, throttledSave, messagesEl }) {
+  const shouldFollow = isNearBottom(messagesEl)
   aiMsg.toolHistory = history
   throttledSave()
   if (!lastContainer) return
   const toolHtml = renderToolBlocks(history)
   const bubble = lastContainer.querySelector('.ast-msg-bubble-ai')
   lastContainer.innerHTML = toolHtml + (bubble ? bubble.outerHTML : '')
-  if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight
+  if (messagesEl && shouldFollow) messagesEl.scrollTop = messagesEl.scrollHeight
 }
 
 export function appendAssistantStreamChunk({ aiMsg, chunk, throttledSave, lastBubble, renderMarkdown, messagesEl, lastRenderTime, now = Date.now(), throttleMs = 50 }) {
+  const shouldFollow = isNearBottom(messagesEl)
   aiMsg.content += chunk
   throttledSave()
   if (!lastBubble) return lastRenderTime
   if (now - lastRenderTime <= throttleMs) return lastRenderTime
   lastBubble.innerHTML = renderMarkdown(aiMsg.content) + '<span class="ast-cursor">▊</span>'
-  if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight
+  if (messagesEl && shouldFollow) messagesEl.scrollTop = messagesEl.scrollHeight
   return now
 }
 
