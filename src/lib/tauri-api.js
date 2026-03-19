@@ -177,6 +177,13 @@ export async function checkBackendHealth() {
   }
 }
 
+// 配置保存后防抖重载 Gateway（3 秒内多次写入只触发一次重载）
+let _reloadTimer = null
+function _debouncedReloadGateway() {
+  clearTimeout(_reloadTimer)
+  _reloadTimer = setTimeout(() => { invoke('reload_gateway').catch(() => {}) }, 3000)
+}
+
 // 导出 API
 export const api = {
   // 服务管理（状态用短缓存，操作不缓存）
