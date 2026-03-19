@@ -155,6 +155,12 @@ async function loadRegistry(page) {
 // ===== 事件绑定 =====
 
 function bindEvents(page) {
+  page.addEventListener('change', (e) => {
+    if (e.target?.matches?.('[data-name="cloudflared-mode"], [data-name="cloudflared-expose"], [data-name="cloudflared-port"]')) {
+      syncCloudflaredFormState(page)
+    }
+  })
+
   page.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-action]')
     if (!btn) return
@@ -306,6 +312,20 @@ function resolveExposePort(form) {
   return 18789
 }
 
+function syncCloudflaredFormState(page) {
+  const form = getCloudflaredForm(page)
+  const modeBlocks = page.querySelectorAll('[data-cloudflared-mode-block]')
+  const exposeBlocks = page.querySelectorAll('[data-cloudflared-expose-block]')
+  modeBlocks.forEach(node => {
+    node.style.display = node.dataset.cloudflaredModeBlock === form.mode ? '' : 'none'
+  })
+  exposeBlocks.forEach(node => {
+    node.style.display = node.dataset.cloudflaredExposeBlock === form.exposeTarget ? '' : 'none'
+  })
+  const resolvedPortEl = page.querySelector('[data-cloudflared-resolved-port]')
+  if (resolvedPortEl) resolvedPortEl.textContent = String(resolveExposePort(form))
+}
+
 async function loadCloudflared(page) {
   const el = page.querySelector('#cloudflared-bar')
   if (!el) return
@@ -326,56 +346,103 @@ async function loadCloudflared(page) {
   const hostname = saved.hostname || ''
 
   el.innerHTML = `
-    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:var(--space-sm)">
-      <span class="status-dot ${status.running ? 'running' : 'stopped'}"></span>
-      <span>${status.running ? '运行中' : '未运行'}</span>
-      <span style="color:var(--text-tertiary)">版本: ${escapeHtml(status.version || '未知')}</span>
-      ${status.url ? `<a href="${escapeHtml(status.url)}" target="_blank" rel="noopener">打开公网地址</a>` : ''}
+    <div class="stat-cards" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-bottom:var(--space-md)">
+      <div class="stat-card">
+        <div class="stat-card-header">
+          <span class="stat-card-label">运行状态</span>
+          <span class="status-dot ${status.running ? 'running' : 'stopped'}"></span>
+        </div>
+        <div class="stat-card-value">${status.running ? '运行中' : '未运行'}</div>
+        <div class="stat-card-meta">版本 ${escapeHtml(status.version || '未知')}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-header"><span class="stat-card-label">当前模式</span></div>
+        <div class="stat-card-value">${mode === 'named' ? '命名隧道' : '快速隧道'}</div>
+        <div class="stat-card-meta">暴露 ${exposeTarget === 'gateway' ? 'Gateway' : exposeTarget === 'webui' ? 'Web UI' : '自定义端口'}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-header"><span class="stat-card-label">实际端口</span></div>
+        <div class="stat-card-value" data-cloudflared-resolved-port>${resolveExposePort({ mode, exposeTarget, customPort, useHttp2, tunnelName, hostname })}</div>
+        <div class="stat-card-meta">启动时传给 cloudflared</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-header"><span class="stat-card-label">公网地址</span></div>
+        <div class="stat-card-value" style="font-size:var(--font-size-sm)">${status.url ? '已生成' : '未生成'}</div>
+        <div class="stat-card-meta">${status.url ? `<a href="${escapeHtml(status.url)}" target="_blank" rel="noopener">打开公网地址</a>` : '启动后自动生成'}</div>
+      </div>
     </div>
 
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:var(--space-sm)">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:var(--space-md)">
       <button class="btn btn-primary btn-sm" data-action="cloudflared-install">安装</button>
-      <button class="btn btn-secondary btn-sm" data-action="cloudflared-login">登录</button>
+      <button class="btn btn-secondary btn-sm" data-action="cloudflared-login">登录 Cloudflare</button>
       ${status.running
-        ? '<button class="btn btn-danger btn-sm" data-action="cloudflared-stop">停止</button>'
-        : '<button class="btn btn-primary btn-sm" data-action="cloudflared-start">启动</button>'
+        ? '<button class="btn btn-danger btn-sm" data-action="cloudflared-stop">停止公网访问</button>'
+        : '<button class="btn btn-primary btn-sm" data-action="cloudflared-start">启动公网访问</button>'
       }
-      <button class="btn btn-secondary btn-sm" data-action="cloudflared-refresh">刷新</button>
+      <button class="btn btn-secondary btn-sm" data-action="cloudflared-refresh">刷新状态</button>
       <button class="btn btn-secondary btn-sm" data-action="cloudflared-save">保存设置</button>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:720px">
-      <label class="form-label">隧道类型
-        <select class="form-input" data-name="cloudflared-mode">
-          <option value="quick" ${mode === 'quick' ? 'selected' : ''}>快速隧道</option>
-          <option value="named" ${mode === 'named' ? 'selected' : ''}>命名隧道</option>
-        </select>
-      </label>
-      <label class="form-label">暴露目标
-        <select class="form-input" data-name="cloudflared-expose">
-          <option value="gateway" ${exposeTarget === 'gateway' ? 'selected' : ''}>Gateway 18789</option>
-          <option value="webui" ${exposeTarget === 'webui' ? 'selected' : ''}>Web UI 1420</option>
-          <option value="custom" ${exposeTarget === 'custom' ? 'selected' : ''}>自定义端口</option>
-        </select>
-      </label>
-      <label class="form-label">自定义端口
-        <input class="form-input" data-name="cloudflared-port" placeholder="18789" value="${escapeHtml(String(customPort))}">
-      </label>
-      <label class="form-label">启用 HTTP/2
-        <input type="checkbox" data-name="cloudflared-http2" ${useHttp2 ? 'checked' : ''}>
-      </label>
-      <label class="form-label">隧道名称（命名隧道）
-        <input class="form-input" data-name="cloudflared-tunnel" value="${escapeHtml(tunnelName)}">
-      </label>
-      <label class="form-label">域名（命名隧道）
-        <input class="form-input" data-name="cloudflared-hostname" value="${escapeHtml(hostname)}">
-      </label>
+    <div class="config-section" style="margin-bottom:var(--space-md)">
+      <div class="config-section-title">1. 选择暴露目标</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;max-width:900px">
+        <label class="form-label">暴露目标
+          <select class="form-input" data-name="cloudflared-expose">
+            <option value="gateway" ${exposeTarget === 'gateway' ? 'selected' : ''}>Gateway 18789</option>
+            <option value="webui" ${exposeTarget === 'webui' ? 'selected' : ''}>Web UI 1420</option>
+            <option value="custom" ${exposeTarget === 'custom' ? 'selected' : ''}>自定义端口</option>
+          </select>
+        </label>
+        <div class="form-hint" style="align-self:end;padding-bottom:10px">推荐默认暴露 Gateway。选择 Gateway 时，会自动把 Cloudflare URL 写入 <code>gateway.controlUi.allowedOrigins</code>。</div>
+      </div>
+      <div class="config-section" data-cloudflared-expose-block="gateway" style="margin-top:var(--space-sm);padding:var(--space-sm);background:var(--bg-tertiary);border:1px solid var(--border-secondary)">
+        <div class="form-hint">固定暴露 OpenClaw Gateway，端口 18789，无需额外输入。</div>
+      </div>
+      <div class="config-section" data-cloudflared-expose-block="webui" style="margin-top:var(--space-sm);padding:var(--space-sm);background:var(--bg-tertiary);border:1px solid var(--border-secondary)">
+        <div class="form-hint">固定暴露 ClawPanel Web UI，端口 1420，适合只开放管理面板。</div>
+      </div>
+      <div class="config-section" data-cloudflared-expose-block="custom" style="margin-top:var(--space-sm);padding:var(--space-sm);background:var(--bg-tertiary);border:1px solid var(--border-secondary)">
+        <label class="form-label">自定义端口
+          <input class="form-input" data-name="cloudflared-port" placeholder="18789" value="${escapeHtml(String(customPort))}">
+        </label>
+        <div class="form-hint">只有在“自定义端口”模式下这里才生效。</div>
+      </div>
     </div>
 
-    <div class="form-hint" style="margin-top:8px">
-      选择 Gateway 暴露时，会自动将 Cloudflare URL 写入 gateway.controlUi.allowedOrigins。
+    <div class="config-section" style="margin-bottom:var(--space-md)">
+      <div class="config-section-title">2. 选择隧道模式</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;max-width:900px">
+        <label class="form-label">隧道类型
+          <select class="form-input" data-name="cloudflared-mode">
+            <option value="quick" ${mode === 'quick' ? 'selected' : ''}>快速隧道</option>
+            <option value="named" ${mode === 'named' ? 'selected' : ''}>命名隧道</option>
+          </select>
+        </label>
+        <label class="form-label">启用 HTTP/2
+          <input type="checkbox" data-name="cloudflared-http2" ${useHttp2 ? 'checked' : ''}>
+        </label>
+      </div>
+      <div class="config-section" data-cloudflared-mode-block="quick" style="margin-top:var(--space-sm);padding:var(--space-sm);background:var(--bg-tertiary);border:1px solid var(--border-secondary)">
+        <div class="form-hint">快速隧道无需隧道名和域名，适合临时开放，启动后自动生成公网地址。</div>
+      </div>
+      <div class="config-section" data-cloudflared-mode-block="named" style="margin-top:var(--space-sm);padding:var(--space-sm);background:var(--bg-tertiary);border:1px solid var(--border-secondary)">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;max-width:900px">
+          <label class="form-label">隧道名称
+            <input class="form-input" data-name="cloudflared-tunnel" value="${escapeHtml(tunnelName)}" placeholder="my-openclaw-tunnel">
+          </label>
+          <label class="form-label">绑定域名
+            <input class="form-input" data-name="cloudflared-hostname" value="${escapeHtml(hostname)}" placeholder="openclaw.example.com">
+          </label>
+        </div>
+        <div class="form-hint">命名隧道适合长期使用。通常先登录，再填写隧道名称和域名。</div>
+      </div>
+    </div>
+
+    <div class="form-hint">
+      推荐顺序：安装 → 登录 Cloudflare → 选择暴露目标 → 选择隧道模式 → 保存设置 → 启动公网访问。
     </div>
   `
+  syncCloudflaredFormState(page)
 }
 
 async function handleCloudflaredSave(page) {

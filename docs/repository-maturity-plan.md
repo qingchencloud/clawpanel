@@ -177,6 +177,8 @@ scripts/
 66. `src/components/sidebar.js` 新增分组折叠态记忆：各导航分组可单独展开/折叠，状态持久化到 localStorage，并保持桌面侧边栏整体折叠模式兼容。
 67. Sidebar icon 收口一版：重做 `dashboard` / `services` / `skills` 图标，并为分组标题新增自定义 toggle 结构，避免原生按钮样式破坏整体 UI。
 68. 公网访问分层表单主入口已确认在 `src/pages/settings.js` 的 `cloudflared` 区块；下一轮将围绕 `loadCloudflared(...)` / `handleCloudflaredStart(...)` 做表单分层与说明收口。
+69. `src/pages/settings.js` 的 Cloudflared 公网访问表单已改为四层结构：状态卡、启动操作、暴露目标、隧道模式；保持原启动参数不变，只重构展示与交互层。
+70. 新增 `syncCloudflaredFormState(...)`：切换 `cloudflared-mode` / `cloudflared-expose` / `cloudflared-port` 时，动态切换对应表单块可见性并实时更新实际端口展示。
 
 ## 风险与回滚建议
 - 风险：`chat.js` 仍然较大，后续继续拆分时容易影响事件时序。
