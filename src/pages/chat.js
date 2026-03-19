@@ -1949,7 +1949,7 @@ function applyHistoryResult(result, hasExisting, sessionKey) {
     const role = (m.role === 'tool' || m.role === 'toolResult') ? 'assistant' : m.role
     return { id: m.id || uuid(), sessionKey, role, content: c?.text || '', timestamp: m.timestamp || Date.now() }
   }))
-  scrollToBottom()
+  scrollToBottom(true)
 }
 
 async function loadHistory() {
@@ -1973,7 +1973,7 @@ async function loadHistory() {
           appendSystemMessage(msg.content || '', msgTime?.getTime?.() || Date.now())
         }
       })
-      scrollToBottom()
+      scrollToBottom(true)
     }
   }
   if (!wsClient.gatewayReady) { _isLoadingHistory = false; return }
