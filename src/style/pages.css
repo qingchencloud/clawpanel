@@ -1205,3 +1205,77 @@
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+
+/* ── 渠道多账号子项 ── */
+
+.account-count {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  padding: 1px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.platform-accounts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-md);
+  padding: var(--space-sm) 0;
+  border-top: 1px solid var(--border-secondary);
+}
+
+.account-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  flex-wrap: wrap;
+}
+
+.account-id {
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.account-appid {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+
+.account-item .agent-badge {
+  font-size: var(--font-size-xs);
+  color: var(--accent);
+  background: var(--accent-muted);
+  padding: 1px 6px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.account-item .account-actions {
+  display: flex;
+  gap: var(--space-xs);
+  margin-left: auto;
+}
+
+@media (max-width: 768px) {
+  .account-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  .account-item .account-actions {
+    margin-left: 0;
+    align-self: flex-end;
+  }
+}

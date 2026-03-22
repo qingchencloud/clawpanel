@@ -5,6 +5,7 @@
 import { api, invalidate } from '../lib/tauri-api.js'
 import { toast } from '../components/toast.js'
 import { showModal, showConfirm } from '../components/modal.js'
+import { CHANNEL_LABELS } from '../lib/channel-labels.js'
 
 export async function render() {
   const page = document.createElement('div')
@@ -25,7 +26,7 @@ export async function render() {
     </div>
   `
 
-  const state = { agents: [] }
+  const state = { agents: [], bindings: [] }
   // 非阻塞：先返回 DOM，后台加载数据
   loadAgents(page, state)
 
@@ -52,7 +53,12 @@ async function loadAgents(page, state) {
   const container = page.querySelector('#agents-list')
   renderSkeleton(container)
   try {
-    state.agents = await api.listAgents()
+    const [agents, config] = await Promise.all([
+      api.listAgents(),
+      api.readOpenclawConfig().catch(() => null),
+    ])
+    state.agents = agents
+    state.bindings = Array.isArray(config?.bindings) ? config.bindings : []
     renderAgents(page, state)
 
     // 只在第一次加载时绑定事件（避免重复绑定）
@@ -64,6 +70,21 @@ async function loadAgents(page, state) {
     container.innerHTML = '<div style="color:var(--error);padding:20px">加载失败: ' + e + '</div>'
     toast('加载 Agent 列表失败: ' + e, 'error')
   }
+}
+
+/** 为指定 agent 生成绑定渠道的 badge HTML */
+function renderBindingBadges(agentId, bindings) {
+  const matched = (bindings || []).filter(b => (b.agentId || 'main') === agentId)
+  if (!matched.length) {
+    return '<span style="color:var(--text-tertiary)">未绑定渠道</span>'
+  }
+  return matched.map(b => {
+    const channel = b.match?.channel || ''
+    const label = CHANNEL_LABELS[channel] || channel
+    const accountId = b.match?.accountId
+    const text = accountId ? `${label} · ${accountId}` : label
+    return `<span style="font-size:var(--font-size-xs);color:var(--accent);background:var(--accent-muted);padding:1px 6px;border-radius:10px;white-space:nowrap">${text}</span>`
+  }).join(' ')
 }
 
 function renderAgents(page, state) {
@@ -101,6 +122,10 @@ function renderAgents(page, state) {
           <div class="agent-info-row">
             <span class="agent-info-label">工作区:</span>
             <span class="agent-info-value" style="font-family:var(--font-mono);font-size:var(--font-size-xs)">${a.workspace || '未设置'}</span>
+          </div>
+          <div class="agent-info-row">
+            <span class="agent-info-label">绑定渠道:</span>
+            <span class="agent-info-value">${renderBindingBadges(a.id, state.bindings)}</span>
           </div>
         </div>
       </div>

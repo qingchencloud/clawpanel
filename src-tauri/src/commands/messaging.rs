@@ -59,17 +59,28 @@ fn gateway_auth_value(cfg: &Value, key: &str) -> Option<String> {
 }
 
 /// 读取指定平台的当前配置（从 openclaw.json 中提取表单可用的值）
+/// account_id: 可选，指定时读取 channels.<platform>.accounts.<account_id>（多账号模式）
 #[tauri::command]
-pub async fn read_platform_config(platform: String) -> Result<Value, String> {
+pub async fn read_platform_config(
+    platform: String,
+    account_id: Option<String>,
+) -> Result<Value, String> {
     let cfg = super::config::load_openclaw_json()?;
     let storage_key = platform_storage_key(&platform);
 
     // 从已有配置中提取用户可编辑字段
-    let saved = cfg
-        .get("channels")
-        .and_then(|c| c.get(storage_key))
-        .cloned()
-        .unwrap_or(Value::Null);
+    // 多账号模式：优先从 accounts.<account_id> 读取
+    let channel_val = cfg.get("channels").and_then(|c| c.get(storage_key));
+
+    let saved = match (&account_id, channel_val) {
+        (Some(acct), Some(ch)) if !acct.is_empty() => ch
+            .get("accounts")
+            .and_then(|a| a.get(acct.as_str()))
+            .cloned()
+            .unwrap_or(Value::Null),
+        (_, Some(ch)) => ch.clone(),
+        _ => Value::Null,
+    };
 
     let mut form = Map::new();
     let exists = !saved.is_null();
@@ -443,16 +454,54 @@ pub async fn save_messaging_platform(
 }
 
 /// 删除指定平台配置
+/// account_id: 可选，指定时仅删除 channels.<platform>.accounts.<account_id>（多账号模式）
+///             未指定时删除整个平台配置
 #[tauri::command]
 pub async fn remove_messaging_platform(
     platform: String,
+    account_id: Option<String>,
     app: tauri::AppHandle,
 ) -> Result<Value, String> {
     let mut cfg = super::config::load_openclaw_json()?;
     let storage_key = platform_storage_key(&platform);
 
-    if let Some(channels) = cfg.get_mut("channels").and_then(|c| c.as_object_mut()) {
-        channels.remove(storage_key);
+    match &account_id {
+        Some(acct) if !acct.is_empty() => {
+            // 多账号模式：仅删除指定账号
+            if let Some(channel) = cfg.get_mut("channels").and_then(|c| c.get_mut(storage_key)) {
+                if let Some(accounts) = channel.get_mut("accounts").and_then(|a| a.as_object_mut())
+                {
+                    accounts.remove(acct.as_str());
+                }
+            }
+        }
+        _ => {
+            // 整平台删除
+            if let Some(channels) = cfg.get_mut("channels").and_then(|c| c.as_object_mut()) {
+                channels.remove(storage_key);
+            }
+        }
+    }
+
+    // 清理对应的 bindings 条目
+    let binding_channel = platform_list_id(&platform);
+    if let Some(bindings) = cfg.get_mut("bindings").and_then(|b| b.as_array_mut()) {
+        bindings.retain(|b| {
+            let m = match b.get("match") {
+                Some(m) => m,
+                None => return true,
+            };
+            if m.get("channel").and_then(|v| v.as_str()) != Some(binding_channel) {
+                return true; // 不同渠道，保留
+            }
+            match &account_id {
+                Some(acct) if !acct.is_empty() => {
+                    // 仅移除匹配该 accountId 的 binding
+                    m.get("accountId").and_then(|v| v.as_str()) != Some(acct.as_str())
+                }
+                _ => false, // 整平台删除，移除该渠道所有 binding
+            }
+        });
     }
 
     super::config::save_openclaw_json(&cfg)?;
@@ -516,6 +565,7 @@ pub async fn verify_bot_token(platform: String, form: Value) -> Result<Value, St
 }
 
 /// 列出当前已配置的平台清单
+/// 若平台包含 accounts 子对象（多账号模式），返回各账号的安全显示字段
 #[tauri::command]
 pub async fn list_configured_platforms() -> Result<Value, String> {
     let cfg = super::config::load_openclaw_json()?;
@@ -524,9 +574,23 @@ pub async fn list_configured_platforms() -> Result<Value, String> {
     if let Some(channels) = cfg.get("channels").and_then(|c| c.as_object()) {
         for (name, val) in channels {
             let enabled = val.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+            let mut accounts: Vec<Value> = vec![];
+
+            // 提取多账号信息（仅安全字段，不含 appSecret 等敏感数据）
+            if let Some(accts) = val.get("accounts").and_then(|a| a.as_object()) {
+                for (acct_id, acct_val) in accts {
+                    let mut entry = json!({ "accountId": acct_id });
+                    if let Some(app_id) = acct_val.get("appId").and_then(|v| v.as_str()) {
+                        entry["appId"] = Value::String(app_id.to_string());
+                    }
+                    accounts.push(entry);
+                }
+            }
+
             result.push(json!({
                 "id": platform_list_id(name),
-                "enabled": enabled
+                "enabled": enabled,
+                "accounts": accounts
             }));
         }
     }

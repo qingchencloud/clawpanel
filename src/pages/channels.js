@@ -160,6 +160,9 @@ async function loadPlatforms(page, state) {
   renderAvailable(page, state)
 }
 
+// ── 多账号支持的平台列表 ──
+const MULTI_INSTANCE_PLATFORMS = ['feishu', 'dingtalk']
+
 // ── 已配置平台渲染 ──
 
 function renderConfigured(page, state) {
@@ -178,12 +181,61 @@ function renderConfigured(page, state) {
           const label = reg?.label || p.id
           const ic = icon(reg?.iconName || 'radio', 22)
           const channelKey = getChannelBindingKey(p.id)
+          const accounts = Array.isArray(p.accounts) ? p.accounts : []
+          const hasAccounts = accounts.length > 0
+          const supportsMulti = MULTI_INSTANCE_PLATFORMS.includes(p.id)
+
+          if (hasAccounts) {
+            // ── 多账号模式：每个账号显示为子项 ──
+            const accountsHtml = accounts.map(acc => {
+              const accId = acc.accountId || 'default'
+              // 找到该账号对应的 binding
+              const accBindings = (state.bindings || []).filter(b =>
+                b.match?.channel === channelKey && (b.match?.accountId || '') === (acc.accountId || '')
+              )
+              const accAgents = accBindings.map(b => b.agentId || 'main')
+              const showBadge = accAgents.length > 0 && !(accAgents.length === 1 && accAgents[0] === 'main')
+              const badgesHtml = showBadge ? accAgents.map(a =>
+                `<span class="agent-badge">\u2192 ${escapeAttr(a)}</span>`
+              ).join(' ') : ''
+              return `
+                <div class="account-item" data-account="${escapeAttr(acc.accountId || '')}">
+                  <span class="account-id">${escapeAttr(accId)}</span>
+                  ${acc.appId ? `<span class="account-appid">${escapeAttr(acc.appId)}</span>` : ''}
+                  ${badgesHtml}
+                  <span class="account-actions">
+                    <button class="btn btn-xs btn-secondary" data-action="edit-account" data-account-id="${escapeAttr(acc.accountId || '')}">${icon('edit', 12)} 编辑</button>
+                    <button class="btn btn-xs btn-danger" data-action="remove-account" data-account-id="${escapeAttr(acc.accountId || '')}">${icon('trash', 12)}</button>
+                  </span>
+                </div>
+              `
+            }).join('')
+
+            return `
+              <div class="platform-card ${p.enabled ? 'active' : 'inactive'}" data-pid="${p.id}">
+                <div class="platform-card-header">
+                  <span class="platform-emoji">${ic}</span>
+                  <span class="platform-name">${label}</span>
+                  <span class="account-count">${accounts.length} 个账号</span>
+                  <span class="platform-status-dot ${p.enabled ? 'on' : 'off'}"></span>
+                </div>
+                <div class="platform-accounts">${accountsHtml}</div>
+                <div class="platform-card-actions">
+                  ${supportsMulti ? `<button class="btn btn-sm btn-secondary" data-action="add-account">${icon('plus', 14)} 添加账号</button>` : ''}
+                  <button class="btn btn-sm btn-secondary" data-action="edit">${icon('edit', 14)} 编辑默认</button>
+                  <button class="btn btn-sm btn-secondary" data-action="toggle">${p.enabled ? icon('pause', 14) + ' 禁用' : icon('play', 14) + ' 启用'}</button>
+                  <button class="btn btn-sm btn-danger" data-action="remove">${icon('trash', 14)}</button>
+                </div>
+              </div>
+            `
+          }
+
+          // ── 无账号模式（原有单卡片布局） ──
           const allBindings = (state.bindings || []).filter(b => b.match?.channel === channelKey)
           const boundAgents = allBindings.map(b => b.agentId || 'main')
-          // 只有一个 main 绑定时不显示标签（默认行为），多绑定时全部显示
           const showAll = boundAgents.length > 1 || (boundAgents.length === 1 && boundAgents[0] !== 'main')
           const agentBadges = showAll ? boundAgents.map(a =>
-            `<span style="font-size:var(--font-size-xs);color:var(--accent);background:var(--accent-muted);padding:1px 6px;border-radius:10px;white-space:nowrap">→ ${escapeAttr(a)}</span>`
+            `<span style="font-size:var(--font-size-xs);color:var(--accent);background:var(--accent-muted);padding:1px 6px;border-radius:10px;white-space:nowrap">\u2192 ${escapeAttr(a)}</span>`
           ).join(' ') : ''
           return `
             <div class="platform-card ${p.enabled ? 'active' : 'inactive'}" data-pid="${p.id}">
@@ -194,6 +246,7 @@ function renderConfigured(page, state) {
                 <span class="platform-status-dot ${p.enabled ? 'on' : 'off'}"></span>
               </div>
               <div class="platform-card-actions">
+                ${supportsMulti ? `<button class="btn btn-sm btn-secondary" data-action="add-account">${icon('plus', 14)} 添加账号</button>` : ''}
                 <button class="btn btn-sm btn-secondary" data-action="edit">${icon('edit', 14)} 编辑</button>
                 <button class="btn btn-sm btn-secondary" data-action="toggle">${p.enabled ? icon('pause', 14) + ' 禁用' : icon('play', 14) + ' 启用'}</button>
                 <button class="btn btn-sm btn-danger" data-action="remove">${icon('trash', 14)}</button>
@@ -208,8 +261,34 @@ function renderConfigured(page, state) {
   // 绑定事件
   el.querySelectorAll('.platform-card').forEach(card => {
     const pid = card.dataset.pid
-    card.querySelector('[data-action="edit"]').onclick = () => openConfigDialog(pid, page, state)
-    card.querySelector('[data-action="toggle"]').onclick = async () => {
+    card.querySelector('[data-action="edit"]')?.addEventListener('click', () => openConfigDialog(pid, page, state))
+
+    // 添加账号按钮
+    card.querySelector('[data-action="add-account"]')?.addEventListener('click', () => openConfigDialog(pid, page, state))
+
+    // 每个账号的编辑/移除按钮
+    card.querySelectorAll('[data-action="edit-account"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const accountId = btn.dataset.accountId
+        openConfigDialog(pid, page, state, accountId)
+      })
+    })
+    card.querySelectorAll('[data-action="remove-account"]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const accountId = btn.dataset.accountId
+        const reg = PLATFORM_REGISTRY[pid]
+        const displayName = accountId ? `${reg?.label || pid} 账号「${accountId}」` : `${reg?.label || pid} 默认账号`
+        const yes = await showConfirm(`确定移除 ${displayName}？该账号配置将被删除。`)
+        if (!yes) return
+        try {
+          await api.removeMessagingPlatform(pid, accountId || null)
+          toast('已移除', 'info')
+          await loadPlatforms(page, state)
+        } catch (e) { toast('移除失败: ' + e, 'error') }
+      })
+    })
+
+    card.querySelector('[data-action="toggle"]')?.addEventListener('click', async () => {
       const cur = state.configured.find(p => p.id === pid)
       if (!cur) return
       try {
@@ -217,8 +296,8 @@ function renderConfigured(page, state) {
         toast(`${PLATFORM_REGISTRY[pid]?.label || pid} 已${cur.enabled ? '禁用' : '启用'}`, 'success')
         await loadPlatforms(page, state)
       } catch (e) { toast('操作失败: ' + e, 'error') }
-    }
-    card.querySelector('[data-action="remove"]').onclick = async () => {
+    })
+    card.querySelector('[data-action="remove"]')?.addEventListener('click', async () => {
       const yes = await showConfirm(`确定移除 ${PLATFORM_REGISTRY[pid]?.label || pid}？配置将被删除。`)
       if (!yes) return
       try {
@@ -226,7 +305,7 @@ function renderConfigured(page, state) {
         toast('已移除', 'info')
         await loadPlatforms(page, state)
       } catch (e) { toast('移除失败: ' + e, 'error') }
-    }
+    })
   })
 }
 
@@ -311,17 +390,17 @@ async function openBindAgentDialog(pid, page, state) {
 
 // ── 配置弹窗（新增 / 编辑共用） ──
 
-async function openConfigDialog(pid, page, state) {
+async function openConfigDialog(pid, page, state, editAccountId) {
   const reg = PLATFORM_REGISTRY[pid]
   if (!reg) { toast('未知平台', 'error'); return }
 
-  // 尝试加载已有配置
+  // 尝试加载已有配置（多账号时按 accountId 读取）
   let existing = {}
   let isEdit = false
   let agents = []
   let currentBinding = ''
   try {
-    const res = await api.readPlatformConfig(pid)
+    const res = await api.readPlatformConfig(pid, editAccountId || null)
     if (res?.values) {
       existing = res.values
     }
@@ -329,7 +408,7 @@ async function openConfigDialog(pid, page, state) {
       isEdit = true
     }
   } catch {}
-  // 加载 Agent 列表和当前 binding
+  // 加载 Agent 列表和当前 binding（多账号时匹配 accountId）
   try {
     agents = await api.listAgents()
   } catch {}
@@ -337,7 +416,11 @@ async function openConfigDialog(pid, page, state) {
     const config = await api.readOpenclawConfig()
     const bindings = config?.bindings || []
     const channelKey = getChannelBindingKey(pid)
-    const found = bindings.find(b => b.match?.channel === channelKey)
+    const found = bindings.find(b => {
+      if (b.match?.channel !== channelKey) return false
+      if (editAccountId != null) return (b.match?.accountId || '') === editAccountId
+      return !b.match?.accountId
+    })
     if (found) currentBinding = found.agentId || ''
   } catch {}
 
@@ -349,11 +432,12 @@ async function openConfigDialog(pid, page, state) {
     return `<option value="${escapeAttr(a.id)}" ${a.id === currentBinding ? 'selected' : ''}>${a.id}${a.id !== label ? ' — ' + label : ''}</option>`
   }).join('')
   const supportsMultiAccount = ['feishu', 'dingtalk', 'dingtalk-connector'].includes(pid)
+  const editingAccount = editAccountId != null
   const accountIdHtml = supportsMultiAccount ? `
     <div class="form-group">
       <label class="form-label">账号标识（多账号模式）</label>
-      <input class="form-input" name="__accountId" placeholder="如 sales、support（留空则为默认账号）" value="">
-      <div class="form-hint">为同一平台接入多个应用时，每个应用需要一个唯一的账号标识。不同账号可绑定不同 Agent</div>
+      <input class="form-input" name="__accountId" placeholder="如 sales、support（留空则为默认账号）" value="${escapeAttr(editAccountId || '')}" ${editingAccount ? 'readonly style="opacity:0.7;cursor:not-allowed"' : ''}>
+      <div class="form-hint">${editingAccount ? '编辑模式下账号标识不可修改' : '为同一平台接入多个应用时，每个应用需要一个唯一的账号标识。不同账号可绑定不同 Agent'}</div>
     </div>
   ` : ''
   const agentBindingHtml = `
