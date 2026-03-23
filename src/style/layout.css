@@ -432,48 +432,83 @@
   color: #fff;
 }
 
-/* Gateway 未启动引导横幅 */
+/* Gateway 状态条：低调信息提示，避免高对比琥珀色造成焦虑 */
 .gw-banner {
-  background: linear-gradient(90deg, #fbbf24 0%, #f59e0b 100%);
-  color: #78350f;
-  padding: 8px 16px;
-  font-size: var(--font-size-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-primary);
+  padding: 5px 12px;
+  font-size: var(--font-size-xs, 12px);
+  font-weight: 400;
+  line-height: 1.35;
   z-index: 100;
-  transition: all 300ms ease;
+  transition: max-height 280ms ease, padding 280ms ease, opacity 200ms ease, border-color 200ms ease;
   overflow: hidden;
-  max-height: 80px;
+  max-height: 72px;
+  box-shadow: none;
 }
 .gw-banner-hidden {
   max-height: 0;
-  padding: 0 16px;
+  padding: 0 12px;
   opacity: 0;
+  border-bottom-color: transparent;
+  pointer-events: none;
 }
 .gw-banner-content {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 .gw-banner-icon {
-  font-size: 16px;
+  font-size: 14px;
+  opacity: 0.85;
+  flex-shrink: 0;
+}
+.gw-banner-icon svg {
+  stroke: var(--text-tertiary) !important;
 }
 .gw-banner-close {
   background: none;
   border: none;
-  color: rgba(0,0,0,.5);
-  font-size: 20px;
+  color: var(--text-tertiary);
+  font-size: 18px;
   line-height: 1;
   cursor: pointer;
-  padding: 0 4px;
-  margin-left: 8px;
-  transition: color .15s;
+  padding: 0 2px;
+  margin-left: 4px;
+  border-radius: 4px;
+  transition: color .15s, background .15s;
 }
-.gw-banner-close:hover { color: rgba(0,0,0,.8); }
+.gw-banner-close:hover {
+  color: var(--text-secondary);
+  background: var(--bg-glass-hover);
+}
 .gw-banner .btn {
-  margin-left: auto;
-  background: rgba(0,0,0,0.15);
-  border: none;
-  color: #000;
-  font-weight: 600;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+  font-weight: 500;
+  font-size: var(--font-size-xs, 12px);
+  padding: 3px 10px;
+  box-shadow: var(--shadow-sm);
+}
+.gw-banner .btn:hover {
+  background: var(--bg-glass-hover);
+  border-color: var(--border-secondary);
+}
+.gw-banner .btn-ghost {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--text-secondary) !important;
+  font-weight: 400;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.gw-banner .btn-ghost:hover {
+  color: var(--text-primary) !important;
+  background: var(--bg-glass) !important;
 }
 
 /* === 移动端顶栏 + 侧边栏 === */

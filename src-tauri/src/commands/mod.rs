@@ -1,7 +1,14 @@
+use serde_json;
 use std::net::IpAddr;
 use std::path::PathBuf;
 use std::sync::RwLock;
 use std::time::Duration;
+
+/// 缓存 gateway 端口，避免频繁读文件（5秒有效期）
+static GATEWAY_PORT_CACHE: std::sync::LazyLock<std::sync::Mutex<(u16, std::time::Instant)>> =
+    std::sync::LazyLock::new(|| {
+        std::sync::Mutex::new((18789, std::time::Instant::now() - Duration::from_secs(60)))
+    });
 
 pub mod agent;
 pub mod assistant;
@@ -37,6 +44,41 @@ pub fn openclaw_dir() -> PathBuf {
         }
     }
     default_openclaw_dir()
+}
+
+/// Gateway 监听端口：读取 `openclaw.json` 的 `gateway.port`，缺省 **18789**。
+/// 与面板「Gateway 配置」、服务状态检测（netstat / TCP / launchctl 兜底）共用同一来源，
+/// 并尊重 `clawpanel.json` 中的 `openclawDir` 自定义配置目录。
+pub fn gateway_listen_port() -> u16 {
+    // 5秒内返回缓存值，避免服务状态检测时频繁读文件
+    if let Ok(cache) = GATEWAY_PORT_CACHE.lock() {
+        if cache.1.elapsed() < Duration::from_secs(5) {
+            return cache.0;
+        }
+    }
+    let port = read_gateway_port_from_config();
+    if let Ok(mut cache) = GATEWAY_PORT_CACHE.lock() {
+        *cache = (port, std::time::Instant::now());
+    }
+    port
+}
+
+fn read_gateway_port_from_config() -> u16 {
+    let config_path = openclaw_dir().join("openclaw.json");
+    if let Ok(content) = std::fs::read_to_string(&config_path) {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(port) = val
+                .get("gateway")
+                .and_then(|g| g.get("port"))
+                .and_then(|p| p.as_u64())
+            {
+                if port > 0 && port < 65536 {
+                    return port as u16;
+                }
+            }
+        }
+    }
+    18789
 }
 
 fn panel_config_path() -> PathBuf {
@@ -341,16 +383,28 @@ fn build_enhanced_path() -> String {
         let mut extra: Vec<String> = vec![];
 
         // 1. NVM_SYMLINK（nvm-windows 活跃版本符号链接，如 D:\nodejs）—— 最高优先级
+        // 增强：尝试解析符号链接目标
         if let Ok(nvm_symlink) = std::env::var("NVM_SYMLINK") {
             let symlink_path = std::path::Path::new(&nvm_symlink);
             if symlink_path.is_dir() {
                 extra.push(nvm_symlink.clone());
             }
+            // 如果是符号链接，尝试读取其实际指向的目标
+            #[cfg(target_os = "windows")]
+            if symlink_path.is_symlink() {
+                if let Ok(target) = std::fs::read_link(symlink_path) {
+                    if target.is_dir() {
+                        extra.push(target.to_string_lossy().to_string());
+                    }
+                }
+            }
         }
+
         // 2. NVM_HOME（用户自定义 nvm 安装目录）
         if let Ok(nvm_home) = std::env::var("NVM_HOME") {
             let nvm_path = std::path::Path::new(&nvm_home);
             if nvm_path.is_dir() {
+                // 扫描所有已安装的版本目录
                 if let Ok(entries) = std::fs::read_dir(nvm_path) {
                     for entry in entries.flatten() {
                         let p = entry.path();
@@ -359,13 +413,34 @@ fn build_enhanced_path() -> String {
                         }
                     }
                 }
+                // 尝试从 settings.json 读取当前激活版本
+                let settings_path = nvm_path.join("settings.json");
+                if settings_path.exists() {
+                    if let Ok(content) = std::fs::read_to_string(&settings_path) {
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                            // settings.json 中有 "path" 字段指向当前版本
+                            if let Some(current_version) = json.get("path").and_then(|v| v.as_str())
+                            {
+                                let version_path = nvm_path.join(current_version);
+                                if version_path.is_dir() {
+                                    // 将当前激活版本移到更高优先级
+                                    let version_bin = version_path.to_string_lossy().to_string();
+                                    if !extra.contains(&version_bin) {
+                                        extra.insert(0, version_bin);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
+
         // 3. %APPDATA%\nvm（nvm-windows 默认安装目录）
         if !appdata.is_empty() {
-            extra.push(format!(r"{}\nvm", appdata));
             let nvm_dir = std::path::Path::new(&appdata).join("nvm");
             if nvm_dir.is_dir() {
+                // 扫描所有已安装的版本
                 if let Ok(entries) = std::fs::read_dir(&nvm_dir) {
                     for entry in entries.flatten() {
                         let p = entry.path();
@@ -374,10 +449,35 @@ fn build_enhanced_path() -> String {
                         }
                     }
                 }
+                // 尝试从 settings.json 读取当前激活版本
+                let settings_path = nvm_dir.join("settings.json");
+                if settings_path.exists() {
+                    if let Ok(content) = std::fs::read_to_string(&settings_path) {
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                            if let Some(current_version) = json.get("path").and_then(|v| v.as_str())
+                            {
+                                let version_path = nvm_dir.join(current_version);
+                                if version_path.is_dir() {
+                                    let version_bin = version_path.to_string_lossy().to_string();
+                                    if !extra.contains(&version_bin) {
+                                        extra.insert(0, version_bin);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
+
         // 4. volta
         extra.push(format!(r"{}\.volta\bin", home.display()));
+        // volta 的活跃版本
+        let volta_bin = std::path::Path::new(&home).join(".volta/bin");
+        if volta_bin.is_dir() && !extra.contains(&volta_bin.to_string_lossy().to_string()) {
+            extra.insert(0, volta_bin.to_string_lossy().to_string());
+        }
+
         // 5. fnm
         if !localappdata.is_empty() {
             extra.push(format!(r"{}\fnm_multishells", localappdata));
@@ -388,30 +488,52 @@ fn build_enhanced_path() -> String {
             .unwrap_or_else(|| std::path::Path::new(&appdata).join("fnm"));
         let fnm_versions = fnm_base.join("node-versions");
         if fnm_versions.is_dir() {
+            // 尝试找到 fnm 的当前活跃版本
+            let fnm_current = fnm_base.join("current");
+            if fnm_current.is_dir() {
+                let current_inst = fnm_current.join("installation");
+                if current_inst.is_dir() && current_inst.join("node.exe").exists() {
+                    if !extra.contains(&current_inst.to_string_lossy().to_string()) {
+                        extra.insert(0, current_inst.to_string_lossy().to_string());
+                    }
+                }
+            }
+            // 扫描所有版本
             if let Ok(entries) = std::fs::read_dir(&fnm_versions) {
                 for entry in entries.flatten() {
                     let inst = entry.path().join("installation");
                     if inst.is_dir() && inst.join("node.exe").exists() {
-                        extra.push(inst.to_string_lossy().to_string());
+                        let inst_str = inst.to_string_lossy().to_string();
+                        if !extra.contains(&inst_str) {
+                            extra.push(inst_str);
+                        }
                     }
                 }
             }
         }
+
         // 6. npm 全局（openclaw.cmd 通常在这里）
         if !appdata.is_empty() {
             extra.push(format!(r"{}\npm", appdata));
         }
+
         // 7. 系统默认 Node.js 安装路径（优先级最低）
         extra.push(format!(r"{}\nodejs", pf));
         extra.push(format!(r"{}\nodejs", pf86));
         if !localappdata.is_empty() {
             extra.push(format!(r"{}\Programs\nodejs", localappdata));
         }
+
         // 8. 扫描常见盘符下的 Node 安装（用户可能装在 D:\、F:\ 等）
         for drive in &["C", "D", "E", "F"] {
             extra.push(format!(r"{}:\nodejs", drive));
             extra.push(format!(r"{}:\Node", drive));
             extra.push(format!(r"{}:\Program Files\nodejs", drive));
+            // 常见 AI/Dev 工具目录
+            extra.push(format!(r"{}:\AI\Node", drive));
+            extra.push(format!(r"{}:\AI\nodejs", drive));
+            extra.push(format!(r"{}:\Dev\nodejs", drive));
+            extra.push(format!(r"{}:\Tools\nodejs", drive));
         }
 
         let mut parts: Vec<&str> = vec![];
@@ -419,9 +541,10 @@ fn build_enhanced_path() -> String {
         if let Some(ref cp) = custom_path {
             parts.push(cp.as_str());
         }
-        // 然后是默认扫描到的路径
+        // 然后是默认扫描到的路径（去重）
+        let mut seen = std::collections::HashSet::new();
         for p in &extra {
-            if std::path::Path::new(p).exists() {
+            if std::path::Path::new(p).exists() && seen.insert(p.clone()) {
                 parts.push(p.as_str());
             }
         }

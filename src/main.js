@@ -1,6 +1,10 @@
 /**
  * ClawPanel 入口
  */
+
+// 模块已加载，取消 splash 超时回退（防止假阳性的 "页面加载失败" 提示）
+if (window._splashTimer) { clearTimeout(window._splashTimer); window._splashTimer = null }
+
 import { registerRoute, initRouter, navigate, setDefaultRoute } from './router.js'
 import { renderSidebar, openMobileSidebar } from './components/sidebar.js'
 import { initTheme } from './lib/theme.js'
@@ -25,6 +29,11 @@ import './style/ai-drawer.css'
 
 // 初始化主题
 initTheme()
+
+/** HTML 转义，防止 XSS 注入 */
+function escapeHtml(str) {
+  return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
 
 // === 访问密码保护（Web + 桌面端通用） ===
 const isTauri = !!window.__TAURI_INTERNALS__
@@ -511,10 +520,10 @@ function setupGatewayBanner() {
       banner.classList.remove('gw-banner-hidden')
       banner.innerHTML = `
         <div class="gw-banner-content">
-          <span class="gw-banner-icon">${statusIcon('warn', 16)}</span>
+          <span class="gw-banner-icon">${statusIcon('info', 16)}</span>
           <span>Gateway 未运行</span>
-          <button class="btn btn-sm btn-primary" id="btn-gw-start" style="margin-left:auto">启动</button>
-          <a class="btn btn-sm btn-ghost" href="#/services" style="color:inherit;font-size:12px">服务管理</a>
+          <button class="btn btn-sm btn-secondary" id="btn-gw-start" style="margin-left:auto">启动</button>
+          <a class="btn btn-sm btn-ghost" href="#/services">服务管理</a>
           <button class="gw-banner-close" id="btn-gw-dismiss" title="关闭提示">&times;</button>
         </div>
       `
@@ -533,13 +542,13 @@ function setupGatewayBanner() {
           const errMsg = (err.message || String(err)).slice(0, 120)
           banner.innerHTML = `
             <div class="gw-banner-content" style="flex-wrap:wrap">
-              <span class="gw-banner-icon">${statusIcon('warn', 16)}</span>
+              <span class="gw-banner-icon">${statusIcon('info', 16)}</span>
               <span>启动失败</span>
-              <button class="btn btn-sm btn-primary" id="btn-gw-start" style="margin-left:auto">重试</button>
-              <a class="btn btn-sm btn-ghost" href="#/services" style="color:inherit;font-size:12px">服务管理</a>
-              <a class="btn btn-sm btn-ghost" href="#/logs" style="color:inherit;font-size:12px">查看日志</a>
+              <button class="btn btn-sm btn-secondary" id="btn-gw-start" style="margin-left:auto">重试</button>
+              <a class="btn btn-sm btn-ghost" href="#/services">服务管理</a>
+              <a class="btn btn-sm btn-ghost" href="#/logs">查看日志</a>
             </div>
-            <div style="font-size:11px;opacity:0.7;margin-top:4px;font-family:monospace;word-break:break-all">${errMsg}</div>
+            <div style="font-size:11px;opacity:0.7;margin-top:4px;font-family:monospace;word-break:break-all">${escapeHtml(errMsg)}</div>
           `
           update(false)
           return
@@ -564,10 +573,10 @@ function setupGatewayBanner() {
         } catch {}
         banner.innerHTML = `
           <div class="gw-banner-content">
-            <span class="gw-banner-icon">${statusIcon('warn', 16)}</span>
+            <span class="gw-banner-icon">${statusIcon('info', 16)}</span>
             <span>启动超时，Gateway 可能仍在启动中</span>
-            <button class="btn btn-sm btn-primary" id="btn-gw-start">重试</button>
-            <a class="btn btn-sm btn-ghost" href="#/logs" style="color:inherit;text-decoration:underline">查看日志</a>
+            <button class="btn btn-sm btn-secondary" id="btn-gw-start" style="margin-left:auto">重试</button>
+            <a class="btn btn-sm btn-ghost" href="#/logs">查看日志</a>
           </div>
           ${logHint}
         `
@@ -588,10 +597,10 @@ function showGuardianRecovery() {
     <div class="gw-banner-content" style="flex-wrap:wrap;gap:8px">
       <span class="gw-banner-icon">${statusIcon('warn', 16)}</span>
       <span>Gateway 反复启动失败，可能配置有误</span>
-      <button class="btn btn-sm btn-primary" id="btn-gw-recover-restart">重试启动</button>
+      <button class="btn btn-sm btn-secondary" id="btn-gw-recover-restart" style="margin-left:auto">重试启动</button>
       <button class="btn btn-sm btn-secondary" id="btn-gw-recover-backup">从备份恢复</button>
-      <a class="btn btn-sm btn-ghost" href="#/services" style="color:inherit;text-decoration:underline">服务管理</a>
-      <a class="btn btn-sm btn-ghost" href="#/logs" style="color:inherit;text-decoration:underline">查看日志</a>
+      <a class="btn btn-sm btn-ghost" href="#/services">服务管理</a>
+      <a class="btn btn-sm btn-ghost" href="#/logs">查看日志</a>
     </div>
   `
   banner.querySelector('#btn-gw-recover-restart')?.addEventListener('click', async (e) => {

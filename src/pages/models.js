@@ -25,20 +25,26 @@ export async function render() {
       服务商是模型的来源（如 OpenAI、DeepSeek 等）。每个服务商下可添加多个模型。
       标记为「主模型」的将优先使用，其余作为备选自动切换。配置修改后自动保存。
     </div>
-    <div id="qtcool-promo" style="margin-bottom:var(--space-md);border-radius:var(--radius-lg);background:var(--bg-secondary);border:1px solid var(--border-primary);padding:14px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
-      <div style="flex:1;min-width:200px">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-          ${icon('zap', 16)}
-          <span style="font-weight:600;font-size:var(--font-size-sm)">晴辰云</span>
-          <span style="font-size:10px;background:var(--primary);color:#fff;padding:1px 6px;border-radius:8px">推荐</span>
+    <div id="qtcool-promo" style="margin-bottom:var(--space-md);border-radius:var(--radius-lg);border:1px solid var(--border-primary);border-left:3px solid var(--primary);background:var(--bg-secondary);padding:16px 20px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:12px">
+        <div style="flex:1;min-width:200px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <span style="font-weight:700;font-size:var(--font-size-base);color:var(--text-primary)">${icon('zap', 15)} 晴辰云</span>
+            <span style="font-size:10px;background:var(--primary);color:#fff;padding:1px 7px;border-radius:8px">推荐</span>
+          </div>
+          <div style="font-size:var(--font-size-xs);color:var(--text-secondary);line-height:1.5">
+            GPT-5 / Codex 全系列，低至官方价 2-3 折，不满意随时可退。
+            <a href="${QTCOOL.site}" target="_blank" style="color:var(--primary);text-decoration:none">了解更多 →</a>
+          </div>
         </div>
-        <div style="font-size:var(--font-size-xs);color:var(--text-secondary);line-height:1.5">
-          无需自行注册 API，一键添加即可使用。基础模型免费，高级模型低至官方价 2-3 折
-        </div>
+        <a href="${QTCOOL.checkinUrl}" target="_blank" class="btn btn-primary btn-sm">${icon('gift', 12)} 每日签到领额度</a>
       </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input class="form-input" id="qtcool-apikey" placeholder="粘贴 API Key（签到后在用户后台获取）" style="font-size:12px;padding:6px 10px;flex:1;min-width:180px">
         <button class="btn btn-primary btn-sm" id="btn-qtcool-oneclick">${icon('plus', 14)} 获取模型列表</button>
-        <a href="${QTCOOL.site}" target="_blank" class="btn btn-secondary btn-sm">${icon('external-link', 12)} 了解更多</a>
+      </div>
+      <div style="font-size:11px;color:var(--text-tertiary);margin-top:6px">
+        没有密钥？前往 <a href="${QTCOOL.checkinUrl}" target="_blank" style="color:var(--primary)">签到页</a> 每日签到即可领取免费额度，在 <a href="${QTCOOL.usageUrl}" target="_blank" style="color:var(--primary)">用户后台</a> 复制你的 Key
       </div>
     </div>
     <div id="default-model-bar"></div>
@@ -755,11 +761,14 @@ function bindTopActions(page, state) {
   page.querySelector('#btn-qtcool-oneclick').onclick = async () => {
     if (!state.config) { toast('配置未加载完成，请稍候', 'warning'); return }
 
+    const bannerKeyInput = page.querySelector('#qtcool-apikey')
+    const bannerKey = bannerKeyInput ? bannerKeyInput.value.trim() : ''
+
     const btn = page.querySelector('#btn-qtcool-oneclick')
     btn.textContent = '获取中...'
     btn.disabled = true
 
-    const models = await fetchQtcoolModels()
+    const models = await fetchQtcoolModels(bannerKey || undefined)
 
     btn.innerHTML = `${icon('plus', 14)} 获取模型列表`
     btn.disabled = false
@@ -780,6 +789,10 @@ function bindTopActions(page, state) {
       <div class="modal" style="max-height:80vh;overflow-y:auto">
         <div class="modal-title">选择要添加的模型</div>
         <div class="form-hint" style="margin-bottom:12px">从晴辰云获取到 ${models.length} 个可用模型，勾选需要的模型后点击添加。</div>
+        ${!existingProvider ? `<div style="margin-bottom:12px">
+          <label class="form-label" style="font-size:var(--font-size-xs)">API Key <a href="${QTCOOL.checkinUrl}" target="_blank" style="color:var(--primary);font-weight:400">每日签到领免费额度 →</a></label>
+          <input class="form-input" id="qtsel-apikey" placeholder="粘贴你的 API Key" style="font-size:12px">
+        </div>` : ''}
         <div style="margin-bottom:12px;display:flex;gap:8px">
           <button class="btn btn-sm btn-secondary" id="qtsel-all">全选</button>
           <button class="btn btn-sm btn-secondary" id="qtsel-none">全不选</button>
@@ -801,6 +814,9 @@ function bindTopActions(page, state) {
       </div>
     `
     document.body.appendChild(overlay)
+    // 从横幅预填充 key
+    const dialogKeyInput = overlay.querySelector('#qtsel-apikey')
+    if (dialogKeyInput && bannerKey) dialogKeyInput.value = bannerKey
     overlay.querySelector('#qtsel-cancel').onclick = () => overlay.remove()
     overlay.querySelector('#qtsel-all').onclick = () => {
       overlay.querySelectorAll('#qtmodel-list input:not(:disabled)').forEach(cb => cb.checked = true)
@@ -810,8 +826,17 @@ function bindTopActions(page, state) {
     }
     overlay.querySelector('#qtsel-confirm').onclick = () => {
       const selected = [...overlay.querySelectorAll('#qtmodel-list input:checked:not(:disabled)')].map(cb => cb.value)
-      overlay.remove()
       if (!selected.length) { toast('未选择任何模型', 'info'); return }
+
+      // 新建服务商时需要 API Key
+      const keyInput = overlay.querySelector('#qtsel-apikey')
+      const apiKey = keyInput ? keyInput.value.trim() : ''
+      if (!existingProvider && !apiKey) {
+        toast('请输入 API Key（可通过每日签到免费获取）', 'warning')
+        keyInput?.focus()
+        return
+      }
+      overlay.remove()
 
       pushUndo(state)
       if (!state.config.models) state.config.models = {}
@@ -827,7 +852,7 @@ function bindTopActions(page, state) {
       } else {
         state.config.models.providers[QTCOOL.providerKey] = {
           baseUrl: QTCOOL.baseUrl,
-          apiKey: QTCOOL.defaultKey,
+          apiKey: apiKey,
           api: QTCOOL.api,
           models: selectedModels.map(m => ({ ...m })),
         }
@@ -1377,16 +1402,29 @@ async function testModel(btn, state, providerKey, idx) {
       model.testStatus = 'ok'
       delete model.testError
     }
-    toast(`${modelId} 连通正常 (${(elapsed / 1000).toFixed(1)}s): "${reply.slice(0, 50)}"`, 'success')
+    // 包含 ⚠ 的是非致命错误（429 等），拆分显示
+    if (reply.startsWith('⚠')) {
+      const lines = reply.split('\n')
+      const summary = lines[0]
+      const detail = lines.slice(1).join('\n').trim()
+      if (detail) {
+        const detailHtml = detail.replace(/</g, '&lt;').replace(/(https?:\/\/[^\s,，。；）)'"&]+)/g, '<a href="$1" target="_blank" style="color:var(--primary);text-decoration:underline">$1</a>')
+        toast(`<strong>${modelId}</strong> ${summary.replace(/</g, '&lt;')}<br><span style="font-size:11px;line-height:1.5;word-break:break-all">${detailHtml}</span>`, 'warning', { duration: 10000, html: true })
+      } else {
+        toast(`${modelId} ${summary}`, 'warning', { duration: 6000 })
+      }
+    } else {
+      toast(`${modelId} 连通正常 (${(elapsed / 1000).toFixed(1)}s): "${reply.slice(0, 50)}"`, 'success')
+    }
   } catch (e) {
     const elapsed = Date.now() - start
     if (typeof model === 'object') {
       model.latency = null
       model.lastTestAt = Date.now()
       model.testStatus = 'fail'
-      model.testError = String(e).slice(0, 100)
+      model.testError = String(e).slice(0, 200)
     }
-    toast(`${modelId} 不可用 (${(elapsed / 1000).toFixed(1)}s): ${e}`, 'error')
+    toast(`${modelId} 不可用 (${(elapsed / 1000).toFixed(1)}s): ${e}`, 'error', { duration: 8000 })
   } finally {
     btn.disabled = false
     btn.textContent = origText

@@ -129,18 +129,69 @@ install_git() {
     echo "✅ Git 安装完成"
 }
 
+# 查找 openclaw 可执行文件（兼容各种安装方式）
+find_openclaw() {
+    # 1. 直接在 PATH 中查找
+    if command -v openclaw &> /dev/null; then
+        echo "$(command -v openclaw)"
+        return 0
+    fi
+    # 2. 常见 npm 全局安装路径
+    local candidates=(
+        "/usr/local/bin/openclaw"
+        "/usr/bin/openclaw"
+        "$HOME/.npm-global/bin/openclaw"
+        "$HOME/.local/bin/openclaw"
+    )
+    # 3. 从 npm prefix 获取（不使用 sudo，避免触发密码提示）
+    local npm_prefix=$(npm config get prefix 2>/dev/null)
+    if [ -n "$npm_prefix" ]; then
+        candidates+=("$npm_prefix/bin/openclaw")
+    fi
+    for p in "${candidates[@]}"; do
+        if [ -x "$p" ]; then
+            echo "$p"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# 检测 OpenClaw 版本来源（官方 vs 汉化版）
+detect_openclaw_source() {
+    local oc_bin="$1"
+    local ver=$("$oc_bin" --version 2>/dev/null || echo "")
+    if echo "$ver" | grep -qi "zh\|汉化\|chinese"; then
+        echo "chinese"
+    else
+        echo "official"
+    fi
+}
+
 # 安装 OpenClaw
 install_openclaw() {
-    if command -v openclaw &> /dev/null; then
-        echo "✅ OpenClaw 已安装: $(openclaw --version 2>/dev/null || echo '未知版本')"
+    local oc_path=$(find_openclaw)
+    if [ -n "$oc_path" ]; then
+        local oc_ver=$("$oc_path" --version 2>/dev/null || echo "未知版本")
+        local oc_src=$(detect_openclaw_source "$oc_path")
+        if [ "$oc_src" = "chinese" ]; then
+            echo "✅ OpenClaw 汉化版已安装: $oc_ver (${oc_path})"
+        else
+            echo "✅ OpenClaw 已安装: $oc_ver (${oc_path})"
+        fi
+        # 确保 openclaw 在 PATH 中（防止后续步骤找不到）
+        if ! command -v openclaw &> /dev/null; then
+            export PATH="$(dirname "$oc_path"):$PATH"
+            echo "ℹ️  已将 $(dirname "$oc_path") 加入 PATH"
+        fi
     else
         echo "📦 安装 OpenClaw 汉化版..."
         if [ "$IS_ROOT" = true ]; then
             npm install -g @qingchencloud/openclaw-zh --registry "$NPM_REGISTRY" || \
             npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmjs.org
         else
-            sudo npm install -g @qingchencloud/openclaw-zh --registry "$NPM_REGISTRY" || \
-            sudo npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmjs.org
+            sudo -E npm install -g @qingchencloud/openclaw-zh --registry "$NPM_REGISTRY" || \
+            sudo -E npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmjs.org
         fi
         echo "✅ OpenClaw 安装完成"
     fi

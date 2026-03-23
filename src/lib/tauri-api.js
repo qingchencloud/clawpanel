@@ -213,15 +213,29 @@ export const api = {
   exportMemoryZip: (category, agentId) => invoke('export_memory_zip', { category, agentId: agentId || null }),
 
   // 消息渠道管理
-  readPlatformConfig: (platform) => invoke('read_platform_config', { platform }),
-  saveMessagingPlatform: (platform, form, accountId) => { invalidate('list_configured_platforms', 'read_platform_config'); return invoke('save_messaging_platform', { platform, form, accountId: accountId || null }) },
-  removeMessagingPlatform: (platform) => { invalidate('list_configured_platforms', 'read_platform_config'); return invoke('remove_messaging_platform', { platform }) },
+  readPlatformConfig: (platform, accountId) => invoke('read_platform_config', { platform, accountId: accountId || null }),
+  saveMessagingPlatform: (platform, form, accountId, agentId) => { invalidate('list_configured_platforms', 'read_openclaw_config', 'read_platform_config'); return invoke('save_messaging_platform', { platform, form, accountId: accountId || null, agentId: agentId || null }) },
+  removeMessagingPlatform: (platform, accountId) => { invalidate('list_configured_platforms', 'read_openclaw_config', 'read_platform_config'); return invoke('remove_messaging_platform', { platform, accountId: accountId || null }) },
   toggleMessagingPlatform: (platform, enabled) => { invalidate('list_configured_platforms', 'read_openclaw_config', 'read_platform_config'); return invoke('toggle_messaging_platform', { platform, enabled }) },
   verifyBotToken: (platform, form) => invoke('verify_bot_token', { platform, form }),
+  diagnoseChannel: (platform, accountId) => invoke('diagnose_channel', { platform, accountId: accountId || null }),
+  repairQqbotChannelSetup: () => {
+    invalidate('list_configured_platforms', 'read_openclaw_config', 'read_platform_config')
+    return invoke('repair_qqbot_channel_setup')
+  },
   listConfiguredPlatforms: () => cachedInvoke('list_configured_platforms', {}, 5000),
   getChannelPluginStatus: (pluginId) => invoke('get_channel_plugin_status', { pluginId }),
   installQqbotPlugin: () => invoke('install_qqbot_plugin'),
   installChannelPlugin: (packageName, pluginId) => invoke('install_channel_plugin', { packageName, pluginId }),
+  runChannelAction: (platform, action) => invoke('run_channel_action', { platform, action }),
+  checkWeixinPluginStatus: () => invoke('check_weixin_plugin_status'),
+
+  // Agent 渠道绑定管理
+  getAgentBindings: (agentId) => invoke('get_agent_bindings', { agentId }),
+  listAllBindings: () => invoke('list_all_bindings'),
+  saveAgentBinding: (agentId, channel, accountId, bindingConfig) => { invalidate('read_openclaw_config', 'list_configured_platforms'); return invoke('save_agent_binding', { agentId, channel, accountId: accountId || null, bindingConfig: bindingConfig || {} }) },
+  deleteAgentBinding: (agentId, channel, accountId) => { invalidate('read_openclaw_config', 'list_configured_platforms'); return invoke('delete_agent_binding', { agentId, channel, accountId: accountId || null }) },
+  deleteAgentAllBindings: (agentId) => { invalidate('read_openclaw_config', 'list_configured_platforms'); return invoke('delete_agent_all_bindings', { agentId }) },
 
   // 面板配置 (clawpanel.json)
   getOpenclawDir: () => invoke('get_openclaw_dir'),

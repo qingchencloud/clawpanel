@@ -480,17 +480,33 @@
   background: var(--bg-hover);
 }
 
-/* 断连横幅 */
+/* 断连提示：细条 + 中性色，与聊天区融合，不抢视觉焦点 */
 .chat-disconnect-bar {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 6px;
-  background: #f59e0b;
-  color: #000;
-  font-size: 12px;
-  font-weight: 500;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 400;
   flex-shrink: 0;
+  border-top: 1px solid var(--border-primary);
+  letter-spacing: 0.01em;
+}
+.chat-disconnect-bar::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  opacity: 0.65;
+  animation: chat-disconnect-pulse 1.4s ease-in-out infinite;
+}
+@keyframes chat-disconnect-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.92); }
+  50% { opacity: 0.85; transform: scale(1); }
 }
 
 /* 连接引导遮罩 */

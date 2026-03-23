@@ -47,6 +47,46 @@
       "chinese": {
         "recommended": "2026.3.13-zh.1"
       }
+    },
+    "0.9.4": {
+      "official": {
+        "recommended": "2026.3.13"
+      },
+      "chinese": {
+        "recommended": "2026.3.13-zh.1"
+      }
+    },
+    "0.9.5": {
+      "official": {
+        "recommended": "2026.3.13"
+      },
+      "chinese": {
+        "recommended": "2026.3.13-zh.1"
+      }
+    },
+    "0.9.6": {
+      "official": {
+        "recommended": "2026.3.13"
+      },
+      "chinese": {
+        "recommended": "2026.3.13-zh.1"
+      }
+    },
+    "0.9.7": {
+      "official": {
+        "recommended": "2026.3.13"
+      },
+      "chinese": {
+        "recommended": "2026.3.13-zh.1"
+      }
+    },
+    "0.9.8": {
+      "official": {
+        "recommended": "2026.3.13"
+      },
+      "chinese": {
+        "recommended": "2026.3.13-zh.1"
+      }
     }
   }
 }

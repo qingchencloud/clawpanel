@@ -146,7 +146,7 @@ function _setGatewayRunning(val) {
     if (val) {
       // 仅记录恢复运行时间，避免短暂存活就把重启计数清零
       _gatewayRunningSince = Date.now()
-    } else if (!isTauri && wasRunning && !_userStopped && !_isUpgrading && _openclawReady) {
+    } else if (wasRunning && !_userStopped && !_isUpgrading && _openclawReady) {
       _gatewayRunningSince = 0
       // Gateway 意外停止，尝试自动重启
       _tryAutoRestart()
@@ -172,6 +172,20 @@ async function _tryAutoRestart() {
     _guardianListeners.forEach(fn => { try { fn() } catch {} })
     return
   }
+
+  // 重启前再次确认端口确实空闲，防止端口被其他程序占用时无限拉起
+  try {
+    const services = await api.getServicesStatus()
+    const gw = services?.[0]
+    if (gw?.running) {
+      console.log('[guardian] 端口仍在使用中，跳过自动重启')
+      _gwStopCount = 0
+      _gatewayRunning = true
+      _gatewayRunningSince = Date.now()
+      _gwListeners.forEach(fn => { try { fn(true) } catch {} })
+      return
+    }
+  } catch {}
 
   _autoRestartCount = decision.autoRestartCount
   _lastRestartTime = decision.lastRestartTime
@@ -217,10 +231,10 @@ export async function refreshGatewayStatus() {
 }
 
 let _pollTimer = null
-/** 启动 Gateway 状态轮询（每 15 秒，避免过于频繁） */
+/** 启动 Gateway 状态轮询（每 15 秒检测一次） */
 export function startGatewayPoll() {
   if (_pollTimer) return
-  _pollTimer = setInterval(() => refreshGatewayStatus(), 30000)
+  _pollTimer = setInterval(() => refreshGatewayStatus(), 15000)
 }
 export function stopGatewayPoll() {
   if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null }

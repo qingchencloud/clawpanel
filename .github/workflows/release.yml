@@ -166,12 +166,15 @@ jobs:
           # 上传为 Release Asset
           gh release upload "$TAG_NAME" "web-${VERSION}.zip" --clobber
 
+          # 读取现有 minAppVersion（前端热更新通常不需要更新 Rust 后端，保留旧值）
+          MIN_APP_VER=$(cat docs/update/latest.json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('minAppVersion','0.9.0'))" 2>/dev/null || echo "0.9.0")
+
           # 更新 docs/update/latest.json
           DL_URL="https://github.com/${{ github.repository }}/releases/download/${TAG_NAME}/web-${VERSION}.zip"
           cat > docs/update/latest.json << EOF
           {
             "version": "${VERSION}",
-            "minAppVersion": "${VERSION}",
+            "minAppVersion": "${MIN_APP_VER}",
             "hash": "sha256:${HASH}",
             "url": "${DL_URL}",
             "size": ${SIZE},

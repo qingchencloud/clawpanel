@@ -1772,7 +1772,7 @@ const handlers = {
   install_qqbot_plugin() {
     const bin = findOpenclawBin() || 'openclaw'
     try {
-      execSync(`${bin} plugins install @sliverp/qqbot@latest`, { timeout: 60000, cwd: homedir() })
+      execSync(`${bin} plugins install @tencent-connect/openclaw-qqbot@latest`, { timeout: 600000, cwd: homedir() })
       return '安装成功'
     } catch (e) {
       throw new Error('QQBot 插件安装失败: ' + (e.message || e))
@@ -3120,6 +3120,75 @@ const handlers = {
       } catch {}
     }
     return result
+  },
+
+  // Agent 渠道绑定管理
+  list_all_bindings() {
+    const cfg = readConfig()
+    const bindings = cfg.bindings || []
+    return { bindings }
+  },
+
+  save_agent_binding({ agentId, channel, accountId, bindingConfig }) {
+    const cfg = readConfig()
+    if (!cfg.bindings) cfg.bindings = []
+    const bindings = cfg.bindings
+
+    // 构建新绑定
+    const newBinding = {
+      type: 'route',
+      agentId,
+      match: {
+        channel,
+        ...(accountId ? { accountId } : {}),
+      },
+    }
+
+    // 合并 peer 配置到 match
+    if (bindingConfig && typeof bindingConfig === 'object') {
+      if (bindingConfig.peer) {
+        newBinding.match.peer = bindingConfig.peer
+      }
+    }
+
+    // 查找并更新现有绑定（相同 agentId + channel + accountId）
+    const accountKey = accountId || ''
+    let found = false
+    for (let i = 0; i < bindings.length; i++) {
+      const b = bindings[i]
+      if (b.agentId === agentId && b.match?.channel === channel) {
+        const existingAccount = b.match?.accountId || ''
+        if (existingAccount === accountKey) {
+          bindings[i] = newBinding
+          found = true
+          break
+        }
+      }
+    }
+    if (!found) {
+      bindings.push(newBinding)
+    }
+
+    saveConfig(cfg)
+    return { ok: true }
+  },
+
+  delete_agent_binding({ agentId, channel, accountId }) {
+    const cfg = readConfig()
+    if (!cfg.bindings) cfg.bindings = []
+    const bindings = cfg.bindings
+    const accountKey = accountId || ''
+
+    const before = bindings.length
+    cfg.bindings = bindings.filter(b => {
+      if (b.agentId !== agentId) return true
+      if (b.match?.channel !== channel) return true
+      const existingAccount = b.match?.accountId || ''
+      return existingAccount !== accountKey
+    })
+
+    saveConfig(cfg)
+    return { ok: true, removed: before - cfg.bindings.length }
   },
 
   // 记忆文件

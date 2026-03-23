@@ -1,5 +1,6 @@
 use crate::utils::openclaw_command_async;
 use serde_json::Value;
+use std::collections::HashSet;
 
 #[cfg(target_os = "windows")]
 #[allow(unused_imports)]
@@ -22,7 +23,20 @@ pub async fn skills_list() -> Result<Value, String> {
             // CLI 可能在有 skill 缺依赖时返回非零退出码，但 JSON 输出仍然有效
             // 优先尝试解析 JSON，无论退出码
             match extract_json(&stdout) {
-                Some(v) => Ok(v),
+                Some(mut v) => {
+                    if let Some(obj) = v.as_object_mut() {
+                        obj.insert("cliAvailable".into(), Value::Bool(true));
+                        obj.insert(
+                            "diagnostic".into(),
+                            serde_json::json!({
+                                "status": "ok",
+                                "message": "已使用 OpenClaw CLI 结果",
+                                "exitCode": o.status.code().unwrap_or(0),
+                            }),
+                        );
+                    }
+                    merge_local_skills(v)
+                }
                 None => {
                     let stderr = String::from_utf8_lossy(&o.stderr);
                     eprintln!(
@@ -31,14 +45,27 @@ pub async fn skills_list() -> Result<Value, String> {
                         stdout.chars().take(200).collect::<String>(),
                         stderr.chars().take(200).collect::<String>()
                     );
-                    scan_local_skills()
+                    scan_local_skills(Some(serde_json::json!({
+                        "status": "parse-failed",
+                        "message": "OpenClaw CLI 可执行，但返回结果未能解析为 JSON，当前展示本地扫描结果",
+                        "cliAvailable": true,
+                        "exitCode": o.status.code().unwrap_or(-1),
+                        "stderr": stderr.chars().take(200).collect::<String>(),
+                    })))
                 }
             }
         }
-        _ => {
-            // CLI 不可用或超时，兜底扫描本地 skills 目录
-            scan_local_skills()
-        }
+        Ok(Err(e)) => scan_local_skills(Some(serde_json::json!({
+            "status": "exec-failed",
+            "message": format!("调用 OpenClaw CLI 失败，当前展示本地扫描结果: {e}"),
+            "cliAvailable": false,
+        }))),
+        Err(_) => scan_local_skills(Some(serde_json::json!({
+            "status": "timeout",
+            "message": "OpenClaw CLI 调用超时，当前展示本地扫描结果",
+            "cliAvailable": true,
+            "timeoutSeconds": 15,
+        }))),
     }
 }
 
@@ -52,12 +79,22 @@ pub async fn skills_info(name: String) -> Result<Value, String> {
         .map_err(|e| format!("执行 openclaw 失败: {e}"))?;
 
     if !output.status.success() {
+        if let Some(local) = scan_custom_skill_detail(&name) {
+            return Ok(local);
+        }
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("获取详情失败: {}", stderr.trim()));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    extract_json(&stdout).ok_or_else(|| "解析详情失败: 输出中未找到有效 JSON".to_string())
+    let parsed =
+        extract_json(&stdout).ok_or_else(|| "解析详情失败: 输出中未找到有效 JSON".to_string())?;
+    if parsed.get("error").and_then(|v| v.as_str()) == Some("not found") {
+        if let Some(local) = scan_custom_skill_detail(&name) {
+            return Ok(local);
+        }
+    }
+    Ok(parsed)
 }
 
 /// 检查 Skills 依赖状态（openclaw skills check --json）
@@ -472,12 +509,222 @@ pub async fn skills_uninstall(name: String) -> Result<Value, String> {
     if name.is_empty() || name.contains("..") || name.contains('/') || name.contains('\\') {
         return Err("无效的 Skill 名称".to_string());
     }
-    let skills_dir = super::openclaw_dir().join("skills").join(&name);
+    let skills_dir =
+        resolve_custom_skill_dir(&name).ok_or_else(|| format!("Skill「{name}」不存在"))?;
     if !skills_dir.exists() {
         return Err(format!("Skill「{name}」不存在"));
     }
     std::fs::remove_dir_all(&skills_dir).map_err(|e| format!("删除失败: {e}"))?;
     Ok(serde_json::json!({ "success": true, "name": name }))
+}
+
+/// 验证 Skill 配置是否正确
+#[tauri::command]
+pub async fn skills_validate(name: String) -> Result<Value, String> {
+    if name.is_empty() || name.contains("..") || name.contains('/') || name.contains('\\') {
+        return Err("无效的 Skill 名称".to_string());
+    }
+
+    let skill_dir =
+        resolve_custom_skill_dir(&name).ok_or_else(|| format!("Skill「{name}」不存在"))?;
+    if !skill_dir.exists() {
+        return Err(format!("Skill「{name}」不存在"));
+    }
+
+    let skill_md = skill_dir.join("SKILL.md");
+    let package_json = skill_dir.join("package.json");
+
+    let mut issues: Vec<Value> = Vec::new();
+    let mut warnings: Vec<Value> = Vec::new();
+    let mut passed: Vec<String> = Vec::new();
+
+    // 1. 检查 SKILL.md 是否存在
+    if !skill_md.exists() {
+        issues.push(serde_json::json!({
+            "level": "error",
+            "code": "MISSING_SKILL_MD",
+            "message": "缺少 SKILL.md 文件",
+            "suggestion": "创建 SKILL.md 文件，包含 skill 的描述和使用说明"
+        }));
+    } else {
+        passed.push("SKILL.md 存在".to_string());
+
+        // 2. 检查 SKILL.md frontmatter 格式
+        if let Some(frontmatter) = parse_skill_frontmatter(&skill_md) {
+            // 检查必要字段
+            let required_fields = ["description", "fullPath"];
+            for field in &required_fields {
+                if !frontmatter
+                    .get(*field)
+                    .and_then(|v| v.as_str())
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(false)
+                {
+                    issues.push(serde_json::json!({
+                        "level": "error",
+                        "code": "MISSING_REQUIRED_FIELD",
+                        "message": format!("SKILL.md frontmatter 缺少必要字段: {}", field),
+                        "field": field,
+                        "suggestion": format!("在 frontmatter 中添加 {}: <值>", field)
+                    }));
+                } else {
+                    passed.push(format!("frontmatter.{} 字段存在且非空", field));
+                }
+            }
+
+            // 检查 fullPath 格式（应该是绝对路径或 ~ 开头）
+            if let Some(fp) = frontmatter.get("fullPath").and_then(|v| v.as_str()) {
+                // Windows 路径以盘符开头（如 C:\），Unix 以 / 或 ~ 或 . 开头
+                let is_valid_path = fp.starts_with('/')
+                    || fp.starts_with('~')
+                    || fp.starts_with('.')
+                    || (fp.len() >= 3
+                        && fp.as_bytes()[1] == b':'
+                        && (fp.as_bytes()[2] == b'\\' || fp.as_bytes()[2] == b'/'));
+                if !is_valid_path {
+                    warnings.push(serde_json::json!({
+                        "level": "warning",
+                        "code": "INVALID_FULLPATH_FORMAT",
+                        "message": format!("fullPath 格式可能不正确: {}", fp),
+                        "suggestion": "建议使用绝对路径或 ~ 开头"
+                    }));
+                }
+            }
+        } else {
+            issues.push(serde_json::json!({
+                "level": "error",
+                "code": "INVALID_FRONTMATTER",
+                "message": "SKILL.md frontmatter 格式不正确",
+                "suggestion": "确保 frontmatter 以 --- 开头和结尾，包含正确的 YAML 格式"
+            }));
+        }
+
+        // 3. 检查 SKILL.md 内容（非 frontmatter 部分）
+        if let Ok(content) = std::fs::read_to_string(&skill_md) {
+            // 检查是否有空内容
+            let body = content
+                .split("---")
+                .skip(2) // 跳过 frontmatter
+                .collect::<Vec<_>>()
+                .join("---")
+                .trim()
+                .to_string();
+
+            if body.len() < 10 {
+                warnings.push(serde_json::json!({
+                    "level": "warning",
+                    "code": "EMPTY_SKILL_CONTENT",
+                    "message": "SKILL.md 正文内容为空或过短",
+                    "suggestion": "添加 skill 的使用说明、功能描述等详细内容"
+                }));
+            } else {
+                passed.push("SKILL.md 正文内容完整".to_string());
+            }
+        }
+    }
+
+    // 4. 检查 package.json
+    if !package_json.exists() {
+        warnings.push(serde_json::json!({
+            "level": "warning",
+            "code": "MISSING_PACKAGE_JSON",
+            "message": "缺少 package.json 文件",
+            "suggestion": "可选：创建 package.json 以便管理 npm 依赖"
+        }));
+    } else {
+        passed.push("package.json 存在".to_string());
+
+        // 5. 解析并验证 package.json
+        if let Ok(pkg_content) = std::fs::read_to_string(&package_json) {
+            if let Ok(pkg) = serde_json::from_str::<serde_json::Value>(&pkg_content) {
+                // 检查 name 字段
+                if let Some(pkg_name) = pkg.get("name").and_then(|v| v.as_str()) {
+                    if pkg_name != name {
+                        warnings.push(serde_json::json!({
+                            "level": "warning",
+                            "code": "NAME_MISMATCH",
+                            "message": format!("package.json 中的 name '{}' 与目录名 '{}' 不一致", pkg_name, name),
+                            "suggestion": "确保 package.json 的 name 字段与 skill 目录名一致"
+                        }));
+                    } else {
+                        passed.push("package.json.name 与目录名一致".to_string());
+                    }
+                }
+
+                // 检查 dependencies 和 node_modules
+                if let Some(deps) = pkg.get("dependencies").and_then(|v| v.as_object()) {
+                    let deps_count = deps.len();
+                    passed.push(format!("package.json 声明了 {} 个依赖", deps_count));
+
+                    // 检查 node_modules
+                    let node_modules = skill_dir.join("node_modules");
+                    if node_modules.exists() {
+                        let missing = detect_missing_dependencies(
+                            &deps.keys().cloned().collect::<Vec<_>>(),
+                            &skill_dir,
+                        );
+                        if !missing.is_empty() {
+                            warnings.push(serde_json::json!({
+                                "level": "warning",
+                                "code": "MISSING_NPM_DEPS",
+                                "message": format!("缺少 {} 个 npm 依赖: {}", missing.len(), missing.join(", ")),
+                                "missingDeps": missing,
+                                "suggestion": "运行 npm install 安装依赖"
+                            }));
+                        } else {
+                            passed.push("所有 npm 依赖已安装".to_string());
+                        }
+                    } else if deps_count > 0 {
+                        issues.push(serde_json::json!({
+                            "level": "error",
+                            "code": "NODE_MODULES_MISSING",
+                            "message": "package.json 声明了依赖但 node_modules 不存在",
+                            "suggestion": "运行 npm install 安装依赖"
+                        }));
+                    }
+                }
+            } else {
+                issues.push(serde_json::json!({
+                    "level": "error",
+                    "code": "INVALID_PACKAGE_JSON",
+                    "message": "package.json 格式不正确",
+                    "suggestion": "确保 package.json 是有效的 JSON 格式"
+                }));
+            }
+        }
+    }
+
+    // 6. 检查常见的不应该存在的文件
+    let unnecessary_files = ["README.md", "README.txt", "readme.md"];
+    for file in unnecessary_files {
+        let file_path = skill_dir.join(file);
+        if file_path.exists() {
+            warnings.push(serde_json::json!({
+                "level": "warning",
+                "code": "UNNECESSARY_FILE",
+                "message": format!("发现不必要的文件: {}", file),
+                "suggestion": "Skill 文档应放在 SKILL.md 中，删除 README.md"
+            }));
+        }
+    }
+
+    // 汇总结果
+    let has_errors = !issues.is_empty();
+    let is_valid = !has_errors;
+
+    Ok(serde_json::json!({
+        "name": name,
+        "valid": is_valid,
+        "summary": {
+            "errors": issues.len(),
+            "warnings": warnings.len(),
+            "passed": passed.len()
+        },
+        "issues": issues,
+        "warnings": warnings,
+        "passed": passed,
+        "validatedAt": chrono::Utc::now().to_rfc3339()
+    }))
 }
 
 /// Public wrapper for extract_json, used by config.rs get_status_summary
@@ -486,20 +733,25 @@ pub fn extract_json_pub(text: &str) -> Option<Value> {
 }
 
 /// Extract the first valid JSON object or array from a string that may contain
-/// non-JSON lines (Node.js warnings, npm update prompts, etc.)
+/// non-JSON lines (Node.js warnings, npm update prompts, ANSI codes, etc.)
 fn extract_json(text: &str) -> Option<Value> {
+    // Pre-processing: clean up common CLI output artifacts
+    let cleaned = clean_cli_output(text);
+
     // Try parsing the whole string first (fast path)
-    if let Ok(v) = serde_json::from_str::<Value>(text) {
+    if let Ok(v) = serde_json::from_str::<Value>(&cleaned) {
         return Some(v);
     }
+
     // Find the first '{' or '[' and try parsing from there
-    for (i, ch) in text.char_indices() {
+    for (i, ch) in cleaned.char_indices() {
         if ch == '{' || ch == '[' {
-            if let Ok(v) = serde_json::from_str::<Value>(&text[i..]) {
+            // Try direct parsing first
+            if let Ok(v) = serde_json::from_str::<Value>(&cleaned[i..]) {
                 return Some(v);
             }
             // Try with a streaming deserializer to handle trailing content
-            let mut de = serde_json::Deserializer::from_str(&text[i..]).into_iter::<Value>();
+            let mut de = serde_json::Deserializer::from_str(&cleaned[i..]).into_iter::<Value>();
             if let Some(Ok(v)) = de.next() {
                 return Some(v);
             }
@@ -508,71 +760,450 @@ fn extract_json(text: &str) -> Option<Value> {
     None
 }
 
-/// CLI 不可用时的兜底：扫描 ~/.openclaw/skills 目录
-fn scan_local_skills() -> Result<Value, String> {
-    let skills_dir = super::openclaw_dir().join("skills");
-    if !skills_dir.exists() {
+/// Clean up CLI output by removing common non-JSON artifacts:
+/// - ANSI escape sequences (color codes)
+/// - npm/node progress bars
+/// - Multiple leading/trailing whitespace
+/// - Debug log prefixes
+fn clean_cli_output(text: &str) -> String {
+    let mut result = text.to_string();
+
+    // 1. Remove ANSI escape sequences
+    // Common patterns: \x1b[...m, \x1b[...;...m, ESC[...m
+    let ansi_regex = regex::Regex::new(r"\x1b\[[0-9;]*m").unwrap();
+    result = ansi_regex.replace_all(&result, "").to_string();
+
+    // 2. Remove npm/node progress bar characters
+    // Pattern: ████░░░░░░ 50% | some info
+    let progress_regex = regex::Regex::new(r"[█▓▒░│┼┤├┬┴]+[│].*?\r?\n").unwrap();
+    result = progress_regex.replace_all(&result, "").to_string();
+
+    // 3. Remove lines that are purely ANSI cursor control sequences
+    // Like \r (carriage return for overwriting), \x1b[?25l (hide cursor), etc.
+    let cursor_regex = regex::Regex::new(r"\x1b\[[?][0-9]+[a-zA-Z]").unwrap();
+    result = cursor_regex.replace_all(&result, "").to_string();
+
+    // 4. Remove "Download" / "Installing" progress prefixes common in npm
+    let npm_progress_regex = regex::Regex::new(r"^\s*(added|removed|changed|up to date)?\s*\d+\s*(package)?s?\s*(in\s+\d+s)?\s*(✓|✔|:)?\s*\r?$").unwrap();
+    result = npm_progress_regex.replace_all(&result, "").to_string();
+
+    // 5. Normalize line endings and remove empty lines at the start
+    let lines: Vec<&str> = result
+        .lines()
+        .map(|l| l.trim_end_matches(|c| c == '\r' || c == '\n'))
+        .collect();
+
+    // Skip leading empty/whitespace-only lines
+    let start_idx = lines.iter().position(|l| !l.trim().is_empty()).unwrap_or(0);
+    let relevant_lines = &lines[start_idx..];
+
+    // 6. Find the first line that starts JSON (fast path)
+    for line in relevant_lines {
+        let trimmed = line.trim();
+        if trimmed.starts_with('{') || trimmed.starts_with('[') {
+            return trimmed.to_string();
+        }
+    }
+
+    // 7. Otherwise, rejoin and let extract_json handle it
+    result
+        .lines()
+        .map(|l| l.trim())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn custom_skill_roots() -> Vec<(std::path::PathBuf, &'static str)> {
+    let mut roots = vec![(super::openclaw_dir().join("skills"), "OpenClaw 自定义")];
+    if let Some(home) = dirs::home_dir() {
+        let claude_skills = home.join(".claude").join("skills");
+        if !roots.iter().any(|(dir, _)| dir == &claude_skills) {
+            roots.push((claude_skills, "Claude 自定义"));
+        }
+    }
+    roots
+}
+
+fn resolve_custom_skill_dir(name: &str) -> Option<std::path::PathBuf> {
+    custom_skill_roots()
+        .into_iter()
+        .map(|(root, _)| root.join(name))
+        .find(|path| path.exists())
+}
+
+fn scan_custom_skill_detail(name: &str) -> Option<Value> {
+    for (root, source_label) in custom_skill_roots() {
+        let skill_path = root.join(name);
+        if !skill_path.exists() {
+            continue;
+        }
+
+        let base = scan_single_skill(&skill_path, name);
+        let missing_deps = base
+            .get("missingDeps")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let eligible = base.get("ready").and_then(|v| v.as_bool()).unwrap_or(false);
+
+        let mut detail = serde_json::json!({
+            "name": name,
+            "description": base.get("description").cloned().unwrap_or(Value::String(String::new())),
+            "emoji": base.get("emoji").cloned().unwrap_or(Value::String("🧩".to_string())),
+            "eligible": eligible,
+            "disabled": false,
+            "blockedByAllowlist": false,
+            "source": source_label,
+            "bundled": false,
+            "filePath": skill_path.to_string_lossy().to_string(),
+            "homepage": base.get("homepage").cloned().unwrap_or(Value::Null),
+            "version": base.get("version").cloned().unwrap_or(Value::Null),
+            "author": base.get("author").cloned().unwrap_or(Value::Null),
+            "dependencies": base.get("dependencies").cloned().unwrap_or(Value::Array(vec![])),
+            "missingDeps": Value::Array(missing_deps.clone()),
+            "missing": {
+                "bins": [],
+                "anyBins": [],
+                "env": [],
+                "config": [],
+                "os": []
+            },
+            "requirements": {
+                "bins": [],
+                "env": [],
+                "config": []
+            },
+            "install": []
+        });
+
+        if let Some(full_path) = base.get("fullPath").cloned() {
+            detail["fullPath"] = full_path;
+        }
+
+        return Some(detail);
+    }
+    None
+}
+
+fn merge_local_skills(mut data: Value) -> Result<Value, String> {
+    let local_skills = scan_local_skill_entries()?;
+    let Some(skills) = data.get_mut("skills").and_then(|v| v.as_array_mut()) else {
+        return Ok(data);
+    };
+
+    let mut existing = HashSet::new();
+    for item in skills.iter() {
+        if let Some(name) = item.get("name").and_then(|v| v.as_str()) {
+            existing.insert(name.to_string());
+        }
+    }
+
+    for skill in local_skills {
+        if let Some(name) = skill.get("name").and_then(|v| v.as_str()) {
+            if existing.insert(name.to_string()) {
+                skills.push(skill);
+            }
+        }
+    }
+
+    Ok(data)
+}
+
+fn scan_local_skill_entries() -> Result<Vec<Value>, String> {
+    let mut skills = Vec::new();
+
+    for (skills_dir, source_label) in custom_skill_roots() {
+        if !skills_dir.exists() {
+            continue;
+        }
+
+        let entries = std::fs::read_dir(&skills_dir).map_err(|e| {
+            format!(
+                "读取 Skills 目录失败 ({}): {e}",
+                skills_dir.to_string_lossy()
+            )
+        })?;
+
+        for entry in entries.flatten() {
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if !file_type.is_dir() && !file_type.is_symlink() {
+                continue;
+            }
+
+            let name = entry.file_name().to_string_lossy().to_string();
+            let base = scan_single_skill(&entry.path(), &name);
+            let eligible = base.get("ready").and_then(|v| v.as_bool()).unwrap_or(false);
+            let mut item = serde_json::json!({
+                "name": name,
+                "description": base.get("description").cloned().unwrap_or(Value::String(String::new())),
+                "emoji": base.get("emoji").cloned().unwrap_or(Value::String("🧩".to_string())),
+                "eligible": eligible,
+                "disabled": false,
+                "blockedByAllowlist": false,
+                "source": source_label,
+                "bundled": false,
+                "filePath": entry.path().to_string_lossy().to_string(),
+                "homepage": base.get("homepage").cloned().unwrap_or(Value::Null),
+                "missing": {
+                    "bins": [],
+                    "anyBins": [],
+                    "env": [],
+                    "config": [],
+                    "os": []
+                },
+                "missingDeps": base.get("missingDeps").cloned().unwrap_or(Value::Array(vec![])),
+                "install": []
+            });
+
+            if let Some(full_path) = base.get("fullPath").cloned() {
+                item["fullPath"] = full_path;
+            }
+
+            skills.push(item);
+        }
+    }
+
+    skills.sort_by(|a, b| {
+        let an = a.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        let bn = b.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        an.cmp(bn)
+    });
+
+    Ok(skills)
+}
+
+/// CLI 不可用或当前结果不可用时的兜底：扫描本地自定义 Skills 目录（含 ~/.openclaw/skills 与 ~/.claude/skills）
+fn scan_local_skills(cli_diagnostic: Option<Value>) -> Result<Value, String> {
+    let roots = custom_skill_roots();
+    let scanned_roots: Vec<String> = roots
+        .iter()
+        .map(|(dir, label)| format!("{}: {}", label, dir.to_string_lossy()))
+        .collect();
+    let skills = scan_local_skill_entries()?;
+    let cli_available = cli_diagnostic
+        .as_ref()
+        .and_then(|v| v.get("cliAvailable"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    if skills.is_empty() {
         return Ok(serde_json::json!({
             "skills": [],
             "source": "local-scan",
-            "cliAvailable": false
+            "cliAvailable": cli_available,
+            "diagnostic": {
+                "status": cli_diagnostic.as_ref().and_then(|v| v.get("status")).and_then(|v| v.as_str()).unwrap_or("no-skills-dir"),
+                "message": "未在本地自定义目录中发现 Skills",
+                "scannedRoots": scanned_roots,
+                "cli": cli_diagnostic
+            }
         }));
     }
 
-    let mut skills = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(&skills_dir) {
-        for entry in entries.flatten() {
-            let ft = match entry.file_type() {
-                Ok(ft) => ft,
-                Err(_) => continue,
-            };
-            if !ft.is_dir() && !ft.is_symlink() {
-                continue;
-            }
-            let name = entry.file_name().to_string_lossy().to_string();
-            let skill_md = entry.path().join("SKILL.md");
-            let description = if skill_md.exists() {
-                // 尝试从 SKILL.md 的 frontmatter 中提取 description
-                parse_skill_description(&skill_md)
-            } else {
-                String::new()
-            };
-            skills.push(serde_json::json!({
-                "name": name,
-                "description": description,
-                "source": "managed",
-                "eligible": true,
-                "bundled": false,
-                "filePath": skill_md.to_string_lossy(),
-            }));
-        }
-    }
+    // 统计信息
+    let total = skills.len();
+    let ready_count = skills
+        .iter()
+        .filter(|s| s.get("eligible").and_then(|v| v.as_bool()).unwrap_or(false))
+        .count();
+    let missing_deps_count = skills
+        .iter()
+        .filter(|s| !s.get("eligible").and_then(|v| v.as_bool()).unwrap_or(false))
+        .count();
 
     Ok(serde_json::json!({
         "skills": skills,
         "source": "local-scan",
-        "cliAvailable": false
+        "cliAvailable": cli_available,
+        "summary": {
+            "total": total,
+            "ready": ready_count,
+            "missingDeps": missing_deps_count,
+        },
+        "diagnostic": {
+            "status": cli_diagnostic.as_ref().and_then(|v| v.get("status")).and_then(|v| v.as_str()).unwrap_or("scanned"),
+            "scannedAt": chrono::Utc::now().to_rfc3339(),
+            "scannedRoots": scanned_roots,
+            "cli": cli_diagnostic
+        }
     }))
 }
 
-/// 从 SKILL.md 的 YAML frontmatter 中提取 description
-fn parse_skill_description(path: &std::path::Path) -> String {
-    let content = match std::fs::read_to_string(path) {
-        Ok(c) => c,
-        Err(_) => return String::new(),
-    };
-    // frontmatter 格式: ---\n...\n---
-    if !content.starts_with("---") {
-        return String::new();
-    }
-    if let Some(end) = content[3..].find("---") {
-        let fm = &content[3..3 + end];
-        for line in fm.lines() {
-            let trimmed = line.trim();
-            if let Some(rest) = trimmed.strip_prefix("description:") {
-                return rest.trim().trim_matches('"').trim_matches('\'').to_string();
+/// 扫描单个 Skill 的详细信息
+fn scan_single_skill(skill_path: &std::path::Path, name: &str) -> Value {
+    let mut result = serde_json::json!({
+        "name": name,
+        "source": "managed",
+        "bundled": false,
+        "filePath": skill_path.to_string_lossy(),
+        "ready": false,
+        "missingDeps": [],
+        "installedDeps": [],
+    });
+
+    // 1. 检查必要文件
+    let skill_md = skill_path.join("SKILL.md");
+    let package_json = skill_path.join("package.json");
+
+    let has_skill_md = skill_md.exists();
+    let has_package_json = package_json.exists();
+
+    result["hasSkillMd"] = Value::Bool(has_skill_md);
+    result["hasPackageJson"] = Value::Bool(has_package_json);
+
+    // 2. 解析 package.json 获取更多信息
+    if has_package_json {
+        if let Ok(pkg_content) = std::fs::read_to_string(&package_json) {
+            if let Ok(pkg) = serde_json::from_str::<serde_json::Value>(&pkg_content) {
+                // 提取基本信息
+                if let Some(version) = pkg.get("version").and_then(|v| v.as_str()) {
+                    result["version"] = Value::String(version.to_string());
+                }
+                if let Some(author) = pkg.get("author").and_then(|v| {
+                    v.as_str().or_else(|| {
+                        v.as_object()
+                            .and_then(|o| o.get("name").and_then(|n| n.as_str()))
+                    })
+                }) {
+                    result["author"] = Value::String(author.to_string());
+                }
+                if let Some(desc) = pkg.get("description").and_then(|v| v.as_str()) {
+                    result["description"] = Value::String(desc.to_string());
+                }
+                if let Some(homepage) = pkg.get("homepage").and_then(|v| v.as_str()) {
+                    result["homepage"] = Value::String(homepage.to_string());
+                }
+
+                // 提取 dependencies
+                if let Some(deps) = pkg.get("dependencies").and_then(|v| v.as_object()) {
+                    let deps_list: Vec<String> = deps.keys().cloned().collect();
+                    result["dependencies"] =
+                        Value::Array(deps_list.iter().map(|s| Value::String(s.clone())).collect());
+
+                    // 检测缺少的依赖（简化版：通过检查 node_modules）
+                    let missing_deps = detect_missing_dependencies(&deps_list, skill_path);
+                    result["missingDeps"] = Value::Array(
+                        missing_deps
+                            .iter()
+                            .map(|s| Value::String(s.clone()))
+                            .collect(),
+                    );
+                    result["installedDeps"] = Value::Array(
+                        deps_list
+                            .iter()
+                            .filter(|d| !missing_deps.contains(d))
+                            .map(|s| Value::String(s.clone()))
+                            .collect(),
+                    );
+                }
+
+                // 提取 scripts（可能包含 install 后处理等）
+                if let Some(scripts) = pkg.get("scripts").and_then(|v| v.as_object()) {
+                    let script_names: Vec<String> = scripts.keys().cloned().collect();
+                    result["scripts"] = Value::Array(
+                        script_names
+                            .iter()
+                            .map(|s| Value::String(s.clone()))
+                            .collect(),
+                    );
+                }
             }
         }
     }
-    String::new()
+
+    // 3. 从 SKILL.md frontmatter 提取额外信息
+    if has_skill_md {
+        if let Some(frontmatter) = parse_skill_frontmatter(&skill_md) {
+            // 覆盖或补充 description（SKILL.md 的 description 更权威）
+            if let Some(desc) = frontmatter.get("description").and_then(|v| v.as_str()) {
+                result["description"] = Value::String(desc.to_string());
+            }
+            if let Some(full_path) = frontmatter.get("fullPath").and_then(|v| v.as_str()) {
+                result["fullPath"] = Value::String(full_path.to_string());
+            }
+        }
+    }
+
+    // 4. 判断 ready 状态
+    // Skill ready 需要：1) 有 SKILL.md  2) 没有缺少依赖  3) 依赖已安装
+    let has_all_deps = result["missingDeps"]
+        .as_array()
+        .map(|a| a.is_empty())
+        .unwrap_or(true);
+    let has_essential_files = has_skill_md;
+    result["ready"] = Value::Bool(has_essential_files && has_all_deps);
+
+    // 5. 检测是否有 node_modules（npm 包已安装）
+    let node_modules = skill_path.join("node_modules");
+    result["nodeModulesInstalled"] = Value::Bool(node_modules.exists());
+
+    result
+}
+
+/// 检测缺少的依赖
+fn detect_missing_dependencies(deps: &[String], skill_path: &std::path::Path) -> Vec<String> {
+    let node_modules = skill_path.join("node_modules");
+    if !node_modules.exists() {
+        // node_modules 不存在，所有依赖都算缺失
+        return deps.to_vec();
+    }
+
+    let mut missing = Vec::new();
+    for dep in deps {
+        let dep_path = node_modules.join(dep);
+        // 检查依赖目录或 @scope/package 格式
+        if !dep_path.exists() {
+            // 可能是 @scope/package 格式，直接检查目录
+            missing.push(dep.clone());
+        }
+    }
+    missing
+}
+
+/// 解析 SKILL.md frontmatter，返回键值对
+fn parse_skill_frontmatter(path: &std::path::Path) -> Option<Value> {
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return None,
+    };
+
+    // frontmatter 格式: ---\n...\n---
+    if !content.starts_with("---") {
+        return None;
+    }
+
+    let after_first = match content[3..].find("---") {
+        Some(pos) => pos,
+        None => return None,
+    };
+
+    let fm_content = &content[3..3 + after_first];
+    let mut fm_map = serde_json::Map::new();
+
+    for line in fm_content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || !trimmed.contains(':') {
+            continue;
+        }
+
+        if let Some(colon_pos) = trimmed.find(':') {
+            let key = trimmed[..colon_pos].trim().to_string();
+            let value = trimmed[colon_pos + 1..].trim();
+
+            // 处理引号包裹的值
+            let clean_value = value.trim_matches('"').trim_matches('\'').trim();
+
+            if !key.is_empty() && !clean_value.is_empty() {
+                fm_map.insert(key, Value::String(clean_value.to_string()));
+            }
+        }
+    }
+
+    if fm_map.is_empty() {
+        None
+    } else {
+        Some(Value::Object(fm_map))
+    }
 }

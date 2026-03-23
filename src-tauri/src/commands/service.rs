@@ -1,9 +1,12 @@
 /// 服务管理命令
-/// macOS: launchctl + LaunchAgents plist
-/// Windows: openclaw CLI + 进程检测
+///
+/// 检测策略（跨平台统一）：
+///   1. TCP 连 127.0.0.1:{port}，超时 1.5s
+///   2. 连通 → 认为 Gateway 在运行
+///
+/// 不依赖任何系统命令（无 netstat / PowerShell / launchctl / openclaw health），
+/// 无权限问题，逻辑一致。
 use std::collections::HashMap;
-#[cfg(target_os = "windows")]
-use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -18,48 +21,6 @@ fn description_map() -> HashMap<&'static str, &'static str> {
         ("ai.openclaw.gateway", "OpenClaw Gateway"),
         ("ai.openclaw.node", "OpenClaw Node Host"),
     ])
-}
-
-#[cfg(target_os = "windows")]
-fn looks_like_gateway_command_line(command_line: &str) -> bool {
-    let text = command_line.to_ascii_lowercase();
-    text.contains("openclaw") && text.contains("gateway")
-}
-
-#[cfg(target_os = "windows")]
-fn parse_listening_pids_from_netstat(stdout: &str, port: u16) -> Vec<u32> {
-    let port_pattern = format!(":{port}");
-    let mut pids = HashSet::new();
-
-    for line in stdout.lines() {
-        let trimmed = line.trim();
-        if !(trimmed.contains("LISTENING") || trimmed.contains("侦听")) {
-            continue;
-        }
-
-        let parts: Vec<&str> = trimmed.split_whitespace().collect();
-        if parts.len() < 5 {
-            continue;
-        }
-
-        let Some(local_addr) = parts.get(1) else {
-            continue;
-        };
-
-        if !local_addr.ends_with(&port_pattern) {
-            continue;
-        }
-
-        if let Ok(pid) = parts[4].parse::<u32>() {
-            if pid > 0 {
-                pids.insert(pid);
-            }
-        }
-    }
-
-    let mut ordered: Vec<u32> = pids.into_iter().collect();
-    ordered.sort_unstable();
-    ordered
 }
 
 const GUARDIAN_INTERVAL: Duration = Duration::from_secs(15);
@@ -336,6 +297,12 @@ pub fn start_backend_guardian(app: tauri::AppHandle) {
         return;
     }
 
+    // Windows 重启后清理残留的僵尸 Gateway 进程（防止多进程堆积）
+    #[cfg(target_os = "windows")]
+    {
+        platform::cleanup_zombie_gateway_processes();
+    }
+
     guardian_log("后端守护循环已启动");
     tauri::async_runtime::spawn(async move {
         loop {
@@ -402,49 +369,50 @@ mod platform {
         format!("{}/Library/LaunchAgents/{}.plist", home.display(), label)
     }
 
-    /// 用 launchctl print 检测单个服务状态，返回 (running, pid)
-    pub fn check_service_status(uid: u32, label: &str) -> (bool, Option<u32>) {
-        let target = format!("gui/{}/{}", uid, label);
-        let output = Command::new("launchctl").args(["print", &target]).output();
-
-        let Ok(out) = output else {
-            return (false, None);
+    /// 跨平台统一检测：TCP 连端口 + lsof 获取 PID
+    pub fn check_service_status(_uid: u32, _label: &str) -> (bool, Option<u32>) {
+        let port = crate::commands::gateway_listen_port();
+        let addr = format!("127.0.0.1:{port}");
+        let socket_addr = match addr.parse() {
+            Ok(a) => a,
+            Err(_) => return (false, None),
         };
-
-        if !out.status.success() {
-            return (false, None);
+        match std::net::TcpStream::connect_timeout(&socket_addr, std::time::Duration::from_secs(1))
+        {
+            Ok(_) => {
+                // 尝试通过 lsof 获取 PID
+                let pid = get_pid_by_lsof(port);
+                (true, pid)
+            }
+            Err(_) => (false, None),
         }
+    }
 
-        let stdout = String::from_utf8_lossy(&out.stdout);
-        let mut pid: Option<u32> = None;
-        let mut running = false;
-
-        for line in stdout.lines() {
-            if !line.starts_with('\t') || line.starts_with("\t\t") {
-                continue;
-            }
-            let trimmed = line.trim();
-            if let Some(rest) = trimmed.strip_prefix("pid = ") {
-                if let Ok(p) = rest.trim().parse::<u32>() {
-                    pid = Some(p);
-                }
-            }
-            if let Some(rest) = trimmed.strip_prefix("state = ") {
-                running = rest.trim() == "running";
-            }
-        }
-
-        (running, pid)
+    /// 通过 lsof 获取监听指定端口的进程 PID
+    fn get_pid_by_lsof(port: u16) -> Option<u32> {
+        let output = Command::new("lsof")
+            .args(["-i", &format!("TCP:{}", port), "-sTCP:LISTEN", "-t"])
+            .output()
+            .ok()?;
+        let text = String::from_utf8_lossy(&output.stdout);
+        text.lines().next()?.trim().parse::<u32>().ok()
     }
 
     /// launchctl 失败时的回退：直接通过 CLI spawn Gateway 进程
     fn start_gateway_direct() -> Result<(), String> {
+        // 启动前再次检查端口（防止 launchctl→direct 回退链路中重复拉起）
+        let port = crate::commands::gateway_listen_port();
+        if let Ok(addr) = format!("127.0.0.1:{port}").parse::<std::net::SocketAddr>() {
+            if std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(500))
+                .is_ok()
+            {
+                return Err(format!("端口 {} 已被占用，跳过 direct 启动", port));
+            }
+        }
+
         let enhanced = crate::commands::enhanced_path();
 
-        let log_dir = dirs::home_dir()
-            .unwrap_or_default()
-            .join(".openclaw")
-            .join("logs");
+        let log_dir = crate::commands::openclaw_dir().join("logs");
         fs::create_dir_all(&log_dir).ok();
 
         let stdout_log = fs::OpenOptions::new()
@@ -474,12 +442,46 @@ mod platform {
             }
         })?;
 
-        // 等 Gateway 初始化
-        std::thread::sleep(std::time::Duration::from_secs(2));
-        Ok(())
+        // 等 Gateway 初始化（最多 10s，轮询端口就绪）
+        let port = crate::commands::gateway_listen_port();
+        let addr = format!("127.0.0.1:{port}");
+        let addr = match addr.parse() {
+            Ok(a) => a,
+            Err(_) => {
+                return Err(format!("端口 {port} 解析失败"));
+            }
+        };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            if std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(200))
+                .is_ok()
+            {
+                return Ok(());
+            }
+        }
+
+        Err("Gateway 启动超时，请查看 ~/.openclaw/logs/gateway.err.log".into())
     }
 
     pub fn start_service_impl(label: &str) -> Result<(), String> {
+        // 启动前检查端口是否已被占用，防止重复拉起导致端口冲突和内存浪费
+        let port = crate::commands::gateway_listen_port();
+        let pre_check_addr: std::net::SocketAddr = format!("127.0.0.1:{port}")
+            .parse()
+            .map_err(|_| format!("端口 {port} 解析失败"))?;
+        if std::net::TcpStream::connect_timeout(
+            &pre_check_addr,
+            std::time::Duration::from_millis(500),
+        )
+        .is_ok()
+        {
+            return Err(format!(
+                "端口 {} 已被占用，Gateway 可能已在运行中（或其他程序占用了该端口）",
+                port
+            ));
+        }
+
         let uid = current_uid()?;
         let path = plist_path(label);
         let domain_target = format!("gui/{}", uid);
@@ -613,14 +615,192 @@ mod platform {
     use std::io::Write;
     use std::os::windows::process::CommandExt;
     use std::path::{Path, PathBuf};
+    use std::process::Command as StdCommand;
     use std::process::Stdio;
     use std::sync::Mutex;
-    use tokio::process::Command as TokioCommand;
+    use std::time::{Duration, Instant};
 
     /// 缓存 is_cli_installed 结果，避免每 15 秒 polling 都 spawn cmd.exe
     static CLI_CACHE: Mutex<Option<(bool, std::time::Instant)>> = Mutex::new(None);
     const CLI_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(60);
     const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    /// 记录最后一次成功启动的 Gateway PID，避免误判旧进程为新进程
+    static LAST_KNOWN_GATEWAY_PID: Mutex<Option<u32>> = Mutex::new(None);
+
+    /// 记录当前活跃的 Gateway 子进程（用于 stop 时精确 kill）
+    static ACTIVE_GATEWAY_CHILD: Mutex<Option<u32>> = Mutex::new(None);
+
+    /// 清理残留的僵尸 Gateway 进程（启动时调用，防止 Windows 重启后多进程堆积）
+    pub(crate) fn cleanup_zombie_gateway_processes() {
+        let port = crate::commands::gateway_listen_port();
+
+        // 用 netstat 找到端口 18789 的所有监听进程 PID
+        let output = match StdCommand::new("netstat")
+            .args(["-ano", "-p", "TCP"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+        {
+            Ok(o) => String::from_utf8_lossy(&o.stdout).to_string(),
+            Err(_) => return,
+        };
+
+        for line in output.lines() {
+            let line = line.trim();
+            // 匹配  TCP    0.0.0.0:18789    0.0.0.0:0    LISTENING    <PID>
+            if !line.contains(&format!(":{port}")) || !line.contains("LISTENING") {
+                continue;
+            }
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() < 5 {
+                continue;
+            }
+            let pid_str = parts.last().unwrap();
+            let pid = match pid_str.parse::<u32>() {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+
+            // 验证这个 PID 的命令行是否确实是 Gateway
+            if let Some(cmdline) = read_process_command_line(pid) {
+                let cmdline_lower = cmdline.to_lowercase();
+                // 只要包含 openclaw 且包含 gateway 就认为是 Gateway 进程
+                // 排除纯 node.exe（可能是其他应用）
+                if cmdline_lower.contains("openclaw") && cmdline_lower.contains("gateway") {
+                    // 只杀我们自己的 PID，不杀记录中的"已知好进程"
+                    let our_pid = *LAST_KNOWN_GATEWAY_PID.lock().unwrap();
+                    if Some(pid) != our_pid {
+                        kill_process_tree(pid);
+                    }
+                }
+            }
+        }
+    }
+
+    fn read_process_command_line(pid: u32) -> Option<String> {
+        // 优先用 PowerShell Get-CimInstance（wmic 在 Win11 已弃用）
+        // fallback 到 wmic 以兼容旧版 Windows
+        let ps_output = StdCommand::new("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                &format!(
+                    "(Get-CimInstance Win32_Process -Filter 'ProcessId={}').CommandLine",
+                    pid
+                ),
+            ])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+        if let Ok(o) = ps_output {
+            let text = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            if !text.is_empty() {
+                return Some(text);
+            }
+        }
+        // fallback: wmic（兼容 Win10 及更早版本）
+        let output = match StdCommand::new("wmic")
+            .args([
+                "process",
+                "where",
+                &format!("ProcessId={pid}"),
+                "get",
+                "CommandLine",
+                "/format:list",
+            ])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+        {
+            Ok(o) => String::from_utf8_lossy(&o.stdout).to_string(),
+            Err(_) => return None,
+        };
+        for line in output.lines() {
+            let line = line.trim();
+            if line.starts_with("CommandLine=") {
+                return Some(line["CommandLine=".len()..].to_string());
+            }
+        }
+        None
+    }
+
+    fn kill_process_tree(pid: u32) {
+        // 先尝试 /ti（包含子进程）
+        let _ = StdCommand::new("taskkill")
+            .args(["/f", "/t", "/pid", &pid.to_string()])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+    }
+
+    /// 获取 Gateway 端口对应的真实 PID（仅返回 OpenClaw Gateway 的 PID）
+    fn get_gateway_pid_by_port(port: u16) -> Option<u32> {
+        let output = match StdCommand::new("netstat")
+            .args(["-ano", "-p", "TCP"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+        {
+            Ok(o) => String::from_utf8_lossy(&o.stdout).to_string(),
+            Err(_) => return None,
+        };
+
+        for line in output.lines() {
+            let line = line.trim();
+            if !line.contains(&format!(":{port}")) || !line.contains("LISTENING") {
+                continue;
+            }
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() < 5 {
+                continue;
+            }
+            let pid = match parts.last().unwrap().parse::<u32>() {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+
+            // 验证命令行
+            if let Some(cmdline) = read_process_command_line(pid) {
+                let cmdline_lower = cmdline.to_lowercase();
+                if cmdline_lower.contains("openclaw") && cmdline_lower.contains("gateway") {
+                    return Some(pid);
+                }
+            } else {
+                // 读不到命令行时，不做假设，避免误杀其他进程
+                continue;
+            }
+        }
+        None
+    }
+
+    /// 验证指定 PID 是否还活着
+    fn is_process_alive(pid: u32) -> bool {
+        let output = StdCommand::new("tasklist")
+            .args(["/fi", &format!("PID eq {pid}"), "/nh"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+        match output {
+            Ok(o) => {
+                let stdout = String::from_utf8_lossy(&o.stdout);
+                // tasklist /nh 输出格式: "node.exe  1234 Console  1  50,000 K"
+                // 行首是进程名，PID 在中间，需要检查行中是否包含该 PID
+                for line in stdout.lines() {
+                    let trimmed = line.trim();
+                    // 跳过空行和 "INFO: No tasks" 之类的提示
+                    if trimmed.is_empty() || trimmed.starts_with("INFO:") {
+                        continue;
+                    }
+                    // 检查行中是否包含该 PID（作为独立的数字字段）
+                    let fields: Vec<&str> = trimmed.split_whitespace().collect();
+                    if fields.len() >= 2 {
+                        if let Ok(line_pid) = fields[1].parse::<u32>() {
+                            if line_pid == pid {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                false
+            }
+            Err(_) => false,
+        }
+    }
 
     /// Windows 不需要 UID
     pub fn current_uid() -> Result<u32, String> {
@@ -745,103 +925,30 @@ mod platform {
         vec!["ai.openclaw.gateway".to_string()]
     }
 
-    /// 从 openclaw.json 读取 gateway 端口，fallback 到 18789
-    fn read_gateway_port() -> u16 {
-        let config_path = crate::commands::openclaw_dir().join("openclaw.json");
-        if let Ok(content) = std::fs::read_to_string(&config_path) {
-            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(port) = val
-                    .get("gateway")
-                    .and_then(|g| g.get("port"))
-                    .and_then(|p| p.as_u64())
-                {
-                    if port > 0 && port < 65536 {
-                        return port as u16;
-                    }
-                }
-            }
-        }
-        18789
-    }
-
-    fn query_listening_pids(port: u16) -> Result<Vec<u32>, String> {
-        let output = std::process::Command::new("netstat")
-            .args(["-ano"])
-            .creation_flags(CREATE_NO_WINDOW)
-            .output()
-            .map_err(|e| format!("netstat 失败: {e}"))?;
-
-        Ok(super::parse_listening_pids_from_netstat(
-            &String::from_utf8_lossy(&output.stdout),
-            port,
-        ))
-    }
-
-    fn query_process_command_line(pid: u32) -> Option<String> {
-        let script = format!(
-            r#"$p = Get-CimInstance Win32_Process -Filter "ProcessId = {pid}"; if ($p) {{ [Console]::Out.Write($p.CommandLine) }}"#,
-        );
-
-        let output = std::process::Command::new("powershell.exe")
-            .args(["-NoProfile", "-Command", &script])
-            .creation_flags(CREATE_NO_WINDOW)
-            .output()
-            .ok()?;
-
-        if !output.status.success() {
-            return None;
-        }
-
-        let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if text.is_empty() {
-            None
-        } else {
-            Some(text)
-        }
-    }
-
-    fn inspect_port_owners(port: u16) -> Result<(Vec<u32>, Vec<u32>), String> {
-        let listening_pids = query_listening_pids(port)?;
-        let mut gateway_pids = Vec::new();
-        let mut foreign_pids = Vec::new();
-
-        for pid in listening_pids {
-            match query_process_command_line(pid) {
-                Some(command_line) if super::looks_like_gateway_command_line(&command_line) => {
-                    gateway_pids.push(pid);
-                }
-                Some(command_line) if !command_line.is_empty() => {
-                    foreign_pids.push(pid);
-                }
-                _ => {
-                    // 命令行读不到时，假定为 Gateway（避免权限问题导致误报）
-                    gateway_pids.push(pid);
-                }
-            }
-        }
-
-        gateway_pids.sort_unstable();
-        gateway_pids.dedup();
-        foreign_pids.sort_unstable();
-        foreign_pids.dedup();
-        Ok((gateway_pids, foreign_pids))
-    }
-
-    fn format_pid_list(pids: &[u32]) -> String {
-        pids.iter()
-            .map(u32::to_string)
-            .collect::<Vec<_>>()
-            .join(", ")
-    }
-
+    /// 检测 Gateway 是否在运行，并返回其 PID
+    /// 策略：先 TCP 端口检测连通性，再用 netstat+WMIC 验证命令行是 OpenClaw Gateway
     pub fn check_service_status(_uid: u32, _label: &str) -> (bool, Option<u32>) {
-        let port = read_gateway_port();
-        match inspect_port_owners(port) {
-            Ok((gateway_pids, _)) => {
-                let pid = gateway_pids.first().copied();
-                (pid.is_some(), pid)
-            }
-            Err(_) => (false, None),
+        let port = crate::commands::gateway_listen_port();
+        let addr = format!("127.0.0.1:{port}");
+        let socket_addr = match addr.parse() {
+            Ok(a) => a,
+            Err(_) => return (false, None),
+        };
+        if std::net::TcpStream::connect_timeout(&socket_addr, Duration::from_secs(1)).is_err() {
+            // 端口不通，先清空已知的僵死 PID
+            let mut known = LAST_KNOWN_GATEWAY_PID.lock().unwrap();
+            *known = None;
+            return (false, None);
+        }
+
+        // 端口通了，获取真实 PID
+        if let Some(pid) = get_gateway_pid_by_port(port) {
+            let mut known = LAST_KNOWN_GATEWAY_PID.lock().unwrap();
+            *known = Some(pid);
+            (true, Some(pid))
+        } else {
+            // 端口通但找不到合法 Gateway PID → 可能是其他进程占用了端口
+            (false, None)
         }
     }
 
@@ -858,10 +965,7 @@ mod platform {
     }
 
     fn create_gateway_log_files() -> Result<(std::fs::File, std::fs::File), String> {
-        let log_dir = dirs::home_dir()
-            .unwrap_or_default()
-            .join(".openclaw")
-            .join("logs");
+        let log_dir = crate::commands::openclaw_dir().join("logs");
         fs::create_dir_all(&log_dir).map_err(|e| format!("创建日志目录失败: {e}"))?;
 
         let mut stdout_log = OpenOptions::new()
@@ -896,15 +1000,20 @@ mod platform {
             );
         }
 
-        let port = read_gateway_port();
-        let (gateway_pids, foreign_pids) = inspect_port_owners(port)?;
-        if !gateway_pids.is_empty() {
-            return Ok(());
-        }
-        if !foreign_pids.is_empty() {
+        // Windows 重启后清理残留的僵尸 Gateway 进程（防止多进程堆积）
+        cleanup_zombie_gateway_processes();
+
+        // 端口已通 → 检查是不是我们的进程
+        let (running, pid) = check_service_status(0, "");
+        if running {
+            // 有 PID 说明就是我们的进程在跑，可以直接返回
+            if pid.is_some() {
+                return Ok(());
+            }
+            // 无 PID 但端口通 → 可能是其他进程占用，拒绝启动
             return Err(format!(
-                "端口 {port} 已被非 Gateway 进程占用 (PID: {})，已阻止启动以避免无限重启",
-                format_pid_list(&foreign_pids)
+                "端口 {} 被未知进程占用，请先关闭占用该端口的程序",
+                crate::commands::gateway_listen_port()
             ));
         }
 
@@ -919,76 +1028,117 @@ mod platform {
             .stdout(stdout_log)
             .stderr(stderr_log);
         crate::commands::apply_proxy_env(&mut cmd);
-        cmd.spawn().map_err(|e| format!("启动 Gateway 失败: {e}"))?;
 
-        for _ in 0..50 {
-            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-            if check_service_status(0, "").0 {
-                return Ok(());
-            }
+        // 记录 spawn 前的已知 PID
+        let before_pid = *LAST_KNOWN_GATEWAY_PID.lock().unwrap();
+
+        let child = cmd.spawn().map_err(|e| format!("启动 Gateway 失败: {e}"))?;
+        let spawned_pid = child.id();
+
+        // 记录活跃子进程 PID（用于 stop 时精确 kill）
+        {
+            let mut active = ACTIVE_GATEWAY_CHILD.lock().unwrap();
+            *active = Some(spawned_pid);
         }
 
-        let (_, foreign_pids_after) = inspect_port_owners(port)?;
-        if !foreign_pids_after.is_empty() {
-            return Err(format!(
-                "Gateway 启动失败，端口 {port} 已被其他进程占用 (PID: {})",
-                format_pid_list(&foreign_pids_after)
-            ));
+        // 轮询等待：端口就绪 AND PID 变化（说明新进程已接管端口）
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            let (running2, pid2) = check_service_status(0, "");
+
+            if running2 && pid2.is_some() {
+                // PID 变了（新进程接管了端口）或 PID 仍然是我们刚 spawn 的
+                let current_pid = pid2.unwrap();
+                let is_new = Some(current_pid) != before_pid;
+                let is_spawned = Some(current_pid) == Some(spawned_pid);
+                if is_new || is_spawned {
+                    // 验证这个 PID 确实还活着
+                    if is_process_alive(current_pid) {
+                        return Ok(());
+                    }
+                }
+            }
         }
 
         Err("Gateway 启动超时，请查看 gateway.err.log".into())
     }
 
-    /// 关闭 Gateway，只允许停止已确认的 Gateway 进程
+    /// 关闭 Gateway：精确 kill Gateway 进程，不误杀其他 node.exe
     pub async fn stop_service_impl(_label: &str) -> Result<(), String> {
-        let port = read_gateway_port();
-        let (gateway_pids, foreign_pids) = inspect_port_owners(port)?;
-        if gateway_pids.is_empty() {
-            if !foreign_pids.is_empty() {
-                return Err(format!(
-                    "端口 {port} 当前由非 Gateway 进程占用 (PID: {})，已拒绝停止以避免误杀",
-                    format_pid_list(&foreign_pids)
-                ));
-            }
+        let port = crate::commands::gateway_listen_port();
+
+        // 端口不通 → 已停止
+        if !check_service_status(0, "").0 {
             cleanup_legacy_gateway_window();
+            // 清空已记录的 PID
+            {
+                let mut known = LAST_KNOWN_GATEWAY_PID.lock().unwrap();
+                *known = None;
+            }
+            {
+                let mut active = ACTIVE_GATEWAY_CHILD.lock().unwrap();
+                *active = None;
+            }
             return Ok(());
         }
 
-        // 先尝试优雅停止
+        // 先尝试 openclaw gateway stop
         let _ = crate::utils::openclaw_command_async()
             .args(["gateway", "stop"])
             .output()
             .await;
 
-        // 等一下看是否停了
         for _ in 0..10 {
-            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            tokio::time::sleep(Duration::from_millis(300)).await;
             if !check_service_status(0, "").0 {
                 cleanup_legacy_gateway_window();
+                let mut known = LAST_KNOWN_GATEWAY_PID.lock().unwrap();
+                *known = None;
+                let mut active = ACTIVE_GATEWAY_CHILD.lock().unwrap();
+                *active = None;
                 return Ok(());
             }
         }
 
-        // 优雅停止失败，只对已确认的 Gateway PID 做强制终止
-        for pid in gateway_pids {
-            let _ = TokioCommand::new("taskkill")
-                .args(["/f", "/t", "/pid", &pid.to_string()])
-                .creation_flags(CREATE_NO_WINDOW)
-                .output()
-                .await;
-        }
+        // 精确 kill：只杀 Gateway 进程，不杀所有 node.exe
+        // 1. 用记录的活跃子进程 PID
+        let pids_to_kill: Vec<u32> = {
+            let active = ACTIVE_GATEWAY_CHILD.lock().unwrap();
+            let known = LAST_KNOWN_GATEWAY_PID.lock().unwrap();
+            [active.as_ref(), known.as_ref()]
+                .into_iter()
+                .flatten()
+                .copied()
+                .collect()
+        };
 
-        for _ in 0..10 {
-            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-            if !check_service_status(0, "").0 {
-                cleanup_legacy_gateway_window();
-                return Ok(());
+        for &pid in &pids_to_kill {
+            if pid > 0 && is_process_alive(pid) {
+                kill_process_tree(pid);
             }
         }
 
-        Err(format!(
-            "停止 Gateway 失败，端口 {port} 仍被 Gateway 进程占用"
-        ))
+        // 2. 再用 netstat 找当前端口上的 Gateway PID（兜底）
+        if let Some(gw_pid) = get_gateway_pid_by_port(port) {
+            if !pids_to_kill.contains(&gw_pid) {
+                kill_process_tree(gw_pid);
+            }
+        }
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        cleanup_legacy_gateway_window();
+
+        if !check_service_status(0, "").0 {
+            // 清空记录
+            let mut known = LAST_KNOWN_GATEWAY_PID.lock().unwrap();
+            *known = None;
+            let mut active = ACTIVE_GATEWAY_CHILD.lock().unwrap();
+            *active = None;
+            Ok(())
+        } else {
+            Err("停止 Gateway 失败，请手动检查进程".into())
+        }
     }
 
     pub async fn restart_service_impl(_label: &str) -> Result<(), String> {
@@ -1001,7 +1151,13 @@ mod platform {
 
 #[cfg(target_os = "linux")]
 mod platform {
+    use std::env;
+    use std::path::PathBuf;
+    use std::sync::Mutex;
     use tokio::process::Command;
+
+    static CLI_CACHE: Mutex<Option<(bool, std::time::Instant)>> = Mutex::new(None);
+    const CLI_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(60);
 
     pub fn current_uid() -> Result<u32, String> {
         let output = std::process::Command::new("id")
@@ -1014,88 +1170,217 @@ mod platform {
             .map_err(|e| format!("解析 UID 失败: {e}"))
     }
 
-    pub async fn is_cli_installed() -> bool {
-        Command::new("openclaw")
-            .arg("--version")
-            .env("PATH", crate::commands::enhanced_path())
-            .output()
-            .await
-            .map(|o| o.status.success())
-            .unwrap_or(false)
+    /// Linux 上检测 CLI 是否安装（带缓存）
+    pub fn is_cli_installed() -> bool {
+        if let Ok(guard) = CLI_CACHE.lock() {
+            if let Some((val, ts)) = *guard {
+                if ts.elapsed() < CLI_CACHE_TTL {
+                    return val;
+                }
+            }
+        }
+        let result = candidate_cli_paths().into_iter().any(|p| p.exists())
+            || std::process::Command::new("which")
+                .arg("openclaw")
+                .env("PATH", crate::commands::enhanced_path())
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+        if let Ok(mut guard) = CLI_CACHE.lock() {
+            *guard = Some((result, std::time::Instant::now()));
+        }
+        result
+    }
+
+    fn candidate_cli_paths() -> Vec<PathBuf> {
+        let mut candidates = Vec::new();
+        if let Ok(home) = env::var("HOME") {
+            candidates.push(PathBuf::from(&home).join(".openclaw").join("openclaw"));
+            candidates.push(
+                PathBuf::from(&home)
+                    .join(".npm-global")
+                    .join("bin")
+                    .join("openclaw"),
+            );
+            candidates.push(
+                PathBuf::from(&home)
+                    .join("node_modules")
+                    .join(".bin")
+                    .join("openclaw"),
+            );
+        }
+        candidates.push(PathBuf::from("/usr/local/bin/openclaw"));
+        candidates.push(PathBuf::from("/usr/bin/openclaw"));
+        for segment in crate::commands::enhanced_path().split(':') {
+            let dir = segment.trim();
+            if dir.is_empty() {
+                continue;
+            }
+            let base = PathBuf::from(dir);
+            candidates.push(base.join("openclaw"));
+        }
+        candidates
     }
 
     pub fn scan_service_labels() -> Vec<String> {
         vec!["ai.openclaw.gateway".to_string()]
     }
 
-    /// 从 openclaw.json 读取 gateway 端口，fallback 到 18789
-    fn read_gateway_port() -> u16 {
-        let config_path = crate::commands::openclaw_dir().join("openclaw.json");
-        if let Ok(content) = std::fs::read_to_string(&config_path) {
-            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(port) = val
-                    .get("gateway")
-                    .and_then(|g| g.get("port"))
-                    .and_then(|p| p.as_u64())
-                {
-                    if port > 0 && port < 65536 {
-                        return port as u16;
-                    }
-                }
-            }
-        }
-        18789
-    }
-
+    /// 跨平台统一检测：TCP 连端口
     pub async fn check_service_status(_uid: u32, _label: &str) -> (bool, Option<u32>) {
-        let port = read_gateway_port();
+        let port = crate::commands::gateway_listen_port();
         let addr = format!("127.0.0.1:{port}");
-        match std::net::TcpStream::connect_timeout(
-            &addr
-                .parse()
-                .unwrap_or_else(|_| "127.0.0.1:18789".parse().unwrap()),
-            std::time::Duration::from_secs(2),
-        ) {
-            Ok(_) => (true, None),
-            Err(_) => {
-                if let Ok(output) = Command::new("openclaw")
-                    .arg("health")
-                    .env("PATH", crate::commands::enhanced_path())
-                    .output()
-                    .await
-                {
-                    let text = String::from_utf8_lossy(&output.stdout);
-                    if output.status.success() && !text.contains("not running") {
-                        return (true, None);
-                    }
-                }
-                (false, None)
-            }
+        let socket_addr: std::net::SocketAddr = match addr.parse() {
+            Ok(a) => a,
+            Err(_) => return (false, None),
+        };
+        // 使用 spawn_blocking 避免阻塞 Tokio 运行时
+        let result = tokio::task::spawn_blocking(move || {
+            std::net::TcpStream::connect_timeout(&socket_addr, std::time::Duration::from_secs(1))
+                .is_ok()
+        })
+        .await
+        .unwrap_or(false);
+        if result {
+            (true, None)
+        } else {
+            (false, None)
         }
     }
 
     async fn gateway_command(action: &str) -> Result<(), String> {
-        if !is_cli_installed().await {
+        if !is_cli_installed() {
             return Err(
                 "openclaw CLI 未安装，请先通过 npm install -g @qingchencloud/openclaw-zh 安装"
                     .into(),
             );
         }
-        let output = crate::utils::openclaw_command_async()
-            .args(["gateway", action])
-            .output()
-            .await
-            .map_err(|e| format!("执行 openclaw gateway {action} 失败: {e}"))?;
+        let action_owned = action.to_string();
+        let mut child = crate::utils::openclaw_command_async()
+            .args(["gateway", &action_owned])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("执行 openclaw gateway {action_owned} 失败: {e}"))?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("openclaw gateway {action} 失败: {stderr}"));
+        // 带超时等待命令完成（防止 restart 时旧进程卡死导致永远阻塞）
+        let timeout = if action_owned == "stop" || action_owned == "restart" {
+            Duration::from_secs(20)
+        } else {
+            Duration::from_secs(30)
+        };
+
+        match tokio::time::timeout(timeout, child.wait()).await {
+            Ok(Ok(status)) => {
+                if !status.success() {
+                    // 命令执行完但失败了
+                    let stderr = if let Some(mut err) = child.stderr.take() {
+                        let mut buf = String::new();
+                        use tokio::io::AsyncReadExt;
+                        let _ = err.read_to_string(&mut buf).await;
+                        buf
+                    } else {
+                        String::new()
+                    };
+                    // restart 失败时尝试 force-kill + start
+                    if action_owned == "restart" {
+                        eprintln!("[gateway_command] restart 失败，尝试强制清理后重启");
+                        cleanup_zombie_gateway_processes();
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                        return start_service_impl("ai.openclaw.gateway").await;
+                    }
+                    return Err(format!("openclaw gateway {action_owned} 失败: {stderr}"));
+                }
+                Ok(())
+            }
+            Ok(Err(e)) => Err(format!("openclaw gateway {action_owned} 进程异常: {e}")),
+            Err(_) => {
+                // 超时：强制杀掉命令进程
+                let _ = child.kill().await;
+                eprintln!(
+                    "[gateway_command] openclaw gateway {} 超时 ({}s)，强制终止",
+                    action_owned,
+                    timeout.as_secs()
+                );
+                // restart/stop 超时时，清理残留进程后尝试 fresh start
+                if action_owned == "restart" || action_owned == "stop" {
+                    cleanup_zombie_gateway_processes();
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    if action_owned == "restart" {
+                        return start_service_impl("ai.openclaw.gateway").await;
+                    }
+                    return Ok(()); // stop 超时但已 force-kill
+                }
+                Err(format!("openclaw gateway {action_owned} 超时"))
+            }
         }
-        Ok(())
     }
 
     pub async fn start_service_impl(_label: &str) -> Result<(), String> {
-        gateway_command("start").await
+        if !is_cli_installed() {
+            return Err(
+                "openclaw CLI 未安装，请先通过 npm install -g @qingchencloud/openclaw-zh 安装"
+                    .into(),
+            );
+        }
+
+        // 启动前检查端口是否已被占用，防止重复拉起导致端口冲突和内存浪费
+        let port = crate::commands::gateway_listen_port();
+        let pre_check_addr: std::net::SocketAddr = format!("127.0.0.1:{port}")
+            .parse()
+            .map_err(|_| format!("端口 {port} 解析失败"))?;
+        let already_occupied = tokio::task::spawn_blocking(move || {
+            std::net::TcpStream::connect_timeout(
+                &pre_check_addr,
+                std::time::Duration::from_millis(500),
+            )
+            .is_ok()
+        })
+        .await
+        .unwrap_or(false);
+        if already_occupied {
+            return Err(format!(
+                "端口 {} 已被占用，Gateway 可能已在运行中（或其他程序占用了该端口）",
+                port
+            ));
+        }
+
+        let output = crate::utils::openclaw_command_async()
+            .args(["gateway", "start"])
+            .output()
+            .await
+            .map_err(|e| format!("执行 openclaw gateway start 失败: {e}"))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("openclaw gateway start 失败: {stderr}"));
+        }
+
+        // 等端口就绪（最多 15s）
+        let port = crate::commands::gateway_listen_port();
+        let addr: std::net::SocketAddr = match format!("127.0.0.1:{port}").parse() {
+            Ok(a) => a,
+            Err(_) => return Err(format!("端口 {port} 解析失败")),
+        };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        while std::time::Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            let addr_clone = addr;
+            let connected = tokio::task::spawn_blocking(move || {
+                std::net::TcpStream::connect_timeout(
+                    &addr_clone,
+                    std::time::Duration::from_millis(200),
+                )
+                .is_ok()
+            })
+            .await
+            .unwrap_or(false);
+            if connected {
+                return Ok(());
+            }
+        }
+
+        Err("Gateway 启动超时，请查看 ~/.openclaw/logs/gateway.err.log".into())
     }
 
     pub async fn stop_service_impl(_label: &str) -> Result<(), String> {
@@ -1117,32 +1402,35 @@ pub fn invalidate_cli_detection_cache() {}
 
 // ===== 跨平台公共接口 =====
 
-#[cfg(target_os = "linux")]
-async fn check_service_status_for_label(uid: u32, label: &str) -> (bool, Option<u32>) {
-    platform::check_service_status(uid, label).await
-}
-
-#[cfg(not(target_os = "linux"))]
-async fn check_service_status_for_label(uid: u32, label: &str) -> (bool, Option<u32>) {
-    platform::check_service_status(uid, label)
+/// 跨平台统一的服务状态检测：纯 TCP 端口连通性（macOS/Linux 使用）
+#[cfg(not(target_os = "windows"))]
+fn check_tcp_service_status(_uid: u32, _label: &str) -> (bool, Option<u32>) {
+    let port = crate::commands::gateway_listen_port();
+    let addr = format!("127.0.0.1:{port}");
+    let socket_addr = match addr.parse() {
+        Ok(a) => a,
+        Err(_) => return (false, None),
+    };
+    match std::net::TcpStream::connect_timeout(&socket_addr, Duration::from_secs(1)) {
+        Ok(_) => (true, None),
+        Err(_) => (false, None),
+    }
 }
 
 #[tauri::command]
 pub async fn get_services_status() -> Result<Vec<ServiceStatus>, String> {
-    let uid = platform::current_uid()?;
+    let _uid = platform::current_uid()?;
     let labels = platform::scan_service_labels();
     let desc_map = description_map();
-
-    #[cfg(target_os = "linux")]
-    let cli_installed = platform::is_cli_installed().await;
-    #[cfg(not(target_os = "linux"))]
     let cli_installed = platform::is_cli_installed();
 
     let mut results = Vec::new();
-
     for label in labels.iter().map(String::as_str) {
-        let (running, pid) = check_service_status_for_label(uid, label).await;
-
+        // Windows 使用 platform::check_service_status（含真实 PID 检测）
+        #[cfg(target_os = "windows")]
+        let (running, pid) = platform::check_service_status(_uid, label);
+        #[cfg(not(target_os = "windows"))]
+        let (running, pid) = check_tcp_service_status(_uid, label);
         results.push(ServiceStatus {
             label: label.to_string(),
             pid,
@@ -1174,34 +1462,4 @@ pub async fn restart_service(label: String) -> Result<(), String> {
     let result = restart_service_impl_internal(&label).await;
     guardian_resume("manual restart");
     result
-}
-
-#[cfg(all(test, target_os = "windows"))]
-mod tests {
-    use super::{looks_like_gateway_command_line, parse_listening_pids_from_netstat};
-
-    #[test]
-    fn 只把_openclaw_gateway_命令行识别为_gateway_进程() {
-        assert!(looks_like_gateway_command_line(
-            r#""C:\Program Files\nodejs\node.exe" "C:\Users\me\AppData\Roaming\npm\node_modules\@qingchencloud\openclaw-zh\bin\openclaw.js" gateway"#,
-        ));
-        assert!(!looks_like_gateway_command_line(
-            r#""C:\Program Files\nodejs\node.exe" "C:\app\server.js""#,
-        ));
-        assert!(!looks_like_gateway_command_line(
-            r#""C:\Program Files\SomeApp\someapp.exe" --port 18789"#,
-        ));
-    }
-
-    #[test]
-    fn 只解析目标端口的监听_pid() {
-        let netstat = r#"
-  TCP    0.0.0.0:18789          0.0.0.0:0              LISTENING       1234
-  TCP    127.0.0.1:18790        0.0.0.0:0              LISTENING       2222
-  TCP    [::]:18789             [::]:0                 LISTENING       3333
-        "#;
-
-        let pids = parse_listening_pids_from_netstat(netstat, 18789);
-        assert_eq!(pids, vec![1234, 3333]);
-    }
 }

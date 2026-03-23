@@ -64,6 +64,7 @@ pub fn run() {
             // 配置
             config::read_openclaw_config,
             config::write_openclaw_config,
+            config::validate_openclaw_config,
             config::read_mcp_config,
             config::write_mcp_config,
             config::get_version_info,
@@ -160,10 +161,20 @@ pub fn run() {
             messaging::remove_messaging_platform,
             messaging::toggle_messaging_platform,
             messaging::verify_bot_token,
+            messaging::diagnose_channel,
+            messaging::repair_qqbot_channel_setup,
             messaging::list_configured_platforms,
             messaging::get_channel_plugin_status,
             messaging::install_channel_plugin,
             messaging::install_qqbot_plugin,
+            messaging::run_channel_action,
+            messaging::check_weixin_plugin_status,
+            // Agent 渠道绑定管理
+            messaging::get_agent_bindings,
+            messaging::list_all_bindings,
+            messaging::save_agent_binding,
+            messaging::delete_agent_binding,
+            messaging::delete_agent_all_bindings,
             // Skills 管理（openclaw skills CLI）
             skills::skills_list,
             skills::skills_info,
@@ -176,6 +187,7 @@ pub fn run() {
             skills::skills_clawhub_search,
             skills::skills_clawhub_install,
             skills::skills_uninstall,
+            skills::skills_validate,
             // 前端热更新
             update::check_frontend_update,
             update::download_frontend_update,

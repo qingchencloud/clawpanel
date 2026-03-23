@@ -31,7 +31,7 @@ export const PROVIDER_PRESETS = [
 // 晴辰云配置
 export const QTCOOL = {
   baseUrl: 'https://gpt.qt.cool/v1',
-  defaultKey: 'sk-0JDu7hyc51ZKD4iNebpFu07EUEhXmVVc',
+  defaultKey: '',
   site: 'https://gpt.qt.cool/',
   checkinUrl: 'https://gpt.qt.cool/checkin',
   usageUrl: 'https://gpt.qt.cool/user?key=',
@@ -78,14 +78,23 @@ export const MODEL_PRESETS = {
 
 /**
  * 动态获取 QTCOOL 模型列表
- * @param {string} [apiKey] - 自定义密钥，不传则用默认密钥
+ * @param {string} [apiKey] - 自定义密钥；未传时尝试从已有配置读取
  * @returns {Promise<Array<{id:string, name:string, contextWindow:number, reasoning?:boolean}>>}
  */
 export async function fetchQtcoolModels(apiKey) {
-  const key = apiKey || QTCOOL.defaultKey
+  let key = apiKey || QTCOOL.defaultKey
+  // 没有 key 时尝试从已有的 qtcool provider 配置读取
+  if (!key) {
+    try {
+      const { api } = await import('../lib/tauri-api.js')
+      const cfg = await api.readOpenclawConfig()
+      key = cfg?.models?.providers?.qtcool?.apiKey || ''
+    } catch { /* ignore */ }
+  }
   try {
+    const headers = key ? { 'Authorization': 'Bearer ' + key } : {}
     const resp = await fetch(QTCOOL.baseUrl + '/models', {
-      headers: { 'Authorization': 'Bearer ' + key },
+      headers,
       signal: AbortSignal.timeout(8000)
     })
     if (resp.ok) {

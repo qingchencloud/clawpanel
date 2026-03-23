@@ -78,19 +78,30 @@ async function loadSkills(page) {
 function renderSkills(el, data) {
   const skills = data?.skills || []
   const cliAvailable = data?.cliAvailable !== false
+  const source = data?.source || ''
+  const cliDiag = data?.diagnostic?.cli || null
   const eligible = skills.filter(s => s.eligible && !s.disabled)
   const missing = skills.filter(s => !s.eligible && !s.disabled && !s.blockedByAllowlist)
   const disabled = skills.filter(s => s.disabled)
   const blocked = skills.filter(s => s.blockedByAllowlist && !s.disabled)
 
   const summary = `${eligible.length} 可用 / ${missing.length} 缺依赖 / ${disabled.length} 已禁用`
+  let sourceHint = ''
+  if (source === 'local-scan') {
+    if (cliDiag?.status === 'timeout') sourceHint = 'CLI 可用，但本次调用超时，当前显示本地扫描结果'
+    else if (cliDiag?.status === 'parse-failed') sourceHint = 'CLI 可用，但返回结果解析失败，当前显示本地扫描结果'
+    else if (cliDiag?.status === 'exec-failed') sourceHint = 'CLI 调用失败，当前显示本地扫描结果'
+    else sourceHint = cliAvailable ? '当前显示本地扫描结果' : 'CLI 不可用，当前显示本地扫描结果'
+  } else if (cliAvailable) {
+    sourceHint = '当前已使用 OpenClaw CLI 结果'
+  }
 
   el.innerHTML = `
     <div class="clawhub-toolbar">
       <input class="input clawhub-search-input" id="skill-filter-input" placeholder="过滤 Skills..." type="text">
       <button class="btn btn-secondary btn-sm" data-action="skill-retry">刷新</button>
       <a class="btn btn-secondary btn-sm" href="https://clawhub.ai/skills" target="_blank" rel="noopener">ClawHub</a>
-      ${!cliAvailable ? '<span class="form-hint" style="margin-left:auto;color:var(--warning)">CLI 不可用，仅显示本地扫描结果</span>' : ''}
+      ${sourceHint ? `<span class="form-hint" style="margin-left:auto;color:${source === 'local-scan' ? 'var(--warning)' : 'var(--text-tertiary)'}">${esc(sourceHint)}</span>` : ''}
     </div>
 
     <div class="skills-summary" style="margin-bottom:var(--space-lg);color:var(--text-secondary);font-size:var(--font-size-sm)">
@@ -136,7 +147,7 @@ function renderSkills(el, data) {
     <div class="clawhub-panel">
       <div class="clawhub-empty" style="text-align:center;padding:var(--space-xl)">
         <div style="margin-bottom:var(--space-sm)">未检测到任何 Skills</div>
-        <div class="form-hint">请确认 OpenClaw 已正确安装。Skills 随 OpenClaw 捆绑提供，也可自定义放置在 <code>~/.openclaw/skills/</code> 目录下。</div>
+        <div class="form-hint">请确认 OpenClaw 已正确安装。Skills 随 OpenClaw 捆绑提供；自定义 Skills 可能位于 <code>~/.openclaw/skills/</code> 或 <code>~/.claude/skills/</code>。</div>
       </div>
     </div>` : ''}
 

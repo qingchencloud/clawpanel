@@ -240,7 +240,8 @@ function inlineFormat(text) {
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/__(.+?)__/g, '<strong>$1</strong>')
-    .replace(/(?<!\w)_(.+?)_(?!\w)/g, '<em>$1</em>')
+    // 避免 (?<!\w) 负向后查找：旧版 Safari / 部分 WebView 会报 invalid group specifier name
+    .replace(/(^|[^A-Za-z0-9_])_(.+?)_(?![A-Za-z0-9_])/g, '$1<em>$2</em>')
     .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, src) => {
       const safeSrc = resolveImageSrc(src.trim())
       const escapedSrc = escapeHtml(src).replace(/\\/g, '&#x5c;')

@@ -1,8 +1,94 @@
 /// Agent 管理命令 — 列表/改名直接读写 openclaw.json；创建/删除走 CLI（需要创建 workspace 等文件）
 use crate::utils::openclaw_command_async;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
 use std::io::Write;
+
+/// Workspace 状态信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceStatus {
+    /// 路径是否存在
+    pub exists: bool,
+    /// 是否为软链接
+    pub is_symlink: bool,
+    /// 软链接指向的目标路径（如果是软链接）
+    pub symlink_target: Option<String>,
+    /// 软链接目标是否有效（仅当 is_symlink=true 时有意义）
+    pub symlink_valid: bool,
+    /// 是否有读取权限
+    pub readable: bool,
+}
+
+/// Workspace 状态检测结果（包含状态和警告信息）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceCheckResult {
+    pub status: WorkspaceStatus,
+    pub warning: Option<String>,
+}
+
+/// 检测 workspace 路径的状态
+/// 使用 symlink_metadata 而非 metadata，避免跟随软链接
+fn check_workspace_status(path: &std::path::Path) -> WorkspaceCheckResult {
+    let mut status = WorkspaceStatus {
+        exists: false,
+        is_symlink: false,
+        symlink_target: None,
+        symlink_valid: false,
+        readable: true,
+    };
+    let mut warning = None;
+
+    // 使用 symlink_metadata 不会跟随软链接，能正确检测软链接本身的状态
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) => {
+            status.exists = true;
+            status.is_symlink = meta.file_type().is_symlink();
+
+            if status.is_symlink {
+                // 软链接：获取目标路径
+                match std::fs::read_link(path) {
+                    Ok(target) => {
+                        status.symlink_target = Some(target.to_string_lossy().to_string());
+                        // 检查软链接目标是否存在
+                        match std::fs::metadata(path) {
+                            Ok(_) => status.symlink_valid = true,
+                            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                                status.symlink_valid = false;
+                                warning = Some("软链接目标不存在".to_string());
+                            }
+                            Err(e) => {
+                                status.symlink_valid = false;
+                                warning = Some(format!("无法访问软链接目标: {}", e));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warning = Some(format!("无法读取软链接目标: {}", e));
+                    }
+                }
+            } else {
+                // 普通目录：验证读取权限
+                match std::fs::read_dir(path) {
+                    Ok(_) => status.readable = true,
+                    Err(e) => {
+                        status.readable = false;
+                        warning = Some(format!("权限不足: {}", e));
+                    }
+                }
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            warning = Some("工作目录不存在".to_string());
+        }
+        Err(e) => {
+            status.readable = false;
+            warning = Some(format!("无法访问路径: {}", e));
+        }
+    }
+
+    WorkspaceCheckResult { status, warning }
+}
 
 /// 获取 agent 列表（直接读 openclaw.json，不走 CLI，毫秒级响应）
 #[tauri::command]
@@ -83,6 +169,28 @@ pub async fn list_agents() -> Result<Value, String> {
                         .map(|o| o.insert("workspace".to_string(), Value::String(ws)));
                 }
             }
+
+            // 检测 workspace 状态
+            if let Some(ws_str) = agent.get("workspace").and_then(|w| w.as_str()) {
+                let ws_path = std::path::Path::new(ws_str);
+                let check_result = check_workspace_status(ws_path);
+
+                // 添加 workspaceStatus 字段
+                agent.as_object_mut().map(|o| {
+                    o.insert(
+                        "workspaceStatus".to_string(),
+                        serde_json::to_value(&check_result.status).unwrap_or(Value::Null),
+                    )
+                });
+
+                // 添加警告信息
+                if let Some(w) = check_result.warning {
+                    agent
+                        .as_object_mut()
+                        .map(|o| o.insert("workspaceWarning".to_string(), Value::String(w)));
+                }
+            }
+
             // 补全 identityName 用于前端显示
             let identity_name = agent
                 .get("identity")
@@ -105,6 +213,7 @@ pub async fn list_agents() -> Result<Value, String> {
 /// 创建新 agent（优先走 CLI，失败则直接写 openclaw.json 兜底）
 #[tauri::command]
 pub async fn add_agent(
+    app: tauri::AppHandle,
     name: String,
     model: String,
     workspace: Option<String>,
@@ -116,6 +225,18 @@ pub async fn add_agent(
             .join(&name)
             .join("workspace"),
     };
+
+    // 验证 workspace 路径有效性
+    let ws_check = check_workspace_status(&ws);
+    if let Some(ref warning) = ws_check.warning {
+        eprintln!("[agent] Workspace 警告: {}", warning);
+    }
+    if ws_check.status.is_symlink && !ws_check.status.symlink_valid {
+        return Err(format!(
+            "指定的 workspace 是软链接，但目标不存在: {}",
+            ws_check.status.symlink_target.as_deref().unwrap_or("未知")
+        ));
+    }
 
     let mut args = vec![
         "agents".to_string(),
@@ -152,20 +273,47 @@ pub async fn add_agent(
             false
         }
         Err(_) => {
-            eprintln!("[agent] CLI 超时 (15s)");
+            eprintln!("[agent] CLI 超时 (15s)，可能是 OpenClaw 未响应");
             false
         }
     };
 
     if !cli_ok {
         // 兜底：直接写 openclaw.json
-        add_agent_to_config(&name, &model, &ws)?;
+        if let Err(e) = add_agent_to_config(&name, &model, &ws) {
+            return Err(format!(
+                "CLI 创建超时且配置写入失败: {}\n请尝试手动运行: openclaw agents add {} --workspace {}",
+                e,
+                name,
+                ws.to_string_lossy()
+            ));
+        }
     }
 
     // 确保 workspace 目录存在
     if !ws.exists() {
-        let _ = fs::create_dir_all(&ws);
+        if let Err(e) = fs::create_dir_all(&ws) {
+            eprintln!("[agent] 创建 workspace 目录失败: {e}");
+        }
     }
+
+    // 验证步骤
+    let agents = list_agents().await?;
+    let created = agents.as_array().and_then(|arr| {
+        arr.iter()
+            .find(|a| a.get("id").and_then(|v| v.as_str()) == Some(&name))
+    });
+
+    if created.is_none() {
+        eprintln!("[agent] 警告: Agent 创建后未在列表中出现");
+    }
+
+    if !ws.exists() {
+        eprintln!("[agent] 警告: Agent workspace 目录未创建");
+    }
+
+    // 触发 Gateway 重载使新 agent 生效
+    let _ = super::config::do_reload_gateway(&app).await;
 
     list_agents().await
 }
@@ -229,7 +377,7 @@ fn add_agent_to_config(id: &str, model: &str, workspace: &std::path::Path) -> Re
 
 /// 删除 agent（直接操作 openclaw.json + 删除 agent 目录，不走 CLI）
 #[tauri::command]
-pub async fn delete_agent(id: String) -> Result<String, String> {
+pub async fn delete_agent(app: tauri::AppHandle, id: String) -> Result<String, String> {
     if id == "main" {
         return Err("不能删除默认 Agent".into());
     }
@@ -265,15 +413,21 @@ pub async fn delete_agent(id: String) -> Result<String, String> {
     // 2. 删除 agent 目录（workspace + sessions 等）
     let agent_dir = super::openclaw_dir().join("agents").join(&id);
     if agent_dir.exists() {
-        let _ = fs::remove_dir_all(&agent_dir);
+        if let Err(e) = fs::remove_dir_all(&agent_dir) {
+            eprintln!("[agent] 删除 agent 目录失败: {e}，不影响配置删除");
+        }
     }
+
+    // 3. 触发 Gateway 重载
+    let _ = super::config::do_reload_gateway(&app).await;
 
     Ok("已删除".into())
 }
 
 /// 更新 agent 身份信息
 #[tauri::command]
-pub fn update_agent_identity(
+pub async fn update_agent_identity(
+    app: tauri::AppHandle,
     id: String,
     name: Option<String>,
     emoji: Option<String>,
@@ -333,7 +487,9 @@ pub fn update_agent_identity(
         });
 
     let json = serde_json::to_string_pretty(&config).map_err(|e| format!("序列化失败: {e}"))?;
-    fs::write(&path, json).map_err(|e| format!("写入配置失败: {e}"))?;
+    if let Err(e) = fs::write(&path, json) {
+        return Err(format!("写入配置失败: {e}，请检查文件权限"));
+    }
 
     // 删除 IDENTITY.md 文件，让配置文件生效
     if let Some(ws_str) = workspace_path {
@@ -342,6 +498,9 @@ pub fn update_agent_identity(
             let _ = fs::remove_file(&identity_file);
         }
     }
+
+    // 触发 Gateway 重载使配置生效
+    let _ = super::config::do_reload_gateway(&app).await;
 
     Ok("已更新".into())
 }
@@ -400,7 +559,11 @@ fn collect_dir_to_zip(
 
 /// 更新 agent 模型配置
 #[tauri::command]
-pub fn update_agent_model(id: String, model: String) -> Result<String, String> {
+pub async fn update_agent_model(
+    app: tauri::AppHandle,
+    id: String,
+    model: String,
+) -> Result<String, String> {
     let path = super::openclaw_dir().join("openclaw.json");
     let content = fs::read_to_string(&path).map_err(|e| format!("读取配置失败: {e}"))?;
     let mut config: Value =
@@ -424,7 +587,12 @@ pub fn update_agent_model(id: String, model: String) -> Result<String, String> {
         .insert("model".to_string(), model_obj);
 
     let json = serde_json::to_string_pretty(&config).map_err(|e| format!("序列化失败: {e}"))?;
-    fs::write(&path, json).map_err(|e| format!("写入配置失败: {e}"))?;
+    if let Err(e) = fs::write(&path, json) {
+        return Err(format!("写入配置失败: {e}，请检查文件权限"));
+    }
+
+    // 触发 Gateway 重载使配置生效
+    let _ = super::config::do_reload_gateway(&app).await;
 
     Ok("已更新".into())
 }

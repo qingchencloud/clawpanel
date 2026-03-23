@@ -20,9 +20,14 @@ export function uuid() {
 }
 
 const REQUEST_TIMEOUT = 30000
-const MAX_RECONNECT_DELAY = 30000
-const PING_INTERVAL = 25000
-const CHALLENGE_TIMEOUT = 5000
+const MAX_RECONNECT_DELAY = 60000
+const PING_INTERVAL = 30000
+const CHALLENGE_TIMEOUT = 15000
+const MAX_RECONNECT_ATTEMPTS = 20
+const HEARTBEAT_TIMEOUT = 90000
+const MESSAGE_CACHE_SIZE = 100
+// Gateway 启动前的初始重连延迟（更长，给 Gateway 充足的重启/初始化时间）
+const INITIAL_RECONNECT_DELAY = 10000
 
 export class WsClient {
   constructor() {
@@ -48,6 +53,19 @@ export class WsClient {
     this._wsId = 0
     this._autoPairAttempts = 0
     this._serverVersion = null
+
+    // 增强状态追踪
+    this._lastConnectedAt = null
+    this._lastMessageAt = null
+    this._pendingReconnect = false
+    this._missedHeartbeats = 0
+    this._heartbeatTimer = null
+    this._reconnectState = 'idle' // idle | attempting | scheduled
+
+    // 消息缓存
+    this._messageCache = new Map()
+    this._cacheSize = MESSAGE_CACHE_SIZE
+    this._seenMessageIds = new Set()
   }
 
   get connected() { return this._connected }
@@ -57,6 +75,27 @@ export class WsClient {
   get hello() { return this._hello }
   get sessionKey() { return this._sessionKey }
   get serverVersion() { return this._serverVersion }
+  get reconnectState() { return this._reconnectState }
+  get reconnectAttempts() { return this._reconnectAttempts }
+  get lastConnectedAt() { return this._lastConnectedAt }
+  get lastMessageAt() { return this._lastMessageAt }
+
+  /**
+   * 获取连接详细信息，供前端使用
+   */
+  getConnectionInfo() {
+    return {
+      connected: this._connected,
+      gatewayReady: this._gatewayReady,
+      lastConnectedAt: this._lastConnectedAt,
+      lastMessageAt: this._lastMessageAt,
+      reconnectAttempts: this._reconnectAttempts,
+      reconnectState: this._reconnectState,
+      serverVersion: this._serverVersion,
+      missedHeartbeats: this._missedHeartbeats,
+      pendingReconnect: this._pendingReconnect,
+    }
+  }
 
   onStatusChange(fn) {
     this._statusListeners.push(fn)
@@ -80,12 +119,14 @@ export class WsClient {
     }
     if (this._ws && (this._ws.readyState === WebSocket.OPEN || this._ws.readyState === WebSocket.CONNECTING)) return
     this._url = nextUrl
+    this._lastConnectedAt = Date.now()
     this._doConnect()
   }
 
   disconnect() {
     this._intentionalClose = true
     this._stopPing()
+    this._stopHeartbeat()
     this._clearReconnectTimer()
     this._clearChallengeTimer()
     this._flushPending()
@@ -93,6 +134,8 @@ export class WsClient {
     this._setConnected(false)
     this._gatewayReady = false
     this._handshaking = false
+    this._reconnectState = 'idle'
+    this._pendingReconnect = false
   }
 
   reconnect() {
@@ -100,7 +143,9 @@ export class WsClient {
     this._intentionalClose = false
     this._reconnectAttempts = 0
     this._autoPairAttempts = 0
+    this._missedHeartbeats = 0
     this._stopPing()
+    this._stopHeartbeat()
     this._clearReconnectTimer()
     this._clearChallengeTimer()
     this._flushPending()
@@ -113,6 +158,7 @@ export class WsClient {
     this._closeWs()
     this._gatewayReady = false
     this._handshaking = false
+    this._reconnectState = 'attempting'
     this._setConnected(false, 'connecting')
     const wsId = ++this._wsId
     let ws
@@ -123,6 +169,10 @@ export class WsClient {
       if (wsId !== this._wsId) return
       this._connecting = false
       this._reconnectAttempts = 0
+      this._missedHeartbeats = 0
+      this._lastConnectedAt = Date.now()
+      this._lastMessageAt = Date.now()
+      this._startHeartbeat()
       this._setConnected(true)
       this._startPing()
       // 等 Gateway 发 connect.challenge，超时则主动发
@@ -171,10 +221,16 @@ export class WsClient {
       if (!this._intentionalClose) this._scheduleReconnect()
     }
 
-    ws.onerror = () => {}
+    ws.onerror = (err) => {
+      console.error('[ws] WebSocket 错误:', err)
+    }
   }
 
   _handleMessage(msg) {
+    // 更新最后消息时间（用于心跳检测）
+    this._lastMessageAt = Date.now()
+    this._missedHeartbeats = 0
+
     // 握手阶段：connect.challenge
     if (msg.type === 'event' && msg.event === 'connect.challenge') {
       console.log('[ws] 收到 connect.challenge')
@@ -228,6 +284,25 @@ export class WsClient {
 
     // 事件转发
     if (msg.type === 'event') {
+      // 消息去重检查
+      if (msg.id && this._seenMessageIds.has(msg.id)) {
+        console.log('[ws] 跳过重复消息:', msg.id)
+        return
+      }
+      if (msg.id) {
+        this._seenMessageIds.add(msg.id)
+        // 保持 Set 大小，防止内存泄漏
+        if (this._seenMessageIds.size > 1000) {
+          const arr = Array.from(this._seenMessageIds)
+          this._seenMessageIds = new Set(arr.slice(-500))
+        }
+      }
+
+      // 缓存聊天消息
+      if (msg.event === 'chat.message' && msg.payload?.sessionKey) {
+        this._cacheMessage(msg.payload.sessionKey, msg.payload)
+      }
+
       this._eventListeners.forEach(fn => {
         try { fn(msg) } catch (e) { console.error('[ws] handler error:', e) }
       })
@@ -288,6 +363,8 @@ export class WsClient {
       this._sessionKey = `agent:${agentId}:main`
     }
     this._gatewayReady = true
+    this._reconnectState = 'idle'
+    this._pendingReconnect = false
     console.log('[ws] Gateway 就绪, sessionKey:', this._sessionKey)
     this._setConnected(true, 'ready')
     this._readyCallbacks.forEach(fn => {
@@ -337,13 +414,36 @@ export class WsClient {
   }
 
   _scheduleReconnect() {
+    // 超过最大重连次数，停止重连
+    if (this._reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      console.warn('[ws] 已达到最大重连次数 (', MAX_RECONNECT_ATTEMPTS, ')，停止自动重连')
+      this._reconnectState = 'idle'
+      this._pendingReconnect = false
+      this._setConnected(false, 'error', `连接失败，已停止重连。请手动刷新页面重试。`)
+      return
+    }
+
     this._clearReconnectTimer()
-    const delay = this._reconnectAttempts < 3
-      ? 1000
-      : Math.min(1000 * Math.pow(2, this._reconnectAttempts - 2), MAX_RECONNECT_DELAY)
+    // 指数退避：1s, 2s, 4s, 8s, 16s, 32s, 60s (最多 60s)
+    const baseDelay = 2000
+    const maxDelay = MAX_RECONNECT_DELAY
+    const exponentialDelay = Math.min(baseDelay * Math.pow(2, this._reconnectAttempts), maxDelay)
+    // 首次连接（Gateway 可能还未启动）：使用更长的初始延迟
+    const delay = this._reconnectAttempts === 0
+      ? INITIAL_RECONNECT_DELAY
+      : Math.round(exponentialDelay * (0.5 + Math.random())) // 50%~150% 抖动，防止同步风暴
+
     this._reconnectAttempts++
-    this._setConnected(false, 'reconnecting')
-    this._reconnectTimer = setTimeout(() => this._doConnect(), delay)
+    this._reconnectState = 'scheduled'
+    this._pendingReconnect = true
+    this._setConnected(false, 'reconnecting', `重连中 (${this._reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})，${Math.round(delay/1000)}秒后...`)
+    console.log(`[ws] 计划重连 (${this._reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})，延迟 ${Math.round(delay/1000)}秒`)
+    this._reconnectTimer = setTimeout(() => {
+      if (!this._intentionalClose) {
+        this._reconnectState = 'attempting'
+        this._doConnect()
+      }
+    }, delay)
   }
 
   _startPing() {
@@ -359,6 +459,45 @@ export class WsClient {
     if (this._pingTimer) {
       clearInterval(this._pingTimer)
       this._pingTimer = null
+    }
+  }
+
+  /**
+   * 心跳检测：如果超过 HEARTBEAT_TIMEOUT 没有收到任何消息，触发重连
+   * 这用于检测 Gateway 端崩溃或网络中断
+   */
+  _startHeartbeat() {
+    this._stopHeartbeat()
+    this._missedHeartbeats = 0
+    this._heartbeatTimer = setInterval(() => {
+      if (!this._connected || !this._gatewayReady) return
+
+      const now = Date.now()
+      const timeSinceLastMessage = this._lastMessageAt ? now - this._lastMessageAt : 0
+
+      if (timeSinceLastMessage > HEARTBEAT_TIMEOUT) {
+        this._missedHeartbeats++
+        console.warn(`[ws] 心跳超时 (${Math.round(timeSinceLastMessage/1000)}秒)，missedHeartbeats: ${this._missedHeartbeats}`)
+        // 增加容忍度：连续 3 次超时（检查间隔 30s × 3 = 约 90s）才强制重连
+        if (this._missedHeartbeats >= 3) {
+          console.error('[ws] 心跳检测失败超过3次，强制重连')
+          this._stopHeartbeat()
+          this.reconnect()
+        } else if (this._missedHeartbeats >= 2) {
+          // 2 次超时：先尝试发 ping 探测，不行再重连
+          console.warn('[ws] 心跳超时 2 次，发送探测 ping...')
+          if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+            try { this._ws.send('{"type":"ping"}') } catch {}
+          }
+        }
+      }
+    }, HEARTBEAT_TIMEOUT / 3) // 每 30 秒检查一次
+  }
+
+  _stopHeartbeat() {
+    if (this._heartbeatTimer) {
+      clearInterval(this._heartbeatTimer)
+      this._heartbeatTimer = null
     }
   }
 
@@ -418,6 +557,104 @@ export class WsClient {
   onEvent(callback) {
     this._eventListeners.push(callback)
     return () => { this._eventListeners = this._eventListeners.filter(fn => fn !== callback) }
+  }
+
+  // ==================== 消息缓存管理 ====================
+
+  /**
+   * 缓存消息
+   * @param {string} sessionKey - 会话 key
+   * @param {object} message - 消息对象
+   */
+  _cacheMessage(sessionKey, message) {
+    if (!this._messageCache.has(sessionKey)) {
+      this._messageCache.set(sessionKey, [])
+    }
+    const messages = this._messageCache.get(sessionKey)
+
+    // 去重检查（基于消息 ID 或内容哈希）
+    const msgId = message.id || message.messageId
+    if (msgId && messages.some(m => (m.id || m.messageId) === msgId)) {
+      return
+    }
+
+    messages.push({
+      ...message,
+      _cachedAt: Date.now(),
+    })
+
+    // 限制缓存大小
+    if (messages.length > this._cacheSize) {
+      messages.splice(0, messages.length - this._cacheSize)
+    }
+  }
+
+  /**
+   * 获取缓存的消息
+   * @param {string} sessionKey - 会话 key
+   * @returns {array} 缓存的消息数组
+   */
+  _getCachedMessages(sessionKey) {
+    return this._messageCache.get(sessionKey) || []
+  }
+
+  /**
+   * 清除指定会话的缓存
+   * @param {string} sessionKey - 会话 key
+   */
+  _clearCache(sessionKey) {
+    if (sessionKey) {
+      this._messageCache.delete(sessionKey)
+    } else {
+      this._messageCache.clear()
+    }
+    console.log('[ws] 消息缓存已清除:', sessionKey || '全部')
+  }
+
+  /**
+   * 清除消息去重记录
+   */
+  _clearSeenMessageIds() {
+    this._seenMessageIds.clear()
+  }
+
+  /**
+   * 获取缓存状态信息
+   */
+  getCacheInfo() {
+    const info = {}
+    for (const [key, messages] of this._messageCache) {
+      info[key] = {
+        count: messages.length,
+        oldest: messages[0]?._cachedAt,
+        newest: messages[messages.length - 1]?._cachedAt,
+      }
+    }
+    return info
+  }
+
+  /**
+   * 连接成功后自动拉取历史消息（供前端调用）
+   * @param {string} sessionKey - 会话 key
+   * @param {number} limit - 消息数量限制
+   */
+  async fetchHistoryOnReconnect(sessionKey, limit = 200) {
+    if (!sessionKey || !this._gatewayReady) {
+      return { error: 'not ready' }
+    }
+    try {
+      const history = await this.chatHistory(sessionKey, limit)
+      // 将历史消息缓存起来
+      if (history?.messages) {
+        for (const msg of history.messages) {
+          this._cacheMessage(sessionKey, msg)
+        }
+      }
+      return { history }
+    } catch (e) {
+      console.error('[ws] 拉取历史消息失败:', e)
+      return { error: e.message }
+    }
   }
 }
 
