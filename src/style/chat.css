@@ -144,6 +144,11 @@
   gap: var(--space-sm);
 }
 
+.msg-virtual-spacer {
+  height: 0;
+  flex-shrink: 0;
+}
+
 /* 消息通用 */
 .msg {
   display: flex;
