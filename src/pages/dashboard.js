@@ -4,6 +4,7 @@
 import { api } from '../lib/tauri-api.js'
 import { toast } from '../components/toast.js'
 import { onGatewayChange } from '../lib/app-state.js'
+import { loadSkillsCatalog, summarizeSkillsCatalog } from '../lib/skills-catalog.js'
 import { navigate } from '../router.js'
 
 let _unsubGw = null
@@ -80,7 +81,7 @@ async function loadDashboardData(page, fullRefresh = false) {
   ]), 15000)
   const secondaryP = withTimeout(Promise.allSettled([
     api.listAgents(),
-    api.readMcpConfig(),
+    loadSkillsCatalog({ force: fullRefresh }),
     api.listBackups(),
     // getStatusSummary 是最重的调用（spawn openclaw status --json），只在首次加载时调用
     (!_dashboardInitialized || fullRefresh) ? api.getStatusSummary() : Promise.resolve(null),
@@ -122,15 +123,15 @@ async function loadDashboardData(page, fullRefresh = false) {
 
   renderStatCards(page, services, version, [], config)
 
-  // 第二波：Agent、MCP、备份 → 更新卡片 + 渲染总览
-  const [agentsRes, mcpRes, backupsRes, statusRes] = await secondaryP
+  // 第二波：Agent、Skills、备份 → 更新卡片 + 渲染总览
+  const [agentsRes, skillsRes, backupsRes, statusRes] = await secondaryP
   const agents = agentsRes.status === 'fulfilled' ? agentsRes.value : []
-  const mcpConfig = mcpRes.status === 'fulfilled' ? mcpRes.value : null
+  const skillsData = skillsRes.status === 'fulfilled' ? skillsRes.value : null
   const backups = backupsRes.status === 'fulfilled' ? backupsRes.value : []
   const statusSummary = statusRes.status === 'fulfilled' ? statusRes.value : null
 
   renderStatCards(page, services, version, agents, config)
-  renderOverview(page, services, mcpConfig, backups, config, agents, statusSummary)
+  renderOverview(page, services, skillsData, backups, config, agents, statusSummary)
 
   // 第三波：日志（最低优先级）
   const logs = await logsP
@@ -199,10 +200,11 @@ function renderStatCards(page, services, version, agents, config) {
   `
 }
 
-function renderOverview(page, services, mcpConfig, backups, config, agents, statusSummary) {
+function renderOverview(page, services, skillsData, backups, config, agents, statusSummary) {
+  services = Array.isArray(services) ? services : []
   const containerEl = page.querySelector('#dashboard-overview-container')
   const gw = services.find(s => s.label === 'ai.openclaw.gateway')
-  const mcpCount = mcpConfig?.mcpServers ? Object.keys(mcpConfig.mcpServers).length : 0
+  const skillSummary = summarizeSkillsCatalog(skillsData)
 
   const formatDate = (timestamp) => {
     if (!timestamp) return '——'
@@ -255,12 +257,12 @@ function renderOverview(page, services, mcpConfig, backups, config, agents, stat
 
         <div class="overview-card" data-nav="/skills">
           <div class="overview-card-icon" style="color:var(--warning)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
           </div>
           <div class="overview-card-body">
-            <div class="overview-card-title">MCP 工具</div>
-            <div class="overview-card-value">${mcpCount} 个</div>
-            <div class="overview-card-meta">已挂载扩展</div>
+            <div class="overview-card-title">Skills</div>
+            <div class="overview-card-value">${skillSummary.total} 个</div>
+            <div class="overview-card-meta">${skillSummary.eligible} 可用 · ${skillSummary.missing + skillSummary.blocked} 待处理 · ${skillSummary.disabled} 已禁用</div>
           </div>
         </div>
 

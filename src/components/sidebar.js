@@ -74,9 +74,9 @@ const NAV_ITEMS_SETUP = [
 
 const ICONS = {
   setup: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>',
-  dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+  dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="5" rx="2"/><rect x="13" y="10" width="8" height="11" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/></svg>',
   chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>',
-  services: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>',
+  services: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01M11 7h6M11 17h6"/></svg>',
   logs: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
   models: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>',
   agents: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>',
@@ -86,7 +86,7 @@ const ICONS = {
   about: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
   assistant: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/><path d="M18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z"/></svg>',
   security: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>',
-  skills: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>',
+  skills: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a2 2 0 012-2h3l2-2 5 5-2 2v3a2 2 0 01-2 2h-2l-4.5 4.5a1.5 1.5 0 01-2.12-2.12L10 14H8a2 2 0 01-2-2V8z"/><path d="M14 6l4 4"/></svg>',
   channels: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
   clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
   'bar-chart': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>',
@@ -109,9 +109,29 @@ function _checkMultiInstances(el) {
 }
 
 const LS_SIDEBAR_COLLAPSED = 'clawpanel_sidebar_collapsed'
+const LS_SIDEBAR_GROUPS = 'clawpanel_sidebar_groups'
 
 function _isDesktopSidebarCollapsed() {
   try { return localStorage.getItem(LS_SIDEBAR_COLLAPSED) === '1' } catch { return false }
+}
+
+function _getSidebarGroupState() {
+  try {
+    return JSON.parse(localStorage.getItem(LS_SIDEBAR_GROUPS) || '{}') || {}
+  } catch {
+    return {}
+  }
+}
+
+function _isSidebarGroupOpen(key) {
+  const state = _getSidebarGroupState()
+  return state[key] !== false
+}
+
+function _setSidebarGroupOpen(key, open) {
+  const state = _getSidebarGroupState()
+  state[key] = !!open
+  try { localStorage.setItem(LS_SIDEBAR_GROUPS, JSON.stringify(state)) } catch {}
 }
 
 function _setDesktopSidebarCollapsed(collapsed) {
@@ -155,8 +175,16 @@ export function renderSidebar(el) {
   const navItems = isOpenclawReady() ? NAV_ITEMS_FULL : NAV_ITEMS_SETUP
 
   for (const section of navItems) {
-    html += `<div class="nav-section">
-      <div class="nav-section-title">${section.section}</div>`
+    const sectionKey = section.section || `section-${section.items.map(item => item.route).join('|')}`
+    const expanded = section.section ? _isSidebarGroupOpen(sectionKey) : true
+    html += `<div class="nav-section${expanded ? ' expanded' : ' collapsed'}" data-section="${_escSidebar(sectionKey)}">`
+    if (section.section) {
+      html += `<button class="nav-section-toggle" type="button" data-section-toggle="${_escSidebar(sectionKey)}">
+        <span class="nav-section-title">${section.section}</span>
+        <span class="nav-section-chevron">${expanded ? '−' : '+'}</span>
+      </button>`
+    }
+    html += `<div class="nav-section-items"${expanded ? '' : ' style="display:none"'}>`
 
     for (const item of section.items) {
       const active = current === item.route ? ' active' : ''
@@ -165,7 +193,7 @@ export function renderSidebar(el) {
         <span>${item.label}</span>
       </div>`
     }
-    html += '</div>'
+    html += '</div></div>'
   }
 
   html += '</nav>'
@@ -200,6 +228,22 @@ export function renderSidebar(el) {
   if (!_delegated) {
     _delegated = true
     el.addEventListener('click', (e) => {
+      const sectionToggle = e.target.closest('[data-section-toggle]')
+      if (sectionToggle) {
+        const key = sectionToggle.dataset.sectionToggle
+        const sectionEl = e.target.closest('.nav-section[data-section]')
+        const itemsEl = sectionEl?.querySelector('.nav-section-items')
+        const nextOpen = sectionEl?.classList.contains('collapsed')
+        if (sectionEl) {
+          sectionEl.classList.toggle('expanded', !!nextOpen)
+          sectionEl.classList.toggle('collapsed', !nextOpen)
+        }
+        if (itemsEl) itemsEl.style.display = nextOpen ? '' : 'none'
+        const chevron = sectionToggle.querySelector('.nav-section-chevron')
+        if (chevron) chevron.textContent = nextOpen ? '−' : '+'
+        if (key) _setSidebarGroupOpen(key, !!nextOpen)
+        return
+      }
       // 导航点击
       const navItem = e.target.closest('.nav-item[data-route]')
       if (navItem) {
