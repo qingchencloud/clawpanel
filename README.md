@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <strong>🇨🇳 中文</strong> | <a href="README.en.md">🇺🇸 English</a>
+  <strong>🇨🇳 中文</strong> | <a href="README.en.md">🇺🇸 English</a> | <a href="README.ja.md">🇯🇵 日本語</a>
 </p>
 
 <p align="center">

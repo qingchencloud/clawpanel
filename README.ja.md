@@ -3,11 +3,11 @@
 </p>
 
 <p align="center">
-  OpenClaw Management Panel with Built-in AI Assistant — One-click Install, Configure, Diagnose & Fix
+  AI アシスタント内蔵の OpenClaw 管理パネル — ワンクリックでインストール・設定・診断・修復
 </p>
 
 <p align="center">
-  <a href="README.md">🇨🇳 中文</a> | <strong>🇺🇸 English</strong> | <a href="README.ja.md">🇯🇵 日本語</a>
+  <a href="README.md">🇨🇳 中文</a> | <a href="README.en.md">🇺🇸 English</a> | <strong>🇯🇵 日本語</strong>
 </p>
 
 <p align="center">
@@ -28,143 +28,143 @@
 ---
 
 <p align="center">
-  <img src="docs/feature-showcase.gif" width="800" alt="ClawPanel Feature Showcase">
+  <img src="docs/feature-showcase.gif" width="800" alt="ClawPanel 機能紹介">
 </p>
 
-ClawPanel is a visual management panel for the [OpenClaw](https://openclaw.ai) AI Agent framework. It features a **built-in intelligent AI assistant** that helps you install OpenClaw with one click, auto-diagnose configurations, troubleshoot issues, and fix errors. 8 tools + 4 modes + interactive Q&A — easy to manage for beginners and experts alike.
+ClawPanel は [OpenClaw](https://openclaw.ai) AI エージェントフレームワークのビジュアル管理パネルです。**AI アシスタントを内蔵**しており、OpenClaw のワンクリックインストール、設定の自動診断、問題のトラブルシューティング、エラーの修復をサポートします。8 つのツール + 4 つのモード + インタラクティブ Q&A で、初心者から上級者まで簡単に管理できます。
 
-> 🌐 **Website**: [claw.qt.cool](https://claw.qt.cool/) | 📦 **Download**: [GitHub Releases](https://github.com/qingchencloud/clawpanel/releases/latest)
+> 🌐 **公式サイト**: [claw.qt.cool](https://claw.qt.cool/) | 📦 **ダウンロード**: [GitHub Releases](https://github.com/qingchencloud/clawpanel/releases/latest)
 
-## Features
+## 機能
 
-### Dashboard & Monitoring
-- **Real-time Dashboard** — Gateway status, version info, agent fleet, model pool, service health at a glance
-- **Log Viewer** — Real-time Gateway logs with search and filtering
-- **System Diagnostics** — Auto-detect configuration issues, WebSocket connectivity, pairing status
+### ダッシュボード & モニタリング
+- **リアルタイムダッシュボード** — ゲートウェイの状態、バージョン情報、エージェント一覧、モデルプール、サービスの健全性を一目で確認
+- **ログビューア** — リアルタイムのゲートウェイログを検索・フィルタリング付きで表示
+- **システム診断** — 設定の問題、WebSocket 接続性、ペアリング状態を自動検出
 
-### AI Assistant (Built-in)
-- **8 Built-in Tools** — Terminal execution, file read/write, directory browsing, web search, URL fetching, system info, process management, port checking
-- **4 Modes** — Full auto, semi-auto, read-only, chat-only
-- **Tool Calling** — AI can directly execute commands, read logs, modify configs to diagnose and fix problems
-- **QingchenCloud Integration** — Free partial model access for panel users, premium models at 2-3x discount for paid users
+### AI アシスタント（内蔵）
+- **8 つの組み込みツール** — ターミナル実行、ファイル読み書き、ディレクトリ参照、Web 検索、URL 取得、システム情報、プロセス管理、ポート確認
+- **4 つのモード** — フルオート、セミオート、読み取り専用、チャットのみ
+- **ツール呼び出し** — AI がコマンドの実行、ログの読み取り、設定の変更を直接行い、問題を診断・修復
+- **QingchenCloud 連携** — パネルユーザー向けの無料モデルアクセス（一部）、有料ユーザーは 2〜3 倍割引でプレミアムモデルを利用可能
 
-### Model Configuration
-- **Multi-Provider** — OpenAI, Anthropic, DeepSeek, Google Gemini, Ollama, SiliconFlow, Volcengine, Alibaba Cloud, and more
-- **One-click Model Add** — Browse and select models from QingchenCloud catalog
-- **Model Testing** — Test any model with a single click before deploying
-- **Primary/Fallback** — Set primary model with automatic fallback to alternatives
+### モデル設定
+- **マルチプロバイダー** — OpenAI、Anthropic、DeepSeek、Google Gemini、Ollama、SiliconFlow、Volcengine、Alibaba Cloud など
+- **ワンクリックモデル追加** — QingchenCloud カタログからモデルを閲覧・選択
+- **モデルテスト** — デプロイ前にワンクリックで任意のモデルをテスト
+- **プライマリ / フォールバック** — プライマリモデルを設定し、代替モデルへの自動フォールバック
 
-### Agent Management
-- **Multi-Agent** — Create and manage multiple AI agents with independent workspaces
-- **Identity & Personality** — Configure name, emoji, model for each agent
-- **Memory Files** — Manage SOUL.md, IDENTITY.md, AGENTS.md workspace files
-- **Workspace Isolation** — Each agent has its own memory, tools, and configuration
+### エージェント管理
+- **マルチエージェント** — 独立したワークスペースを持つ複数の AI エージェントを作成・管理
+- **アイデンティティ & パーソナリティ** — 各エージェントに名前、絵文字、モデルを設定
+- **メモリファイル** — SOUL.md、IDENTITY.md、AGENTS.md ワークスペースファイルを管理
+- **ワークスペース分離** — 各エージェントが独自のメモリ、ツール、設定を保持
 
-### Messaging Channels
-- **QQ Bot** — Built-in QQ robot integration via QQ Open Platform
-- **Telegram** — Bot Token authentication
-- **Discord** — Bot with guild/channel management
-- **Feishu/Lark** — Enterprise messaging with WebSocket mode
-- **DingTalk** — Enterprise app with Stream mode robot
-- **Multi-Account** — Bind different accounts to different agents
+### メッセージングチャネル
+- **QQ Bot** — QQ オープンプラットフォーム経由の QQ ロボット統合
+- **Telegram** — Bot Token 認証
+- **Discord** — ギルド / チャネル管理付き Bot
+- **Feishu / Lark** — WebSocket モードによるエンタープライズメッセージング
+- **DingTalk** — Stream モードロボット付きエンタープライズアプリ
+- **マルチアカウント** — 異なるアカウントを異なるエージェントに紐付け
 
-### Gateway & Services
-- **Gateway Control** — Start, stop, restart OpenClaw Gateway
-- **Auto-Guardian** — Automatic Gateway restart on unexpected exit (with cooldown)
-- **Config Editor** — Direct JSON editor for openclaw.json with syntax validation
-- **Backup & Restore** — One-click configuration backup and restore
+### ゲートウェイ & サービス
+- **ゲートウェイ制御** — OpenClaw ゲートウェイの起動、停止、再起動
+- **自動ガーディアン** — 予期しない終了時にゲートウェイを自動再起動（クールダウン付き）
+- **設定エディタ** — 構文検証付き openclaw.json の直接 JSON エディタ
+- **バックアップ & リストア** — ワンクリックで設定のバックアップとリストア
 
-### Cron Jobs
-- **Scheduled Tasks** — Create cron-based scheduled AI tasks
-- **Delivery Channels** — Route task results to messaging channels
-- **Per-Agent Assignment** — Assign tasks to specific agents
+### Cron ジョブ
+- **スケジュールタスク** — cron ベースのスケジュール AI タスクを作成
+- **配信チャネル** — タスク結果をメッセージングチャネルにルーティング
+- **エージェント別割り当て** — 特定のエージェントにタスクを割り当て
 
-### Security
-- **Access Password** — Protect Web panel with password authentication
-- **Network Proxy** — Configure HTTP/SOCKS proxy for all outbound requests
-- **Session Management** — Secure session tokens with expiration
+### セキュリティ
+- **アクセスパスワード** — パスワード認証で Web パネルを保護
+- **ネットワークプロキシ** — すべてのアウトバウンドリクエストに HTTP/SOCKS プロキシを設定
+- **セッション管理** — 有効期限付きのセキュアなセッショントークン
 
-## Installation
+## インストール
 
-### Desktop App (Windows / macOS / Linux)
+### デスクトップアプリ（Windows / macOS / Linux）
 
-Download the latest installer from [GitHub Releases](https://github.com/qingchencloud/clawpanel/releases/latest):
+最新のインストーラーを [GitHub Releases](https://github.com/qingchencloud/clawpanel/releases/latest) からダウンロード:
 
-| Platform | Download |
+| プラットフォーム | ダウンロード |
 |----------|----------|
-| **Windows** | `.exe` installer (recommended) or `.msi` |
+| **Windows** | `.exe` インストーラー（推奨）または `.msi` |
 | **macOS Apple Silicon** | `.dmg` (aarch64) |
 | **macOS Intel** | `.dmg` (x64) |
 | **Linux** | `.AppImage` / `.deb` / `.rpm` |
 
-### Web Version (No Rust/Tauri Required)
+### Web 版（Rust / Tauri 不要）
 
-For headless servers, Raspberry Pi, ARM boards, or Docker:
+ヘッドレスサーバー、Raspberry Pi、ARM ボード、Docker 向け:
 
 ```bash
 git clone https://github.com/qingchencloud/clawpanel.git
 cd clawpanel
 npm install
 npm run serve
-# Open http://localhost:1420 in your browser
+# ブラウザで http://localhost:1420 を開く
 ```
 
-### ARM / Embedded Device Support
+### ARM / 組み込みデバイスサポート
 
-ClawPanel provides a **pure Web deployment mode** (zero GUI dependency), natively compatible with ARM64 boards:
+ClawPanel は **純粋な Web デプロイメントモード**（GUI 依存ゼロ）を提供し、ARM64 ボードにネイティブ対応しています:
 
-- **Orange Pi / Raspberry Pi / RK3588** — `npm run serve` to run
+- **Orange Pi / Raspberry Pi / RK3588** — `npm run serve` で実行
 - **Docker ARM64** — `docker run ghcr.io/qingchencloud/openclaw:latest`
-- **Armbian / Debian / Ubuntu Server** — Auto-detect architecture
-- No Rust / Tauri / GUI needed — **only Node.js 18+ required**
+- **Armbian / Debian / Ubuntu Server** — アーキテクチャを自動検出
+- Rust / Tauri / GUI 不要 — **Node.js 18+ のみ必要**
 
-## Quick Start
+## クイックスタート
 
-1. Install and open ClawPanel
-2. First run auto-detects Node.js environment and OpenClaw CLI
-3. If OpenClaw is not installed, click one-click install (R2 CDN accelerated)
-4. After installation, the dashboard loads automatically
+1. ClawPanel をインストールして開く
+2. 初回起動時に Node.js 環境と OpenClaw CLI を自動検出
+3. OpenClaw が未インストールの場合、ワンクリックでインストール（R2 CDN 高速化）
+4. インストール後、ダッシュボードが自動的に読み込まれる
 
-> **Requirements**: Node.js 18+ (22 LTS recommended)
+> **動作要件**: Node.js 18+（22 LTS 推奨）
 
-## Tech Stack
+## 技術スタック
 
-- **Frontend**: Vanilla JS + CSS Custom Properties (zero framework dependency)
-- **Desktop**: Tauri v2 (Rust backend)
-- **Web Backend**: Node.js (Express-compatible API server)
-- **Build**: Vite
-- **CI/CD**: GitHub Actions (cross-platform builds)
+- **フロントエンド**: Vanilla JS + CSS Custom Properties（フレームワーク依存ゼロ）
+- **デスクトップ**: Tauri v2（Rust バックエンド）
+- **Web バックエンド**: Node.js（Express 互換 API サーバー）
+- **ビルド**: Vite
+- **CI/CD**: GitHub Actions（クロスプラットフォームビルド）
 
-## Development
+## 開発
 
 ```bash
-# Prerequisites: Node.js 22+, Rust toolchain, Tauri CLI
+# 前提条件: Node.js 22+、Rust ツールチェーン、Tauri CLI
 
-# Clone
+# クローン
 git clone https://github.com/qingchencloud/clawpanel.git
 cd clawpanel
 
-# Install dependencies
+# 依存関係のインストール
 npm install
 
-# Desktop development (Tauri)
+# デスクトップ開発（Tauri）
 npm run tauri dev
 
-# Web-only development
+# Web のみの開発
 npm run serve
 ```
 
-## Contributing
+## コントリビューション
 
-Issues and Pull Requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
+Issue や Pull Request を歓迎します。コントリビューションガイドラインについては [CONTRIBUTING.md](CONTRIBUTING.md) をご覧ください。
 
-## Acknowledgements
+## 謝辞
 
-ClawPanel keeps growing because of every contributor in the community. Thank you for helping make the project better.
+ClawPanel はコミュニティのすべてのコントリビューターのおかげで成長し続けています。プロジェクトの改善にご協力いただき、ありがとうございます。
 
-### Code Contributors
+### コードコントリビューター
 
-Thanks to these developers for submitting Pull Requests and contributing directly to the codebase:
+Pull Request を提出し、コードベースに直接貢献してくださった開発者の皆様に感謝します:
 
 <table>
   <tr>
@@ -179,9 +179,9 @@ Thanks to these developers for submitting Pull Requests and contributing directl
   </tr>
 </table>
 
-### Community Reporters
+### コミュニティレポーター
 
-Thanks to community members who opened issues, reported bugs, and suggested features:
+Issue の作成、バグの報告、機能の提案をしてくださったコミュニティメンバーに感謝します:
 
 <a href="https://github.com/asfork"><img src="https://github.com/asfork.png?size=40" width="32" height="32" title="asfork"></a>
 <a href="https://github.com/p1ayer222"><img src="https://github.com/p1ayer222.png?size=40" width="32" height="32" title="p1ayer222"></a>
@@ -253,10 +253,10 @@ Thanks to community members who opened issues, reported bugs, and suggested feat
 <a href="https://github.com/qingdeng888"><img src="https://github.com/qingdeng888.png?size=40" width="32" height="32" title="qingdeng888"></a>
 <a href="https://github.com/18574707971"><img src="https://github.com/18574707971.png?size=40" width="32" height="32" title="18574707971"></a>
 
-> If we missed your contribution, please [open an issue](https://github.com/qingchencloud/clawpanel/issues/new) and we will add it promptly.
+> 貢献の記載漏れがありましたら、[Issue を作成](https://github.com/qingchencloud/clawpanel/issues/new)してください。速やかに追加いたします。
 
-## License
+## ライセンス
 
-This project is licensed under [AGPL-3.0](LICENSE). For commercial/proprietary use without open-source requirements, contact us for a commercial license.
+このプロジェクトは [AGPL-3.0](LICENSE) ライセンスの下で公開されています。オープンソース要件なしでの商用 / プロプライエタリ利用については、商用ライセンスについてお問い合わせください。
 
-© 2026 QingchenCloud (武汉晴辰天下网络科技有限公司) | [claw.qt.cool](https://claw.qt.cool)
+© 2026 QingchenCloud (武漢晴辰天下網絡科技有限公司) | [claw.qt.cool](https://claw.qt.cool)
