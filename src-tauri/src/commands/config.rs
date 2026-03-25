@@ -1390,7 +1390,13 @@ fn detect_installed_source() -> String {
 #[tauri::command]
 pub async fn get_version_info() -> Result<VersionInfo, String> {
     let current = get_local_version().await;
-    let source = detect_installed_source();
+    let mut source = detect_installed_source();
+    // 兜底：版本号含 -zh 则一定是汉化版（文件系统检测可能误判）
+    if let Some(ref ver) = current {
+        if ver.contains("-zh") && source != "chinese" {
+            source = "chinese".to_string();
+        }
+    }
     let latest = get_latest_version_for(&source).await;
     let recommended = recommended_version_for(&source);
     let update_available = match (&current, &recommended) {

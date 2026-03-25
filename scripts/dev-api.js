@@ -2983,8 +2983,10 @@ const handlers = {
 
   // 版本信息
   async get_version_info() {
-    const source = detectInstalledSource()
+    let source = detectInstalledSource()
     const current = getLocalOpenclawVersion()
+    // 兜底：版本号含 -zh 则一定是汉化版
+    if (current && current.includes('-zh') && source !== 'chinese') source = 'chinese'
     const latest = await getLatestVersionFor(source)
     const recommended = recommendedVersionFor(source)
 
