@@ -4498,5 +4498,3 @@ pub fn invalidate_path_cache() -> Result<(), String> {
     crate::commands::service::invalidate_cli_detection_cache();
     Ok(())
 }
-    Ok(())
-}
