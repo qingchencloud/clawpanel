@@ -4479,22 +4479,3 @@ pub fn invalidate_path_cache() -> Result<(), String> {
     crate::commands::service::invalidate_cli_detection_cache();
     Ok(())
 }
-pub fn configure_git_https() -> Result<String, String> {
-    let success = configure_git_https_rules();
-    if success > 0 {
-        Ok(format!(
-            "已配置 Git 使用 HTTPS（{success}/{} 条规则）",
-            GIT_HTTPS_REWRITES.len()
-        ))
-    } else {
-        Err("Git 未安装或配置失败".to_string())
-    }
-}
-
-/// 刷新 enhanced_path 缓存，使新设置的 Node.js 路径立即生效
-#[tauri::command]
-pub fn invalidate_path_cache() -> Result<(), String> {
-    super::refresh_enhanced_path();
-    crate::commands::service::invalidate_cli_detection_cache();
-    Ok(())
-}
