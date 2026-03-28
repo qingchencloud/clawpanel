@@ -146,7 +146,7 @@ docker run -d --name clawpanel --restart unless-stopped \
 ## Quick Start
 
 1. **Initial Setup** — First launch auto-detects Node.js, Git, OpenClaw. One-click install if missing.
-2. **Configure Models** — Add AI providers (DeepSeek, OpenAI, Ollama, etc.) with API keys. Test connectivity.
+2. **Configure Models** — Add AI providers (DeepSeek, MiniMax, OpenAI, Ollama, etc.) with API keys. Test connectivity.
 3. **Start Gateway** — Go to Service Management, click Start. Green status = ready.
 4. **Start Chatting** — Go to Live Chat, select model, start conversation with streaming & Markdown.
 
