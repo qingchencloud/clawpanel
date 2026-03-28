@@ -186,7 +186,7 @@ function renderStatCards(page, services, version, agents, config) {
     </div>
     <div class="stat-card">
       <div class="stat-card-header">
-        <span class="stat-card-label">${t('dashboard.versionLabel')} · ${version.source === 'official' ? t('dashboard.versionOfficial') : t('dashboard.versionChinese')}</span>
+        <span class="stat-card-label">${t('dashboard.versionLabel')} · ${version.source === 'official' ? t('dashboard.versionOfficial') : version.source === 'chinese' ? t('dashboard.versionChinese') : t('dashboard.versionUnknownSource')}</span>
       </div>
       <div class="stat-card-value">${version.current || t('common.unknown')}</div>
       <div class="stat-card-meta">${versionMeta}</div>

@@ -38,11 +38,14 @@ fn find_openclaw_cmd() -> Option<std::path::PathBuf> {
 #[cfg(not(target_os = "windows"))]
 fn common_non_windows_cli_candidates() -> Vec<std::path::PathBuf> {
     let mut candidates = Vec::new();
+    // standalone 安装目录（集中管理，避免多处硬编码）
+    for sa_dir in crate::commands::config::all_standalone_dirs() {
+        candidates.push(sa_dir.join("openclaw"));
+    }
+    // 其他标准路径
     if let Some(home) = dirs::home_dir() {
-        candidates.push(home.join(".openclaw-bin").join("openclaw"));
         candidates.push(home.join(".local").join("bin").join("openclaw"));
     }
-    candidates.push(std::path::PathBuf::from("/opt/openclaw/openclaw"));
     candidates.push(std::path::PathBuf::from("/opt/homebrew/bin/openclaw"));
     candidates.push(std::path::PathBuf::from("/usr/local/bin/openclaw"));
     candidates.push(std::path::PathBuf::from("/usr/bin/openclaw"));

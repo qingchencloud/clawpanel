@@ -83,7 +83,7 @@ async function loadData(page) {
     checkHotUpdate(cards, panelVersion)
 
     const isInstalled = !!version.current
-    const sourceLabel = version.source === 'official' ? t('about.official') : t('about.chinese')
+    const sourceLabel = version.source === 'official' ? t('about.official') : version.source === 'chinese' ? t('about.chinese') : t('about.unknownSource')
     const btnSm = 'padding:2px 8px;font-size:var(--font-size-xs)'
     const hasRecommended = !!version.recommended
     const aheadOfRecommended = isInstalled && hasRecommended && !!version.ahead_of_recommended
@@ -250,18 +250,18 @@ async function showVersionPicker(page, currentVersion) {
     if (!targetVer || targetVer === '') { hintEl.textContent = ''; confirmBtn.disabled = true; return }
     const targetTag = select.selectedIndex === 0 ? t('about.tagRecommended') : t('about.tagNeedTest')
 
-    const sameSource = targetSource === (currentVersion.source === 'official' ? 'official' : 'chinese')
+    const sameSource = targetSource === currentVersion.source
 
     if (!isInstalled) {
       confirmBtn.textContent = t('about.btnInstall')
-      hintEl.textContent = t('about.hintInstall', { source: targetSource === 'official' ? t('about.official') : t('about.chinese'), ver: targetVer, tag: targetTag })
+      hintEl.textContent = t('about.hintInstall', { source: targetSource === 'official' ? t('about.official') : targetSource === 'chinese' ? t('about.chinese') : t('about.unknownSource'), ver: targetVer, tag: targetTag })
       confirmBtn.disabled = false
       return
     }
 
     if (!sameSource) {
       confirmBtn.textContent = t('about.btnSwitch')
-      hintEl.innerHTML = `${t('about.hintCurrent')}: <strong>${currentVersion.source === 'official' ? t('about.official') : t('about.chinese')} ${currentVersion.current}</strong> → <strong>${targetSource === 'official' ? t('about.official') : t('about.chinese')} ${targetVer}</strong>${targetTag}`
+      hintEl.innerHTML = `${t('about.hintCurrent')}: <strong>${currentVersion.source === 'official' ? t('about.official') : currentVersion.source === 'chinese' ? t('about.chinese') : t('about.unknownSource')} ${currentVersion.current}</strong> → <strong>${targetSource === 'official' ? t('about.official') : targetSource === 'chinese' ? t('about.chinese') : t('about.unknownSource')} ${targetVer}</strong>${targetTag}`
       confirmBtn.disabled = false
       return
     }
@@ -310,7 +310,7 @@ async function showVersionPicker(page, currentVersion) {
       const versions = showNightly ? allVersions : (stable.length > 0 ? stable : allVersions)
       const nightlyCount = allVersions.length - stable.length
       select.innerHTML = versions.map((v, idx) => {
-        const isCurrent = isInstalled && v === currentVersion.current && source === (currentVersion.source === 'official' ? 'official' : 'chinese')
+        const isCurrent = isInstalled && v === currentVersion.current && source === currentVersion.source
         return `<option value="${v}">${v}${idx === 0 ? ` (${t('about.recommended')})` : ''}${isCurrent ? ` (${t('about.current')})` : ''}</option>`
       }).join('')
       // nightly 切换提示

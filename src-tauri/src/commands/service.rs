@@ -329,10 +329,11 @@ mod platform {
 
     fn common_cli_candidates() -> Vec<PathBuf> {
         let mut candidates = Vec::new();
-        if let Some(home) = dirs::home_dir() {
-            candidates.push(home.join(".openclaw-bin").join("openclaw"));
+        // standalone 安装目录（集中管理，避免多处硬编码）
+        for sa_dir in crate::commands::config::all_standalone_dirs() {
+            candidates.push(sa_dir.join("openclaw"));
         }
-        candidates.push(PathBuf::from("/opt/openclaw/openclaw"));
+        // Homebrew 路径（非 standalone，保留）
         candidates.push(PathBuf::from("/opt/homebrew/bin/openclaw"));
         candidates.push(PathBuf::from("/usr/local/bin/openclaw"));
         candidates
@@ -849,23 +850,9 @@ mod platform {
     fn candidate_cli_paths() -> Vec<PathBuf> {
         let mut candidates = Vec::new();
 
-        // standalone 安装目录（优先检测，覆盖所有可能位置）
-        if let Ok(localappdata) = env::var("LOCALAPPDATA") {
-            // Inno Setup PrivilegesRequired=lowest 默认路径
-            candidates.push(
-                Path::new(&localappdata)
-                    .join("Programs")
-                    .join("OpenClaw")
-                    .join("openclaw.cmd"),
-            );
-            candidates.push(
-                Path::new(&localappdata)
-                    .join("OpenClaw")
-                    .join("openclaw.cmd"),
-            );
-        }
-        if let Ok(pf) = env::var("ProgramFiles") {
-            candidates.push(Path::new(&pf).join("OpenClaw").join("openclaw.cmd"));
+        // standalone 安装目录（集中管理，避免多处硬编码）
+        for sa_dir in crate::commands::config::all_standalone_dirs() {
+            candidates.push(sa_dir.join("openclaw.cmd"));
         }
 
         if let Ok(appdata) = env::var("APPDATA") {
@@ -1223,6 +1210,10 @@ mod platform {
                     .join(".bin")
                     .join("openclaw"),
             );
+        }
+        // standalone 安装目录（集中管理，避免多处硬编码）
+        for sa_dir in crate::commands::config::all_standalone_dirs() {
+            candidates.push(sa_dir.join("openclaw"));
         }
         candidates.push(PathBuf::from("/usr/local/bin/openclaw"));
         candidates.push(PathBuf::from("/usr/bin/openclaw"));

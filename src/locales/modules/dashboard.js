@@ -9,6 +9,7 @@ export default {
   versionLabel: _('版本', 'Version', '', 'バージョン', '버전', 'Phiên bản', 'Versión', 'Versão', 'Версия'),
   versionOfficial: _('官方', 'Official', '', '公式', '공식'),
   versionChinese: _('汉化', 'Chinese', '漢化', '中国語版', '중국어판'),
+  versionUnknownSource: _('未知来源', 'Unknown Source', '未知來源', '不明なソース', '알 수 없는 출처'),
   versionUnknown: _('版本信息未获取', 'Version info unavailable', '版本資訊未取得', 'バージョン情報未取得', '버전 정보 없음'),
   versionAhead: _('当前版本高于推荐稳定版 {version}，可能不稳定', 'Current version is ahead of recommended stable {version}, may be unstable', '目前版本高於推薦穩定版 {version}，可能不穩定', '現在のバージョンは推奨安定版 {version} より新しく、不安定な可能性があります', '현재 버전이 권장 안정 버전 {version}보다 높아 불안정할 수 있습니다'),
   versionStable: _('稳定版 {version}', 'Stable {version}', '穩定版 {version}', '安定版 {version}', '안정 버전 {version}'),

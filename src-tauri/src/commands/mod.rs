@@ -258,6 +258,10 @@ fn build_enhanced_path() -> String {
         if let Ok(prefix) = std::env::var("NPM_CONFIG_PREFIX") {
             extra.push(format!("{}/bin", prefix));
         }
+        // standalone 安装目录（集中管理，避免多处硬编码）
+        for sa_dir in config::all_standalone_dirs() {
+            extra.push(sa_dir.to_string_lossy().into_owned());
+        }
         // 扫描 nvm 实际安装的版本目录（兼容无 current 符号链接的情况）
         // 按版本号倒序排列，确保最新版优先（修复 #143：v20 排在 v24 前面）
         let nvm_versions = home.join(".nvm/versions/node");
@@ -325,6 +329,10 @@ fn build_enhanced_path() -> String {
         // NPM_CONFIG_PREFIX: 用户通过 npm config set prefix 自定义的全局安装路径
         if let Ok(prefix) = std::env::var("NPM_CONFIG_PREFIX") {
             extra.push(format!("{}/bin", prefix));
+        }
+        // standalone 安装目录（集中管理，避免多处硬编码）
+        for sa_dir in config::all_standalone_dirs() {
+            extra.push(sa_dir.to_string_lossy().into_owned());
         }
         // NVM_DIR 环境变量（用户可能自定义了 nvm 安装目录）
         // 按版本号倒序排列，确保最新版优先（修复 #143：v20 排在 v24 前面）
@@ -537,6 +545,14 @@ fn build_enhanced_path() -> String {
         // 6. npm 全局（openclaw.cmd 通常在这里）
         if !appdata.is_empty() {
             extra.push(format!(r"{}\npm", appdata));
+        }
+
+        // 6.5 standalone 安装目录（集中管理，避免多处硬编码）
+        // standalone 安装后通过注册表写入用户 PATH，但当前进程的 PATH 环境变量不会
+        // 实时更新，需要显式添加到 enhanced_path 以确保 resolve_openclaw_cli_path()
+        // 能找到 standalone 安装的 openclaw.cmd
+        for sa_dir in config::all_standalone_dirs() {
+            extra.push(sa_dir.to_string_lossy().into_owned());
         }
 
         // 7. 系统默认 Node.js 安装路径（优先级最低）
