@@ -489,6 +489,7 @@ Web 版功能与桌面版一致，后端通过 `scripts/dev-api.js` 调用本机
 | 服务商 | 获取 API Key |
 |--------|-------------|
 | DeepSeek | [platform.deepseek.com](https://platform.deepseek.com/) |
+| MiniMax | [platform.minimaxi.com](https://platform.minimaxi.com/) |
 | OpenAI | [platform.openai.com](https://platform.openai.com/) |
 | 阿里通义 | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com/) |
 | Ollama（本地） | 免费，无需 Key，安装后自动检测 |
