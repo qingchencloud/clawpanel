@@ -254,6 +254,7 @@ Restart=on-failure
 RestartSec=5
 Environment=NODE_ENV=production
 Environment=HOME=$HOME
+Environment=PATH=$HOME/.npm-global/bin:$HOME/.local/bin:$HOME/.volta/bin:$(dirname $(which node)):$PATH
 
 [Install]
 WantedBy=multi-user.target
@@ -275,6 +276,7 @@ Restart=on-failure
 RestartSec=5
 Environment=NODE_ENV=production
 Environment=HOME=$HOME
+Environment=PATH=$HOME/.npm-global/bin:$HOME/.local/bin:$HOME/.volta/bin:$(dirname $(which node)):$PATH
 
 [Install]
 WantedBy=default.target

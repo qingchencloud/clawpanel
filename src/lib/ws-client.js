@@ -324,12 +324,16 @@ export class WsClient {
         console.warn('[ws] reloadGateway 失败（非致命）:', e)
       }
 
-      console.log('[ws] 配对成功，2秒后重新连接...')
+      // 修复 #160: 不调用 reconnect()（它会重置 _autoPairAttempts 导致无限循环），
+      // 而是直接重连一次。如果仍然失败，_autoPairAttempts 不会被重置，不会再次触发自动修复。
+      console.log('[ws] 配对成功，3秒后重新连接...')
       setTimeout(() => {
         if (!this._intentionalClose) {
-          this.reconnect()
+          this._reconnectAttempts = 0
+          this._closeWs()
+          this._doConnect()
         }
-      }, 2000)
+      }, 3000)
     } catch (e) {
       console.error('[ws] 自动配对失败:', e)
       this._setConnected(false, 'error', `配对失败: ${e}`)

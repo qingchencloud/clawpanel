@@ -1089,6 +1089,9 @@ function findOpenclawBin() {
     '/usr/bin/openclaw',
     '/snap/bin/openclaw',
     path.join(home, '.local/bin/openclaw'),
+    // npm 全局安装路径（修复 #156：systemd 服务缺少 PATH 时 which 失败）
+    path.join(home, '.npm-global/bin/openclaw'),
+    path.join(home, '.npm/bin/openclaw'),
   ]
 
   // nvm
@@ -1141,8 +1144,19 @@ function linuxCheckGateway() {
   try {
     const out = execSync(`ss -tlnp 'sport = :${port}' 2>/dev/null`, { timeout: 3000 }).toString().trim()
     const pidMatch = out.match(/pid=(\d+)/)
-    if (pidMatch) return { running: true, pid: parseInt(pidMatch[1]) }
-    if (out.includes(`:${port}`)) return { running: true, pid: null }
+    if (pidMatch) {
+      const pid = parseInt(pidMatch[1])
+      // 修复 #151: 验证进程是否是 OpenClaw，避免与其他占用同端口的程序冲突
+      let isOpenClaw = false
+      try {
+        const cmdline = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').replace(/\0/g, ' ')
+        isOpenClaw = /openclaw/i.test(cmdline)
+      } catch {
+        isOpenClaw = true // 无法读取进程信息时保守认为是
+      }
+      return { running: true, pid, manageable: isOpenClaw }
+    }
+    if (out.includes(`:${port}`)) return { running: true, pid: null, manageable: false }
   } catch {}
   // fallback: lsof
   try {
@@ -1182,8 +1196,10 @@ function linuxStartGateway() {
 }
 
 function linuxStopGateway() {
-  const { running, pid } = linuxCheckGateway()
+  const { running, pid, manageable } = linuxCheckGateway()
   if (!running || !pid) throw new Error('Gateway 未运行')
+  // 修复 #151: 检测到非 OpenClaw 进程占用端口时拒绝操作
+  if (manageable === false) throw new Error(`端口已被其他进程 (PID ${pid}) 占用，无法操作`)
   try {
     process.kill(pid, 'SIGTERM')
   } catch (e) {
@@ -1597,6 +1613,10 @@ const handlers = {
   },
 
   start_service({ label }) {
+    // 修复 #159: Docker 双容器模式下禁止本地启动 Gateway
+    if (process.env.DISABLE_GATEWAY_SPAWN === '1' || process.env.DISABLE_GATEWAY_SPAWN === 'true') {
+      throw new Error('本地 Gateway 启动已禁用（DISABLE_GATEWAY_SPAWN=1），请使用远程 Gateway')
+    }
     if (isMac) { macStartService(label); return true }
     if (isLinux) { linuxStartGateway(); return true }
     winStartGateway()
@@ -1633,6 +1653,9 @@ const handlers = {
   },
 
   reload_gateway() {
+    if (process.env.DISABLE_GATEWAY_SPAWN === '1' || process.env.DISABLE_GATEWAY_SPAWN === 'true') {
+      throw new Error('本地 Gateway 启动已禁用（DISABLE_GATEWAY_SPAWN=1）')
+    }
     if (isMac) {
       macRestartService('ai.openclaw.gateway')
       return 'Gateway 已重启'
@@ -1646,6 +1669,9 @@ const handlers = {
   },
 
   restart_gateway() {
+    if (process.env.DISABLE_GATEWAY_SPAWN === '1' || process.env.DISABLE_GATEWAY_SPAWN === 'true') {
+      throw new Error('本地 Gateway 启动已禁用（DISABLE_GATEWAY_SPAWN=1）')
+    }
     if (isMac) {
       macRestartService('ai.openclaw.gateway')
       return 'Gateway 已重启'
@@ -3195,13 +3221,13 @@ const handlers = {
 
   // Agent 渠道绑定管理
   list_all_bindings() {
-    const cfg = readConfig()
+    const cfg = fs.existsSync(CONFIG_PATH) ? JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')) : {}
     const bindings = cfg.bindings || []
     return { bindings }
   },
 
   save_agent_binding({ agentId, channel, accountId, bindingConfig }) {
-    const cfg = readConfig()
+    const cfg = fs.existsSync(CONFIG_PATH) ? JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')) : {}
     if (!cfg.bindings) cfg.bindings = []
     const bindings = cfg.bindings
 
@@ -3240,12 +3266,12 @@ const handlers = {
       bindings.push(newBinding)
     }
 
-    saveConfig(cfg)
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2))
     return { ok: true }
   },
 
   delete_agent_binding({ agentId, channel, accountId }) {
-    const cfg = readConfig()
+    const cfg = fs.existsSync(CONFIG_PATH) ? JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')) : {}
     if (!cfg.bindings) cfg.bindings = []
     const bindings = cfg.bindings
     const accountKey = accountId || ''
@@ -3258,7 +3284,7 @@ const handlers = {
       return existingAccount !== accountKey
     })
 
-    saveConfig(cfg)
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2))
     return { ok: true, removed: before - cfg.bindings.length }
   },
 

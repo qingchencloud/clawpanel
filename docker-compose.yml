@@ -61,6 +61,8 @@ services:
       # OpenClaw Gateway 地址（如果 Gateway 不在本地，修改为实际地址）
       # 注意：host 模式下直接使用 localhost 或 127.0.0.1
       - OPENCLAW_URL=http://127.0.0.1:18789
+      # 双容器模式下禁止面板自动启动 Gateway（取消注释）
+      # - DISABLE_GATEWAY_SPAWN=1
       # 如果需要代理（取消注释并修改为实际代理地址）
       # - HTTP_PROXY=http://host.docker.internal:7890
       # - HTTPS_PROXY=http://host.docker.internal:7890
