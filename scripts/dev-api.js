@@ -205,7 +205,7 @@ async function _tryStandaloneInstall(version, logs, overrideBaseUrl = null) {
     execSync(`tar -xzf "${tmpPath}" -C "${installDir}" --strip-components=1`, { windowsHide: true })
   }
 
-  try { fs.unlinkSync(tmpPath) } catch {}
+  try { fs.unlinkSync(tmpPath) } catch { }
 
   // 验证
   const binFile = isWindows ? 'openclaw.cmd' : 'openclaw'
@@ -292,7 +292,7 @@ async function _tryR2Install(version, source, logs) {
       execSync(`${npmBin} install -g "${tmpPath}" --force 2>&1`, { timeout: 120000, windowsHide: true })
       logs.push('npm install 完成 ✓')
     } catch (e) {
-      try { fs.unlinkSync(tmpPath) } catch {}
+      try { fs.unlinkSync(tmpPath) } catch { }
       throw new Error('npm install -g tarball 失败: ' + (e.stderr?.toString() || e.message).slice(-300))
     }
   } else {
@@ -348,17 +348,17 @@ async function _tryR2Install(version, source, logs) {
         fs.writeFileSync(path.join(binDir, 'openclaw.cmd'), cmdContent)
       } else {
         const linkPath = path.join(binDir, 'openclaw')
-        try { fs.unlinkSync(linkPath) } catch {}
+        try { fs.unlinkSync(linkPath) } catch { }
         fs.symlinkSync(openclawJs, linkPath)
-        try { fs.chmodSync(openclawJs, 0o755) } catch {}
-        try { fs.chmodSync(linkPath, 0o755) } catch {}
+        try { fs.chmodSync(openclawJs, 0o755) } catch { }
+        try { fs.chmodSync(linkPath, 0o755) } catch { }
       }
       logs.push('bin 链接已创建 ✓')
     }
   }
 
   // 清理临时文件
-  try { fs.unlinkSync(tmpPath) } catch {}
+  try { fs.unlinkSync(tmpPath) } catch { }
 
   logs.push(`✅ CDN 加速安装完成，当前版本: ${cdnVersion}`)
   return true
@@ -382,7 +382,7 @@ function getConfiguredNpmRegistry() {
       const value = fs.readFileSync(regFile, 'utf8').trim()
       if (value) return value
     }
-  } catch {}
+  } catch { }
   return 'https://registry.npmmirror.com'
 }
 
@@ -397,13 +397,13 @@ function pickRegistryForPackage(pkg) {
 }
 
 function configureGitHttpsRules() {
-  try { execSync('git config --global --unset-all url.https://github.com/.insteadOf 2>&1', { timeout: 5000, windowsHide: true }) } catch {}
+  try { execSync('git config --global --unset-all url.https://github.com/.insteadOf 2>&1', { timeout: 5000, windowsHide: true }) } catch { }
   let success = 0
   for (const from of GIT_HTTPS_REWRITES) {
     try {
       execSync(`git config --global --add url.https://github.com/.insteadOf "${from}"`, { timeout: 5000, windowsHide: true })
       success++
-    } catch {}
+    } catch { }
   }
   return success
 }
@@ -430,13 +430,13 @@ function detectInstalledSource() {
       const target = fs.readlinkSync('/opt/homebrew/bin/openclaw')
       if (String(target).includes('openclaw-zh')) return 'chinese'
       return 'official'
-    } catch {}
+    } catch { }
     // Intel Homebrew
     try {
       const target = fs.readlinkSync('/usr/local/bin/openclaw')
       if (String(target).includes('openclaw-zh')) return 'chinese'
       return 'official'
-    } catch {}
+    } catch { }
     // standalone (~/.openclaw-bin)
     const saDir = path.join(homedir(), '.openclaw-bin')
     if (fs.existsSync(path.join(saDir, 'openclaw')) || fs.existsSync(path.join(saDir, 'VERSION'))) return 'chinese'
@@ -457,14 +457,14 @@ function detectInstalledSource() {
         const zhDir = path.join(appdata, 'npm', 'node_modules', '@qingchencloud', 'openclaw-zh')
         if (fs.existsSync(zhDir)) return 'chinese'
       }
-    } catch {}
+    } catch { }
     return 'official'
   }
   try {
     const npmBin = isWindows ? 'npm.cmd' : 'npm'
     const out = execSync(`${npmBin} list -g @qingchencloud/openclaw-zh --depth=0 2>&1`, { timeout: 10000, windowsHide: true }).toString()
     if (out.includes('openclaw-zh@')) return 'chinese'
-  } catch {}
+  } catch { }
   return 'official'
 }
 
@@ -476,14 +476,14 @@ function getLocalOpenclawVersion() {
       const target = fs.readlinkSync('/opt/homebrew/bin/openclaw')
       const pkgPath = path.resolve('/opt/homebrew/bin', target, '..', 'package.json')
       current = JSON.parse(fs.readFileSync(pkgPath, 'utf8')).version
-    } catch {}
+    } catch { }
     // Intel Homebrew
     if (!current) {
       try {
         const target = fs.readlinkSync('/usr/local/bin/openclaw')
         const pkgPath = path.resolve('/usr/local/bin', target, '..', 'package.json')
         current = JSON.parse(fs.readFileSync(pkgPath, 'utf8')).version
-      } catch {}
+      } catch { }
     }
     // standalone (~/.openclaw-bin)
     if (!current) {
@@ -497,7 +497,7 @@ function getLocalOpenclawVersion() {
           const pkg = path.join(homedir(), '.openclaw-bin', 'node_modules', '@qingchencloud', 'openclaw-zh', 'package.json')
           if (fs.existsSync(pkg)) current = JSON.parse(fs.readFileSync(pkg, 'utf8')).version
         }
-      } catch {}
+      } catch { }
     }
   }
   if (!current && isWindows) {
@@ -512,10 +512,10 @@ function getLocalOpenclawVersion() {
           }
         }
       }
-    } catch {}
+    } catch { }
   }
   if (!current) {
-    try { current = execSync('openclaw --version 2>&1', { windowsHide: true }).toString().trim().split(/\s+/).find(w => /^\d/.test(w)) || null } catch {}
+    try { current = execSync('openclaw --version 2>&1', { windowsHide: true }).toString().trim().split(/\s+/).find(w => /^\d/.test(w)) || null } catch { }
   }
   return current || null
 }
@@ -531,7 +531,7 @@ async function getLatestVersionFor(source = 'chinese') {
       if (!resp.ok) continue
       const data = await resp.json()
       if (data?.version) return data.version
-    } catch {}
+    } catch { }
   }
   return null
 }
@@ -578,7 +578,7 @@ function clearLoginAttempts(ip) {
 // 从 CLI 输出中提取 JSON（跳过 Node 警告、npm 更新提示等非 JSON 行）
 function extractCliJson(text) {
   // 快速路径：整个文本就是合法 JSON
-  try { return JSON.parse(text) } catch {}
+  try { return JSON.parse(text) } catch { }
   // 找到第一个 { 或 [ 开始尝试解析
   for (let i = 0; i < text.length; i++) {
     const ch = text[i]
@@ -597,7 +597,7 @@ function extractCliJson(text) {
         else if (c === close) { depth--; if (depth === 0) { end = j; break } }
       }
       if (end > i) {
-        try { return JSON.parse(text.slice(i, end + 1)) } catch {}
+        try { return JSON.parse(text.slice(i, end + 1)) } catch { }
       }
     }
   }
@@ -620,7 +620,7 @@ function readPanelConfig() {
       _panelConfigCacheTime = now
       return JSON.parse(JSON.stringify(_panelConfigCache))
     }
-  } catch {}
+  } catch { }
   return {}
 }
 
@@ -635,10 +635,10 @@ function getAccessPassword() {
 
 function parseCookies(req) {
   const obj = {}
-  ;(req.headers.cookie || '').split(';').forEach(pair => {
-    const [k, ...v] = pair.trim().split('=')
-    if (k) try { obj[k] = decodeURIComponent(v.join('=')) } catch (_) { obj[k] = v.join('=') }
-  })
+    ; (req.headers.cookie || '').split(';').forEach(pair => {
+      const [k, ...v] = pair.trim().split('=')
+      if (k) try { obj[k] = decodeURIComponent(v.join('=')) } catch (_) { obj[k] = v.join('=') }
+    })
   return obj
 }
 
@@ -667,6 +667,23 @@ function checkPasswordStrength(pw) {
 
 function isUnsafePath(p) {
   return !p || p.includes('..') || p.includes('\0') || path.isAbsolute(p)
+}
+
+function getAgentWorkspaceDir(agentId) {
+  if (!agentId || agentId === 'main') return path.join(OPENCLAW_DIR, 'workspace')
+  return path.join(OPENCLAW_DIR, 'agents', agentId, 'workspace')
+}
+
+function getMemoryCategoryDir(agentId, category) {
+  const ws = getAgentWorkspaceDir(agentId)
+  if (category === 'archive') {
+    return path.join(path.dirname(ws), 'workspace-memory')
+  }
+  if (category === 'core') {
+    return ws
+  }
+  // Default and "memory" category
+  return path.join(ws, 'memory')
 }
 
 const MAX_BODY_SIZE = 1024 * 1024 // 1MB
@@ -764,10 +781,12 @@ function getLocalIps() {
 function rawWsConnect(host, port, wsPath) {
   return new Promise((ok, no) => {
     const key = crypto.randomBytes(16).toString('base64')
-    const req = http.request({ hostname: host, port, path: wsPath, method: 'GET', headers: {
-      'Connection': 'Upgrade', 'Upgrade': 'websocket', 'Sec-WebSocket-Version': '13',
-      'Sec-WebSocket-Key': key, 'Origin': 'http://localhost',
-    } })
+    const req = http.request({
+      hostname: host, port, path: wsPath, method: 'GET', headers: {
+        'Connection': 'Upgrade', 'Upgrade': 'websocket', 'Sec-WebSocket-Version': '13',
+        'Sec-WebSocket-Key': key, 'Origin': 'http://localhost',
+      }
+    })
     req.on('upgrade', (_, socket) => ok(socket))
     req.on('response', (res) => { let d = ''; res.on('data', c => d += c); res.on('end', () => no(new Error(`HTTP ${res.statusCode}`))) })
     req.on('error', no)
@@ -819,7 +838,7 @@ function wsSendFrame(socket, text) {
 function wsReadLoop(socket, onMessage, timeoutMs = DOCKER_TASK_TIMEOUT_MS) {
   let buf = Buffer.alloc(0), done = false
   const timer = setTimeout(() => { done = true; socket.destroy() }, timeoutMs)
-  const cancel = () => { done = true; clearTimeout(timer); try { socket.destroy() } catch {} }
+  const cancel = () => { done = true; clearTimeout(timer); try { socket.destroy() } catch { } }
   socket.on('data', (chunk) => {
     if (done) return
     buf = Buffer.concat([buf, chunk])
@@ -836,7 +855,7 @@ function wsReadLoop(socket, onMessage, timeoutMs = DOCKER_TASK_TIMEOUT_MS) {
         const mask = crypto.randomBytes(4)
         const h = Buffer.alloc(2); h[0] = 0x8A; h[1] = 0x80 | payload.length
         const m = Buffer.alloc(payload.length); for (let i = 0; i < payload.length; i++) m[i] = payload[i] ^ mask[i % 4]
-        try { socket.write(Buffer.concat([h, mask, m])) } catch {}
+        try { socket.write(Buffer.concat([h, mask, m])) } catch { }
         continue
       }
       if (opcode === 0x01) onMessage(payload.toString('utf8')) // text
@@ -888,7 +907,7 @@ function macCheckService(label) {
     }
     // 有 PID 则用 kill -0 验证进程是否存活（比 state 字符串更可靠）
     if (pid) {
-      try { execSync(`kill -0 ${pid} 2>&1`); return { running: true, pid } } catch {}
+      try { execSync(`kill -0 ${pid} 2>&1`); return { running: true, pid } } catch { }
     }
     // 无 PID 时 fallback 到 pgrep（launchctl 可能还没刷出 PID）
     if (state === 'running' || state === 'waiting') {
@@ -898,7 +917,7 @@ function macCheckService(label) {
           const fallbackPid = parseInt(pgrepOut.split('\n')[0]) || null
           if (fallbackPid) return { running: true, pid: fallbackPid }
         }
-      } catch {}
+      } catch { }
     }
     return { running: state === 'running', pid }
   } catch {
@@ -910,27 +929,27 @@ function macStartService(label) {
   const uid = getUid()
   const plistPath = path.join(homedir(), `Library/LaunchAgents/${label}.plist`)
   if (!fs.existsSync(plistPath)) throw new Error(`plist 不存在: ${plistPath}`)
-  try { execSync(`launchctl bootstrap gui/${uid} "${plistPath}" 2>&1`) } catch {}
-  try { execSync(`launchctl kickstart gui/${uid}/${label} 2>&1`) } catch {}
+  try { execSync(`launchctl bootstrap gui/${uid} "${plistPath}" 2>&1`) } catch { }
+  try { execSync(`launchctl kickstart gui/${uid}/${label} 2>&1`) } catch { }
 }
 
 function macStopService(label) {
   const uid = getUid()
-  try { execSync(`launchctl bootout gui/${uid}/${label} 2>&1`) } catch {}
+  try { execSync(`launchctl bootout gui/${uid}/${label} 2>&1`) } catch { }
 }
 
 function macRestartService(label) {
   const uid = getUid()
   const plistPath = path.join(homedir(), `Library/LaunchAgents/${label}.plist`)
-  try { execSync(`launchctl bootout gui/${uid}/${label} 2>&1`) } catch {}
+  try { execSync(`launchctl bootout gui/${uid}/${label} 2>&1`) } catch { }
   // 等待进程退出
   for (let i = 0; i < 15; i++) {
     const { running } = macCheckService(label)
     if (!running) break
     execSync('sleep 0.2')
   }
-  try { execSync(`launchctl bootstrap gui/${uid} "${plistPath}" 2>&1`) } catch {}
-  try { execSync(`launchctl kickstart -k gui/${uid}/${label} 2>&1`) } catch {}
+  try { execSync(`launchctl bootstrap gui/${uid} "${plistPath}" 2>&1`) } catch { }
+  try { execSync(`launchctl kickstart -k gui/${uid}/${label} 2>&1`) } catch { }
 }
 
 // === Windows 服务管理 ===
@@ -1042,7 +1061,7 @@ async function winStopGateway() {
   for (const pid of gatewayPids) {
     try {
       execSync(`taskkill /F /T /PID ${pid}`, { timeout: 5000, windowsHide: true })
-    } catch {}
+    } catch { }
   }
 
   for (let i = 0; i < 10; i++) {
@@ -1081,7 +1100,7 @@ function readGatewayPort() {
 function findOpenclawBin() {
   try {
     return execSync('which openclaw 2>/dev/null', { stdio: 'pipe' }).toString().trim()
-  } catch {}
+  } catch { }
 
   const home = homedir()
   const candidates = [
@@ -1099,7 +1118,7 @@ function findOpenclawBin() {
       for (const entry of fs.readdirSync(nvmVersions)) {
         candidates.push(path.join(nvmVersions, entry, 'bin/openclaw'))
       }
-    } catch {}
+    } catch { }
   }
 
   // volta
@@ -1116,7 +1135,7 @@ function findOpenclawBin() {
       for (const entry of fs.readdirSync(fnmVersions)) {
         candidates.push(path.join(fnmVersions, entry, 'installation/bin/openclaw'))
       }
-    } catch {}
+    } catch { }
   }
 
   // /usr/local/lib/nodejs（手动安装的 Node.js）
@@ -1126,7 +1145,7 @@ function findOpenclawBin() {
       for (const entry of fs.readdirSync(nodejsLib)) {
         candidates.push(path.join(nodejsLib, entry, 'bin/openclaw'))
       }
-    } catch {}
+    } catch { }
   }
 
   for (const p of candidates) {
@@ -1143,7 +1162,7 @@ function linuxCheckGateway() {
     const pidMatch = out.match(/pid=(\d+)/)
     if (pidMatch) return { running: true, pid: parseInt(pidMatch[1]) }
     if (out.includes(`:${port}`)) return { running: true, pid: null }
-  } catch {}
+  } catch { }
   // fallback: lsof
   try {
     const out = execSync(`lsof -i :${port} -t 2>/dev/null`, { timeout: 3000 }).toString().trim()
@@ -1151,13 +1170,13 @@ function linuxCheckGateway() {
       const pid = parseInt(out.split('\n')[0]) || null
       return { running: !!pid, pid }
     }
-  } catch {}
+  } catch { }
   // fallback: /proc/net/tcp
   try {
     const hexPort = port.toString(16).toUpperCase().padStart(4, '0')
     const tcp = fs.readFileSync('/proc/net/tcp', 'utf8')
     if (tcp.includes(`:${hexPort}`)) return { running: true, pid: null }
-  } catch {}
+  } catch { }
   return { running: false, pid: null }
 }
 
@@ -1187,7 +1206,7 @@ function linuxStopGateway() {
   try {
     process.kill(pid, 'SIGTERM')
   } catch (e) {
-    try { process.kill(pid, 'SIGKILL') } catch {}
+    try { process.kill(pid, 'SIGKILL') } catch { }
     throw new Error('停止失败: ' + (e.message || e))
   }
 }
@@ -1416,11 +1435,11 @@ async function instanceHealthCheck(instance) {
     try {
       const services = await handlers.get_services_status()
       result.gatewayRunning = services?.[0]?.running === true
-    } catch {}
+    } catch { }
     try {
       const ver = await handlers.get_version_info()
       result.version = ver?.current
-    } catch {}
+    } catch { }
     return result
   }
   // Docker 类型实例：通过 Docker API 检查容器状态
@@ -1435,7 +1454,7 @@ async function instanceHealthCheck(instance) {
           result.gatewayRunning = true
         }
       }
-    } catch {}
+    } catch { }
     return result
   }
 
@@ -1452,7 +1471,7 @@ async function instanceHealthCheck(instance) {
       result.online = true
       result.version = data?.version || null
     }
-  } catch {}
+  } catch { }
   if (result.online) {
     try {
       const resp = await fetch(`${instance.endpoint}/__api/get_services_status`, {
@@ -1465,7 +1484,7 @@ async function instanceHealthCheck(instance) {
         const services = await resp.json()
         result.gatewayRunning = services?.[0]?.running === true
       }
-    } catch {}
+    } catch { }
   }
   return result
 }
@@ -1613,7 +1632,7 @@ const handlers = {
   async restart_service({ label }) {
     if (isMac) { macRestartService(label); return true }
     if (isLinux) {
-      try { linuxStopGateway() } catch {}
+      try { linuxStopGateway() } catch { }
       for (let i = 0; i < 10; i++) {
         const { running } = linuxCheckGateway()
         if (!running) break
@@ -1637,7 +1656,7 @@ const handlers = {
       macRestartService('ai.openclaw.gateway')
       return 'Gateway 已重启'
     } else if (isLinux) {
-      try { linuxStopGateway() } catch {}
+      try { linuxStopGateway() } catch { }
       linuxStartGateway()
       return 'Gateway 已重启'
     } else {
@@ -1650,7 +1669,7 @@ const handlers = {
       macRestartService('ai.openclaw.gateway')
       return 'Gateway 已重启'
     } else if (isLinux) {
-      try { linuxStopGateway() } catch {}
+      try { linuxStopGateway() } catch { }
       linuxStartGateway()
       return 'Gateway 已重启'
     } else {
@@ -1838,7 +1857,7 @@ const handlers = {
       const result = spawnSync(bin, ['plugins', 'list'], { timeout: 10000, encoding: 'utf8', cwd: homedir() })
       const output = (result.stdout || '') + (result.stderr || '')
       if (output.includes(pid) && output.includes('built-in')) builtin = true
-    } catch {}
+    } catch { }
     const cfg = fs.existsSync(CONFIG_PATH) ? JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')) : {}
     const allowArr = cfg.plugins?.allow || []
     const allowed = allowArr.includes(pid)
@@ -2149,7 +2168,7 @@ const handlers = {
     }
 
     // 3. 停止并移除旧容器
-    await dockerRequest('POST', `/containers/${containerId}/stop`, null, node.endpoint).catch(() => {})
+    await dockerRequest('POST', `/containers/${containerId}/stop`, null, node.endpoint).catch(() => { })
     await new Promise(r => setTimeout(r, 1000))
     const rmResp = await dockerRequest('DELETE', `/containers/${containerId}?force=true`, null, node.endpoint)
     if (rmResp.status !== 204 && rmResp.status !== 404) {
@@ -2381,7 +2400,7 @@ const handlers = {
     const lines = execResult.stdout.split('\n').filter(l => l.trim())
     const events = []
     for (const line of lines) {
-      try { events.push(JSON.parse(line)) } catch {}
+      try { events.push(JSON.parse(line)) } catch { }
     }
 
     if (execResult.stderr) {
@@ -2562,7 +2581,7 @@ const handlers = {
           syncConfig.models = JSON.parse(JSON.stringify(localConfig.models, (k, v) => {
             if (k === 'baseUrl' && typeof v === 'string') {
               return v.replace(/\/\/127\.0\.0\.1([:/])/g, '//host.docker.internal$1')
-                      .replace(/\/\/localhost([:/])/g, '//host.docker.internal$1')
+                .replace(/\/\/localhost([:/])/g, '//host.docker.internal$1')
             }
             return v
           }))
@@ -2762,7 +2781,7 @@ const handlers = {
                   p.completedLayers = layers.filter(l => l.status === 'Pull complete' || l.status === 'Already exists').length
                 }
                 _pullProgress.set(rid, p)
-              } catch {}
+              } catch { }
             }
           })
           res.on('end', () => {
@@ -2957,7 +2976,7 @@ const handlers = {
                 }
               }
             }
-          } catch {}
+          } catch { }
           return null
         })()
         return {
@@ -3005,7 +3024,7 @@ const handlers = {
         else if (lower.includes('/npm/') || lower.includes('/node_modules/')) cli_source = 'npm-official'
         else cli_source = 'unknown'
       }
-    } catch {}
+    } catch { }
 
     return {
       current,
@@ -3027,7 +3046,7 @@ const handlers = {
   async test_model({ baseUrl, apiKey, modelId, apiType = 'openai-completions' }) {
     const type = ['anthropic', 'anthropic-messages'].includes(apiType) ? 'anthropic-messages'
       : apiType === 'google-gemini' ? 'google-gemini'
-      : 'openai-completions'
+        : 'openai-completions'
     let base = _normalizeBaseUrl(baseUrl)
     // 仅 Anthropic 强制补 /v1，OpenAI 兼容类不强制（火山引擎等用 /v3）
     if (type === 'anthropic-messages' && !/\/v1$/i.test(base)) base += '/v1'
@@ -3077,7 +3096,7 @@ const handlers = {
         try {
           const parsed = JSON.parse(text)
           msg = parsed.error?.message || parsed.message || msg
-        } catch {}
+        } catch { }
         if (resp.status === 401 || resp.status === 403) throw new Error(msg)
         return `⚠ 连接正常（API 返回 ${resp.status}，部分模型对简单测试不兼容，不影响实际使用）`
       }
@@ -3097,7 +3116,7 @@ const handlers = {
   async list_remote_models({ baseUrl, apiKey, apiType = 'openai-completions' }) {
     const type = ['anthropic', 'anthropic-messages'].includes(apiType) ? 'anthropic-messages'
       : apiType === 'google-gemini' ? 'google-gemini'
-      : 'openai-completions'
+        : 'openai-completions'
     let base = _normalizeBaseUrl(baseUrl)
     // 仅 Anthropic 强制补 /v1，OpenAI 兼容类不强制（火山引擎等用 /v3）
     if (type === 'anthropic-messages' && !/\/v1$/i.test(base)) base += '/v1'
@@ -3123,7 +3142,7 @@ const handlers = {
         try {
           const parsed = JSON.parse(text)
           msg = parsed.error?.message || parsed.message || msg
-        } catch {}
+        } catch { }
         throw new Error(msg)
       }
       const data = await resp.json()
@@ -3188,7 +3207,7 @@ const handlers = {
             result.push({ id: entry, isDefault: false, identityName: null, model: null, workspace: null })
           }
         }
-      } catch {}
+      } catch { }
     }
     return result
   },
@@ -3264,35 +3283,64 @@ const handlers = {
 
   // 记忆文件
   list_memory_files({ category, agent_id }) {
-    const suffix = agent_id && agent_id !== 'main' ? `/agents/${agent_id}` : ''
-    const dir = path.join(OPENCLAW_DIR, 'workspace' + suffix, category || 'memory')
+    const dir = getMemoryCategoryDir(agent_id, category)
     if (!fs.existsSync(dir)) return []
-    return fs.readdirSync(dir).filter(f => f.endsWith('.md'))
+    // 递归获取所有支持的文件，并返回相对路径（相对于 category dir）
+    const files = []
+    const collect = (curr, base) => {
+      if (!fs.existsSync(curr)) return
+      const entries = fs.readdirSync(curr, { withFileTypes: true })
+      for (const ent of entries) {
+        const full = path.join(curr, ent.name)
+        if (ent.isDirectory()) {
+          if (category !== 'core') collect(full, base)
+        } else {
+          const ext = path.extname(ent.name).toLowerCase()
+          if (['.md', '.txt', '.json', '.jsonl'].includes(ext)) {
+            files.push(path.relative(base, full).replace(/\\/g, '/'))
+          }
+        }
+      }
+    }
+    collect(dir, dir)
+    return files.sort()
   },
 
   read_memory_file({ path: filePath, agent_id }) {
     if (isUnsafePath(filePath)) throw new Error('非法路径')
-    const suffix = agent_id && agent_id !== 'main' ? `/agents/${agent_id}` : ''
-    const full = path.join(OPENCLAW_DIR, 'workspace' + suffix, filePath)
-    if (!fs.existsSync(full)) return ''
-    return fs.readFileSync(full, 'utf8')
+    // 遍历三个可能的目录尝试读取文件（匹配 Rust 逻辑）
+    const categories = ['memory', 'archive', 'core']
+    for (const cat of categories) {
+      const dir = getMemoryCategoryDir(agent_id, cat)
+      const full = path.join(dir, filePath)
+      if (fs.existsSync(full) && fs.statSync(full).isFile()) {
+        return fs.readFileSync(full, 'utf8')
+      }
+    }
+    return ''
   },
 
   write_memory_file({ path: filePath, content, category, agent_id }) {
     if (isUnsafePath(filePath)) throw new Error('非法路径')
-    const suffix = agent_id && agent_id !== 'main' ? `/agents/${agent_id}` : ''
-    const full = path.join(OPENCLAW_DIR, 'workspace' + suffix, filePath)
-    const dir = path.dirname(full)
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+    const dir = getMemoryCategoryDir(agent_id, category || 'memory')
+    const full = path.join(dir, filePath)
+    const parentDir = path.dirname(full)
+    if (!fs.existsSync(parentDir)) fs.mkdirSync(parentDir, { recursive: true })
     fs.writeFileSync(full, content)
     return true
   },
 
   delete_memory_file({ path: filePath, agent_id }) {
     if (isUnsafePath(filePath)) throw new Error('非法路径')
-    const suffix = agent_id && agent_id !== 'main' ? `/agents/${agent_id}` : ''
-    const full = path.join(OPENCLAW_DIR, 'workspace' + suffix, filePath)
-    if (fs.existsSync(full)) fs.unlinkSync(full)
+    const categories = ['memory', 'archive', 'core']
+    for (const cat of categories) {
+      const dir = getMemoryCategoryDir(agent_id, cat)
+      const full = path.join(dir, filePath)
+      if (fs.existsSync(full) && fs.statSync(full).isFile()) {
+        fs.unlinkSync(full)
+        return true
+      }
+    }
     return true
   },
 
@@ -3456,7 +3504,7 @@ const handlers = {
         }
       }
       if (needUninstallOld) {
-        try { execSync(`${npmBin} uninstall -g ${oldPkg} 2>&1`, { timeout: 60000, windowsHide: true }) } catch {}
+        try { execSync(`${npmBin} uninstall -g ${oldPkg} 2>&1`, { timeout: 60000, windowsHide: true }) } catch { }
       }
       logs.push(`安装完成 (${pkg}@${ver})`)
       return `${logs.join('\n')}\n${out.slice(-400)}`
@@ -3470,13 +3518,13 @@ const handlers = {
     // 清理 standalone 安装
     const saDir = standaloneInstallDir()
     if (fs.existsSync(saDir)) {
-      try { fs.rmSync(saDir, { recursive: true, force: true }) } catch {}
+      try { fs.rmSync(saDir, { recursive: true, force: true }) } catch { }
     }
     // 清理 npm 安装
-    try { execSync(`${npmBin} uninstall -g openclaw 2>&1`, { timeout: 60000, windowsHide: true }) } catch {}
-    try { execSync(`${npmBin} uninstall -g @qingchencloud/openclaw-zh 2>&1`, { timeout: 60000, windowsHide: true }) } catch {}
+    try { execSync(`${npmBin} uninstall -g openclaw 2>&1`, { timeout: 60000, windowsHide: true }) } catch { }
+    try { execSync(`${npmBin} uninstall -g @qingchencloud/openclaw-zh 2>&1`, { timeout: 60000, windowsHide: true }) } catch { }
     if (cleanConfig && fs.existsSync(OPENCLAW_DIR)) {
-      try { fs.rmSync(OPENCLAW_DIR, { recursive: true, force: true }) } catch {}
+      try { fs.rmSync(OPENCLAW_DIR, { recursive: true, force: true }) } catch { }
     }
     return cleanConfig ? 'OpenClaw 已完全卸载（包括配置文件）' : 'OpenClaw 已卸载（配置文件保留）'
   },
@@ -3484,7 +3532,7 @@ const handlers = {
   uninstall_gateway() {
     if (isMac) {
       const uid = getUid()
-      try { execSync(`launchctl bootout gui/${uid}/ai.openclaw.gateway 2>&1`) } catch {}
+      try { execSync(`launchctl bootout gui/${uid}/ai.openclaw.gateway 2>&1`) } catch { }
       const plist = path.join(homedir(), 'Library/LaunchAgents/ai.openclaw.gateway.plist')
       if (fs.existsSync(plist)) fs.unlinkSync(plist)
     }
@@ -3761,7 +3809,7 @@ const handlers = {
     const pureB64 = data.includes(',') ? data.split(',')[1] : data
     const ext = data.startsWith('data:image/png') ? 'png'
       : data.startsWith('data:image/gif') ? 'gif'
-      : data.startsWith('data:image/webp') ? 'webp' : 'jpg'
+        : data.startsWith('data:image/webp') ? 'webp' : 'jpg'
     const filepath = path.join(dir, `${id}.${ext}`)
     fs.writeFileSync(filepath, Buffer.from(pureB64, 'base64'))
     return filepath
@@ -3868,7 +3916,7 @@ const handlers = {
     try {
       const nodeVer = execSync('node --version 2>&1', { windowsHide: true }).toString().trim()
       lines.push(`Node.js: ${nodeVer}`)
-    } catch {}
+    } catch { }
     return lines.join('\n')
   },
 
@@ -3951,7 +3999,7 @@ const handlers = {
         try {
           const uddg = new URL(rawUrl, 'https://duckduckgo.com').searchParams.get('uddg')
           if (uddg) finalUrl = decodeURIComponent(uddg)
-        } catch {}
+        } catch { }
         if (title && finalUrl) {
           results.push({ title, url: finalUrl, snippet })
         }
@@ -4111,7 +4159,7 @@ const handlers = {
         try {
           const ver = execSync(`"${nodeBin}" --version 2>&1`, { timeout: 5000, windowsHide: true }).toString().trim()
           results.push({ path: p, version: ver })
-        } catch {}
+        } catch { }
       }
     }
     return results
