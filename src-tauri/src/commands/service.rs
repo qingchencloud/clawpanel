@@ -1105,14 +1105,14 @@ mod platform {
             return (false, None);
         }
 
-        // 端口通了，获取真实 PID
+        // 端口通了，PID 识别仅作为增强信息
         if let Some(pid) = get_gateway_pid_by_port(port) {
             let mut known = LAST_KNOWN_GATEWAY_PID.lock().unwrap();
             *known = Some(pid);
             (true, Some(pid))
         } else {
-            // 端口通但找不到合法 Gateway PID → 可能是其他进程占用了端口
-            (false, None)
+            // 关键修复：避免因命令行查询失败误判为“未运行”并触发重复拉起
+            (true, None)
         }
     }
 
