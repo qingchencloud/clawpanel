@@ -19,12 +19,60 @@ const AGENT_FILE_ALLOWLIST: &[&str] = &[
 ];
 
 const WORKSPACE_TEXT_EXTENSIONS: &[&str] = &[
-    "md", "markdown", "mdx", "txt", "json", "jsonc", "yaml", "yml", "toml", "ini",
-    "cfg", "conf", "log", "csv", "env", "gitignore", "gitattributes", "editorconfig",
-    "js", "mjs", "cjs", "ts", "tsx", "jsx", "html", "htm", "css", "scss", "less",
-    "rs", "py", "sh", "bash", "zsh", "fish", "ps1", "bat", "cmd", "sql", "xml",
-    "java", "kt", "go", "rb", "php", "c", "cc", "cpp", "h", "hpp", "vue", "svelte",
-    "lock", "sample",
+    "md",
+    "markdown",
+    "mdx",
+    "txt",
+    "json",
+    "jsonc",
+    "yaml",
+    "yml",
+    "toml",
+    "ini",
+    "cfg",
+    "conf",
+    "log",
+    "csv",
+    "env",
+    "gitignore",
+    "gitattributes",
+    "editorconfig",
+    "js",
+    "mjs",
+    "cjs",
+    "ts",
+    "tsx",
+    "jsx",
+    "html",
+    "htm",
+    "css",
+    "scss",
+    "less",
+    "rs",
+    "py",
+    "sh",
+    "bash",
+    "zsh",
+    "fish",
+    "ps1",
+    "bat",
+    "cmd",
+    "sql",
+    "xml",
+    "java",
+    "kt",
+    "go",
+    "rb",
+    "php",
+    "c",
+    "cc",
+    "cpp",
+    "h",
+    "hpp",
+    "vue",
+    "svelte",
+    "lock",
+    "sample",
 ];
 
 const WORKSPACE_TEXT_BASENAMES: &[&str] = &[
@@ -401,14 +449,13 @@ pub async fn list_agent_workspace_entries(
         .collect();
 
     items.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
-    Ok(Value::Array(items.into_iter().map(|(_, _, item)| item).collect()))
+    Ok(Value::Array(
+        items.into_iter().map(|(_, _, item)| item).collect(),
+    ))
 }
 
 #[tauri::command]
-pub async fn read_agent_workspace_file(
-    id: String,
-    relative_path: String,
-) -> Result<Value, String> {
+pub async fn read_agent_workspace_file(id: String, relative_path: String) -> Result<Value, String> {
     let config = super::config::load_openclaw_json()?;
     let workspace_dir = resolve_agent_workspace_path(&id, &config);
     let normalized = normalize_workspace_relative_path(&relative_path)?;
@@ -476,7 +523,7 @@ pub async fn write_agent_workspace_file(
     Ok(json!({
         "ok": true,
         "relativePath": normalized.to_string_lossy().replace('\\', "/"),
-        "size": content.as_bytes().len(),
+        "size": content.len(),
     }))
 }
 
@@ -1008,7 +1055,10 @@ fn normalize_workspace_relative_path(raw: &str) -> Result<PathBuf, String> {
     Ok(normalized)
 }
 
-fn resolve_workspace_target_path(root: &Path, relative_path: Option<&str>) -> Result<PathBuf, String> {
+fn resolve_workspace_target_path(
+    root: &Path,
+    relative_path: Option<&str>,
+) -> Result<PathBuf, String> {
     let normalized = normalize_workspace_relative_path(relative_path.unwrap_or_default())?;
     Ok(root.join(normalized))
 }
