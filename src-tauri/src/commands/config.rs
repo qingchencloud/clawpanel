@@ -606,19 +606,8 @@ pub fn write_openclaw_config(config: Value) -> Result<(), String> {
 }
 
 const CALIBRATION_RESET_INHERIT_KEYS: &[&str] = &[
-    "agents",
-    "auth",
-    "bindings",
-    "browser",
-    "channels",
-    "commands",
-    "env",
-    "hooks",
-    "models",
-    "plugins",
-    "session",
-    "skills",
-    "wizard",
+    "agents", "auth", "bindings", "browser", "channels", "commands", "env", "hooks", "models",
+    "plugins", "session", "skills", "wizard",
 ];
 
 fn calibration_required_origins() -> Vec<String> {
@@ -953,9 +942,7 @@ fn normalize_calibrated_config(mut config: Value) -> Value {
         {
             tools_obj.insert("profile".into(), Value::String("full".into()));
         }
-        let sessions = tools_obj
-            .entry("sessions")
-            .or_insert_with(|| json!({}));
+        let sessions = tools_obj.entry("sessions").or_insert_with(|| json!({}));
         if !sessions.is_object() {
             *sessions = json!({});
         }
@@ -1020,9 +1007,7 @@ fn normalize_calibrated_config(mut config: Value) -> Value {
             );
         }
 
-        let control_ui = gateway_obj
-            .entry("controlUi")
-            .or_insert_with(|| json!({}));
+        let control_ui = gateway_obj.entry("controlUi").or_insert_with(|| json!({}));
         if !control_ui.is_object() {
             *control_ui = json!({});
         }
@@ -1101,8 +1086,8 @@ pub fn calibrate_openclaw_config(mode: String) -> Result<Value, String> {
     inherited_keys.dedup();
 
     let calibrated = strip_ui_fields(normalize_calibrated_config(calibrated));
-    let json =
-        serde_json::to_string_pretty(&calibrated).map_err(|e| format!("序列化校准配置失败: {e}"))?;
+    let json = serde_json::to_string_pretty(&calibrated)
+        .map_err(|e| format!("序列化校准配置失败: {e}"))?;
 
     fs::write(&config_path, &json).map_err(|e| format!("写入校准配置失败: {e}"))?;
     fs::write(&backup_path, &json).map_err(|e| format!("写入配置备份失败: {e}"))?;
