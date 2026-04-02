@@ -91,6 +91,29 @@ fn current_gateway_owner_signature() -> (u16, String, Option<String>) {
     )
 }
 
+fn matches_current_gateway_owner_signature(owner: &GatewayOwnerRecord) -> bool {
+    if owner.started_by != "clawpanel" {
+        return false;
+    }
+    let (port, openclaw_dir, cli_path) = current_gateway_owner_signature();
+    if owner.port != port {
+        return false;
+    }
+    if normalize_owned_path(&owner.openclaw_dir) != openclaw_dir {
+        return false;
+    }
+    let owner_cli_path = owner.cli_path.as_ref().map(normalize_owned_path);
+    matches!(
+        (owner_cli_path.as_deref(), cli_path.as_deref()),
+        (Some(owner_cli), Some(current_cli)) if owner_cli == current_cli
+    )
+}
+
+fn gateway_owner_pid_needs_refresh(owner: &GatewayOwnerRecord, pid: Option<u32>) -> bool {
+    matches_current_gateway_owner_signature(owner)
+        && matches!(pid, Some(current_pid) if owner.pid != Some(current_pid))
+}
+
 fn read_gateway_owner() -> Option<GatewayOwnerRecord> {
     let content = std::fs::read_to_string(gateway_owner_path()).ok()?;
     serde_json::from_str(&content).ok()
@@ -119,35 +142,8 @@ fn clear_gateway_owner() {
     let _ = std::fs::remove_file(gateway_owner_path());
 }
 
-fn is_current_gateway_owner(owner: &GatewayOwnerRecord, pid: Option<u32>) -> bool {
-    if owner.started_by != "clawpanel" {
-        return false;
-    }
-    let (port, openclaw_dir, cli_path) = current_gateway_owner_signature();
-    if owner.port != port {
-        return false;
-    }
-    if normalize_owned_path(&owner.openclaw_dir) != openclaw_dir {
-        return false;
-    }
-    let owner_cli_path = owner.cli_path.as_ref().map(normalize_owned_path);
-    match (owner_cli_path.as_deref(), cli_path.as_deref()) {
-        (Some(owner_cli), Some(current_cli)) if owner_cli == current_cli => {}
-        _ => return false,
-    }
-    if let (Some(owner_pid), Some(current_pid)) = (owner.pid, pid) {
-        if owner_pid != current_pid {
-            return false;
-        }
-    }
-    true
-}
-
-fn is_gateway_owned_by_current_instance(pid: Option<u32>) -> bool {
-    read_gateway_owner()
-        .as_ref()
-        .map(|owner| is_current_gateway_owner(owner, pid))
-        .unwrap_or(false)
+fn is_current_gateway_owner(owner: &GatewayOwnerRecord, _pid: Option<u32>) -> bool {
+    matches_current_gateway_owner_signature(owner)
 }
 
 fn foreign_gateway_error(pid: Option<u32>) -> String {
@@ -162,11 +158,15 @@ fn foreign_gateway_error(pid: Option<u32>) -> String {
 }
 
 fn ensure_owned_gateway_or_err(pid: Option<u32>) -> Result<(), String> {
-    if is_gateway_owned_by_current_instance(pid) {
-        Ok(())
-    } else {
-        Err(foreign_gateway_error(pid))
+    if let Some(owner) = read_gateway_owner() {
+        if is_current_gateway_owner(&owner, pid) {
+            if gateway_owner_pid_needs_refresh(&owner, pid) {
+                write_gateway_owner(pid)?;
+            }
+            return Ok(());
+        }
     }
+    Err(foreign_gateway_error(pid))
 }
 
 async fn current_gateway_runtime(label: &str) -> (bool, Option<u32>) {
@@ -845,6 +845,9 @@ mod platform {
                         kill_process_tree(pid);
                     }
                 }
+            } else {
+                // 读不到命令行时，不做假设，避免误杀其他进程
+                continue;
             }
         }
     }
@@ -1617,7 +1620,19 @@ pub async fn get_services_status() -> Result<Vec<ServiceStatus>, String> {
     let mut results = Vec::new();
     for label in labels.iter().map(String::as_str) {
         let (running, pid) = current_gateway_runtime(label).await;
-        let owned_by_current_instance = running && is_gateway_owned_by_current_instance(pid);
+        let owner = read_gateway_owner();
+        let owned_by_current_instance = running
+            && owner
+                .as_ref()
+                .map(|record| is_current_gateway_owner(record, pid))
+                .unwrap_or(false);
+        if owned_by_current_instance {
+            if let Some(record) = owner.as_ref() {
+                if gateway_owner_pid_needs_refresh(record, pid) {
+                    let _ = write_gateway_owner(pid);
+                }
+            }
+        }
         let ownership = if !running {
             Some("stopped".to_string())
         } else if owned_by_current_instance {

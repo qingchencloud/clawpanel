@@ -5,6 +5,12 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.11.2] - 2026-04-02
+
+### 修复 (Fixes)
+
+- **Gateway 归属误判** — 放宽 Gateway owner 判定，改为按端口 / CLI 路径 / OpenClaw 目录签名识别当前绑定实例，不再因 PID 漂移把当前面板已启动且可正常聊天的 Gateway 误判为“外部实例”；检测到 PID 变化时会自动回写 `gateway-owner.json`，修复服务页误报、Dashboard 外部实例提示以及顶部“Gateway 未运行”误报 (fixes #176)
+
 ## [0.11.1] - 2026-04-02
 
 ### 改进 (Improvements)

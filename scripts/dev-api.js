@@ -2125,7 +2125,7 @@ function currentGatewayOwnerSignature() {
   }
 }
 
-function isCurrentGatewayOwner(owner, pid = null) {
+function matchesCurrentGatewayOwnerSignature(owner) {
   if (!owner || owner.startedBy !== 'clawpanel') return false
   const current = currentGatewayOwnerSignature()
   if (Number(owner.port || 0) !== current.port) return false
@@ -2133,8 +2133,17 @@ function isCurrentGatewayOwner(owner, pid = null) {
   const ownerCliPath = canonicalCliPath(owner.cliPath)
   if (!ownerCliPath || ownerCliPath !== current.cliPath) return false
   if (!owner.openclawDir || path.resolve(owner.openclawDir) !== current.openclawDir) return false
-  if (pid != null && owner.pid != null && Number(owner.pid) !== Number(pid)) return false
   return true
+}
+
+function gatewayOwnerPidNeedsRefresh(owner, pid = null) {
+  if (!matchesCurrentGatewayOwnerSignature(owner)) return false
+  if (!Number.isInteger(pid) || pid <= 0) return false
+  return !Number.isInteger(owner?.pid) || Number(owner.pid) !== Number(pid)
+}
+
+function isCurrentGatewayOwner(owner, pid = null) {
+  return matchesCurrentGatewayOwnerSignature(owner)
 }
 
 function writeGatewayOwner(pid = null) {
@@ -2164,7 +2173,11 @@ function foreignGatewayError(pid = null) {
 }
 
 function ensureOwnedGatewayOrThrow(pid = null) {
-  if (isCurrentGatewayOwner(readGatewayOwner(), pid)) return true
+  const owner = readGatewayOwner()
+  if (isCurrentGatewayOwner(owner, pid)) {
+    if (gatewayOwnerPidNeedsRefresh(owner, pid)) writeGatewayOwner(pid)
+    return true
+  }
   throw foreignGatewayError(pid)
 }
 
@@ -2753,7 +2766,11 @@ const handlers = {
       }
 
       const cliInstalled = !!resolveOpenclawCliPath()
-      const ownedByCurrentInstance = !!running && isCurrentGatewayOwner(readGatewayOwner(), pid || null)
+      const owner = readGatewayOwner()
+      const ownedByCurrentInstance = !!running && isCurrentGatewayOwner(owner, pid || null)
+      if (ownedByCurrentInstance && gatewayOwnerPidNeedsRefresh(owner, pid || null)) {
+        writeGatewayOwner(pid || null)
+      }
       const ownership = !running ? 'stopped' : ownedByCurrentInstance ? 'owned' : 'foreign'
 
       return [{ label, running, pid, description: 'OpenClaw Gateway', cli_installed: cliInstalled, ownership, owned_by_current_instance: ownedByCurrentInstance }]
