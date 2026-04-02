@@ -1,9 +1,9 @@
 {
-  "version": "0.11.2",
+  "version": "0.11.3",
   "minAppVersion": "0.9.0",
-  "hash": "sha256:e17e80ad365df3f301277afea66dd452a83685bec74fc679e149bfb1a532e216",
-  "url": "https://github.com/qingchencloud/clawpanel/releases/download/v0.11.2/web-0.11.2.zip",
-  "size": 2254331,
-  "changelog": "修复 Gateway 归属误判，避免将当前实例误报为外部实例或未运行。",
-  "releasedAt": "2026-04-02T10:28:38Z"
+  "hash": "sha256:b85c9994950d1b274c16161a7ddbcbcb2dfe6ec540a82017ff47881d8d9ece41",
+  "url": "https://github.com/qingchencloud/clawpanel/releases/download/v0.11.3/web-0.11.3.zip",
+  "size": 2256256,
+  "changelog": "",
+  "releasedAt": "2026-04-02T16:28:56Z"
 }
