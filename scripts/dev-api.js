@@ -2170,9 +2170,6 @@ function matchesCurrentGatewayOwnerSignature(owner) {
   if (!owner || owner.startedBy !== 'clawpanel') return false
   const current = currentGatewayOwnerSignature()
   if (Number(owner.port || 0) !== current.port) return false
-  if (!current.cliPath) return false
-  const ownerCliPath = canonicalCliPath(owner.cliPath)
-  if (!ownerCliPath || ownerCliPath !== current.cliPath) return false
   if (!owner.openclawDir || path.resolve(owner.openclawDir) !== current.openclawDir) return false
   return true
 }

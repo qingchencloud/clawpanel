@@ -95,18 +95,15 @@ fn matches_current_gateway_owner_signature(owner: &GatewayOwnerRecord) -> bool {
     if owner.started_by != "clawpanel" {
         return false;
     }
-    let (port, openclaw_dir, cli_path) = current_gateway_owner_signature();
+    let (port, openclaw_dir, _cli_path) = current_gateway_owner_signature();
     if owner.port != port {
         return false;
     }
     if normalize_owned_path(&owner.openclaw_dir) != openclaw_dir {
         return false;
     }
-    let owner_cli_path = owner.cli_path.as_ref().map(normalize_owned_path);
-    matches!(
-        (owner_cli_path.as_deref(), cli_path.as_deref()),
-        (Some(owner_cli), Some(current_cli)) if owner_cli == current_cli
-    )
+    // 放宽 CLI 路径校验：只要由当前面板启动，且端口和目录一致，就不因多实例共存时的 active path 切换而阻止操作
+    true
 }
 
 fn gateway_owner_pid_needs_refresh(owner: &GatewayOwnerRecord, pid: Option<u32>) -> bool {
