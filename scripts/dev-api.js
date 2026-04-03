@@ -2246,7 +2246,9 @@ async function waitForGatewayStopped(label = 'ai.openclaw.gateway', timeoutMs = 
   while (Date.now() < deadline) {
     const status = await getLocalGatewayRuntime(label)
     if (!status?.running) {
-      clearGatewayOwner()
+      if (isCurrentGatewayOwner(readGatewayOwner())) {
+        clearGatewayOwner()
+      }
       return true
     }
     await new Promise(resolve => setTimeout(resolve, 300))
