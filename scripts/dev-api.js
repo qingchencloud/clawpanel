@@ -2170,6 +2170,9 @@ function matchesCurrentGatewayOwnerSignature(owner) {
   if (!owner || owner.startedBy !== 'clawpanel') return false
   const current = currentGatewayOwnerSignature()
   if (Number(owner.port || 0) !== current.port) return false
+  if (!current.cliPath) return false
+  const ownerCliPath = canonicalCliPath(owner.cliPath)
+  if (!ownerCliPath || ownerCliPath !== current.cliPath) return false
   if (!owner.openclawDir || path.resolve(owner.openclawDir) !== current.openclawDir) return false
   return true
 }
@@ -2855,15 +2858,17 @@ const handlers = {
     if (isMac) {
       macStopService(label)
       if (!(await waitForGatewayStopped(label))) throw new Error('Gateway 停止超时')
+      if (isCurrentGatewayOwner(readGatewayOwner())) clearGatewayOwner()
       return true
     }
     if (isLinux) {
       linuxStopGateway()
       if (!(await waitForGatewayStopped(label))) throw new Error('Gateway 停止超时')
+      if (isCurrentGatewayOwner(readGatewayOwner())) clearGatewayOwner()
       return true
     }
     await winStopGateway()
-    clearGatewayOwner()
+    if (isCurrentGatewayOwner(readGatewayOwner())) clearGatewayOwner()
     return true
   },
 
