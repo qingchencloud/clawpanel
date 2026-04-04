@@ -3,11 +3,11 @@
  * 版本信息、项目链接、相关项目、系统环境
  */
 import { api } from '../lib/tauri-api.js'
+import { t } from '../lib/i18n.js'
 import { toast } from '../components/toast.js'
 import { showUpgradeModal, showConfirm } from '../components/modal.js'
 import { setUpgrading } from '../lib/app-state.js'
 import { icon, statusIcon } from '../lib/icons.js'
-import { t, getLang } from '../lib/i18n.js'
 
 export async function render() {
   const page = document.createElement('div')
@@ -83,7 +83,7 @@ async function loadData(page) {
     checkHotUpdate(cards, panelVersion)
 
     const isInstalled = !!version.current
-    const sourceLabel = version.source === 'official' ? t('about.official') : version.source === 'chinese' ? t('about.chinese') : t('about.unknownSource')
+    const sourceLabel = version.source === 'official' ? t('about.official') : t('about.chinese')
     const btnSm = 'padding:2px 8px;font-size:var(--font-size-xs)'
     const hasRecommended = !!version.recommended
     const aheadOfRecommended = isInstalled && hasRecommended && !!version.ahead_of_recommended
@@ -250,18 +250,18 @@ async function showVersionPicker(page, currentVersion) {
     if (!targetVer || targetVer === '') { hintEl.textContent = ''; confirmBtn.disabled = true; return }
     const targetTag = select.selectedIndex === 0 ? t('about.tagRecommended') : t('about.tagNeedTest')
 
-    const sameSource = targetSource === currentVersion.source
+    const sameSource = targetSource === (currentVersion.source === 'official' ? 'official' : 'chinese')
 
     if (!isInstalled) {
       confirmBtn.textContent = t('about.btnInstall')
-      hintEl.textContent = t('about.hintInstall', { source: targetSource === 'official' ? t('about.official') : targetSource === 'chinese' ? t('about.chinese') : t('about.unknownSource'), ver: targetVer, tag: targetTag })
+      hintEl.textContent = t('about.hintInstall', { source: targetSource === 'official' ? t('about.official') : t('about.chinese'), ver: targetVer, tag: targetTag })
       confirmBtn.disabled = false
       return
     }
 
     if (!sameSource) {
       confirmBtn.textContent = t('about.btnSwitch')
-      hintEl.innerHTML = `${t('about.hintCurrent')}: <strong>${currentVersion.source === 'official' ? t('about.official') : currentVersion.source === 'chinese' ? t('about.chinese') : t('about.unknownSource')} ${currentVersion.current}</strong> → <strong>${targetSource === 'official' ? t('about.official') : targetSource === 'chinese' ? t('about.chinese') : t('about.unknownSource')} ${targetVer}</strong>${targetTag}`
+      hintEl.innerHTML = `${t('about.hintCurrent')}: <strong>${currentVersion.source === 'official' ? t('about.official') : t('about.chinese')} ${currentVersion.current}</strong> → <strong>${targetSource === 'official' ? t('about.official') : t('about.chinese')} ${targetVer}</strong>${targetTag}`
       confirmBtn.disabled = false
       return
     }
@@ -310,7 +310,7 @@ async function showVersionPicker(page, currentVersion) {
       const versions = showNightly ? allVersions : (stable.length > 0 ? stable : allVersions)
       const nightlyCount = allVersions.length - stable.length
       select.innerHTML = versions.map((v, idx) => {
-        const isCurrent = isInstalled && v === currentVersion.current && source === currentVersion.source
+        const isCurrent = isInstalled && v === currentVersion.current && source === (currentVersion.source === 'official' ? 'official' : 'chinese')
         return `<option value="${v}">${v}${idx === 0 ? ` (${t('about.recommended')})` : ''}${isCurrent ? ` (${t('about.current')})` : ''}</option>`
       }).join('')
       // nightly 切换提示
@@ -633,42 +633,12 @@ function renderCompany(page) {
         </div>
         <div style="padding:12px;border-radius:var(--radius-md);border:1px solid var(--border-primary);background:var(--bg-secondary)">
           <div style="color:var(--text-tertiary);font-size:var(--font-size-xs);margin-bottom:4px">${t('about.businessCoop')}</div>
-          <a href="mailto:support@qctx.net" style="color:var(--accent)">support@qctx.net</a>
+          <span style="color:var(--text-primary)">${t('about.contactViaWebsite')}</span>
         </div>
       </div>
       <div style="font-size:var(--font-size-xs);color:var(--text-tertiary);line-height:1.6">
         ${t('about.companyDesc')}
       </div>
-      ${!getLang().startsWith('zh') ? `<div style="margin-top:12px;padding:12px 14px;border-radius:var(--radius-md);border:1px dashed var(--border-primary);background:var(--bg-secondary);font-size:var(--font-size-xs);color:var(--text-tertiary)">
-        <div style="display:flex;align-items:center;gap:12px">
-          <img src="/images/bnbqr.jpg" alt="Sponsor QR" width="64" height="64" style="border-radius:6px;flex-shrink:0;background:#fff;padding:2px;cursor:pointer" loading="lazy" id="sponsor-qr-thumb" title="Click to enlarge">
-          <div style="min-width:0">
-            <div style="font-weight:600;color:var(--text-secondary);margin-bottom:4px">${t('about.sponsorProject') || 'Sponsor This Project'} <span style="opacity:0.5">· USDT (BNB Smart Chain)</span></div>
-            <code style="font-size:10px;background:var(--bg-tertiary);padding:2px 6px;border-radius:4px;user-select:all;word-break:break-all;display:block;line-height:1.6">0xbdd7ebdf2b30d873e556799711021c6671ffe88f</code>
-            <div style="margin-top:4px;opacity:0.6">${t('about.sponsorDesc') || 'Your support helps us maintain and improve this open-source project.'}</div>
-          </div>
-        </div>
-      </div>` : ''}
     </div>
   `
-  // QR 点击预览大图
-  el.querySelector('#sponsor-qr-thumb')?.addEventListener('click', () => {
-    const overlay = document.createElement('div')
-    overlay.className = 'modal-overlay'
-    overlay.innerHTML = `
-      <div class="modal" style="max-width:360px;text-align:center">
-        <div class="modal-title">${t('about.sponsorProject') || 'Sponsor This Project'}</div>
-        <img src="/images/bnbqr.jpg" alt="Sponsor QR" style="width:240px;height:240px;border-radius:8px;margin:12px auto;display:block">
-        <div style="font-size:var(--font-size-sm);color:var(--text-secondary);margin:8px 0">USDT · BNB Smart Chain</div>
-        <code style="font-size:11px;background:var(--bg-tertiary);padding:4px 8px;border-radius:4px;user-select:all;word-break:break-all;display:block;line-height:1.6">0xbdd7ebdf2b30d873e556799711021c6671ffe88f</code>
-        <div style="font-size:var(--font-size-xs);color:var(--text-tertiary);margin-top:8px">${t('about.sponsorDesc') || 'Your support helps us maintain and improve this open-source project.'}</div>
-        <div class="modal-actions" style="margin-top:16px">
-          <button class="btn btn-secondary btn-sm" data-action="close">${t('common.close')}</button>
-        </div>
-      </div>
-    `
-    document.body.appendChild(overlay)
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove() })
-    overlay.querySelector('[data-action="close"]').onclick = () => overlay.remove()
-  })
 }

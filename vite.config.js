@@ -35,6 +35,7 @@ export default defineConfig({
   server: {
     port: 1420,
     strictPort: true,
+    allowedHosts: ['cc.aitradepulse.com', 'cc2.aitradepulse.com'],
     proxy: {
       '/ws': {
         target: `ws://127.0.0.1:${gatewayPort}`,
