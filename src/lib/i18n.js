@@ -26,9 +26,16 @@ export function setLang(lang) {
 export function getAvailableLangs() {
   return [
     { code: 'zh-CN', label: '简体中文' },
+    { code: 'zh-TW', label: '繁體中文' },
     { code: 'en', label: 'English' },
-    { code: 'id', label: 'Bahasa Indonesia' },
-    { code: 'ru', label: 'Русский' }
+    { code: 'ja', label: '日本語' },
+    { code: 'ko', label: '한국어' },
+    { code: 'vi', label: 'Tiếng Việt' },
+    { code: 'es', label: 'Español' },
+    { code: 'pt', label: 'Português' },
+    { code: 'ru', label: 'Русский' },
+    { code: 'fr', label: 'Français' },
+    { code: 'de', label: 'Deutsch' }
   ]
 }
 
