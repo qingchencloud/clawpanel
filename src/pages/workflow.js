@@ -22,7 +22,7 @@ export async function render() {
       <button class="btn ${_activeTab === 'runs' ? 'btn-primary' : 'btn-secondary'}" data-tab="runs">${t('workflow.runs')}</button>
     </div>
     <div id="workflow-content">
-      <div class="loading" style="text-align:center;padding:40px;color:var(--text-tertiary)">Loading...</div>
+      <div class="loading" style="text-align:center;padding:40px;color:var(--text-tertiary)">${t('common.loading')}</div>
     </div>
   `
 
@@ -50,7 +50,7 @@ async function loadData(page) {
     }
   } catch (err) {
     const content = page.querySelector('#workflow-content')
-    content.innerHTML = `<div class="error-state" style="text-align:center;padding:40px"><div style="color:var(--error)">Failed to load: ${escapeHtml(err.message)}</div><button class="btn btn-secondary" onclick="location.reload()">Retry</button></div>`
+    content.innerHTML = `<div class="error-state" style="text-align:center;padding:40px"><div style="color:var(--error)">${t('common.error')}: ${escapeHtml(err.message)}</div><button class="btn btn-secondary" onclick="location.reload()">${t('common.retry')}</button></div>`
   }
 }
 
@@ -93,7 +93,7 @@ function renderRuns(page) {
   const content = page.querySelector('#workflow-content')
 
   if (!_runs || _runs.length === 0) {
-    content.innerHTML = `<div style="text-align:center;padding:60px 20px;color:var(--text-tertiary)">No execution records yet</div>`
+    content.innerHTML = `<div style="text-align:center;padding:60px 20px;color:var(--text-tertiary)">${t('workflow.noWorkflows')}</div>`
     return
   }
 
@@ -117,7 +117,7 @@ function renderRuns(page) {
     ${_runs.map(run => `
       <div class="run-card" data-id="${run.id}" style="padding:12px 16px;border-radius:var(--radius-md);border:1px solid var(--border-primary);background:var(--bg-secondary);display:flex;justify-content:space-between;align-items:center">
         <div style="flex:1;min-width:0">
-          <div style="font-weight:600;font-size:14px">${escapeHtml(run.templateName || 'Unknown')}</div>
+          <div style="font-weight:600;font-size:14px">${escapeHtml(run.templateName || t('common.unknown'))}</div>
           <div style="font-size:12px;color:var(--text-tertiary);margin-top:2px">${new Date(run.createdAt).toLocaleString()}</div>
         </div>
         <div style="display:flex;align-items:center;gap:12px">
@@ -245,7 +245,7 @@ async function showEditDialog(page, id) {
 
     try {
       await api.updateWorkflow({ id, name, description })
-      toast('Workflow updated', 'success')
+      toast(t('common.save') + ' OK', 'success')
       overlay.remove()
       loadData(page)
     } catch (err) {

@@ -23,4 +23,8 @@ export default {
   confirmDeleteRun: _('确定删除此执行记录吗？', 'Are you sure you want to delete this execution record?', '確定刪除此執行記錄嗎？', 'この実行記録を削除してもよろしいですか？', '이 실행 기록을 삭제하시겠습니까?', 'Bạn có chắc chắn muốn xóa hồ sơ này?', '¿Eliminar este registro?', 'Excluir este registro?', 'Удалить эту запись?', 'Supprimer cet enregistrement ?', 'Protokoll löschen?'),
   nodes: _('节点', 'Nodes', '節點', 'ノード', '노드', 'Nút', 'Nodos', 'Nós', 'Узлы', 'Nœuds', 'Knoten'),
   steps: _('步骤', 'Steps', '步驟', 'ステップ', '단계', 'Bước', 'Pasos', 'Etapas', 'Шаги', 'Étapes', 'Schritte'),
+  created: _('已创建', 'Created', '已建立', '作成済み', '생성됨', 'Đã tạo', 'Creado', 'Criado', 'Создано', 'Créé', 'Erstellt'),
+  updated: _('已更新', 'Updated', '已更新', '更新済み', '업데이트됨', 'Đã cập nhật', 'Actualizado', 'Atualizado', 'Обновлено', 'Mis à jour', 'Aktualisiert'),
+  deleted: _('已删除', 'Deleted', '已刪除', '削除済み', '삭제됨', 'Đã xóa', 'Eliminado', 'Excluído', 'Удалено', 'Supprimé', 'Gelöscht'),
+  failed: _('失败', 'Failed', '失敗', '失敗', '실패', 'Thất bại', 'Fallido', 'Falhou', 'Ошибка', 'Échoué', 'Fehlgeschlagen'),
 }
