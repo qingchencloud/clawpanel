@@ -5367,14 +5367,14 @@ const handlers = {
   },
 
   get_workflow({ id }) {
-    if (!id) return { error: 'Missing workflow id' }
+    if (!id) throw new Error('Missing workflow id')
     const template = getTemplate(id)
-    if (!template) return { error: 'Workflow not found' }
+    if (!template) throw new Error('Workflow not found')
     return template
   },
 
   create_workflow({ name, description, nodes, edges }) {
-    if (!name) return { error: 'Workflow name is required' }
+    if (!name) throw new Error('Workflow name is required')
     const template = saveTemplate({
       name,
       description: description || '',
@@ -5385,9 +5385,9 @@ const handlers = {
   },
 
   update_workflow({ id, name, description, nodes, edges }) {
-    if (!id) return { error: 'Missing workflow id' }
+    if (!id) throw new Error('Missing workflow id')
     const existing = getTemplate(id)
-    if (!existing) return { error: 'Workflow not found' }
+    if (!existing) throw new Error('Workflow not found')
     const template = saveTemplate({
       id,
       name: name || existing.name,
@@ -5399,9 +5399,9 @@ const handlers = {
   },
 
   delete_workflow({ id }) {
-    if (!id) return { error: 'Missing workflow id' }
+    if (!id) throw new Error('Missing workflow id')
     const deleted = deleteTemplate(id)
-    if (!deleted) return { error: 'Workflow not found' }
+    if (!deleted) throw new Error('Workflow not found')
     return { success: true }
   },
 
@@ -5410,16 +5410,16 @@ const handlers = {
   },
 
   get_workflow_run({ id }) {
-    if (!id) return { error: 'Missing run id' }
+    if (!id) throw new Error('Missing run id')
     const run = getRun(id)
-    if (!run) return { error: 'Run not found' }
+    if (!run) throw new Error('Run not found')
     return run
   },
 
   start_workflow_run({ templateId }) {
-    if (!templateId) return { error: 'Missing template id' }
+    if (!templateId) throw new Error('Missing template id')
     const template = getTemplate(templateId)
-    if (!template) return { error: 'Template not found' }
+    if (!template) throw new Error('Template not found')
     const run = saveRun({
       templateId,
       templateName: template.name,
@@ -5433,9 +5433,9 @@ const handlers = {
   },
 
   update_workflow_run({ id, status, currentStep, logs }) {
-    if (!id) return { error: 'Missing run id' }
+    if (!id) throw new Error('Missing run id')
     const existing = getRun(id)
-    if (!existing) return { error: 'Run not found' }
+    if (!existing) throw new Error('Run not found')
     const run = saveRun({
       id,
       status: status || existing.status,
@@ -5446,9 +5446,9 @@ const handlers = {
   },
 
   delete_workflow_run({ id }) {
-    if (!id) return { error: 'Missing run id' }
+    if (!id) throw new Error('Missing run id')
     const deleted = deleteRun(id)
-    if (!deleted) return { error: 'Run not found' }
+    if (!deleted) throw new Error('Run not found')
     return { success: true }
   },
 
