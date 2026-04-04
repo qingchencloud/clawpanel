@@ -729,17 +729,36 @@ function ensureValidPrimary(state) {
 function applyDefaultModel(state) {
   ensureValidPrimary(state)
   const primary = getCurrentPrimary(state.config)
-  const allModels = collectAllModels(state.config)
-  const fallbacks = allModels.filter(m => m.full !== primary).map(m => m.full)
 
+  // 确保 defaults.model 存在
   const defaults = state.config.agents.defaults
-  defaults.model.primary = primary
-  defaults.model.fallbacks = fallbacks
+  if (!defaults.model) defaults.model = {}
 
-  const modelsMap = {}
-  modelsMap[primary] = {}
-  for (const fb of fallbacks) modelsMap[fb] = {}
-  defaults.models = modelsMap
+  // 只同步 primary，不自动重写 fallbacks / models
+  // ———————————————————————————————————————————
+  // 原逻辑会把所有非主模型强制塞进 fallbacks 并重建 defaults.models，
+  // 导致用户精心维护的精简 fallback 链被覆盖，且随模型增多而不断膨胀，
+  // 可能引起频繁 failover 卡顿（参考 https://github.com/qingchencloud/clawpanel/issues/190）
+  //
+  // 保留 primary 同步（确保主模型始终有效）；
+  // fallback 由用户自行在 openclaw.json 中维护，ClawPanel 不再主动干预。
+  // ———————————————————————————————————————————
+  defaults.model.primary = primary
+
+  // 如 model 对象尚未初始化 fallbacks / models，再初始化一次（首次安装时友好）
+  if (!defaults.model.fallbacks) {
+    const allModels = collectAllModels(state.config)
+    const fallbacks = allModels.filter(m => m.full !== primary).map(m => m.full)
+    defaults.model.fallbacks = fallbacks
+  }
+  if (!defaults.model.models) {
+    const allModels = collectAllModels(state.config)
+    const fallbacks = allModels.filter(m => m.full !== primary).map(m => m.full)
+    const modelsMap = {}
+    modelsMap[primary] = {}
+    for (const fb of fallbacks) modelsMap[fb] = {}
+    defaults.model.models = modelsMap
+  }
 
   // 注意：不再强制同步到各 agent 的 model.primary
   // 子 Agent 的模型覆盖是 OpenClaw 正常功能（用户可通过对话为不同 Agent 设置不同模型）
