@@ -329,6 +329,7 @@ async function boot() {
   registerRoute('/usage', () => import('./pages/usage.js'))
   registerRoute('/communication', () => import('./pages/communication.js'))
   registerRoute('/settings', () => import('./pages/settings.js'))
+  registerRoute('/workflow', () => import('./pages/workflow.js'))
 
   renderSidebar(sidebar)
   initRouter(content)

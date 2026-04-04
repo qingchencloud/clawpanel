@@ -12,6 +12,7 @@ import { fileURLToPath } from 'url'
 import net from 'net'
 import http from 'http'
 import crypto from 'crypto'
+import { loadTemplates, saveTemplate, deleteTemplate, getTemplate, loadRuns, saveRun, deleteRun, getRun } from './workflow-storage.js'
 const DOCKER_TASK_TIMEOUT_MS = 10 * 60 * 1000
 
 const __dev_dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -5359,6 +5360,96 @@ const handlers = {
       if (fs.existsSync(filepath)) fs.unlinkSync(filepath)
     }
     return null
+  },
+
+  list_workflows() {
+    return loadTemplates()
+  },
+
+  get_workflow({ id }) {
+    if (!id) throw new Error('Missing workflow id')
+    const template = getTemplate(id)
+    if (!template) throw new Error('Workflow not found')
+    return template
+  },
+
+  create_workflow({ name, description, nodes, edges }) {
+    if (!name) throw new Error('Workflow name is required')
+    const template = saveTemplate({
+      name,
+      description: description || '',
+      nodes: nodes || [],
+      edges: edges || []
+    })
+    return { success: true, template }
+  },
+
+  update_workflow({ id, name, description, nodes, edges }) {
+    if (!id) throw new Error('Missing workflow id')
+    const existing = getTemplate(id)
+    if (!existing) throw new Error('Workflow not found')
+    const template = saveTemplate({
+      id,
+      name: name || existing.name,
+      description: description !== undefined ? description : existing.description,
+      nodes: nodes !== undefined ? nodes : existing.nodes,
+      edges: edges !== undefined ? edges : existing.edges
+    })
+    return { success: true, template }
+  },
+
+  delete_workflow({ id }) {
+    if (!id) throw new Error('Missing workflow id')
+    const deleted = deleteTemplate(id)
+    if (!deleted) throw new Error('Workflow not found')
+    return { success: true }
+  },
+
+  list_workflow_runs({ templateId }) {
+    return loadRuns(templateId || undefined)
+  },
+
+  get_workflow_run({ id }) {
+    if (!id) throw new Error('Missing run id')
+    const run = getRun(id)
+    if (!run) throw new Error('Run not found')
+    return run
+  },
+
+  start_workflow_run({ templateId }) {
+    if (!templateId) throw new Error('Missing template id')
+    const template = getTemplate(templateId)
+    if (!template) throw new Error('Template not found')
+    const run = saveRun({
+      templateId,
+      templateName: template.name,
+      status: 'running',
+      currentStep: 0,
+      steps: template.nodes || [],
+      logs: [],
+      startedAt: new Date().toISOString()
+    })
+    return { success: true, run }
+  },
+
+  update_workflow_run({ id, status, currentStep, logs }) {
+    if (!id) throw new Error('Missing run id')
+    const existing = getRun(id)
+    if (!existing) throw new Error('Run not found')
+    const run = saveRun({
+      id,
+      status: status || existing.status,
+      currentStep: currentStep !== undefined ? currentStep : existing.currentStep,
+      logs: logs || existing.logs || []
+    })
+    return { success: true, run }
+  },
+
+  delete_workflow_run({ id }) {
+    if (!id) throw new Error('Missing run id')
+    const deleted = deleteRun(id)
+    if (!deleted) throw new Error('Run not found')
+    return { success: true }
   },
 
   // === AI 助手工具（Web 模式真实执行） ===

@@ -368,4 +368,16 @@ export const api = {
   saveImage: (id, data) => invoke('assistant_save_image', { id, data }),
   loadImage: (id) => invoke('assistant_load_image', { id }),
   deleteImage: (id) => invoke('assistant_delete_image', { id }),
+
+  // Workflow management
+  listWorkflows: () => invoke('list_workflows'),
+  getWorkflow: (id) => invoke('get_workflow', { id }),
+  createWorkflow: (data) => invoke('create_workflow', data),
+  updateWorkflow: (data) => invoke('update_workflow', data),
+  deleteWorkflow: (id) => invoke('delete_workflow', { id }),
+  listWorkflowRuns: (templateId) => invoke('list_workflow_runs', { templateId: templateId || null }),
+  getWorkflowRun: (id) => invoke('get_workflow_run', { id }),
+  startWorkflowRun: (templateId) => invoke('start_workflow_run', { templateId }),
+  updateWorkflowRun: (data) => invoke('update_workflow_run', data),
+  deleteWorkflowRun: (id) => invoke('delete_workflow_run', { id }),
 }
