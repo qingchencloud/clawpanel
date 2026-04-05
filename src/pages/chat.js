@@ -394,7 +394,7 @@ function bindEvents(page) {
   })
 
   _textarea.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); sendMessage() }
     if (e.key === 'Escape') hideCmdPanel()
   })
 
@@ -536,7 +536,24 @@ function bindEvents(page) {
     _autoScrollEnabled = true
     scrollToBottom(true)
   })
-  _messagesEl.addEventListener('click', () => hideCmdPanel())
+  _messagesEl.addEventListener('click', (e) => {
+    const copyBtn = e.target.closest('.msg-copy-btn')
+    if (copyBtn) {
+      e.stopPropagation()
+      const msgWrap = copyBtn.closest('.msg')
+      const bubble = msgWrap?.querySelector('.msg-bubble')
+      if (bubble) {
+        const text = bubble.innerText || bubble.textContent || ''
+        navigator.clipboard.writeText(text.trim()).then(() => {
+          copyBtn.classList.add('copied')
+          copyBtn.innerHTML = svgIcon('check', 12)
+          setTimeout(() => { copyBtn.classList.remove('copied'); copyBtn.innerHTML = svgIcon('copy', 12) }, 1500)
+        }).catch(() => {})
+      }
+      return
+    }
+    hideCmdPanel()
+  })
 }
 
 async function loadModelOptions(showToast = false) {
@@ -1733,6 +1750,7 @@ function handleChatEvent(payload) {
           parts.push(`<span class="meta-sep">·</span><span class="msg-tokens">${tokenStr}</span>`)
         }
       }
+      parts.push(`<button class="msg-copy-btn" title="${t('common.copy')}">${svgIcon('copy', 12)}</button>`)
       meta.innerHTML = parts.join('')
       wrapper.appendChild(meta)
     }
@@ -2335,7 +2353,7 @@ function appendUserMessage(text, attachments = [], msgTime) {
 
   const meta = document.createElement('div')
   meta.className = 'msg-meta'
-  meta.innerHTML = `<span class="msg-time">${formatTime(msgTime || new Date())}</span>`
+  meta.innerHTML = `<span class="msg-time">${formatTime(msgTime || new Date())}</span><button class="msg-copy-btn" title="${t('common.copy')}">${svgIcon('copy', 12)}</button>`
 
   wrap.appendChild(bubble)
   wrap.appendChild(meta)
@@ -2362,7 +2380,7 @@ function appendAiMessage(text, msgTime, images, videos, audios, files, tools) {
 
   const meta = document.createElement('div')
   meta.className = 'msg-meta'
-  meta.innerHTML = `<span class="msg-time">${formatTime(msgTime || new Date())}</span>`
+  meta.innerHTML = `<span class="msg-time">${formatTime(msgTime || new Date())}</span><button class="msg-copy-btn" title="${t('common.copy')}">${svgIcon('copy', 12)}</button>`
 
   wrap.appendChild(bubble)
   wrap.appendChild(meta)

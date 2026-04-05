@@ -283,6 +283,37 @@
 .ast-msg-bubble-ai h2 { font-size: 16px; }
 .ast-msg-bubble-ai h3 { font-size: 14px; }
 
+/* 消息元信息 + 复制按钮 */
+.ast-msg-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 4px;
+  padding: 0 4px;
+}
+.ast-msg-user .ast-msg-meta { justify-content: flex-end; }
+.ast-msg-ai .ast-msg-meta { justify-content: flex-start; }
+
+.ast-msg .msg-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+.ast-msg:hover .msg-copy-btn,
+.ast-msg .msg-copy-btn:focus { opacity: 1; }
+.ast-msg .msg-copy-btn:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+.ast-msg .msg-copy-btn.copied { opacity: 1; color: var(--success); }
+
 /* 流式光标 */
 .ast-cursor {
   animation: ast-blink 1s infinite;

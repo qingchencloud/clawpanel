@@ -4409,6 +4409,27 @@ const handlers = {
     }
   },
 
+  scan_git_paths() {
+    const candidates = [
+      ['/usr/bin/git', 'SYSTEM'],
+      ['/usr/local/bin/git', 'SYSTEM'],
+      ['/opt/homebrew/bin/git', 'BREW'],
+      ['/Library/Developer/CommandLineTools/usr/bin/git', 'XCODE_CLT'],
+      ['/snap/bin/git', 'SNAP'],
+    ]
+    const found = []
+    const seen = new Set()
+    for (const [p, source] of candidates) {
+      if (!fs.existsSync(p) || seen.has(p)) continue
+      seen.add(p)
+      try {
+        const ver = cp.execSync(`"${p}" --version`, { timeout: 5000 }).toString().trim()
+        found.push({ path: p, version: ver, source })
+      } catch {}
+    }
+    return found
+  },
+
   auto_install_git() {
     // Web 模式下不自动安装系统软件，返回指引
     throw new Error('Web 部署模式下请手动安装 Git：\n- Ubuntu/Debian: sudo apt install git\n- CentOS/RHEL: sudo yum install git\n- macOS: xcode-select --install')

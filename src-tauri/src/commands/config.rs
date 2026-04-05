@@ -5359,6 +5359,126 @@ pub fn check_git() -> Result<Value, String> {
     Ok(Value::Object(result))
 }
 
+/// 扫描常见路径，返回所有找到的 Git 安装
+#[tauri::command]
+pub fn scan_git_paths() -> Result<Value, String> {
+    let mut found: Vec<Value> = vec![];
+    let mut candidates: Vec<(String, String)> = vec![]; // (path, source)
+
+    #[cfg(target_os = "windows")]
+    {
+        let pf = std::env::var("ProgramFiles").unwrap_or_else(|_| r"C:\Program Files".into());
+        let pf86 = std::env::var("ProgramFiles(x86)").unwrap_or_else(|_| r"C:\Program Files (x86)".into());
+        let localappdata = std::env::var("LOCALAPPDATA").unwrap_or_default();
+
+        // 标准安装路径
+        candidates.push((format!(r"{}\Git\cmd\git.exe", pf), "SYSTEM".into()));
+        candidates.push((format!(r"{}\Git\cmd\git.exe", pf86), "SYSTEM".into()));
+
+        // 常见盘符
+        for drive in &["C", "D", "E", "F", "G"] {
+            candidates.push((format!(r"{}:\Git\cmd\git.exe", drive), "MANUAL".into()));
+            candidates.push((format!(r"{}:\Program Files\Git\cmd\git.exe", drive), "SYSTEM".into()));
+            // 工具目录
+            for sub in &["Tools", "Dev", "AI", "Apps", "Software"] {
+                candidates.push((format!(r"{}:\{}\Git\cmd\git.exe", drive, sub), "MANUAL".into()));
+            }
+        }
+
+        // 自定义应用目录（如 D:\Data\exeApp\Git）
+        for drive in &["C", "D", "E", "F"] {
+            candidates.push((format!(r"{}:\Data\exeApp\Git\cmd\git.exe", drive), "MANUAL".into()));
+        }
+
+        // GitHub Desktop 内置 Git
+        if !localappdata.is_empty() {
+            let gh_dir = std::path::Path::new(&localappdata).join("GitHubDesktop");
+            if gh_dir.is_dir() {
+                if let Ok(entries) = std::fs::read_dir(&gh_dir) {
+                    for entry in entries.flatten() {
+                        let p = entry.path();
+                        if p.is_dir() {
+                            let git_exe = p.join("resources").join("app").join("git").join("cmd").join("git.exe");
+                            if git_exe.exists() {
+                                candidates.push((git_exe.to_string_lossy().to_string(), "GITHUB_DESKTOP".into()));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // VS Code 内置 Git
+        if !localappdata.is_empty() {
+            let vscode_git = std::path::Path::new(&localappdata).join(r"Programs\Microsoft VS Code\resources\app\node_modules.asar.unpacked\vscode-git\git\cmd\git.exe");
+            if vscode_git.exists() {
+                candidates.push((vscode_git.to_string_lossy().to_string(), "VSCODE".into()));
+            }
+        }
+
+        // MinGW / MSYS2 / Git Bash
+        candidates.push((format!(r"{}\Git\mingw64\bin\git.exe", pf), "MINGW".into()));
+        for drive in &["C", "D"] {
+            candidates.push((format!(r"{}:\msys64\usr\bin\git.exe", drive), "MSYS2".into()));
+            candidates.push((format!(r"{}:\msys2\usr\bin\git.exe", drive), "MSYS2".into()));
+        }
+
+        // Scoop
+        let home = dirs::home_dir().unwrap_or_default();
+        candidates.push((format!(r"{}\scoop\apps\git\current\cmd\git.exe", home.display()), "SCOOP".into()));
+        candidates.push((format!(r"{}\scoop\shims\git.exe", home.display()), "SCOOP".into()));
+
+        // Chocolatey
+        let choco_dir = std::env::var("ChocolateyInstall").unwrap_or_else(|_| r"C:\ProgramData\chocolatey".into());
+        candidates.push((format!(r"{}\bin\git.exe", choco_dir), "CHOCOLATEY".into()));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        candidates.push(("/usr/bin/git".into(), "SYSTEM".into()));
+        candidates.push(("/usr/local/bin/git".into(), "SYSTEM".into()));
+        candidates.push(("/opt/homebrew/bin/git".into(), "BREW".into()));
+        // Xcode
+        candidates.push(("/Library/Developer/CommandLineTools/usr/bin/git".into(), "XCODE_CLT".into()));
+        candidates.push(("/Applications/Xcode.app/Contents/Developer/usr/bin/git".into(), "XCODE".into()));
+        // Snap / Flatpak
+        candidates.push(("/snap/bin/git".into(), "SNAP".into()));
+        // Nix
+        let home = dirs::home_dir().unwrap_or_default();
+        candidates.push((format!("{}/.nix-profile/bin/git", home.display()), "NIX".into()));
+        // Linuxbrew
+        candidates.push((format!("{}/.linuxbrew/bin/git", home.display()), "BREW".into()));
+        candidates.push(("/home/linuxbrew/.linuxbrew/bin/git".into(), "BREW".into()));
+    }
+
+    // 去重并检测
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for (path, source) in &candidates {
+        let p = std::path::Path::new(path);
+        if !p.exists() { continue; }
+        let canonical = p.to_string_lossy().to_string();
+        if seen.contains(&canonical) { continue; }
+        seen.insert(canonical.clone());
+
+        let mut cmd = Command::new(path);
+        cmd.arg("--version");
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(0x08000000);
+        if let Ok(o) = cmd.output() {
+            if o.status.success() {
+                let ver = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                let mut entry = serde_json::Map::new();
+                entry.insert("path".into(), Value::String(canonical));
+                entry.insert("version".into(), Value::String(ver));
+                entry.insert("source".into(), Value::String(source.clone()));
+                found.push(Value::Object(entry));
+            }
+        }
+    }
+
+    Ok(Value::Array(found))
+}
+
 /// 尝试自动安装 Git（Windows: winget; macOS: xcode-select; Linux: apt/yum）
 #[tauri::command]
 pub async fn auto_install_git(app: tauri::AppHandle) -> Result<String, String> {

@@ -82,4 +82,8 @@ export default {
   gitPathSaved: _('Git 路径已保存', 'Git path saved', 'Git 路徑已儲存', 'Git パス保存済み', 'Git 경로 저장됨'),
   gitPathCleared: _('已恢复 Git 自动检测', 'Git auto-detect restored', '已恢復 Git 自動檢測', 'Git 自動検出に戻しました', 'Git 자동 감지로 복원됨'),
   gitPathInvalid: _('指定的 Git 路径不存在', 'The specified Git path does not exist', '指定的 Git 路徑不存在', '指定された Git パスが存在しません'),
+  gitScan: _('扫描', 'Scan', '掃描', 'スキャン', '스캔'),
+  gitScanning: _('正在扫描…', 'Scanning…', '正在掃描…', 'スキャン中…', '스캔 중…'),
+  gitScanEmpty: _('未找到 Git 安装', 'No Git installations found', '未找到 Git 安裝', 'Git インストールが見つかりません', 'Git 설치를 찾을 수 없습니다'),
+  gitScanUse: _('使用', 'Use', '使用', '使用', '사용'),
 }

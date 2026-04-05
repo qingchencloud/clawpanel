@@ -1229,6 +1229,25 @@
   opacity: 0.4;
 }
 
+.msg-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+  margin-left: auto;
+}
+.msg:hover .msg-copy-btn,
+.msg-copy-btn:focus { opacity: 1; }
+.msg-copy-btn:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+.msg-copy-btn.copied { opacity: 1; color: var(--success); }
+
 /* 消息内图片 */
 .msg-img {
   max-width: 200px;

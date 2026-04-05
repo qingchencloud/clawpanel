@@ -2431,10 +2431,10 @@ function renderMessages() {
           ? `<img class="ast-msg-img" src="${img.dataUrl}" alt="${escHtml(img.name)}" style="max-width:${Math.min(img.width || 300, 300)}px" loading="lazy"/>`
           : `<div class="ast-msg-img-loading" data-db-id="${img.dbId || ''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="24" height="24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><span>${escHtml(img.name || t('assistant.image'))}</span></div>`
       ).join('')}</div>` : ''
-      return `<div class="ast-msg ast-msg-user" data-msg-idx="${idx}"><div class="ast-msg-bubble ast-msg-bubble-user">${imagesHtml}${textPart ? escHtml(textPart) : ''}</div></div>`
+      return `<div class="ast-msg ast-msg-user" data-msg-idx="${idx}"><div class="ast-msg-bubble ast-msg-bubble-user">${imagesHtml}${textPart ? escHtml(textPart) : ''}</div><div class="ast-msg-meta"><button class="msg-copy-btn" title="${t('common.copy')}">${icon('copy', 12)}</button></div></div>`
     } else if (m.role === 'assistant') {
       const toolHtml = renderToolBlocks(m.toolHistory)
-      return `<div class="ast-msg ast-msg-ai" data-msg-idx="${idx}">${toolHtml}<div class="ast-msg-bubble ast-msg-bubble-ai">${renderMarkdown(m.content)}</div></div>`
+      return `<div class="ast-msg ast-msg-ai" data-msg-idx="${idx}">${toolHtml}<div class="ast-msg-bubble ast-msg-bubble-ai">${renderMarkdown(m.content)}</div><div class="ast-msg-meta"><button class="msg-copy-btn" title="${t('common.copy')}">${icon('copy', 12)}</button></div></div>`
     }
     return ''
   }).join('')
@@ -4067,6 +4067,23 @@ export async function render() {
 
   // ── 事件绑定 ──
 
+  // 复制按钮（事件委托）
+  _messagesEl.addEventListener('click', (e) => {
+    const copyBtn = e.target.closest('.msg-copy-btn')
+    if (!copyBtn) return
+    e.stopPropagation()
+    const msgWrap = copyBtn.closest('.ast-msg')
+    const bubble = msgWrap?.querySelector('.ast-msg-bubble')
+    if (bubble) {
+      const text = bubble.innerText || bubble.textContent || ''
+      navigator.clipboard.writeText(text.trim()).then(() => {
+        copyBtn.classList.add('copied')
+        copyBtn.innerHTML = icon('check', 12)
+        setTimeout(() => { copyBtn.classList.remove('copied'); copyBtn.innerHTML = icon('copy', 12) }, 1500)
+      }).catch(() => {})
+    }
+  })
+
   // 右键调试菜单（事件委托）
   _messagesEl.addEventListener('contextmenu', (e) => {
     const msgEl = e.target.closest('[data-msg-idx]')
@@ -4084,9 +4101,9 @@ export async function render() {
     }
   })
 
-  // Enter 发送，Shift+Enter 换行
+  // Enter 发送，Shift+Enter 换行；IME 选词中不发送
   _textarea.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
       e.preventDefault()
       if (!_textarea.value.trim() && _pendingImages.length === 0) return
       sendMessage(_textarea.value)

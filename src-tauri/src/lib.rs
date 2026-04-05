@@ -104,6 +104,7 @@ pub fn run() {
             config::get_npm_registry,
             config::set_npm_registry,
             config::check_git,
+            config::scan_git_paths,
             config::auto_install_git,
             config::configure_git_https,
             config::invalidate_path_cache,

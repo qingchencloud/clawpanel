@@ -471,6 +471,13 @@ function bindEvents(page) {
         case 'reset-git-path':
           await handleResetGitPath(page)
           break
+        case 'scan-git-paths':
+          await handleScanGitPaths(page)
+          break
+        case 'use-scanned-git':
+          page.querySelector('[data-name="git-path"]').value = btn.dataset.gitPath || ''
+          await handleSaveGitPath(page)
+          break
         case 'bind-cli':
           await handleBindCli(page, btn.dataset.path)
           break
@@ -587,7 +594,9 @@ async function loadGitPath(page) {
           <input class="input" data-name="git-path" value="${escapeHtml(customValue)}" placeholder="${t('settings.gitPathPlaceholder')}" style="flex:1;min-width:200px">
           <button class="btn btn-primary btn-sm" data-action="save-git-path">${t('common.save')}</button>
           <button class="btn btn-secondary btn-sm" data-action="reset-git-path">${t('settings.resetDefault')}</button>
+          <button class="btn btn-secondary btn-sm" data-action="scan-git-paths">${t('settings.gitScan')}</button>
         </div>
+        <div id="git-scan-results"></div>
       </div>`
   } catch (e) {
     bar.innerHTML = `<div class="stat-card" style="padding:16px;color:var(--error)">${e}</div>`
@@ -611,6 +620,29 @@ async function handleSaveGitPath(page) {
     toast(value ? t('settings.gitPathSaved') : t('settings.gitPathCleared'), 'success')
   }
   await loadGitPath(page)
+}
+
+async function handleScanGitPaths(page) {
+  const container = page.querySelector('#git-scan-results')
+  if (!container) return
+  container.innerHTML = `<div style="margin-top:10px;font-size:12px;color:var(--text-secondary)">${t('settings.gitScanning')}</div>`
+  try {
+    const results = await api.scanGitPaths()
+    if (!results || results.length === 0) {
+      container.innerHTML = `<div style="margin-top:10px;font-size:12px;color:var(--text-tertiary)">${t('settings.gitScanEmpty')}</div>`
+      return
+    }
+    container.innerHTML = `<div style="margin-top:10px;display:flex;flex-direction:column;gap:6px">${results.map(r =>
+      `<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:6px 8px;background:var(--bg-tertiary);border-radius:var(--radius-sm)">
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(r.path)}">${escapeHtml(r.path)}</span>
+        <span style="color:var(--text-tertiary);flex-shrink:0">${escapeHtml(r.version || '')}</span>
+        <span class="badge" style="font-size:10px;flex-shrink:0">${escapeHtml(r.source)}</span>
+        <button class="btn btn-primary btn-sm" style="padding:2px 8px;font-size:11px" data-action="use-scanned-git" data-git-path="${escapeHtml(r.path)}">${t('settings.gitScanUse')}</button>
+      </div>`
+    ).join('')}</div>`
+  } catch (e) {
+    container.innerHTML = `<div style="margin-top:10px;font-size:12px;color:var(--error)">${e}</div>`
+  }
 }
 
 async function handleResetGitPath(page) {
