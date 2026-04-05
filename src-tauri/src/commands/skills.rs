@@ -821,6 +821,36 @@ fn custom_skill_roots() -> Vec<(std::path::PathBuf, &'static str)> {
             roots.push((claude_skills, "Claude 自定义"));
         }
     }
+    // 从已解析的 CLI 路径推导 npm 包内的 bundled skills 目录
+    // 例如 CLI 在 /usr/lib/node_modules/openclaw/bin/openclaw
+    //   → 包根 /usr/lib/node_modules/openclaw/
+    //   → skills 目录 /usr/lib/node_modules/openclaw/skills/
+    if let Some(cli_path) = crate::utils::resolve_openclaw_cli_path() {
+        let cli = std::path::PathBuf::from(&cli_path);
+        let cli = std::fs::canonicalize(&cli).unwrap_or(cli);
+        // CLI 可能在 bin/ 子目录或包根目录
+        for ancestor in [cli.parent(), cli.parent().and_then(|p| p.parent())] {
+            if let Some(pkg_root) = ancestor {
+                let bundled = pkg_root.join("skills");
+                if bundled.is_dir() && !roots.iter().any(|(dir, _)| dir == &bundled) {
+                    roots.push((bundled, "OpenClaw 内置"));
+                    break;
+                }
+            }
+        }
+    }
+    #[cfg(target_os = "windows")]
+    if let Some(prefix) = super::windows_npm_global_prefix() {
+        for pkg in ["openclaw", "@qingchencloud/openclaw-zh"] {
+            let bundled = std::path::PathBuf::from(&prefix)
+                .join("node_modules")
+                .join(pkg)
+                .join("skills");
+            if bundled.is_dir() && !roots.iter().any(|(dir, _)| dir == &bundled) {
+                roots.push((bundled, "OpenClaw 内置"));
+            }
+        }
+    }
     roots
 }
 

@@ -100,6 +100,11 @@ export async function render() {
       <div id="docker-defaults-bar"><div class="stat-card loading-placeholder" style="height:84px"></div></div>
     </div>
 
+    <div class="config-section" id="git-path-section">
+      <div class="config-section-title">${t('settings.gitPath')}</div>
+      <div id="git-path-bar"><div class="stat-card loading-placeholder" style="height:48px"></div></div>
+    </div>
+
     <div class="config-section" id="cli-binding-section">
       <div class="config-section-title">${t('settings.openclawCli')}</div>
       <div id="cli-binding-bar"><div class="stat-card loading-placeholder" style="height:48px"></div></div>
@@ -123,7 +128,7 @@ export async function render() {
 }
 
 async function loadAll(page) {
-  const tasks = [loadProxyConfig(page), loadModelProxyConfig(page), loadOpenclawDir(page), loadOpenclawSearchPaths(page), loadDockerDefaults(page), loadCliBinding(page)]
+  const tasks = [loadProxyConfig(page), loadModelProxyConfig(page), loadOpenclawDir(page), loadOpenclawSearchPaths(page), loadDockerDefaults(page), loadGitPath(page), loadCliBinding(page)]
   tasks.push(loadRegistry(page))
   if (window.__TAURI_INTERNALS__) tasks.push(loadAutostart(page))
   await Promise.all(tasks)
@@ -460,6 +465,12 @@ function bindEvents(page) {
         case 'save-docker-defaults':
           await handleSaveDockerDefaults(page)
           break
+        case 'save-git-path':
+          await handleSaveGitPath(page)
+          break
+        case 'reset-git-path':
+          await handleResetGitPath(page)
+          break
         case 'bind-cli':
           await handleBindCli(page, btn.dataset.path)
           break
@@ -546,6 +557,68 @@ async function handleSaveRegistry(page) {
   if (!registry) { toast(t('settings.registryEmpty'), 'error'); return }
   await api.setNpmRegistry(registry)
   toast(t('settings.registrySaved'), 'success')
+}
+
+// ===== Git 路径 =====
+
+async function loadGitPath(page) {
+  const bar = page.querySelector('#git-path-bar')
+  if (!bar) return
+  try {
+    const gitInfo = await api.checkGit()
+    const cfg = await api.readPanelConfig()
+    const customValue = cfg?.gitPath || ''
+    const invalidCustom = gitInfo.isCustom && !gitInfo.installed
+    const statusText = gitInfo.installed
+      ? `<span style="color:var(--success)">✓ ${escapeHtml(gitInfo.version || 'Git')}</span>`
+      : invalidCustom
+        ? `<span style="color:var(--error)">✗ ${t('settings.gitPathInvalid')}</span>`
+        : `<span style="color:var(--error)">✗ Git ${t('setup.notInstalled')}</span>`
+    const pathText = gitInfo.path ? `<span style="font-size:var(--font-size-xs);opacity:0.7">${escapeHtml(gitInfo.path)}</span>` : ''
+    const customBadge = gitInfo.isCustom ? `<span class="badge" style="margin-left:6px;font-size:10px">${t('settings.customBadge')}</span>` : ''
+    bar.innerHTML = `
+      <div class="stat-card" style="padding:16px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          ${statusText}${customBadge}
+        </div>
+        ${pathText ? `<div style="margin-bottom:10px">${pathText}</div>` : ''}
+        <p style="font-size:var(--font-size-xs);color:var(--text-tertiary);margin-bottom:12px;line-height:1.5">${t('settings.gitPathHint')}</p>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input class="input" data-name="git-path" value="${escapeHtml(customValue)}" placeholder="${t('settings.gitPathPlaceholder')}" style="flex:1;min-width:200px">
+          <button class="btn btn-primary btn-sm" data-action="save-git-path">${t('common.save')}</button>
+          <button class="btn btn-secondary btn-sm" data-action="reset-git-path">${t('settings.resetDefault')}</button>
+        </div>
+      </div>`
+  } catch (e) {
+    bar.innerHTML = `<div class="stat-card" style="padding:16px;color:var(--error)">${e}</div>`
+  }
+}
+
+async function handleSaveGitPath(page) {
+  const input = page.querySelector('[data-name="git-path"]')
+  const value = (input?.value || '').trim()
+  const cfg = await api.readPanelConfig()
+  if (value) {
+    cfg.gitPath = value
+  } else {
+    delete cfg.gitPath
+  }
+  await api.writePanelConfig(cfg)
+  const gitInfo = await api.checkGit()
+  if (value && gitInfo.isCustom && !gitInfo.installed) {
+    toast(t('settings.gitPathInvalid'), 'error')
+  } else {
+    toast(value ? t('settings.gitPathSaved') : t('settings.gitPathCleared'), 'success')
+  }
+  await loadGitPath(page)
+}
+
+async function handleResetGitPath(page) {
+  const cfg = await api.readPanelConfig()
+  delete cfg.gitPath
+  await api.writePanelConfig(cfg)
+  toast(t('settings.gitPathCleared'), 'success')
+  await loadGitPath(page)
 }
 
 // ===== CLI 绑定 =====

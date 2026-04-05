@@ -129,6 +129,50 @@ function findCommandPath(command) {
   }
 }
 
+function normalizeCommandPath(raw) {
+  if (typeof raw !== 'string') return null
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  const expanded = expandHomePath(trimmed)
+  if (!expanded) return null
+  const looksLikePath =
+    trimmed.includes('/') || trimmed.includes('\\') || trimmed.startsWith('.') || /^~[\\/]/.test(trimmed) || /^[A-Za-z]:[\\/]/.test(trimmed)
+  return looksLikePath ? path.resolve(expanded) : expanded
+}
+
+function readConfiguredGitPath() {
+  return normalizeCommandPath(readPanelConfig()?.gitPath || '')
+}
+
+function resolveGitExecutable() {
+  const gitPath = readConfiguredGitPath()
+  const isCustom = !!gitPath
+  const isPathLike = !!gitPath && (gitPath.includes('/') || gitPath.includes('\\') || /^[A-Za-z]:[\\/]/.test(gitPath))
+  return { gitPath: gitPath || 'git', isCustom, isPathLike }
+}
+
+function buildGitCommandEnv(extraEnv = {}, resolved = resolveGitExecutable()) {
+  const env = { ...process.env, ...(extraEnv || {}) }
+  if (resolved.isCustom && resolved.isPathLike) {
+    const dir = path.dirname(resolved.gitPath)
+    env.PATH = [dir, env.PATH || ''].filter(Boolean).join(path.delimiter)
+  }
+  if (resolved.isCustom) env.GIT = resolved.gitPath
+  return env
+}
+
+function runGitSync(args, options = {}) {
+  const resolved = resolveGitExecutable()
+  const env = buildGitCommandEnv(options.env, resolved)
+  const result = spawnSync(resolved.gitPath, args, {
+    encoding: 'utf8',
+    windowsHide: true,
+    ...options,
+    env,
+  })
+  return { ...resolved, result }
+}
+
 function readConfiguredOpenclawSearchPaths() {
   const entries = readPanelConfig()?.openclawSearchPaths
   if (!Array.isArray(entries)) return []
@@ -810,30 +854,178 @@ function pickRegistryForPackage(pkg) {
 }
 
 function configureGitHttpsRules() {
-  try { execSync('git config --global --unset-all url.https://github.com/.insteadOf 2>&1', { timeout: 5000, windowsHide: true }) } catch {}
+  try { runGitSync(['config', '--global', '--unset-all', 'url.https://github.com/.insteadOf'], { timeout: 5000 }) } catch {}
   let success = 0
   for (const from of GIT_HTTPS_REWRITES) {
     try {
-      execSync(`git config --global --add url.https://github.com/.insteadOf "${from}"`, { timeout: 5000, windowsHide: true })
-      success++
+      const { result } = runGitSync(['config', '--global', '--add', 'url.https://github.com/.insteadOf', from], { timeout: 5000 })
+      if (!result?.error && result?.status === 0) success++
     } catch {}
   }
   return success
 }
 
 function buildGitInstallEnv() {
-  const env = {
-    ...process.env,
+  const env = buildGitCommandEnv({
     GIT_TERMINAL_PROMPT: '0',
     GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o IdentitiesOnly=yes',
     GIT_ALLOW_PROTOCOL: 'https:http:file',
     GIT_CONFIG_COUNT: String(GIT_HTTPS_REWRITES.length),
-  }
+  })
   GIT_HTTPS_REWRITES.forEach((from, idx) => {
     env[`GIT_CONFIG_KEY_${idx}`] = 'url.https://github.com/.insteadOf'
     env[`GIT_CONFIG_VALUE_${idx}`] = from
   })
   return env
+}
+
+function parseSkillFrontmatterFile(skillMdPath) {
+  try {
+    const raw = fs.readFileSync(skillMdPath, 'utf8').replace(/\r\n/g, '\n')
+    if (!raw.startsWith('---\n')) return {}
+    const end = raw.indexOf('\n---\n', 4)
+    if (end < 0) return {}
+    const frontmatter = raw.slice(4, end)
+    const result = {}
+    for (const line of frontmatter.split('\n')) {
+      const match = line.match(/^([A-Za-z0-9_-]+)\s*:\s*(.+)$/)
+      if (!match) continue
+      result[match[1]] = match[2].trim().replace(/^['"]|['"]$/g, '')
+    }
+    return result
+  } catch {
+    return {}
+  }
+}
+
+function collectLocalSkillRoots() {
+  const roots = []
+  const seen = new Set()
+  const pushRoot = (dir, source, bundled = false) => {
+    if (!dir) return
+    const normalized = path.resolve(dir)
+    const key = isWindows ? normalized.toLowerCase() : normalized
+    if (seen.has(key)) return
+    seen.add(key)
+    roots.push({ dir: normalized, source, bundled })
+  }
+
+  pushRoot(path.join(OPENCLAW_DIR, 'skills'), 'OpenClaw 自定义', false)
+  pushRoot(path.join(homedir(), '.claude', 'skills'), 'Claude 自定义', false)
+
+  const cliPath = resolveOpenclawCliPath()
+  if (cliPath) {
+    const resolvedCli = canonicalCliPath(cliPath) || cliPath
+    const cliDir = path.dirname(resolvedCli)
+    const pkgRoots = [cliDir, path.dirname(cliDir)]
+    for (const pkgRoot of pkgRoots) {
+      const bundledDir = path.join(pkgRoot, 'skills')
+      if (fs.existsSync(bundledDir) && fs.statSync(bundledDir).isDirectory()) {
+        pushRoot(bundledDir, 'openclaw-bundled', true)
+        break
+      }
+    }
+  }
+
+  if (isWindows) {
+    const prefix = readWindowsNpmGlobalPrefix() || path.join(process.env.APPDATA || '', 'npm')
+    for (const pkg of ['openclaw', path.join('@qingchencloud', 'openclaw-zh')]) {
+      const bundledDir = path.join(prefix, 'node_modules', pkg, 'skills')
+      if (fs.existsSync(bundledDir) && fs.statSync(bundledDir).isDirectory()) {
+        pushRoot(bundledDir, 'openclaw-bundled', true)
+      }
+    }
+  }
+
+  return roots
+}
+
+function scanSingleSkill(root, name) {
+  const skillPath = path.join(root.dir, name)
+  const skillMd = path.join(skillPath, 'SKILL.md')
+  const packageJson = path.join(skillPath, 'package.json')
+  if (!fs.existsSync(skillMd) && !fs.existsSync(packageJson)) return null
+
+  const result = {
+    name,
+    source: root.source,
+    bundled: !!root.bundled,
+    filePath: skillPath,
+    description: '',
+    eligible: true,
+    disabled: false,
+    blockedByAllowlist: false,
+    requirements: { bins: [], anyBins: [], env: [], config: [], os: [] },
+    missing: { bins: [], anyBins: [], env: [], config: [], os: [] },
+    install: [],
+  }
+
+  try {
+    if (fs.existsSync(packageJson)) {
+      const pkg = JSON.parse(fs.readFileSync(packageJson, 'utf8'))
+      if (pkg.description) result.description = pkg.description
+      if (pkg.homepage) result.homepage = pkg.homepage
+      if (pkg.version) result.version = pkg.version
+      if (pkg.author) result.author = typeof pkg.author === 'string' ? pkg.author : (pkg.author?.name || '')
+    }
+  } catch {}
+
+  const frontmatter = parseSkillFrontmatterFile(skillMd)
+  if (frontmatter.description) result.description = frontmatter.description
+  if (frontmatter.fullPath) result.fullPath = frontmatter.fullPath
+  if (frontmatter.emoji) result.emoji = frontmatter.emoji
+
+  return result
+}
+
+function scanLocalSkillsFallback(cliError = null) {
+  const roots = collectLocalSkillRoots()
+  const skills = []
+  const seen = new Set()
+  const scannedRoots = []
+
+  for (const root of roots) {
+    if (!fs.existsSync(root.dir) || !fs.statSync(root.dir).isDirectory()) continue
+    scannedRoots.push(root.dir)
+    for (const entry of fs.readdirSync(root.dir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue
+      const key = isWindows ? entry.name.toLowerCase() : entry.name
+      if (seen.has(key)) continue
+      const skill = scanSingleSkill(root, entry.name)
+      if (!skill) continue
+      seen.add(key)
+      skills.push(skill)
+    }
+  }
+
+  skills.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+  const eligible = skills.filter(s => s.eligible && !s.disabled)
+  const missingRequirements = skills.filter(s => !s.eligible && !s.disabled && !s.blockedByAllowlist)
+  const disabled = skills.filter(s => s.disabled)
+  const blocked = skills.filter(s => s.blockedByAllowlist && !s.disabled)
+
+  return {
+    skills,
+    source: 'local-scan',
+    cliAvailable: false,
+    summary: {
+      total: skills.length,
+      eligible: eligible.length,
+      disabled: disabled.length,
+      blocked: blocked.length,
+      missingRequirements: missingRequirements.length,
+    },
+    eligible,
+    disabled,
+    blocked,
+    missingRequirements,
+    diagnostic: {
+      status: 'scanned',
+      scannedAt: new Date().toISOString(),
+      scannedRoots,
+      cli: cliError ? { status: 'exec-failed', message: String(cliError?.message || cliError) } : null,
+    },
+  }
 }
 
 function detectInstalledSource() {
@@ -4196,12 +4388,15 @@ const handlers = {
   },
 
   check_git() {
+    const { gitPath, isCustom, result } = runGitSync(['--version'], { timeout: 5000 })
+    const detectedPath = isCustom ? gitPath : findCommandPath('git')
     try {
-      const ver = execSync('git --version', { encoding: 'utf8', timeout: 5000, windowsHide: true }).trim()
+      if (result?.error || result?.status !== 0) throw new Error(result?.error?.message || result?.stderr || result?.stdout || 'git not found')
+      const ver = String(result.stdout || result.stderr || '').trim()
       const match = ver.match(/(\d+\.\d+[\.\d]*)/)
-      return { installed: true, version: match ? match[1] : ver, path: findCommandPath('git') }
+      return { installed: true, version: match ? match[1] : ver, path: detectedPath, isCustom }
     } catch {
-      return { installed: false, path: null }
+      return { installed: false, version: null, path: detectedPath, isCustom }
     }
   },
 
@@ -5107,39 +5302,36 @@ const handlers = {
 
   // Skills 管理（模拟 openclaw skills CLI JSON 输出）
   skills_list() {
-    // 尝试真实 CLI
     try {
-      const out = execSync('npx -y openclaw skills list --json', { encoding: 'utf8', timeout: 30000 })
+      const out = execOpenclawSync(['skills', 'list', '--json'], { encoding: 'utf8', timeout: 30000, cwd: homedir(), windowsHide: true }, '读取 Skills 列表失败')
       return extractCliJson(out)
-    } catch {
-      // CLI 不可用时返回 mock 数据
-      return {
-        skills: [
-          { name: 'github', description: 'GitHub operations via gh CLI: issues, PRs, CI runs, code review.', source: 'openclaw-bundled', bundled: true, emoji: '🐙', eligible: true, disabled: false, blockedByAllowlist: false, requirements: { bins: ['gh'], anyBins: [], env: [], config: [], os: [] }, missing: { bins: [], anyBins: [], env: [], config: [], os: [] }, install: [{ id: 'brew', kind: 'brew', label: 'Install GitHub CLI (brew)', bins: ['gh'] }] },
-          { name: 'weather', description: 'Get current weather and forecasts via wttr.in. No API key needed.', source: 'openclaw-bundled', bundled: true, emoji: '🌤️', eligible: true, disabled: false, blockedByAllowlist: false, requirements: { bins: ['curl'], anyBins: [], env: [], config: [], os: [] }, missing: { bins: [], anyBins: [], env: [], config: [], os: [] }, install: [] },
-          { name: 'summarize', description: 'Summarize web pages, PDFs, images, audio and more.', source: 'openclaw-bundled', bundled: true, emoji: '📝', eligible: false, disabled: false, blockedByAllowlist: false, requirements: { bins: [], anyBins: [], env: [], config: [], os: [] }, missing: { bins: [], anyBins: [], env: [], config: [], os: [] }, install: [] },
-          { name: 'slack', description: 'Send and read Slack messages via CLI.', source: 'openclaw-bundled', bundled: true, emoji: '💬', eligible: false, disabled: false, blockedByAllowlist: false, requirements: { bins: ['slack-cli'], anyBins: [], env: [], config: [], os: [] }, missing: { bins: ['slack-cli'], anyBins: [], env: [], config: [], os: [] }, install: [{ id: 'brew', kind: 'brew', label: 'Install Slack CLI (brew)', bins: ['slack-cli'] }] },
-          { name: 'notion', description: 'Create and search Notion pages using the API.', source: 'openclaw-bundled', bundled: true, emoji: '📓', eligible: false, disabled: true, blockedByAllowlist: false, requirements: { bins: [], anyBins: [], env: ['NOTION_API_KEY'], config: [], os: [] }, missing: { bins: [], anyBins: [], env: ['NOTION_API_KEY'], config: [], os: [] }, install: [] },
-        ],
-        source: 'mock',
-        cliAvailable: false,
-      }
+    } catch (e) {
+      return scanLocalSkillsFallback(e)
     }
   },
   skills_info({ name }) {
     try {
-      const out = execSync(`npx -y openclaw skills info ${JSON.stringify(name)} --json`, { encoding: 'utf8', timeout: 30000 })
+      const out = execOpenclawSync(['skills', 'info', String(name || '').trim(), '--json'], { encoding: 'utf8', timeout: 30000, cwd: homedir(), windowsHide: true }, '查看 Skill 详情失败')
       return extractCliJson(out)
     } catch (e) {
+      const fallback = scanLocalSkillsFallback(e).skills.find(skill => skill.name === String(name || '').trim())
+      if (fallback) return fallback
       throw new Error('查看详情失败: ' + (e.message || e))
     }
   },
   skills_check() {
     try {
-      const out = execSync('npx -y openclaw skills check --json', { encoding: 'utf8', timeout: 30000 })
+      const out = execOpenclawSync(['skills', 'check', '--json'], { encoding: 'utf8', timeout: 30000, cwd: homedir(), windowsHide: true }, '检查 Skills 依赖失败')
       return extractCliJson(out)
-    } catch {
-      return { summary: { total: 0, eligible: 0, disabled: 0, blocked: 0, missingRequirements: 0 }, eligible: [], disabled: [], blocked: [], missingRequirements: [] }
+    } catch (e) {
+      const fallback = scanLocalSkillsFallback(e)
+      return {
+        summary: fallback.summary,
+        eligible: fallback.eligible,
+        disabled: fallback.disabled,
+        blocked: fallback.blocked,
+        missingRequirements: fallback.missingRequirements,
+      }
     }
   },
   skills_install_dep({ kind, spec }) {

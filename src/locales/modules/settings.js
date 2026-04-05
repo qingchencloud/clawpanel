@@ -76,4 +76,10 @@ export default {
   proxyCleared: _('网络代理已关闭', 'Network proxy disabled', '網路代理已關閉', 'ネットワークプロキシ無効化', '네트워크 프록시 비활성화됨'),
   modelProxyOn: _('模型请求将走代理', 'Model requests will use proxy', '模型請求將走代理', 'モデルリクエストはプロキシを使用します', '모델 요청이 프록시를 사용합니다'),
   modelProxyOff: _('模型请求已关闭代理', 'Model requests proxy disabled', '模型請求已關閉代理', 'モデルリクエストプロキシ無効化', '모델 요청 프록시 비활성화됨'),
+  gitPath: _('Git 可执行文件路径', 'Git Executable Path', 'Git 可執行檔路徑', 'Git 実行ファイルパス', 'Git 실행 파일 경로'),
+  gitPathHint: _('自定义 Git 可执行文件路径。留空则自动从系统 PATH 中查找。当系统找不到 Git 时，可在此手动指定完整路径。', 'Custom Git executable path. Leave empty to auto-detect from system PATH. Specify the full path here if the system cannot find Git.', '自定義 Git 可執行檔路徑。留空則自動從系統 PATH 中尋找。當系統找不到 Git 時，可在此手動指定完整路徑。', 'カスタム Git 実行ファイルパス。空欄にするとシステム PATH から自動検出します。システムが Git を見つけられない場合はここにフルパスを指定してください。'),
+  gitPathPlaceholder: _('留空自动检测，例如 C:\\Program Files\\Git\\cmd\\git.exe', 'Leave empty for auto-detect, e.g. C:\\Program Files\\Git\\cmd\\git.exe', '留空自動檢測，例如 /usr/local/bin/git', '空欄で自動検出、例: C:\\Program Files\\Git\\cmd\\git.exe'),
+  gitPathSaved: _('Git 路径已保存', 'Git path saved', 'Git 路徑已儲存', 'Git パス保存済み', 'Git 경로 저장됨'),
+  gitPathCleared: _('已恢复 Git 自动检测', 'Git auto-detect restored', '已恢復 Git 自動檢測', 'Git 自動検出に戻しました', 'Git 자동 감지로 복원됨'),
+  gitPathInvalid: _('指定的 Git 路径不存在', 'The specified Git path does not exist', '指定的 Git 路徑不存在', '指定された Git パスが存在しません'),
 }

@@ -275,13 +275,27 @@ fn recommended_version_for(source: &str) -> Option<String> {
     }
 }
 
+/// 获取用户配置的 git 可执行文件路径，回退到 "git"
+fn configured_git_path() -> Option<String> {
+    super::read_panel_config_value()
+        .and_then(|v| v.get("gitPath")?.as_str().map(String::from))
+        .map(|custom| custom.trim().to_string())
+        .filter(|custom| !custom.is_empty())
+}
+
+/// 获取用户配置的 git 可执行文件路径，回退到 "git"
+pub fn git_executable() -> String {
+    configured_git_path().unwrap_or_else(|| "git".into())
+}
+
 fn configure_git_https_rules() -> usize {
+    let git = git_executable();
     // Collect unique target prefixes to unset old rules
     let targets: std::collections::HashSet<&str> =
         GIT_HTTPS_REWRITES.iter().map(|(t, _)| *t).collect();
     for target in &targets {
         let key = format!("url.{target}.insteadOf");
-        let mut unset = Command::new("git");
+        let mut unset = Command::new(&git);
         unset.args(["config", "--global", "--unset-all", &key]);
         #[cfg(target_os = "windows")]
         unset.creation_flags(0x08000000);
@@ -291,7 +305,7 @@ fn configure_git_https_rules() -> usize {
     let mut success = 0;
     for (target, from) in GIT_HTTPS_REWRITES {
         let key = format!("url.{target}.insteadOf");
-        let mut cmd = Command::new("git");
+        let mut cmd = Command::new(&git);
         cmd.args(["config", "--global", "--add", &key, from]);
         #[cfg(target_os = "windows")]
         cmd.creation_flags(0x08000000);
@@ -303,6 +317,21 @@ fn configure_git_https_rules() -> usize {
 }
 
 fn apply_git_install_env(cmd: &mut Command) {
+    if let Some(custom_git) = configured_git_path() {
+        let git_path = PathBuf::from(&custom_git);
+        if let Some(parent) = git_path.parent() {
+            let mut paths: Vec<PathBuf> = std::env::var_os("PATH")
+                .map(|value| std::env::split_paths(&value).collect())
+                .unwrap_or_default();
+            if !paths.iter().any(|p| p == parent) {
+                paths.insert(0, parent.to_path_buf());
+            }
+            if let Ok(joined) = std::env::join_paths(paths) {
+                cmd.env("PATH", joined);
+            }
+        }
+        cmd.env("GIT", &custom_git);
+    }
     crate::commands::apply_proxy_env(cmd);
     cmd.env("GIT_TERMINAL_PROMPT", "0")
         .env(
@@ -5297,8 +5326,15 @@ pub fn set_npm_registry(registry: String) -> Result<(), String> {
 #[tauri::command]
 pub fn check_git() -> Result<Value, String> {
     let mut result = serde_json::Map::new();
-    let git_path = find_git_path();
-    let mut cmd = Command::new("git");
+    let configured = configured_git_path();
+    let git = configured.clone().unwrap_or_else(|| "git".into());
+    let is_custom = configured.is_some();
+    let git_path = if is_custom {
+        Some(git.clone())
+    } else {
+        find_git_path()
+    };
+    let mut cmd = Command::new(&git);
     cmd.arg("--version");
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000);
@@ -5311,11 +5347,13 @@ pub fn check_git() -> Result<Value, String> {
                 "path".into(),
                 git_path.map(Value::String).unwrap_or(Value::Null),
             );
+            result.insert("isCustom".into(), Value::Bool(is_custom));
         }
         _ => {
             result.insert("installed".into(), Value::Bool(false));
             result.insert("version".into(), Value::Null);
             result.insert("path".into(), Value::Null);
+            result.insert("isCustom".into(), Value::Bool(is_custom));
         }
     }
     Ok(Value::Object(result))
