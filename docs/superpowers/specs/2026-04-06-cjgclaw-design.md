@@ -226,27 +226,194 @@ export function useGateway() {
 
 ### 3.4 UI 设计规范
 
-**主色调：**
+#### 3.4.1 字体
+
+| 用途 | 字体 | 说明 |
+|------|------|------|
+| 标题 / 数字 | **Geist Sans** | Vercel 出品，现代利落，技术感强 |
+| 正文 / 中文 | **Noto Sans SC** | 中文渲染清晰，与 Geist Sans 搭配和谐 |
+| 代码 / 终端 / 日志 | **JetBrains Mono** | 等宽字体，数字对齐，终端可读性佳 |
 
 ```css
-@theme {
-  --color-primary: #2C8E65;
-  --color-primary-hover: #236B50;
-  --color-primary-light: #E8F5F0;
-  --color-secondary: #5BBC9E;
-  --color-bg-dark: #1A2E28;
+body {
+  font-family: 'Geist Sans', 'Noto Sans SC', system-ui, sans-serif;
+}
+code, pre, .font-mono {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
 }
 ```
 
-**动效规范：**
+**字号规范：**
 
-| 场景 | 方案 |
+| 级别 | 大小 | 行高 | 用途 |
+|------|------|------|------|
+| `text-xs` | 11px | 16px | 辅助信息、时间戳 |
+| `text-sm` | 13px | 20px | 次级文本、表格内容 |
+| `text-base` | 14px | 22px | 正文 |
+| `text-lg` | 16px | 24px | 区块标题 |
+| `text-xl` | 18px | 28px | 页面标题 |
+| `text-2xl` | 24px | 32px | 仪表盘数字 |
+| `text-3xl` | 30px | 36px | 关键指标 |
+
+#### 3.4.2 色彩体系
+
+```css
+@theme {
+  /* === 主色系（Teal 青绿） === */
+  --color-primary-50: #E8F5F0;
+  --color-primary-100: #C5E8DA;
+  --color-primary-200: #9DD6BC;
+  --color-primary-300: #6DC4A0;
+  --color-primary-400: #5BBC9E;
+  --color-primary-500: #2C8E65;       /* 主色 */
+  --color-primary-600: #236B50;
+  --color-primary-700: #1A523D;
+  --color-primary-800: #12392B;
+  --color-primary-900: #1A2E28;
+
+  /* === 语义色 === */
+  --color-success: #22C55E;
+  --color-success-light: #DCFCE7;
+  --color-warning: #F59E0B;
+  --color-warning-light: #FEF3C7;
+  --color-error: #EF4444;
+  --color-error-light: #FEE2E2;
+  --color-info: #3B82F6;
+  --color-info-light: #DBEAFE;
+
+  /* === 中性色阶（决定品质感） === */
+  --color-gray-50: #F8FAFB;
+  --color-gray-100: #F1F5F3;
+  --color-gray-200: #E2E8E5;
+  --color-gray-300: #CBD5D0;
+  --color-gray-400: #94A3A0;
+  --color-gray-500: #64748B;
+  --color-gray-600: #475569;
+  --color-gray-700: #334155;
+  --color-gray-800: #1E293B;
+  --color-gray-900: #0F172A;
+
+  /* === 表面色（Surface） === */
+  --color-surface: #FFFFFF;              /* 页面底色 */
+  --color-surface-raised: #F8FAFB;      /* 卡片背景 */
+  --color-surface-overlay: #F1F5F3;     /* 弹窗/抽屉背景 */
+  --color-surface-sidebar: #1A2E28;     /* 侧边栏（深青） */
+
+  /* === 文本色阶 === */
+  --color-text-primary: #0F172A;
+  --color-text-secondary: #475569;
+  --color-text-tertiary: #94A3A0;
+  --color-text-inverse: #F8FAFB;
+
+  /* === 边框 === */
+  --color-border: #E2E8E5;
+  --color-border-hover: #CBD5D0;
+
+  /* === 阴影 === */
+  --shadow-sm: 0 1px 2px rgba(28, 46, 40, 0.06);
+  --shadow-md: 0 4px 12px rgba(28, 46, 40, 0.08);
+  --shadow-lg: 0 8px 24px rgba(28, 46, 40, 0.12);
+  --shadow-card: 0 2px 8px rgba(28, 46, 40, 0.06);
+  --shadow-card-hover: 0 8px 24px rgba(28, 46, 40, 0.12);
+
+  /* === 圆角 === */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+}
+```
+
+#### 3.4.3 布局规范
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Sidebar (240px)  │  Content Area (flex-1)          │
+│                   │                                  │
+│  ┌─────────────┐  │  ┌─ Header (56px) ────────────┐ │
+│  │ Logo        │  │  │ 面包屑 / 页面标题  · 用户   │ │
+│  ├─────────────┤  │  ├─────────────────────────────┤ │
+│  │ 导航菜单    │  │  │                             │ │
+│  │             │  │  │  Page Content (p-6)         │ │
+│  │ · 仪表盘   │  │  │                             │ │
+│  │ · 聊天     │  │  │  ┌──────┐ ┌──────┐ ┌────┐ │ │
+│  │ · 模型     │  │  │  │ Card │ │ Card │ │Card│ │ │
+│  │ · Agent    │  │  │  └──────┘ └──────┘ └────┘ │ │
+│  │ · 服务     │  │  │                             │ │
+│  │ · Skills   │  │  │  ┌─────────────────────────┐│ │
+│  │ · 扩展     │  │  │  │ Table / List            ││ │
+│  │ · 网关     │  │  │  └─────────────────────────┘│ │
+│  ├─────────────┤  │  │                             │ │
+│  │ 设置 / 关于 │  │  │                             │ │
+│  └─────────────┘  │  └─────────────────────────────┘ │
+└─────────────────────────────────────────────────────┘
+```
+
+| 元素 | 规格 |
 |------|------|
-| 页面切换 | Framer Motion `AnimatePresence` + 滑入 200ms |
-| 卡片 Hover | `hover:-translate-y-0.5` + 阴影加深 |
-| 加载状态 | Skeleton 骨架屏 |
-| 状态徽章 | 颜色变化 + 微缩放动画 |
-| 计数器 | `react-countup` 数字滚动动画 |
+| 侧边栏宽度 | 240px（展开）/ 64px（折叠，仅图标 + Tooltip） |
+| 侧边栏背景 | `#1A2E28`（深青，主色暗色，品质感强） |
+| 侧边栏文字 | `#F8FAFB`（白色系），活跃项背景 `rgba(44,142,101,0.2)` |
+| 顶栏高度 | 56px |
+| 内容区内边距 | 24px (`p-6`) |
+| 卡片圆角 | 12px (`rounded-xl`) |
+| 卡片间距 | 16px gap (`gap-4`) |
+| 卡片背景 | `#FFFFFF`，边框 `1px solid #E2E8E5` |
+| 最小窗口 | 1024 × 640 |
+
+#### 3.4.4 动效规范
+
+**基础动效：**
+
+| 场景 | 方案 | 时长 |
+|------|------|------|
+| 页面切换 | Framer Motion `AnimatePresence` + 淡入滑入 | 200ms ease-out |
+| 卡片 Hover | `translateY(-2px)` + 阴影 `shadow-card → shadow-card-hover` | 150ms |
+| 加载状态 | Skeleton 骨架屏（脉冲动画） | 1.5s 循环 |
+| 状态徽章 | 颜色过渡 + 微缩放 `scale(1.05)` | 200ms |
+| 计数器 | `react-countup` 数字滚动 | 800ms ease-out |
+| 按钮点击 | `scale(0.97)` 按下反馈 | 100ms |
+
+**Signature Moment（记忆点动效）：**
+
+| 场景 | 效果 | 实现 |
+|------|------|------|
+| **仪表盘首次加载** | 卡片依次从下方浮入，错落延迟 80ms，配合透明度 0→1 | Framer Motion `variants` + `staggerChildren: 0.08` |
+| **Gateway 状态切换** | 绿色脉冲波纹从状态徽章向外扩散 | CSS `@keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.4) } 100% { box-shadow: 0 0 0 12px rgba(34,197,94,0) } }` |
+| **聊天消息流式到达** | 每条消息从下方滑入 + 打字机光标闪烁 | Framer Motion `initial={{opacity:0, y:8}}` + CSS `@keyframes blink` |
+| **侧边栏展开/折叠** | 图标→文字弹性过渡，宽度 smooth 动画 | Framer Motion `layout` + `transition={{ type: "spring", stiffness: 300 }}` |
+
+#### 3.4.5 状态设计
+
+| 状态 | 设计方案 |
+|------|---------|
+| **加载中** | Skeleton 骨架屏，匹配目标组件形状（卡片/表格/列表） |
+| **空列表** | 居中插画区域 + 灰色引导文案 + 主色 CTA 按钮（如"创建第一个 Agent"） |
+| **错误** | 内联错误提示（红色左边框卡片），含错误信息 + 重试按钮，不用弹窗 |
+| **Gateway 离线** | 顶部全宽 Banner（`warning-light` 黄底），显示"Gateway 未运行" + 启动按钮 + 关闭按钮 |
+| **操作确认** | 危险操作（删除等）弹出 shadcn AlertDialog 确认 |
+| **操作成功** | 右下角 Toast 提示（`success` 绿色），3 秒自动消失 |
+
+#### 3.4.6 暗色主题预留
+
+v1.0 以浅色为主，但 CSS Variables 结构预留暗色切换能力：
+
+```css
+/* 浅色（默认） */
+:root { --color-surface: #FFFFFF; --color-text-primary: #0F172A; ... }
+
+/* 暗色（预留，v2 启用） */
+[data-theme="dark"] {
+  --color-surface: #0F172A;
+  --color-surface-raised: #1E293B;
+  --color-surface-sidebar: #0B1120;
+  --color-text-primary: #F8FAFB;
+  --color-text-secondary: #94A3A0;
+  --color-border: #334155;
+  /* 主色在暗色下提亮 */
+  --color-primary-500: #5BBC9E;
+}
+```
 
 ---
 
