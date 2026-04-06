@@ -1,5 +1,6 @@
 mod commands;
 mod models;
+pub mod sandbox;
 mod tray;
 mod utils;
 
@@ -65,6 +66,18 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // 沙箱管理
+            sandbox::init::sandbox_init,
+            sandbox::init::sandbox_status,
+            sandbox::openclaw::openclaw_path,
+            sandbox::openclaw::openclaw_command,
+            sandbox::openclaw::openclaw_command_async,
+            sandbox::openclaw::bundled_openclaw_path,
+            sandbox::gateway::gateway_status,
+            sandbox::gateway::gateway_start,
+            sandbox::gateway::gateway_stop,
+            sandbox::gateway::gateway_restart,
+            sandbox::gateway::gateway_reload,
             // 配置
             config::read_openclaw_config,
             config::write_openclaw_config,
