@@ -299,11 +299,13 @@ node $BUNDLE_RESOURCES/openclaw/node_modules/openclaw/openclaw.mjs <args>
 | 实时聊天 | WebSocket 流式对话、Markdown 渲染 |
 | Agent 管理 | Agent CRUD、身份编辑、模型绑定 |
 | 网关配置 | 端口、Token、访问权限 |
+| Skills 管理 | Skills 列表、详情、安装/卸载、SkillHub/ClawHub 搜索与安装 |
+| 扩展工具 | cftunnel 内网穿透状态/启停、ClawApp 状态监控与安装 |
 | 初始向导 | 沙箱初始化、环境检测、安装引导 |
 
 ### 5.2 延后（v2+）
 
-AI 助手、消息渠道、定时任务、用量统计、Skills 管理、扩展工具、自动更新、审计日志、多语言
+AI 助手、消息渠道、定时任务、用量统计、自动更新、审计日志、多语言
 
 ---
 
