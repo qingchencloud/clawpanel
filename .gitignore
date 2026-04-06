@@ -60,3 +60,6 @@ src-tauri/.cargo/
 CONTEXT_STATE.md
 PROJECT_CONTRACT.md
 project.yaml
+.worktrees/
+.worktrees/index
+.worktrees/**
