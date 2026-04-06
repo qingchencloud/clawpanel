@@ -51,7 +51,7 @@ async fn agent_workspace(agent_id: &str) -> Result<PathBuf, String> {
     }
 
     // 缓存过期或为空，从 openclaw.json 读取
-    let config_path = super::openclaw_dir().join("openclaw.json");
+    let config_path = crate::sandbox::openclaw_config_dir().join("openclaw.json");
     let content =
         fs::read_to_string(&config_path).map_err(|e| format!("读取 openclaw.json 失败: {e}"))?;
     let config: serde_json::Value =
@@ -63,7 +63,7 @@ async fn agent_workspace(agent_id: &str) -> Result<PathBuf, String> {
         .and_then(|d| d.get("workspace"))
         .and_then(|w| w.as_str())
         .map(PathBuf::from)
-        .unwrap_or_else(|| super::openclaw_dir().join("workspace"));
+        .unwrap_or_else(|| crate::sandbox::openclaw_config_dir().join("workspace"));
     // 解析符号链接
     let default_workspace = fs::canonicalize(&default_workspace).unwrap_or(default_workspace);
 
@@ -87,9 +87,9 @@ async fn agent_workspace(agent_id: &str) -> Result<PathBuf, String> {
                 .map(PathBuf::from)
                 .unwrap_or_else(|| {
                     if id == "main" {
-                        super::openclaw_dir().join("workspace")
+                        crate::sandbox::openclaw_config_dir().join("workspace")
                     } else {
-                        super::openclaw_dir()
+                        crate::sandbox::openclaw_config_dir()
                             .join("agents")
                             .join(id)
                             .join("workspace")

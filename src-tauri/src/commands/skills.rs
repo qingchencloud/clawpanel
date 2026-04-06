@@ -281,7 +281,7 @@ pub async fn skills_skillhub_install(slug: String) -> Result<Value, String> {
     let path_env = super::enhanced_path();
     let home = dirs::home_dir().unwrap_or_default();
 
-    let skills_dir = super::openclaw_dir().join("skills");
+    let skills_dir = crate::sandbox::openclaw_config_dir().join("skills");
     if !skills_dir.exists() {
         std::fs::create_dir_all(&skills_dir).map_err(|e| format!("创建 skills 目录失败: {e}"))?;
     }
@@ -472,7 +472,7 @@ pub async fn skills_clawhub_search(query: String) -> Result<Value, String> {
 pub async fn skills_clawhub_install(slug: String) -> Result<Value, String> {
     let path_env = super::enhanced_path();
     let home = dirs::home_dir().unwrap_or_default();
-    let skills_dir = super::openclaw_dir().join("skills");
+    let skills_dir = crate::sandbox::openclaw_config_dir().join("skills");
     if !skills_dir.exists() {
         std::fs::create_dir_all(&skills_dir).map_err(|e| format!("创建 skills 目录失败: {e}"))?;
     }
@@ -814,7 +814,7 @@ fn clean_cli_output(text: &str) -> String {
 }
 
 fn custom_skill_roots() -> Vec<(std::path::PathBuf, &'static str)> {
-    let mut roots = vec![(super::openclaw_dir().join("skills"), "OpenClaw 自定义")];
+    let mut roots = vec![(crate::sandbox::openclaw_config_dir().join("skills"), "OpenClaw 自定义")];
     if let Some(home) = dirs::home_dir() {
         let claude_skills = home.join(".claude").join("skills");
         if !roots.iter().any(|(dir, _)| dir == &claude_skills) {

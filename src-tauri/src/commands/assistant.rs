@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 /// 审计日志：记录 AI 助手的敏感操作（exec / read / write）
 fn audit_log(action: &str, detail: &str) {
-    let log_dir = super::openclaw_dir().join("logs");
+    let log_dir = crate::sandbox::openclaw_config_dir().join("logs");
     let _ = std::fs::create_dir_all(&log_dir);
     let log_path = log_dir.join("assistant-audit.log");
     let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
@@ -23,7 +23,7 @@ fn audit_log(action: &str, detail: &str) {
 
 /// ClawPanel 数据目录（~/.openclaw/clawpanel/）
 fn data_dir() -> PathBuf {
-    super::openclaw_dir().join("clawpanel")
+    crate::sandbox::openclaw_config_dir().join("clawpanel")
 }
 
 /// 确保数据目录及子目录存在，返回目录路径

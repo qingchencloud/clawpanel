@@ -298,7 +298,7 @@ fn nix_is_root() -> bool {
 
 /// 读取用户配置的 npm registry，fallback 到淘宝镜像
 fn get_configured_registry() -> String {
-    let path = super::openclaw_dir().join("npm-registry.txt");
+    let path = crate::sandbox::openclaw_config_dir().join("npm-registry.txt");
     fs::read_to_string(&path)
         .ok()
         .map(|s| s.trim().to_string())
@@ -393,12 +393,12 @@ fn pre_install_cleanup() {
 }
 
 fn backups_dir() -> PathBuf {
-    super::openclaw_dir().join("backups")
+    crate::sandbox::openclaw_config_dir().join("backups")
 }
 
 #[tauri::command]
 pub fn read_openclaw_config() -> Result<Value, String> {
-    let path = super::openclaw_dir().join("openclaw.json");
+    let path = crate::sandbox::openclaw_config_dir().join("openclaw.json");
     let raw = fs::read(&path).map_err(|e| format!("读取配置失败: {e}"))?;
 
     // 自愈：自动剥离 UTF-8 BOM（EF BB BF），防止 JSON 解析失败
@@ -427,7 +427,7 @@ pub fn read_openclaw_config() -> Result<Value, String> {
                 v
             } else {
                 // 自动修复失败，尝试从备份恢复
-                let bak = super::openclaw_dir().join("openclaw.json.bak");
+                let bak = crate::sandbox::openclaw_config_dir().join("openclaw.json.bak");
                 if bak.exists() {
                     let bak_raw = fs::read(&bak).map_err(|e2| format!("备份也读取失败: {e2}"))?;
                     let bak_content = if bak_raw.starts_with(&[0xEF, 0xBB, 0xBF]) {
@@ -458,7 +458,7 @@ pub fn read_openclaw_config() -> Result<Value, String> {
     if has_ui_fields(&config) {
         config = strip_ui_fields(config);
         // 静默写回清理后的配置
-        let bak = super::openclaw_dir().join("openclaw.json.bak");
+        let bak = crate::sandbox::openclaw_config_dir().join("openclaw.json.bak");
         let _ = fs::copy(&path, &bak);
         let json = serde_json::to_string_pretty(&config).map_err(|e| format!("序列化失败: {e}"))?;
         let _ = fs::write(&path, json);
@@ -571,7 +571,7 @@ pub async fn do_reload_gateway(app: &tauri::AppHandle) -> Result<String, String>
 
 #[tauri::command]
 pub fn write_openclaw_config(config: Value) -> Result<(), String> {
-    let path = super::openclaw_dir().join("openclaw.json");
+    let path = crate::sandbox::openclaw_config_dir().join("openclaw.json");
 
     // Issue #127 修复：先读取现有配置，合并后写入
     // 这样可以保留用户手动添加的合法字段（如 browser.profiles）
@@ -581,7 +581,7 @@ pub fn write_openclaw_config(config: Value) -> Result<(), String> {
         .and_then(|c| serde_json::from_str::<Value>(&c).ok());
 
     // 备份
-    let bak = super::openclaw_dir().join("openclaw.json.bak");
+    let bak = crate::sandbox::openclaw_config_dir().join("openclaw.json.bak");
     let _ = fs::copy(&path, &bak);
 
     // 合并配置：现有配置 + 新配置
@@ -694,7 +694,7 @@ const KNOWN_LEGAL_FIELDS: &[&str] = &["browser", "profiles", "agents", "gateway"
 /// - warnings: 警告信息和建议
 #[tauri::command]
 pub fn validate_openclaw_config() -> Result<Value, String> {
-    let path = super::openclaw_dir().join("openclaw.json");
+    let path = crate::sandbox::openclaw_config_dir().join("openclaw.json");
 
     // 读取原始内容（不经过自愈逻辑）
     let raw = fs::read(&path).map_err(|e| format!("读取配置失败: {e}"))?;
@@ -724,7 +724,7 @@ pub fn validate_openclaw_config() -> Result<Value, String> {
                 }
                 Err(_) => {
                     // 自动修复失败，检查备份
-                    let bak = super::openclaw_dir().join("openclaw.json.bak");
+                    let bak = crate::sandbox::openclaw_config_dir().join("openclaw.json.bak");
                     if bak.exists() {
                         if let Ok(bak_content) = fs::read_to_string(&bak) {
                             if serde_json::from_str::<Value>(&bak_content).is_ok() {
@@ -906,7 +906,7 @@ fn sync_providers_to_agent_models(config: &Value) {
         }
     }
 
-    let agents_dir = super::openclaw_dir().join("agents");
+    let agents_dir = crate::sandbox::openclaw_config_dir().join("agents");
     for agent_id in &agent_ids {
         let models_path = agents_dir.join(agent_id).join("agent").join("models.json");
         if !models_path.exists() {
@@ -1139,7 +1139,7 @@ fn strip_ui_fields(mut val: Value) -> Value {
 
 #[tauri::command]
 pub fn read_mcp_config() -> Result<Value, String> {
-    let path = super::openclaw_dir().join("mcp.json");
+    let path = crate::sandbox::openclaw_config_dir().join("mcp.json");
     if !path.exists() {
         return Ok(Value::Object(Default::default()));
     }
@@ -1149,7 +1149,7 @@ pub fn read_mcp_config() -> Result<Value, String> {
 
 #[tauri::command]
 pub fn write_mcp_config(config: Value) -> Result<(), String> {
-    let path = super::openclaw_dir().join("mcp.json");
+    let path = crate::sandbox::openclaw_config_dir().join("mcp.json");
     let json = serde_json::to_string_pretty(&config).map_err(|e| format!("序列化失败: {e}"))?;
     fs::write(&path, json).map_err(|e| format!("写入失败: {e}"))
 }
@@ -2956,7 +2956,7 @@ async fn uninstall_openclaw_inner(
 
     // 5. 可选：清理配置目录
     if clean_config {
-        let config_dir = super::openclaw_dir();
+        let config_dir = crate::sandbox::openclaw_config_dir();
         if config_dir.exists() {
             let _ = app.emit(
                 "upgrade-log",
@@ -2984,7 +2984,7 @@ async fn uninstall_openclaw_inner(
 /// 自动初始化配置文件（CLI 已装但 openclaw.json 不存在时）
 #[tauri::command]
 pub fn init_openclaw_config() -> Result<Value, String> {
-    let dir = super::openclaw_dir();
+    let dir = crate::sandbox::openclaw_config_dir();
     let config_path = dir.join("openclaw.json");
     let mut result = serde_json::Map::new();
 
@@ -3007,7 +3007,7 @@ pub fn init_openclaw_config() -> Result<Value, String> {
         "models": { "providers": {} },
         "gateway": {
             "mode": "local",
-            "port": 18789,
+            "port": 28790,
             "auth": { "mode": "none" },
             "controlUi": { "allowedOrigins": ["*"], "allowInsecureAuth": true }
         },
@@ -3025,7 +3025,7 @@ pub fn init_openclaw_config() -> Result<Value, String> {
 
 #[tauri::command]
 pub fn check_installation() -> Result<Value, String> {
-    let dir = super::openclaw_dir();
+    let dir = crate::sandbox::openclaw_config_dir();
     let installed = dir.join("openclaw.json").exists();
     let mut result = serde_json::Map::new();
     result.insert("installed".into(), Value::Bool(installed));
@@ -3467,7 +3467,7 @@ fn is_nvm_active_version(nvm_dir: &str, version_dir: &std::path::Path) -> bool {
 /// 保存用户自定义的 Node.js 路径到 ~/.openclaw/clawpanel.json
 #[tauri::command]
 pub fn save_custom_node_path(node_dir: String) -> Result<(), String> {
-    let config_path = super::openclaw_dir().join("clawpanel.json");
+    let config_path = crate::sandbox::openclaw_config_dir().join("clawpanel.json");
     let mut config: serde_json::Map<String, Value> = if config_path.exists() {
         let content =
             std::fs::read_to_string(&config_path).map_err(|e| format!("读取配置失败: {e}"))?;
@@ -3494,7 +3494,7 @@ pub fn write_env_file(path: String, config: String) -> Result<(), String> {
     };
 
     // 安全限制：只允许写入 ~/.openclaw/ 目录下的文件
-    let openclaw_base = super::openclaw_dir();
+    let openclaw_base = crate::sandbox::openclaw_config_dir();
     if !expanded.starts_with(&openclaw_base) {
         return Err("只允许写入 ~/.openclaw/ 目录下的文件".to_string());
     }
@@ -3555,7 +3555,7 @@ pub fn create_backup() -> Result<Value, String> {
     let dir = backups_dir();
     fs::create_dir_all(&dir).map_err(|e| format!("创建备份目录失败: {e}"))?;
 
-    let src = super::openclaw_dir().join("openclaw.json");
+    let src = crate::sandbox::openclaw_config_dir().join("openclaw.json");
     if !src.exists() {
         return Err("openclaw.json 不存在".into());
     }
@@ -3586,7 +3586,7 @@ pub fn restore_backup(name: String) -> Result<(), String> {
     if !backup_path.exists() {
         return Err(format!("备份文件不存在: {name}"));
     }
-    let target = super::openclaw_dir().join("openclaw.json");
+    let target = crate::sandbox::openclaw_config_dir().join("openclaw.json");
 
     // 恢复前先自动备份当前配置
     if target.exists() {
@@ -3634,7 +3634,7 @@ fn get_uid() -> Result<u32, String> {
 #[allow(dead_code)]
 async fn reload_gateway_via_http() -> Result<String, String> {
     // 读取 gateway 端口和 token
-    let config_path = crate::commands::openclaw_dir().join("openclaw.json");
+    let config_path = crate::sandbox::openclaw_config_dir().join("openclaw.json");
     let content =
         std::fs::read_to_string(&config_path).map_err(|e| format!("读取配置失败: {e}"))?;
     let config: serde_json::Value =
@@ -3644,7 +3644,7 @@ async fn reload_gateway_via_http() -> Result<String, String> {
         .get("gateway")
         .and_then(|g| g.get("port"))
         .and_then(|p| p.as_u64())
-        .unwrap_or(18789) as u16;
+        .unwrap_or(28790) as u16;
 
     let token = config
         .get("gateway")
@@ -4166,7 +4166,7 @@ pub fn uninstall_gateway() -> Result<String, String> {
 /// 为 openclaw.json 中所有模型添加 input: ["text", "image"]，使 Gateway 识别模型支持图片输入
 #[tauri::command]
 pub fn patch_model_vision() -> Result<bool, String> {
-    let path = super::openclaw_dir().join("openclaw.json");
+    let path = crate::sandbox::openclaw_config_dir().join("openclaw.json");
     let content = fs::read_to_string(&path).map_err(|e| format!("读取配置失败: {e}"))?;
     let mut config: Value =
         serde_json::from_str(&content).map_err(|e| format!("解析 JSON 失败: {e}"))?;
@@ -4204,7 +4204,7 @@ pub fn patch_model_vision() -> Result<bool, String> {
     }
 
     if changed {
-        let bak = super::openclaw_dir().join("openclaw.json.bak");
+        let bak = crate::sandbox::openclaw_config_dir().join("openclaw.json.bak");
         let _ = fs::copy(&path, &bak);
         let json = serde_json::to_string_pretty(&config).map_err(|e| format!("序列化失败: {e}"))?;
         fs::write(&path, json).map_err(|e| format!("写入失败: {e}"))?;
@@ -4287,7 +4287,7 @@ pub async fn check_panel_update() -> Result<Value, String> {
 /// 获取当前生效的 OpenClaw 配置目录路径
 #[tauri::command]
 pub fn get_openclaw_dir() -> Result<Value, String> {
-    let resolved = super::openclaw_dir();
+    let resolved = crate::sandbox::openclaw_config_dir();
     let is_custom = super::read_panel_config_value()
         .and_then(|v| v.get("openclawDir")?.as_str().map(String::from))
         .map(|s| !s.is_empty())
@@ -4372,7 +4372,7 @@ pub fn get_npm_registry() -> Result<String, String> {
 
 #[tauri::command]
 pub fn set_npm_registry(registry: String) -> Result<(), String> {
-    let path = super::openclaw_dir().join("npm-registry.txt");
+    let path = crate::sandbox::openclaw_config_dir().join("npm-registry.txt");
     fs::write(&path, registry.trim()).map_err(|e| format!("保存失败: {e}"))
 }
 

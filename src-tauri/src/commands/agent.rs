@@ -93,7 +93,7 @@ fn check_workspace_status(path: &std::path::Path) -> WorkspaceCheckResult {
 /// 获取 agent 列表（直接读 openclaw.json，不走 CLI，毫秒级响应）
 #[tauri::command]
 pub async fn list_agents() -> Result<Value, String> {
-    let config_path = super::openclaw_dir().join("openclaw.json");
+    let config_path = crate::sandbox::openclaw_config_dir().join("openclaw.json");
     if !config_path.exists() {
         return Err("openclaw.json 不存在，请先安装 OpenClaw".to_string());
     }
@@ -116,7 +116,7 @@ pub async fn list_agents() -> Result<Value, String> {
         .and_then(|w| w.as_str())
         .map(|s| s.to_string())
         .unwrap_or_else(|| {
-            super::openclaw_dir()
+            crate::sandbox::openclaw_config_dir()
                 .join("workspace")
                 .to_string_lossy()
                 .to_string()
@@ -158,7 +158,7 @@ pub async fn list_agents() -> Result<Value, String> {
                         )
                     });
                 } else {
-                    let ws = super::openclaw_dir()
+                    let ws = crate::sandbox::openclaw_config_dir()
                         .join("agents")
                         .join(&id)
                         .join("workspace")
@@ -220,7 +220,7 @@ pub async fn add_agent(
 ) -> Result<Value, String> {
     let ws = match workspace {
         Some(ref w) if !w.is_empty() => std::path::PathBuf::from(w),
-        _ => super::openclaw_dir()
+        _ => crate::sandbox::openclaw_config_dir()
             .join("agents")
             .join(&name)
             .join("workspace"),
@@ -320,7 +320,7 @@ pub async fn add_agent(
 
 /// 直接写 openclaw.json 创建 agent（CLI 不可用时的兜底方案）
 fn add_agent_to_config(id: &str, model: &str, workspace: &std::path::Path) -> Result<(), String> {
-    let config_path = super::openclaw_dir().join("openclaw.json");
+    let config_path = crate::sandbox::openclaw_config_dir().join("openclaw.json");
     if !config_path.exists() {
         return Err("openclaw.json 不存在，请先安装 OpenClaw".to_string());
     }
@@ -367,7 +367,7 @@ fn add_agent_to_config(id: &str, model: &str, workspace: &std::path::Path) -> Re
     list.push(agent);
 
     // 备份 + 写回
-    let bak = super::openclaw_dir().join("openclaw.json.bak");
+    let bak = crate::sandbox::openclaw_config_dir().join("openclaw.json.bak");
     let _ = fs::copy(&config_path, &bak);
     let json = serde_json::to_string_pretty(&config).map_err(|e| format!("序列化失败: {e}"))?;
     fs::write(&config_path, json).map_err(|e| format!("写入配置失败: {e}"))?;
@@ -383,7 +383,7 @@ pub async fn delete_agent(app: tauri::AppHandle, id: String) -> Result<String, S
     }
 
     // 1. 从 openclaw.json 的 agents.list 中移除
-    let config_path = super::openclaw_dir().join("openclaw.json");
+    let config_path = crate::sandbox::openclaw_config_dir().join("openclaw.json");
     if config_path.exists() {
         let content = fs::read_to_string(&config_path).map_err(|e| format!("读取配置失败: {e}"))?;
         let mut config: Value =
@@ -404,14 +404,14 @@ pub async fn delete_agent(app: tauri::AppHandle, id: String) -> Result<String, S
             profiles.remove(&id);
         }
         // 备份 + 写回
-        let bak = super::openclaw_dir().join("openclaw.json.bak");
+        let bak = crate::sandbox::openclaw_config_dir().join("openclaw.json.bak");
         let _ = fs::copy(&config_path, &bak);
         let json = serde_json::to_string_pretty(&config).map_err(|e| format!("序列化失败: {e}"))?;
         fs::write(&config_path, &json).map_err(|e| format!("写入失败: {e}"))?;
     }
 
     // 2. 删除 agent 目录（workspace + sessions 等）
-    let agent_dir = super::openclaw_dir().join("agents").join(&id);
+    let agent_dir = crate::sandbox::openclaw_config_dir().join("agents").join(&id);
     if agent_dir.exists() {
         if let Err(e) = fs::remove_dir_all(&agent_dir) {
             eprintln!("[agent] 删除 agent 目录失败: {e}，不影响配置删除");
@@ -432,7 +432,7 @@ pub async fn update_agent_identity(
     name: Option<String>,
     emoji: Option<String>,
 ) -> Result<String, String> {
-    let path = super::openclaw_dir().join("openclaw.json");
+    let path = crate::sandbox::openclaw_config_dir().join("openclaw.json");
     let content = fs::read_to_string(&path).map_err(|e| format!("读取配置失败: {e}"))?;
     let mut config: Value =
         serde_json::from_str(&content).map_err(|e| format!("解析 JSON 失败: {e}"))?;
@@ -508,7 +508,7 @@ pub async fn update_agent_identity(
 /// 备份 agent 数据（agent 配置 + 会话记录）打包为 zip
 #[tauri::command]
 pub fn backup_agent(id: String) -> Result<String, String> {
-    let agent_dir = super::openclaw_dir().join("agents").join(&id);
+    let agent_dir = crate::sandbox::openclaw_config_dir().join("agents").join(&id);
     if !agent_dir.exists() {
         return Err(format!("Agent「{id}」数据目录不存在"));
     }
@@ -564,7 +564,7 @@ pub async fn update_agent_model(
     id: String,
     model: String,
 ) -> Result<String, String> {
-    let path = super::openclaw_dir().join("openclaw.json");
+    let path = crate::sandbox::openclaw_config_dir().join("openclaw.json");
     let content = fs::read_to_string(&path).map_err(|e| format!("读取配置失败: {e}"))?;
     let mut config: Value =
         serde_json::from_str(&content).map_err(|e| format!("解析 JSON 失败: {e}"))?;

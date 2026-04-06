@@ -1040,7 +1040,7 @@ pub async fn verify_bot_token(platform: String, form: Value) -> Result<Value, St
 /// 检测微信插件安装状态与版本
 #[tauri::command]
 pub async fn check_weixin_plugin_status() -> Result<Value, String> {
-    let ext_dir = super::openclaw_dir()
+    let ext_dir = crate::sandbox::openclaw_config_dir()
         .join("extensions")
         .join("openclaw-weixin");
     let mut installed = false;
@@ -1223,7 +1223,7 @@ pub async fn run_channel_action(
         };
         // 先清理旧的不兼容插件目录 + openclaw.json 中的残留配置
         // （否则 OpenClaw 配置校验会报 unknown channel / plugin not found）
-        let weixin_ext_dir = super::openclaw_dir()
+        let weixin_ext_dir = crate::sandbox::openclaw_config_dir()
             .join("extensions")
             .join("openclaw-weixin");
         if weixin_ext_dir.exists() {
@@ -1684,7 +1684,7 @@ pub async fn repair_qqbot_channel_setup(app: tauri::AppHandle) -> Result<Value, 
 }
 
 async fn diagnose_qqbot_channel(account_id: Option<String>) -> Result<Value, String> {
-    let port = crate::commands::gateway_listen_port();
+    let port = crate::sandbox::gateway_port();
     let cfg = super::config::load_openclaw_json().unwrap_or_else(|_| json!({}));
 
     let mut checks: Vec<Value> = vec![];
@@ -2438,17 +2438,17 @@ fn disable_legacy_plugin(cfg: &mut Value, plugin_id: &str) {
 }
 
 fn plugin_backup_root() -> PathBuf {
-    super::openclaw_dir()
+    crate::sandbox::openclaw_config_dir()
         .join("backups")
         .join("plugin-installs")
 }
 
 fn qqbot_plugin_dir() -> PathBuf {
-    super::openclaw_dir().join("extensions").join("qqbot")
+    crate::sandbox::openclaw_config_dir().join("extensions").join("qqbot")
 }
 
 fn legacy_plugin_backup_dir(plugin_id: &str) -> PathBuf {
-    super::openclaw_dir()
+    crate::sandbox::openclaw_config_dir()
         .join("extensions")
         .join(format!("{plugin_id}.__clawpanel_backup"))
 }
@@ -2494,7 +2494,7 @@ fn cleanup_failed_extension_install(
     had_plugin_backup: bool,
     had_config_backup: bool,
 ) -> Result<(), String> {
-    let config_path = super::openclaw_dir().join("openclaw.json");
+    let config_path = crate::sandbox::openclaw_config_dir().join("openclaw.json");
 
     if plugin_dir.exists() {
         fs::remove_dir_all(plugin_dir).map_err(|e| format!("清理坏插件目录失败: {e}"))?;
@@ -2568,7 +2568,7 @@ fn is_plugin_builtin(plugin_id: &str) -> bool {
 }
 
 fn generic_plugin_dir(plugin_id: &str) -> PathBuf {
-    super::openclaw_dir().join("extensions").join(plugin_id)
+    crate::sandbox::openclaw_config_dir().join("extensions").join(plugin_id)
 }
 
 fn generic_plugin_backup_dir(plugin_id: &str) -> PathBuf {
@@ -2586,7 +2586,7 @@ fn cleanup_failed_plugin_install(
 ) -> Result<(), String> {
     let plugin_dir = generic_plugin_dir(plugin_id);
     let plugin_backup = generic_plugin_backup_dir(plugin_id);
-    let config_path = super::openclaw_dir().join("openclaw.json");
+    let config_path = crate::sandbox::openclaw_config_dir().join("openclaw.json");
     let config_backup = generic_plugin_config_backup_path(plugin_id);
 
     if plugin_dir.exists() {
@@ -2632,7 +2632,7 @@ pub async fn install_channel_plugin(
     };
     let plugin_dir = generic_plugin_dir(plugin_id);
     let plugin_backup = generic_plugin_backup_dir(plugin_id);
-    let config_path = super::openclaw_dir().join("openclaw.json");
+    let config_path = crate::sandbox::openclaw_config_dir().join("openclaw.json");
     let config_backup = generic_plugin_config_backup_path(plugin_id);
     let had_existing_plugin = plugin_dir.exists();
     let had_existing_config = config_path.exists();
@@ -2798,7 +2798,7 @@ pub async fn install_qqbot_plugin(
 
     let plugin_dir = generic_plugin_dir(OPENCLAW_QQBOT_EXTENSION_FOLDER);
     let plugin_backup = generic_plugin_backup_dir(OPENCLAW_QQBOT_EXTENSION_FOLDER);
-    let config_path = super::openclaw_dir().join("openclaw.json");
+    let config_path = crate::sandbox::openclaw_config_dir().join("openclaw.json");
     let config_backup = generic_plugin_config_backup_path(OPENCLAW_QQBOT_EXTENSION_FOLDER);
     let had_existing_plugin = plugin_dir.exists();
     let had_existing_config = config_path.exists();

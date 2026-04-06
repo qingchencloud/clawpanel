@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 /// 前端热更新目录 (~/.openclaw/clawpanel/web-update/)
 pub fn update_dir() -> PathBuf {
-    super::openclaw_dir().join("clawpanel").join("web-update")
+    crate::sandbox::openclaw_config_dir().join("clawpanel").join("web-update")
 }
 
 /// 更新清单 URL（GitHub Pages 托管）

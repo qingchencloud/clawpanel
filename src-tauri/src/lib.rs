@@ -10,7 +10,7 @@ use commands::{
 };
 
 pub fn run() {
-    let hot_update_dir = commands::openclaw_dir()
+    let hot_update_dir = sandbox::openclaw_config_dir()
         .join("clawpanel")
         .join("web-update");
 

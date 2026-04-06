@@ -3,12 +3,6 @@ use std::path::PathBuf;
 use std::sync::RwLock;
 use std::time::Duration;
 
-/// 缓存 gateway 端口，避免频繁读文件（5秒有效期）
-static GATEWAY_PORT_CACHE: std::sync::LazyLock<std::sync::Mutex<(u16, std::time::Instant)>> =
-    std::sync::LazyLock::new(|| {
-        std::sync::Mutex::new((18789, std::time::Instant::now() - Duration::from_secs(60)))
-    });
-
 pub mod agent;
 pub mod assistant;
 pub mod config;
@@ -22,67 +16,13 @@ pub mod service;
 pub mod skills;
 pub mod update;
 
-/// 默认 OpenClaw 配置目录（ClawPanel 自身配置始终在此）
-fn default_openclaw_dir() -> PathBuf {
-    dirs::home_dir().unwrap_or_default().join(".openclaw")
-}
+// 委托路径工具到 sandbox 模块
+pub use crate::sandbox::cjgclaw_dir;
+pub use crate::sandbox::openclaw_config_dir;
 
-/// 获取 OpenClaw 配置目录
-/// 优先使用 clawpanel.json 中的 openclawDir 自定义路径，不存在则回退默认 ~/.openclaw
-pub fn openclaw_dir() -> PathBuf {
-    // 直接读 clawpanel.json（始终在默认目录下），避免循环依赖
-    let config_path = default_openclaw_dir().join("clawpanel.json");
-    if let Ok(content) = std::fs::read_to_string(&config_path) {
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
-            if let Some(custom) = v.get("openclawDir").and_then(|d| d.as_str()) {
-                let p = PathBuf::from(custom);
-                if !custom.is_empty() && p.exists() {
-                    return p;
-                }
-            }
-        }
-    }
-    default_openclaw_dir()
-}
-
-/// Gateway 监听端口：读取 `openclaw.json` 的 `gateway.port`，缺省 **18789**。
-/// 与面板「Gateway 配置」、服务状态检测（netstat / TCP / launchctl 兜底）共用同一来源，
-/// 并尊重 `clawpanel.json` 中的 `openclawDir` 自定义配置目录。
-pub fn gateway_listen_port() -> u16 {
-    // 5秒内返回缓存值，避免服务状态检测时频繁读文件
-    if let Ok(cache) = GATEWAY_PORT_CACHE.lock() {
-        if cache.1.elapsed() < Duration::from_secs(5) {
-            return cache.0;
-        }
-    }
-    let port = read_gateway_port_from_config();
-    if let Ok(mut cache) = GATEWAY_PORT_CACHE.lock() {
-        *cache = (port, std::time::Instant::now());
-    }
-    port
-}
-
-fn read_gateway_port_from_config() -> u16 {
-    let config_path = openclaw_dir().join("openclaw.json");
-    if let Ok(content) = std::fs::read_to_string(&config_path) {
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-            if let Some(port) = val
-                .get("gateway")
-                .and_then(|g| g.get("port"))
-                .and_then(|p| p.as_u64())
-            {
-                if port > 0 && port < 65536 {
-                    return port as u16;
-                }
-            }
-        }
-    }
-    18789
-}
-
+/// ClawPanel 自身配置路径（始终在 cjgclaw 目录下）
 fn panel_config_path() -> PathBuf {
-    // ClawPanel 自身配置始终在默认目录，不随 openclawDir 变化
-    default_openclaw_dir().join("clawpanel.json")
+    cjgclaw_dir().join("clawpanel.json")
 }
 
 pub fn read_panel_config_value() -> Option<serde_json::Value> {
@@ -231,11 +171,11 @@ fn build_enhanced_path() -> String {
     let home = dirs::home_dir().unwrap_or_default();
 
     // 读取用户保存的自定义 Node.js 路径
-    let custom_path = openclaw_dir()
+    let custom_path = openclaw_config_dir()
         .join("clawpanel.json")
         .exists()
         .then(|| {
-            std::fs::read_to_string(openclaw_dir().join("clawpanel.json"))
+            std::fs::read_to_string(openclaw_config_dir().join("clawpanel.json"))
                 .ok()
                 .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
                 .and_then(|v| v.get("nodePath")?.as_str().map(String::from))

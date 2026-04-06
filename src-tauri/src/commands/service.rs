@@ -65,7 +65,7 @@ fn guardian_state() -> &'static Arc<Mutex<GuardianRuntimeState>> {
 }
 
 fn guardian_log(message: &str) {
-    let log_dir = crate::commands::openclaw_dir().join("logs");
+    let log_dir = crate::sandbox::openclaw_config_dir().join("logs");
     let _ = std::fs::create_dir_all(&log_dir);
     let path = log_dir.join("guardian.log");
     let line = format!(
@@ -126,7 +126,7 @@ pub(crate) fn guardian_resume(reason: &str) {
 }
 
 fn gateway_config_exists() -> bool {
-    crate::commands::openclaw_dir()
+    crate::sandbox::openclaw_config_dir()
         .join("openclaw.json")
         .exists()
 }
@@ -388,7 +388,7 @@ mod platform {
 
     /// 跨平台统一检测：TCP 连端口 + lsof 获取 PID
     pub fn check_service_status(_uid: u32, _label: &str) -> (bool, Option<u32>) {
-        let port = crate::commands::gateway_listen_port();
+        let port = crate::sandbox::gateway_port();
         let addr = format!("127.0.0.1:{port}");
         let socket_addr = match addr.parse() {
             Ok(a) => a,
@@ -418,7 +418,7 @@ mod platform {
     /// launchctl 失败时的回退：直接通过 CLI spawn Gateway 进程
     fn start_gateway_direct() -> Result<(), String> {
         // 启动前再次检查端口（防止 launchctl→direct 回退链路中重复拉起）
-        let port = crate::commands::gateway_listen_port();
+        let port = crate::sandbox::gateway_port();
         if let Ok(addr) = format!("127.0.0.1:{port}").parse::<std::net::SocketAddr>() {
             if std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(500))
                 .is_ok()
@@ -429,7 +429,7 @@ mod platform {
 
         let enhanced = crate::commands::enhanced_path();
 
-        let log_dir = crate::commands::openclaw_dir().join("logs");
+        let log_dir = crate::sandbox::openclaw_config_dir().join("logs");
         fs::create_dir_all(&log_dir).ok();
 
         let stdout_log = fs::OpenOptions::new()
@@ -460,7 +460,7 @@ mod platform {
         })?;
 
         // 等 Gateway 初始化（最多 10s，轮询端口就绪）
-        let port = crate::commands::gateway_listen_port();
+        let port = crate::sandbox::gateway_port();
         let addr = format!("127.0.0.1:{port}");
         let addr = match addr.parse() {
             Ok(a) => a,
@@ -483,7 +483,7 @@ mod platform {
 
     pub fn start_service_impl(label: &str) -> Result<(), String> {
         // 启动前检查端口是否已被占用，防止重复拉起导致端口冲突和内存浪费
-        let port = crate::commands::gateway_listen_port();
+        let port = crate::sandbox::gateway_port();
         let pre_check_addr: std::net::SocketAddr = format!("127.0.0.1:{port}")
             .parse()
             .map_err(|_| format!("端口 {port} 解析失败"))?;
@@ -650,9 +650,9 @@ mod platform {
 
     /// 清理残留的僵尸 Gateway 进程（启动时调用，防止 Windows 重启后多进程堆积）
     pub(crate) fn cleanup_zombie_gateway_processes() {
-        let port = crate::commands::gateway_listen_port();
+        let port = crate::sandbox::gateway_port();
 
-        // 用 netstat 找到端口 18789 的所有监听进程 PID
+        // 用 netstat 找到端口的所有监听进程 PID
         let output = match StdCommand::new("netstat")
             .args(["-ano", "-p", "TCP"])
             .creation_flags(CREATE_NO_WINDOW)
@@ -664,7 +664,7 @@ mod platform {
 
         for line in output.lines() {
             let line = line.trim();
-            // 匹配  TCP    0.0.0.0:18789    0.0.0.0:0    LISTENING    <PID>
+            // 匹配  TCP    0.0.0.0:<port>    0.0.0.0:0    LISTENING    <PID>
             if !line.contains(&format!(":{port}")) || !line.contains("LISTENING") {
                 continue;
             }
@@ -931,7 +931,7 @@ mod platform {
     /// 检测 Gateway 是否在运行，并返回其 PID
     /// 策略：先 TCP 端口检测连通性，再用 netstat+WMIC 验证命令行是 OpenClaw Gateway
     pub fn check_service_status(_uid: u32, _label: &str) -> (bool, Option<u32>) {
-        let port = crate::commands::gateway_listen_port();
+        let port = crate::sandbox::gateway_port();
         let addr = format!("127.0.0.1:{port}");
         let socket_addr = match addr.parse() {
             Ok(a) => a,
@@ -968,7 +968,7 @@ mod platform {
     }
 
     fn create_gateway_log_files() -> Result<(std::fs::File, std::fs::File), String> {
-        let log_dir = crate::commands::openclaw_dir().join("logs");
+        let log_dir = crate::sandbox::openclaw_config_dir().join("logs");
         fs::create_dir_all(&log_dir).map_err(|e| format!("创建日志目录失败: {e}"))?;
 
         let mut stdout_log = OpenOptions::new()
@@ -1016,7 +1016,7 @@ mod platform {
             // 无 PID 但端口通 → 可能是其他进程占用，拒绝启动
             return Err(format!(
                 "端口 {} 被未知进程占用，请先关闭占用该端口的程序",
-                crate::commands::gateway_listen_port()
+                crate::sandbox::gateway_port()
             ));
         }
 
@@ -1068,7 +1068,7 @@ mod platform {
 
     /// 关闭 Gateway：精确 kill Gateway 进程，不误杀其他 node.exe
     pub async fn stop_service_impl(_label: &str) -> Result<(), String> {
-        let port = crate::commands::gateway_listen_port();
+        let port = crate::sandbox::gateway_port();
 
         // 端口不通 → 已停止
         if !check_service_status(0, "").0 {
@@ -1235,7 +1235,7 @@ mod platform {
     /// 跨平台统一检测：TCP 连端口
     #[allow(dead_code)]
     pub async fn check_service_status(_uid: u32, _label: &str) -> (bool, Option<u32>) {
-        let port = crate::commands::gateway_listen_port();
+        let port = crate::sandbox::gateway_port();
         let addr = format!("127.0.0.1:{port}");
         let socket_addr: std::net::SocketAddr = match addr.parse() {
             Ok(a) => a,
@@ -1257,7 +1257,7 @@ mod platform {
 
     /// 清理残留的 Gateway 进程（Linux 版：通过 fuser 查端口占用进程并 kill）
     fn cleanup_zombie_gateway_processes() {
-        let port = crate::commands::gateway_listen_port();
+        let port = crate::sandbox::gateway_port();
         // 尝试用 fuser 找到端口占用进程
         if let Ok(output) = std::process::Command::new("fuser")
             .args([&format!("{port}/tcp")])
@@ -1348,7 +1348,7 @@ mod platform {
         }
 
         // 启动前检查端口是否已被占用，防止重复拉起导致端口冲突和内存浪费
-        let port = crate::commands::gateway_listen_port();
+        let port = crate::sandbox::gateway_port();
         let pre_check_addr: std::net::SocketAddr = format!("127.0.0.1:{port}")
             .parse()
             .map_err(|_| format!("端口 {port} 解析失败"))?;
@@ -1380,7 +1380,7 @@ mod platform {
         }
 
         // 等端口就绪（最多 15s）
-        let port = crate::commands::gateway_listen_port();
+        let port = crate::sandbox::gateway_port();
         let addr: std::net::SocketAddr = match format!("127.0.0.1:{port}").parse() {
             Ok(a) => a,
             Err(_) => return Err(format!("端口 {port} 解析失败")),
@@ -1428,7 +1428,7 @@ pub fn invalidate_cli_detection_cache() {}
 /// 跨平台统一的服务状态检测：纯 TCP 端口连通性（macOS/Linux 使用）
 #[cfg(not(target_os = "windows"))]
 fn check_tcp_service_status(_uid: u32, _label: &str) -> (bool, Option<u32>) {
-    let port = crate::commands::gateway_listen_port();
+    let port = crate::sandbox::gateway_port();
     let addr = format!("127.0.0.1:{port}");
     let socket_addr = match addr.parse() {
         Ok(a) => a,

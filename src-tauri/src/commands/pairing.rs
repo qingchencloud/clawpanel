@@ -11,10 +11,10 @@ pub fn auto_pair_device() -> Result<String, String> {
     let (device_id, public_key, _) = super::device::get_or_create_key()?;
 
     // 读取或创建 paired.json
-    let paired_path = crate::commands::openclaw_dir()
+    let paired_path = crate::sandbox::openclaw_config_dir()
         .join("devices")
         .join("paired.json");
-    let devices_dir = crate::commands::openclaw_dir().join("devices");
+    let devices_dir = crate::sandbox::openclaw_config_dir().join("devices");
 
     // 确保 devices 目录存在
     if !devices_dir.exists() {
@@ -104,7 +104,7 @@ pub fn auto_pair_device() -> Result<String, String> {
 /// 将 Tauri 应用的 origin 写入 gateway.controlUi.allowedOrigins
 /// 避免 Gateway 因 origin not allowed 拒绝 WebSocket 握手
 fn patch_gateway_origins() {
-    let config_path = crate::commands::openclaw_dir().join("openclaw.json");
+    let config_path = crate::sandbox::openclaw_config_dir().join("openclaw.json");
     if !config_path.exists() {
         return;
     }
@@ -162,7 +162,7 @@ fn patch_gateway_origins() {
 #[tauri::command]
 pub fn check_pairing_status() -> Result<bool, String> {
     // 读取设备密钥
-    let device_key_path = crate::commands::openclaw_dir().join("clawpanel-device-key.json");
+    let device_key_path = crate::sandbox::openclaw_config_dir().join("clawpanel-device-key.json");
     if !device_key_path.exists() {
         return Ok(false);
     }
@@ -176,7 +176,7 @@ pub fn check_pairing_status() -> Result<bool, String> {
     let device_id = device_key["deviceId"].as_str().ok_or("设备 ID 不存在")?;
 
     // 检查 paired.json
-    let paired_path = crate::commands::openclaw_dir()
+    let paired_path = crate::sandbox::openclaw_config_dir()
         .join("devices")
         .join("paired.json");
     if !paired_path.exists() {
