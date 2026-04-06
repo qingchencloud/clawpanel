@@ -95,6 +95,19 @@ pub fn sandbox_init() -> Result<SandboxStatus, String> {
             .map_err(|e| format!("Failed to write .installed: {}", e))?;
     }
 
+    // 创建 cjgclaw.json（如果不存在）
+    let config_path = cjgclaw.join("cjgclaw.json");
+    if !config_path.exists() {
+        let config = serde_json::json!({
+            "version": version_str,
+            "gateway": {
+                "port": 28790
+            }
+        });
+        std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap())
+            .map_err(|e| format!("Failed to write cjgclaw.json: {}", e))?;
+    }
+
     Ok(SandboxStatus {
         initialized: true,
         cjgclaw_dir: cjgclaw.to_string_lossy().to_string(),
