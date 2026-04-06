@@ -1,81 +1,13 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ClawPanel</title>
-  <link rel="icon" href="/favicon.ico">
-  <!-- 样式由 main.js 通过 Vite 统一加载 -->
-  <style>
-    /* 启动加载屏（内联，零依赖，立即渲染） */
-    #splash {
-      position: fixed; inset: 0; z-index: 99999;
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      background: #f8f9fb;
-      transition: opacity 0.4s ease, visibility 0.4s ease;
-    }
-    @media (prefers-color-scheme: dark) { #splash { background: #0f0f14; } }
-    #splash.hide { opacity: 0; visibility: hidden; pointer-events: none; }
-    #splash .sp-logo {
-      width: 56px; height: 56px; margin-bottom: 20px;
-      color: #6366f1; animation: sp-pulse 2s ease-in-out infinite;
-    }
-    #splash .sp-name {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      font-size: 18px; font-weight: 600; letter-spacing: 0.5px;
-      color: #18181b; margin-bottom: 28px;
-    }
-    @media (prefers-color-scheme: dark) { #splash .sp-name { color: #e4e4e7; } }
-    #splash .sp-bar {
-      width: 120px; height: 3px; border-radius: 2px; overflow: hidden;
-      background: rgba(99, 102, 241, 0.15);
-    }
-    #splash .sp-bar-inner {
-      width: 40%; height: 100%; border-radius: 2px;
-      background: #6366f1;
-      animation: sp-slide 1.2s ease-in-out infinite;
-    }
-    #splash .sp-site {
-      margin-top: 24px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      font-size: 12px; color: #a1a1aa; letter-spacing: 0.3px;
-    }
-    #splash .sp-site a {
-      color: #6366f1; text-decoration: none;
-    }
-    #splash .sp-site a:hover { text-decoration: underline; }
-    @keyframes sp-slide {
-      0% { transform: translateX(-100%); }
-      50% { transform: translateX(200%); }
-      100% { transform: translateX(-100%); }
-    }
-    @keyframes sp-pulse {
-      0%, 100% { opacity: 0.7; transform: scale(1); }
-      50% { opacity: 1; transform: scale(1.05); }
-    }
-  </style>
-</head>
-<body>
-  <!-- 启动加载屏 -->
-  <div id="splash">
-    <svg class="sp-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-      <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/>
-      <path d="M18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z"/>
-    </svg>
-    <div class="sp-name">ClawPanel</div>
-    <div class="sp-bar"><div class="sp-bar-inner"></div></div>
-    <div class="sp-site"><a href="https://qt.cool" target="_blank">qt.cool</a></div>
-  </div>
-  <script>window._splashTimer=setTimeout(function(){var s=document.getElementById('splash');if(s){var app=document.getElementById('content');if(app&&app.children.length>0){s.classList.add('hide');setTimeout(function(){s.remove()},500)}else{s.innerHTML='<div style="text-align:center;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif"><div style="font-size:40px;margin-bottom:12px">\u26A0\uFE0F</div><div style="font-size:16px;font-weight:600;color:#18181b;margin-bottom:8px">\u9875\u9762\u52A0\u8F7D\u5931\u8D25</div><div style="font-size:12px;color:#71717a;margin-bottom:16px;line-height:1.6">\u53EF\u80FD\u539F\u56E0\uFF1A\u5E94\u7528\u521D\u59CB\u5316\u8D85\u65F6\uFF0C\u8BF7\u68C0\u67E5\u63A7\u5236\u53F0\u662F\u5426\u6709\u62A5\u9519<br>\u5982\u786E\u8BA4 WebView2 \u672A\u5B89\u88C5\uFF0C\u8BF7\u4E0B\u8F7D <a href="https://go.microsoft.com/fwlink/p/?LinkId=2124703" style="color:#6366f1">WebView2 Runtime</a></div><button onclick="location.reload()" style="padding:6px 16px;border-radius:6px;border:none;background:#6366f1;color:#fff;font-size:12px;cursor:pointer">\u5237\u65B0\u91CD\u8BD5</button></div>'}}},15000)</script>
-
-  <div id="app">
-    <aside id="sidebar"></aside>
-    <div id="main-col">
-      <div id="update-banner" class="update-banner update-banner-hidden"></div>
-      <div id="gw-banner" class="gw-banner gw-banner-hidden"></div>
-      <main id="content"></main>
-    </div>
-  </div>
-  <script type="module" src="/src/main.js"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CJGClaw</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>
