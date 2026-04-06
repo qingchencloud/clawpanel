@@ -6,6 +6,7 @@ use tauri::{
     tray::TrayIconBuilder,
     AppHandle, Manager,
 };
+use crate::sandbox::gateway;
 
 pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     // 菜单项
@@ -15,7 +16,7 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let gateway_stop = MenuItemBuilder::with_id("gateway_stop", "停止 Gateway").build(app)?;
     let gateway_restart = MenuItemBuilder::with_id("gateway_restart", "重启 Gateway").build(app)?;
     let separator2 = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItemBuilder::with_id("quit", "退出 ClawPanel").build(app)?;
+    let quit = MenuItemBuilder::with_id("quit", "退出 CJGClaw").build(app)?;
 
     let menu = MenuBuilder::new(app)
         .item(&show)
@@ -32,7 +33,7 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
     let _tray = TrayIconBuilder::new()
         .icon(icon)
-        .tooltip("ClawPanel")
+        .tooltip("CJGClaw")
         .menu(&menu)
         .on_menu_event(move |app, event| {
             handle_menu_event(app, event.id().as_ref());
@@ -60,19 +61,13 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
             }
         }
         "gateway_start" => {
-            std::mem::drop(crate::commands::service::start_service(
-                "ai.openclaw.gateway".into(),
-            ));
+            std::mem::drop(gateway::gateway_start());
         }
         "gateway_stop" => {
-            std::mem::drop(crate::commands::service::stop_service(
-                "ai.openclaw.gateway".into(),
-            ));
+            std::mem::drop(gateway::gateway_stop());
         }
         "gateway_restart" => {
-            std::mem::drop(crate::commands::service::restart_service(
-                "ai.openclaw.gateway".into(),
-            ));
+            std::mem::drop(gateway::gateway_restart());
         }
         "quit" => {
             app.exit(0);
