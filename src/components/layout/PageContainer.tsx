@@ -1,5 +1,4 @@
 import { motion } from 'framer-motion'
-import { Outlet } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 
@@ -14,7 +13,7 @@ const pageTransition = {
   ease: 'easeOut',
 }
 
-export function PageContainer() {
+export function PageContainer({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar />
@@ -28,7 +27,7 @@ export function PageContainer() {
             exit="exit"
             transition={pageTransition}
           >
-            <Outlet />
+            {children}
           </motion.div>
         </main>
       </div>

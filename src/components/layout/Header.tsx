@@ -1,5 +1,4 @@
 import { useLocation } from 'react-router-dom'
-import { useUIStore } from '@/stores/ui-store'
 
 const PAGE_TITLES: Record<string, string> = {
   '/dashboard': '仪表盘',
