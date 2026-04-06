@@ -5,7 +5,7 @@ mod tray;
 mod utils;
 
 use commands::{
-    agent, assistant, config, device, extensions, logs, memory, messaging, pairing, service,
+    agent, config, device, extensions, logs, pairing,
     skills, update,
 };
 
@@ -61,7 +61,6 @@ pub fn run() {
             }
         })
         .setup(|app| {
-            service::start_backend_guardian(app.handle().clone());
             tray::setup_tray(app.handle())?;
             Ok(())
         })
@@ -128,21 +127,9 @@ pub fn run() {
             pairing::check_pairing_status,
             pairing::pairing_list_channel,
             pairing::pairing_approve_channel,
-            // 服务
-            service::get_services_status,
-            service::start_service,
-            service::stop_service,
-            service::restart_service,
-            service::guardian_status,
             // 日志
             logs::read_log_tail,
             logs::search_log,
-            // 记忆文件
-            memory::list_memory_files,
-            memory::read_memory_file,
-            memory::write_memory_file,
-            memory::delete_memory_file,
-            memory::export_memory_zip,
             // 扩展工具
             extensions::get_cftunnel_status,
             extensions::cftunnel_action,
@@ -157,41 +144,6 @@ pub fn run() {
             agent::update_agent_identity,
             agent::update_agent_model,
             agent::backup_agent,
-            // AI 助手工具
-            assistant::assistant_exec,
-            assistant::assistant_read_file,
-            assistant::assistant_write_file,
-            assistant::assistant_list_dir,
-            assistant::assistant_system_info,
-            assistant::assistant_list_processes,
-            assistant::assistant_check_port,
-            assistant::assistant_web_search,
-            assistant::assistant_fetch_url,
-            // 数据目录 & 图片存储
-            assistant::assistant_ensure_data_dir,
-            assistant::assistant_save_image,
-            assistant::assistant_load_image,
-            assistant::assistant_delete_image,
-            // 消息渠道管理
-            messaging::read_platform_config,
-            messaging::save_messaging_platform,
-            messaging::remove_messaging_platform,
-            messaging::toggle_messaging_platform,
-            messaging::verify_bot_token,
-            messaging::diagnose_channel,
-            messaging::repair_qqbot_channel_setup,
-            messaging::list_configured_platforms,
-            messaging::get_channel_plugin_status,
-            messaging::install_channel_plugin,
-            messaging::install_qqbot_plugin,
-            messaging::run_channel_action,
-            messaging::check_weixin_plugin_status,
-            // Agent 渠道绑定管理
-            messaging::get_agent_bindings,
-            messaging::list_all_bindings,
-            messaging::save_agent_binding,
-            messaging::delete_agent_binding,
-            messaging::delete_agent_all_bindings,
             // Skills 管理（openclaw skills CLI）
             skills::skills_list,
             skills::skills_info,
