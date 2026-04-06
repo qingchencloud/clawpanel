@@ -1,4 +1,5 @@
 import { useLocation } from 'react-router-dom'
+import { GatewayBanner } from './GatewayBanner'
 
 const PAGE_TITLES: Record<string, string> = {
   '/dashboard': '仪表盘',
@@ -17,11 +18,14 @@ export function Header() {
   const title = PAGE_TITLES[location.pathname] ?? 'CJGClaw'
 
   return (
-    <header className="flex h-14 items-center justify-between border-b border-border bg-surface px-6">
-      <h1 className="text-lg font-semibold text-text-primary">{title}</h1>
-      <div className="flex items-center gap-3">
-        <span className="text-sm text-text-tertiary">v1.0.0</span>
-      </div>
-    </header>
+    <div>
+      <GatewayBanner />
+      <header className="flex h-14 items-center justify-between border-b border-border bg-surface px-6">
+        <h1 className="text-lg font-semibold text-text-primary">{title}</h1>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-text-tertiary">v1.0.0</span>
+        </div>
+      </header>
+    </div>
   )
 }
