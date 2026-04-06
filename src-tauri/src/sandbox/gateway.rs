@@ -114,6 +114,17 @@ fn find_pid_by_port(port: u16) -> Option<u32> {
     }
 }
 
+/// 等待端口上有进程监听，最多重试 max_attempts 次
+fn wait_for_port(port: u16, max_attempts: u32) -> Option<u32> {
+    for _ in 0..max_attempts {
+        if let Some(pid) = find_pid_by_port(port) {
+            return Some(pid);
+        }
+        std::thread::sleep(Duration::from_secs(1));
+    }
+    None
+}
+
 /// 启动 Gateway
 #[command]
 pub fn gateway_start() -> Result<GatewayStatus, String> {
@@ -168,12 +179,13 @@ pub fn gateway_start() -> Result<GatewayStatus, String> {
         }
 
         // 加载并启动
-        let _ = std::process::Command::new("launchctl")
+        let output = std::process::Command::new("launchctl")
             .args(["load", &plist_path.to_string_lossy()])
-            .output();
-
-        // 等待并检查（同步等待）
-        std::thread::sleep(Duration::from_secs(2));
+            .output()
+            .map_err(|e| format!("Failed to run launchctl: {}", e))?;
+        if !output.status.success() {
+            return Err(format!("launchctl load failed: {}", String::from_utf8_lossy(&output.stderr)));
+        }
     }
 
     #[cfg(target_os = "windows")]
@@ -215,9 +227,8 @@ pub fn gateway_start() -> Result<GatewayStatus, String> {
         return Err("Unsupported platform for gateway_start".to_string());
     }
 
-    // 等待启动并检查（同步等待）
-    std::thread::sleep(Duration::from_secs(2));
-    let pid = find_pid_by_port(port);
+    // 等待启动并检查（带重试）
+    let pid = wait_for_port(port, 5);
 
     Ok(GatewayStatus {
         running: pid.is_some(),

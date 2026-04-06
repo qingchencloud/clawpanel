@@ -25,7 +25,7 @@ pub struct SandboxStatus {
 /// 创建目录结构、设备身份密钥、cjgclaw.json
 #[command]
 pub fn sandbox_init() -> Result<SandboxStatus, String> {
-    let _home = dirs::home_dir().ok_or("Cannot determine home directory")?;
+    dirs::home_dir().ok_or("Cannot determine home directory")?;
     let cjgclaw = cjgclaw_dir();
     let openclaw_cfg = openclaw_config_dir();
 
@@ -82,9 +82,7 @@ pub fn sandbox_init() -> Result<SandboxStatus, String> {
                 .map_err(|e| format!("Failed to set keypair permissions: {}", e))?;
         }
 
-        let _ = &keypair_path;
-        let pub_key = keypair.split(':').nth(1).map(|s| s.to_string());
-        pub_key
+        keypair.split(':').nth(1).map(|s| s.to_string())
     };
 
     // 确保 .installed 文件存在（包含版本）
@@ -104,7 +102,7 @@ pub fn sandbox_init() -> Result<SandboxStatus, String> {
                 "port": 28790
             }
         });
-        std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap())
+        std::fs::write(&config_path, serde_json::to_string_pretty(&config).map_err(|e| format!("Failed to serialize cjgclaw.json: {}", e))?)
             .map_err(|e| format!("Failed to write cjgclaw.json: {}", e))?;
     }
 
