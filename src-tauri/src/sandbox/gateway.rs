@@ -2,6 +2,8 @@
 //! 管理 Gateway 进程的启动、停止、重启和状态检查。
 
 use crate::sandbox::gateway_port;
+#[allow(unused_imports)]
+use std::process::Stdio;
 use std::time::Duration;
 use tauri::command;
 
@@ -110,12 +112,6 @@ fn find_pid_by_port(port: u16) -> Option<u32> {
         let _ = port;
         None
     }
-}
-
-/// 获取 OpenClaw CLI 路径
-#[allow(dead_code)]
-fn openclaw_cli_path() -> std::path::PathBuf {
-    crate::sandbox::bundled_openclaw_dir().join("node_modules/openclaw/openclaw.mjs")
 }
 
 /// 启动 Gateway

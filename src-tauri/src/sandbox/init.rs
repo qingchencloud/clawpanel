@@ -7,6 +7,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use ed25519_dalek::SigningKey;
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use tauri::command;
 
 /// 沙箱状态响应
@@ -29,7 +30,7 @@ pub fn sandbox_init() -> Result<SandboxStatus, String> {
     let openclaw_cfg = openclaw_config_dir();
 
     // 创建目录结构
-    let dirs_to_create = [
+    let dirs_to_create: [PathBuf; 10] = [
         cjgclaw.clone(),
         cjgclaw.join("agents"),
         cjgclaw.join("memory"),
@@ -42,7 +43,7 @@ pub fn sandbox_init() -> Result<SandboxStatus, String> {
         openclaw_cfg.join("skills"),
     ];
 
-    for dir in dirs_to_create {
+    for dir in &dirs_to_create {
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("Failed to create directory {:?}: {}", dir, e))?;
     }
@@ -81,7 +82,9 @@ pub fn sandbox_init() -> Result<SandboxStatus, String> {
                 .map_err(|e| format!("Failed to set keypair permissions: {}", e))?;
         }
 
-        keypair.split(':').nth(1).map(|s| s.to_string())
+        let _ = &keypair_path;
+        let pub_key = keypair.split(':').nth(1).map(|s| s.to_string());
+        pub_key
     };
 
     // 确保 .installed 文件存在（包含版本）
