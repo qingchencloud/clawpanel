@@ -4919,6 +4919,7 @@ async fn reload_gateway_via_http() -> Result<String, String> {
 /// 重载 Gateway 服务
 /// Windows/Linux: 优先尝试 HTTP 热重载（不重启进程）
 /// 如果 HTTP 重载失败，回退到 restart_service（会触发 Guardian 重启循环）
+#[allow(unused_variables)]
 async fn reload_gateway_internal(app: Option<&tauri::AppHandle>) -> Result<String, String> {
     #[cfg(target_os = "macos")]
     {
