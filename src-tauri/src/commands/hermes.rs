@@ -946,7 +946,7 @@ async fn install_via_uv_tool(
     };
 
     let mut cmd = tokio::process::Command::new(uv_path);
-    cmd.args(["tool", "install", "--force", &pkg, "--python", "3.11"]);
+    cmd.args(["tool", "install", "--force", &pkg, "--python", "3.11", "--with", "croniter"]);
 
     // 配置 PyPI 镜像（extras 的依赖仍从 PyPI 下载）
     if let Some(mirror) = pypi_mirror_url() {
@@ -2143,6 +2143,22 @@ pub async fn hermes_api_proxy(
 ) -> Result<Value, String> {
     let url = format!("{}{path}", hermes_gateway_url());
 
+    // 读取 API_SERVER_KEY
+    let api_key = {
+        let env_path = hermes_home().join(".env");
+        let mut key = String::new();
+        if let Ok(content) = std::fs::read_to_string(&env_path) {
+            for line in content.lines() {
+                let line = line.trim();
+                if let Some(val) = line.strip_prefix("API_SERVER_KEY=") {
+                    key = val.trim().to_string();
+                    break;
+                }
+            }
+        }
+        key
+    };
+
     let timeout = if path.contains("/chat/completions") || path.contains("/responses") {
         std::time::Duration::from_secs(120)
     } else {
@@ -2167,9 +2183,27 @@ pub async fn hermes_api_proxy(
             }
             r
         }
-        "DELETE" => client.delete(&url),
+        "PUT" => {
+            let mut r = client.put(&url);
+            if let Some(b) = &body {
+                r = r.header("Content-Type", "application/json").body(b.clone());
+            }
+            r
+        }
+        "DELETE" => {
+            let mut r = client.delete(&url);
+            if let Some(b) = &body {
+                r = r.header("Content-Type", "application/json").body(b.clone());
+            }
+            r
+        }
         _ => return Err(format!("不支持的方法: {method}")),
     };
+
+    // 注入 API_SERVER_KEY 认证
+    if !api_key.is_empty() {
+        req = req.header("Authorization", format!("Bearer {api_key}"));
+    }
 
     // 注入自定义 headers（如 X-Hermes-Session-Id）
     if let Some(Value::Object(map)) = &headers {
@@ -2190,12 +2224,16 @@ pub async fn hermes_api_proxy(
     });
 
     if status >= 400 {
-        // 返回错误信息
+        // 提取错误信息：支持 {"error": "msg"} 和 {"error": {"message": "msg"}} 两种格式
         let err_msg = json_val
             .get("error")
-            .and_then(|v| v.as_str())
-            .unwrap_or(&text);
-        return Err(format!("{err_msg}"));
+            .and_then(|v| {
+                v.as_str().map(String::from).or_else(|| {
+                    v.get("message").and_then(|m| m.as_str()).map(String::from)
+                })
+            })
+            .unwrap_or_else(|| text.clone());
+        return Err(err_msg);
     }
 
     Ok(json_val)
@@ -2368,4 +2406,399 @@ pub async fn hermes_agent_run(
         "output": &final_output,
     }));
     Ok(run_id)
+}
+
+// ---------------------------------------------------------------------------
+// Hermes Sessions / Logs / Skills / Memory — 文件系统 + CLI 命令
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn hermes_sessions_list(
+    source: Option<String>,
+    limit: Option<usize>,
+) -> Result<Value, String> {
+    let mut args = vec!["sessions", "export", "-"];
+    let source_owned;
+    if let Some(s) = &source {
+        source_owned = s.clone();
+        args.push("--source");
+        args.push(&source_owned);
+    }
+    let output = match run_silent("hermes", &args) {
+        Ok(s) => s,
+        Err(_) => return Ok(serde_json::json!([])),
+    };
+    let mut sessions: Vec<Value> = Vec::new();
+    for line in output.lines() {
+        let t = line.trim();
+        if t.is_empty() {
+            continue;
+        }
+        if let Ok(obj) = serde_json::from_str::<Value>(t) {
+            sessions.push(serde_json::json!({
+                "id": obj.get("session_id").or(obj.get("id")).and_then(|v| v.as_str()).unwrap_or(""),
+                "title": obj.get("title").or(obj.get("name")).and_then(|v| v.as_str()).unwrap_or(""),
+                "source": obj.get("source").and_then(|v| v.as_str()).unwrap_or(""),
+                "model": obj.get("model").and_then(|v| v.as_str()).unwrap_or(""),
+                "created_at": obj.get("created_at").or(obj.get("createdAt")).and_then(|v| v.as_str()).unwrap_or(""),
+                "updated_at": obj.get("updated_at").or(obj.get("updatedAt")).and_then(|v| v.as_str()).unwrap_or(""),
+                "message_count": obj.get("message_count").and_then(|v| v.as_u64()).unwrap_or(0),
+            }));
+        }
+    }
+    sessions.sort_by(|a, b| {
+        let ca = a["created_at"].as_str().unwrap_or("");
+        let cb = b["created_at"].as_str().unwrap_or("");
+        cb.cmp(ca)
+    });
+    if let Some(lim) = limit {
+        if lim > 0 {
+            sessions.truncate(lim);
+        }
+    }
+    Ok(Value::Array(sessions))
+}
+
+#[tauri::command]
+pub async fn hermes_session_detail(session_id: String) -> Result<Value, String> {
+    let output = run_silent("hermes", &["sessions", "export", "-"])
+        .map_err(|e| format!("Failed to read sessions: {e}"))?;
+    for line in output.lines() {
+        let t = line.trim();
+        if t.is_empty() {
+            continue;
+        }
+        if let Ok(obj) = serde_json::from_str::<Value>(t) {
+            let id = obj
+                .get("session_id")
+                .or(obj.get("id"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if id == session_id {
+                let messages = obj
+                    .get("messages")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .map(|m| {
+                                serde_json::json!({
+                                    "role": m.get("role").and_then(|v| v.as_str()).unwrap_or(""),
+                                    "content": m.get("content").map(|c| {
+                                        if let Some(s) = c.as_str() { s.to_string() }
+                                        else { c.to_string() }
+                                    }).unwrap_or_default(),
+                                    "timestamp": m.get("timestamp").or(m.get("created_at")).and_then(|v| v.as_str()).unwrap_or(""),
+                                })
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                return Ok(serde_json::json!({
+                    "id": id,
+                    "title": obj.get("title").or(obj.get("name")).and_then(|v| v.as_str()).unwrap_or(""),
+                    "source": obj.get("source").and_then(|v| v.as_str()).unwrap_or(""),
+                    "model": obj.get("model").and_then(|v| v.as_str()).unwrap_or(""),
+                    "created_at": obj.get("created_at").and_then(|v| v.as_str()).unwrap_or(""),
+                    "messages": messages,
+                }));
+            }
+        }
+    }
+    Err("Session not found".into())
+}
+
+#[tauri::command]
+pub async fn hermes_session_delete(session_id: String) -> Result<String, String> {
+    run_silent("hermes", &["sessions", "delete", &session_id, "--yes"])?;
+    Ok("ok".into())
+}
+
+#[tauri::command]
+pub async fn hermes_session_rename(session_id: String, title: String) -> Result<String, String> {
+    run_silent("hermes", &["sessions", "rename", &session_id, &title])?;
+    Ok("ok".into())
+}
+
+#[tauri::command]
+pub async fn hermes_logs_list() -> Result<Value, String> {
+    let logs_dir = hermes_home().join("logs");
+    if !logs_dir.exists() {
+        return Ok(serde_json::json!([]));
+    }
+    let mut files: Vec<Value> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&logs_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.ends_with(".log") && !name.ends_with(".txt") && !name.ends_with(".jsonl") {
+                continue;
+            }
+            let (size, modified) = if let Ok(meta) = entry.metadata() {
+                let sz = meta.len();
+                let mt = meta
+                    .modified()
+                    .ok()
+                    .and_then(|t| {
+                        t.duration_since(std::time::UNIX_EPOCH)
+                            .ok()
+                            .map(|d| {
+                                let secs = d.as_secs() as i64;
+                                // Simple ISO-ish format
+                                let dt = chrono_simple(secs);
+                                dt
+                            })
+                    })
+                    .unwrap_or_default();
+                (sz, mt)
+            } else {
+                (0, String::new())
+            };
+            files.push(serde_json::json!({
+                "name": name,
+                "size": size,
+                "modified": modified,
+            }));
+        }
+    }
+    files.sort_by(|a, b| {
+        let ma = a["modified"].as_str().unwrap_or("");
+        let mb = b["modified"].as_str().unwrap_or("");
+        mb.cmp(ma)
+    });
+    Ok(Value::Array(files))
+}
+
+/// Simple timestamp formatter (no chrono crate dependency)
+fn chrono_simple(epoch_secs: i64) -> String {
+    // Use system time formatting via std
+    let d = std::time::UNIX_EPOCH + std::time::Duration::from_secs(epoch_secs as u64);
+    // Format as ISO string via debug (rough but functional)
+    format!("{d:?}")
+}
+
+#[tauri::command]
+pub async fn hermes_logs_read(
+    name: String,
+    lines: Option<usize>,
+    level: Option<String>,
+) -> Result<Value, String> {
+    let max_lines = lines.unwrap_or(200);
+    let log_path = hermes_home().join("logs").join(&name);
+    if !log_path.exists() {
+        return Err(format!("Log file not found: {name}"));
+    }
+    // Security: ensure path is within logs dir
+    let logs_dir = hermes_home().join("logs");
+    let canonical = log_path
+        .canonicalize()
+        .map_err(|e| format!("Path error: {e}"))?;
+    let canonical_dir = logs_dir
+        .canonicalize()
+        .map_err(|e| format!("Path error: {e}"))?;
+    if !canonical.starts_with(&canonical_dir) {
+        return Err("Access denied".into());
+    }
+
+    let content =
+        std::fs::read_to_string(&canonical).map_err(|e| format!("Failed to read log: {e}"))?;
+    let all_lines: Vec<&str> = content.lines().collect();
+    let start = if all_lines.len() > max_lines {
+        all_lines.len() - max_lines
+    } else {
+        0
+    };
+    let tail = &all_lines[start..];
+
+    let level_upper = level.as_deref().unwrap_or("").to_uppercase();
+    let mut entries: Vec<Value> = Vec::new();
+    // Regex-like manual parsing: "TIMESTAMP LEVEL MESSAGE"
+    for line in tail {
+        let t = line.trim();
+        if t.is_empty() {
+            continue;
+        }
+        // Try to parse structured log: "2024-01-01 12:00:00 INFO message..."
+        let parsed = parse_log_line(t);
+        if !level_upper.is_empty() && level_upper != "ALL" {
+            if let Some(ref lvl) = parsed.level {
+                if lvl.to_uppercase() != level_upper {
+                    continue;
+                }
+            } else {
+                continue; // skip raw lines when filtering by level
+            }
+        }
+        entries.push(match (parsed.timestamp, parsed.level, parsed.message) {
+            (Some(ts), Some(lvl), Some(msg)) => serde_json::json!({
+                "timestamp": ts,
+                "level": lvl,
+                "message": msg,
+                "raw": t,
+            }),
+            _ => serde_json::json!({ "raw": t }),
+        });
+    }
+    Ok(Value::Array(entries))
+}
+
+struct ParsedLogLine {
+    timestamp: Option<String>,
+    level: Option<String>,
+    message: Option<String>,
+}
+
+fn parse_log_line(line: &str) -> ParsedLogLine {
+    // Pattern: "YYYY-MM-DD HH:MM:SS LEVEL rest..." or "HH:MM:SS LEVEL rest..."
+    let parts: Vec<&str> = line.splitn(4, char::is_whitespace).collect();
+    if parts.len() >= 3 {
+        // Check if first two parts look like a timestamp
+        let maybe_date = parts[0];
+        let maybe_time = parts[1];
+        if (maybe_date.len() == 10 && maybe_date.contains('-'))
+            && (maybe_time.len() >= 8 && maybe_time.contains(':'))
+        {
+            let ts = format!("{maybe_date} {maybe_time}");
+            let lvl = parts[2].to_string();
+            let msg = if parts.len() > 3 { parts[3].to_string() } else { String::new() };
+            return ParsedLogLine {
+                timestamp: Some(ts),
+                level: Some(lvl),
+                message: Some(msg),
+            };
+        }
+    }
+    // Fallback: check if first part is time-like
+    if parts.len() >= 2 && parts[0].contains(':') && parts[0].len() >= 8 {
+        let ts = parts[0].to_string();
+        let lvl = parts[1].to_string();
+        let msg = parts[2..].join(" ");
+        return ParsedLogLine {
+            timestamp: Some(ts),
+            level: Some(lvl),
+            message: Some(msg),
+        };
+    }
+    ParsedLogLine {
+        timestamp: None,
+        level: None,
+        message: None,
+    }
+}
+
+#[tauri::command]
+pub async fn hermes_skills_list() -> Result<Value, String> {
+    let skills_dir = hermes_home().join("skills");
+    if !skills_dir.exists() {
+        return Ok(serde_json::json!([]));
+    }
+    let mut categories: Vec<Value> = Vec::new();
+    let entries =
+        std::fs::read_dir(&skills_dir).map_err(|e| format!("Failed to read skills dir: {e}"))?;
+    for entry in entries.flatten() {
+        let ft = match entry.file_type() {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        let name = entry.file_name().to_string_lossy().to_string();
+        if ft.is_dir() {
+            let cat_dir = skills_dir.join(&name);
+            let mut skills: Vec<Value> = Vec::new();
+            if let Ok(files) = std::fs::read_dir(&cat_dir) {
+                for f in files.flatten() {
+                    let fname = f.file_name().to_string_lossy().to_string();
+                    if !fname.ends_with(".md") {
+                        continue;
+                    }
+                    let fpath = cat_dir.join(&fname);
+                    let content = std::fs::read_to_string(&fpath).unwrap_or_default();
+                    let skill_name = content
+                        .lines()
+                        .find(|l| l.starts_with("# "))
+                        .map(|l| l[2..].trim().to_string())
+                        .unwrap_or_else(|| fname.trim_end_matches(".md").to_string());
+                    let description = content
+                        .lines()
+                        .find(|l| {
+                            !l.starts_with('#') && !l.trim().is_empty() && l.trim().len() > 10
+                        })
+                        .map(|l| {
+                            let s = l.trim();
+                            if s.len() > 200 {
+                                format!("{}...", &s[..200])
+                            } else {
+                                s.to_string()
+                            }
+                        })
+                        .unwrap_or_default();
+                    skills.push(serde_json::json!({
+                        "file": fname,
+                        "name": skill_name,
+                        "description": description,
+                        "path": fpath.to_string_lossy(),
+                    }));
+                }
+            }
+            if !skills.is_empty() {
+                categories.push(serde_json::json!({
+                    "category": name,
+                    "skills": skills,
+                }));
+            }
+        } else if name.ends_with(".md") {
+            let fpath = skills_dir.join(&name);
+            let content = std::fs::read_to_string(&fpath).unwrap_or_default();
+            let skill_name = content
+                .lines()
+                .find(|l| l.starts_with("# "))
+                .map(|l| l[2..].trim().to_string())
+                .unwrap_or_else(|| name.trim_end_matches(".md").to_string());
+            categories.push(serde_json::json!({
+                "category": "_root",
+                "skills": [{
+                    "file": name,
+                    "name": skill_name,
+                    "description": "",
+                    "path": fpath.to_string_lossy(),
+                }],
+            }));
+        }
+    }
+    Ok(Value::Array(categories))
+}
+
+#[tauri::command]
+pub async fn hermes_skill_detail(file_path: String) -> Result<String, String> {
+    let skills_dir = hermes_home().join("skills");
+    let resolved = PathBuf::from(&file_path);
+    let canonical = resolved
+        .canonicalize()
+        .map_err(|e| format!("Path error: {e}"))?;
+    let canonical_dir = skills_dir
+        .canonicalize()
+        .map_err(|e| format!("Path error: {e}"))?;
+    if !canonical.starts_with(&canonical_dir) {
+        return Err("Access denied".into());
+    }
+    std::fs::read_to_string(&canonical).map_err(|e| format!("Failed to read skill: {e}"))
+}
+
+#[tauri::command]
+pub async fn hermes_memory_read(r#type: Option<String>) -> Result<String, String> {
+    let kind = r#type.as_deref().unwrap_or("memory");
+    let file_name = if kind == "user" { "USER.md" } else { "MEMORY.md" };
+    let file_path = hermes_home().join("memories").join(file_name);
+    if !file_path.exists() {
+        return Ok(String::new());
+    }
+    std::fs::read_to_string(&file_path).map_err(|e| format!("Failed to read memory: {e}"))
+}
+
+#[tauri::command]
+pub async fn hermes_memory_write(r#type: Option<String>, content: String) -> Result<String, String> {
+    let kind = r#type.as_deref().unwrap_or("memory");
+    let mem_dir = hermes_home().join("memories");
+    std::fs::create_dir_all(&mem_dir).map_err(|e| format!("Failed to create dir: {e}"))?;
+    let file_name = if kind == "user" { "USER.md" } else { "MEMORY.md" };
+    let file_path = mem_dir.join(file_name);
+    std::fs::write(&file_path, &content).map_err(|e| format!("Failed to write memory: {e}"))?;
+    Ok("ok".into())
 }

@@ -390,4 +390,16 @@ export const api = {
   hermesSetGatewayUrl: (url) => invoke('hermes_set_gateway_url', { url: url || null }),
   updateHermes: () => invoke('update_hermes'),
   uninstallHermes: (cleanConfig = false) => invoke('uninstall_hermes', { cleanConfig }),
+
+  // Hermes Sessions / Logs / Skills / Memory
+  hermesSessionsList: (source, limit) => invoke('hermes_sessions_list', { source: source || null, limit: limit || null }),
+  hermesSessionDetail: (sessionId) => invoke('hermes_session_detail', { sessionId }),
+  hermesSessionDelete: (sessionId) => invoke('hermes_session_delete', { sessionId }),
+  hermesSessionRename: (sessionId, title) => invoke('hermes_session_rename', { sessionId, title }),
+  hermesLogsList: () => invoke('hermes_logs_list'),
+  hermesLogsRead: (name, lines, level) => invoke('hermes_logs_read', { name, lines: lines || 200, level: level || null }),
+  hermesSkillsList: () => invoke('hermes_skills_list'),
+  hermesSkillDetail: (filePath) => invoke('hermes_skill_detail', { filePath }),
+  hermesMemoryRead: (type) => invoke('hermes_memory_read', { type: type || 'memory' }),
+  hermesMemoryWrite: (type, content) => invoke('hermes_memory_write', { type: type || 'memory', content }),
 }

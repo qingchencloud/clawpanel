@@ -8,6 +8,7 @@ import { showConfirm } from '../components/modal.js'
 import { t, getLang, setLang, getAvailableLangs, onLangChange } from '../lib/i18n.js'
 import { isMacPlatform } from '../lib/app-state.js'
 import { renderSidebar } from '../components/sidebar.js'
+import { getActiveEngineId } from '../lib/engine-manager.js'
 
 const isTauri = !!window.__TAURI_INTERNALS__
 
@@ -64,6 +65,8 @@ export async function render() {
   const page = document.createElement('div')
   page.className = 'page'
 
+  const isHermes = getActiveEngineId() === 'hermes'
+
   page.innerHTML = `
     <div class="page-header">
       <h1 class="page-title">${t('settings.title')}</h1>
@@ -80,7 +83,7 @@ export async function render() {
       <div id="model-proxy-bar"><div class="stat-card loading-placeholder" style="height:48px"></div></div>
     </div>
 
-    <div class="config-section" id="registry-section">
+    ${isHermes ? '' : `<div class="config-section" id="registry-section">
       <div class="config-section-title">${t('settings.npmRegistry')}</div>
       <div id="registry-bar"><div class="stat-card loading-placeholder" style="height:48px"></div></div>
     </div>
@@ -108,7 +111,7 @@ export async function render() {
     <div class="config-section" id="cli-binding-section">
       <div class="config-section-title">${t('settings.openclawCli')}</div>
       <div id="cli-binding-bar"><div class="stat-card loading-placeholder" style="height:48px"></div></div>
-    </div>
+    </div>`}
 
     <div class="config-section" id="language-section">
       <div class="config-section-title">${t('settings.language')}</div>
@@ -128,8 +131,11 @@ export async function render() {
 }
 
 async function loadAll(page) {
-  const tasks = [loadProxyConfig(page), loadModelProxyConfig(page), loadOpenclawDir(page), loadOpenclawSearchPaths(page), loadDockerDefaults(page), loadGitPath(page), loadCliBinding(page)]
-  tasks.push(loadRegistry(page))
+  const isHermes = getActiveEngineId() === 'hermes'
+  const tasks = [loadProxyConfig(page), loadModelProxyConfig(page)]
+  if (!isHermes) {
+    tasks.push(loadOpenclawDir(page), loadOpenclawSearchPaths(page), loadDockerDefaults(page), loadGitPath(page), loadCliBinding(page), loadRegistry(page))
+  }
   if (window.__TAURI_INTERNALS__) tasks.push(loadAutostart(page))
   await Promise.all(tasks)
   loadLanguageSwitcher(page)

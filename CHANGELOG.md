@@ -5,6 +5,32 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.13.2] - 2026-04-13
+
+### 新功能 (Features)
+
+- **Hermes 日志查看器** — 新增 Agent 日志页面，支持文件列表、级别过滤、关键词搜索，左右分栏布局实时浏览日志
+- **Hermes Skills 浏览器** — 新增 Skills 页面，左侧分类列表 + 右侧 Markdown 详情预览
+- **Hermes 记忆编辑器** — 新增记忆文件页面，支持查看和编辑 Agent 笔记（MEMORY.md）与用户画像（USER.md）
+- **Hermes 定时任务可视化** — 定时任务页面全新重写：统计卡片、快捷预设按钮（每5分钟/每小时/每天9:00等）、cron 表达式实时人性化预览、SVG 图标操作按钮
+
+### 改进 (Improvements)
+
+- **仪表盘模型配置折叠** — 模型配置区域默认折叠，点击可展开/收起，节省仪表盘空间
+- **定时任务执行反馈** — "立即执行"按钮点击后显示✓/✕状态闪烁，明确告知执行结果
+- **Hermes CLI 命令完整对接** — Rust 后端新增 sessions/logs/skills/memory 全套 CLI 命令，Web 后端同步实现
+- **API 代理认证注入** — `hermes_api_proxy` 自动从 .env 注入 API_SERVER_KEY，解决 Cron 等页面 "Invalid API key" 错误
+
+### 修复 (Fixes)
+
+- **定时任务显示 [object Object]** — 正确解析 Gateway 返回的 schedule 对象（`{kind,expr,display}`），提取 cron 表达式显示
+- **定时任务保存 'str' has no attribute 'get'** — 保存时发送 `{kind:'cron', expr:...}` 对象格式，匹配 Gateway 期望的结构
+- **ClawPanel 误杀外部 Gateway** — `cleanup_zombie_gateway_processes` 不再杀死外部启动的健康 Gateway 进程，改为采纳其 PID
+- **croniter 依赖缺失** — `uv tool install` 添加 `--with croniter`，确保定时任务功能开箱即用
+- **API 代理错误提取** — 修复嵌套错误对象（`{error:{message:...}}`）的提取逻辑
+
+---
+
 ## [0.13.1] - 2026-04-13
 
 ### 新功能 (Features)

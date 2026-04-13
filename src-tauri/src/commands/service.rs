@@ -1245,11 +1245,12 @@ mod platform {
                         ));
                         kill_process_tree(pid);
                     } else if Some(pid) != our_pid {
-                        // /health 有响应但不是我们启动的 → 旧进程残留
+                        // /health 有响应但不是当前实例启动的 → 采纳为已知进程，不杀
                         super::guardian_log(&format!(
-                            "清理残留 Gateway 进程 (PID {pid})：非当前实例"
+                            "检测到外部启动的 Gateway 进程 (PID {pid})：/health 正常响应，已采纳"
                         ));
-                        kill_process_tree(pid);
+                        let mut known = LAST_KNOWN_GATEWAY_PID.lock().unwrap();
+                        *known = Some(pid);
                     }
                 }
             }

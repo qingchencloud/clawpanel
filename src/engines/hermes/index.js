@@ -71,17 +71,24 @@ export default {
       }]
     }
     // 就绪后显示完整菜单
-    // 仅展示已开发的页面，stub 页面暂时隐藏
     return [{
       section: t('sidebar.sectionMonitor'),
       items: [
         { route: '/h/dashboard', label: t('sidebar.dashboard'), icon: 'dashboard' },
-        { route: '/assistant', label: t('sidebar.assistant'), icon: 'assistant' },
         { route: '/h/chat', label: t('sidebar.chat'), icon: 'chat' },
+        { route: '/h/logs', label: t('sidebar.logs'), icon: 'logs' },
+      ]
+    }, {
+      section: t('sidebar.sectionManage'),
+      items: [
+        { route: '/h/skills', label: t('sidebar.skills'), icon: 'skills' },
+        { route: '/h/memory', label: t('sidebar.memory'), icon: 'memory' },
+        { route: '/h/cron', label: t('sidebar.cron'), icon: 'clock' },
       ]
     }, {
       section: '',
       items: [
+        { route: '/assistant', label: t('sidebar.assistant'), icon: 'assistant' },
         { route: '/settings', label: t('sidebar.settings'), icon: 'settings' },
         { route: '/about', label: t('sidebar.about'), icon: 'about' },
       ]
@@ -90,15 +97,17 @@ export default {
 
   getRoutes() {
     return [
-      // Hermes 专属页面（/h/ 前缀）— Phase 2 实现
+      // Hermes 专属页面（/h/ 前缀）
       { path: '/h/setup', loader: () => import('./pages/setup.js') },
       { path: '/h/dashboard', loader: () => import('./pages/dashboard.js') },
       { path: '/h/chat', loader: () => import('./pages/chat.js') },
+      { path: '/h/logs', loader: () => import('./pages/logs.js') },
+      { path: '/h/skills', loader: () => import('./pages/skills.js') },
+      { path: '/h/memory', loader: () => import('./pages/memory.js') },
+      { path: '/h/cron', loader: () => import('./pages/cron.js') },
       { path: '/h/services', loader: () => import('./pages/services.js') },
       { path: '/h/config', loader: () => import('./pages/config.js') },
       { path: '/h/channels', loader: () => import('./pages/channels.js') },
-      { path: '/h/cron', loader: () => import('./pages/cron.js') },
-      { path: '/h/skills', loader: () => import('./pages/skills.js') },
       // 共用页面（引擎无关）
       { path: '/assistant', loader: () => import('../../pages/assistant.js') },
       { path: '/settings', loader: () => import('../../pages/settings.js') },

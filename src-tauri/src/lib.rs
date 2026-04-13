@@ -231,6 +231,16 @@ pub fn run() {
             hermes::hermes_set_gateway_url,
             hermes::update_hermes,
             hermes::uninstall_hermes,
+            hermes::hermes_sessions_list,
+            hermes::hermes_session_detail,
+            hermes::hermes_session_delete,
+            hermes::hermes_session_rename,
+            hermes::hermes_logs_list,
+            hermes::hermes_logs_read,
+            hermes::hermes_skills_list,
+            hermes::hermes_skill_detail,
+            hermes::hermes_memory_read,
+            hermes::hermes_memory_write,
         ])
         .on_window_event(|window, event| {
             // 关闭窗口时最小化到托盘，不退出应用

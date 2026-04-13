@@ -6555,7 +6555,13 @@ const handlers = {
     const opts = { method: method || 'GET', headers: { 'User-Agent': 'ClawPanel-Web' } }
     const timeout = (reqPath.includes('/chat/completions') || reqPath.includes('/responses')) ? 120000 : 30000
     opts.signal = AbortSignal.timeout(timeout)
-    if (body && (method === 'POST' || method === 'PATCH')) {
+    // Auto-inject API_SERVER_KEY from .env if available
+    try {
+      const envContent = fs.readFileSync(path.join(hermesHome(), '.env'), 'utf8')
+      const m = envContent.match(/^API_SERVER_KEY=(.+)$/m)
+      if (m) opts.headers['Authorization'] = `Bearer ${m[1].trim()}`
+    } catch {}
+    if (body && (method === 'POST' || method === 'PATCH' || method === 'PUT' || method === 'DELETE')) {
       opts.body = typeof body === 'string' ? body : JSON.stringify(body)
       opts.headers['Content-Type'] = 'application/json'
     }
@@ -6565,7 +6571,7 @@ const handlers = {
     const resp = await globalThis.fetch(url, opts)
     const text = await resp.text()
     let json; try { json = JSON.parse(text) } catch { json = { raw: text } }
-    if (resp.status >= 400) throw new Error(json?.error || text)
+    if (resp.status >= 400) throw new Error(json?.error?.message || json?.error || text)
     return json
   },
 
@@ -6703,6 +6709,199 @@ const handlers = {
     if (!fs.existsSync(path.dirname(PANEL_CONFIG_PATH))) fs.mkdirSync(path.dirname(PANEL_CONFIG_PATH), { recursive: true })
     fs.writeFileSync(PANEL_CONFIG_PATH, JSON.stringify(cfg, null, 2))
     return `Gateway URL 已设置: ${hermesGatewayUrl()}`
+  },
+
+  // =========================================================================
+  // Hermes Sessions / Logs / Skills / Memory
+  // =========================================================================
+
+  hermes_sessions_list({ source, limit } = {}) {
+    const args = ['sessions', 'export', '-']
+    if (source) args.push('--source', source)
+    const r = runHermesSilent('hermes', args)
+    if (!r.ok) return []
+    const sessions = []
+    for (const line of r.stdout.split('\n')) {
+      const t = line.trim()
+      if (!t) continue
+      try {
+        const obj = JSON.parse(t)
+        sessions.push({
+          id: obj.session_id || obj.id || '',
+          title: obj.title || obj.name || '',
+          source: obj.source || '',
+          model: obj.model || '',
+          created_at: obj.created_at || obj.createdAt || '',
+          updated_at: obj.updated_at || obj.updatedAt || '',
+          message_count: obj.message_count || (obj.messages ? obj.messages.length : 0),
+        })
+      } catch {}
+    }
+    sessions.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+    if (limit && limit > 0) return sessions.slice(0, limit)
+    return sessions
+  },
+
+  hermes_session_detail({ sessionId } = {}) {
+    if (!sessionId) throw new Error('sessionId is required')
+    const r = runHermesSilent('hermes', ['sessions', 'export', '-'])
+    if (!r.ok) throw new Error('Failed to read sessions')
+    for (const line of r.stdout.split('\n')) {
+      const t = line.trim()
+      if (!t) continue
+      try {
+        const obj = JSON.parse(t)
+        if ((obj.session_id || obj.id) === sessionId) {
+          return {
+            id: obj.session_id || obj.id,
+            title: obj.title || obj.name || '',
+            source: obj.source || '',
+            model: obj.model || '',
+            created_at: obj.created_at || '',
+            messages: (obj.messages || []).map(m => ({
+              role: m.role || '',
+              content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content || ''),
+              timestamp: m.timestamp || m.created_at || '',
+            })),
+          }
+        }
+      } catch {}
+    }
+    throw new Error('Session not found')
+  },
+
+  hermes_session_delete({ sessionId } = {}) {
+    if (!sessionId) throw new Error('sessionId is required')
+    const r = runHermesSilent('hermes', ['sessions', 'delete', sessionId, '--yes'])
+    if (!r.ok) throw new Error(`Failed to delete session: ${r.stderr || 'unknown error'}`)
+    return 'ok'
+  },
+
+  hermes_session_rename({ sessionId, title } = {}) {
+    if (!sessionId || !title) throw new Error('sessionId and title are required')
+    const r = runHermesSilent('hermes', ['sessions', 'rename', sessionId, title])
+    if (!r.ok) throw new Error(`Failed to rename session: ${r.stderr || 'unknown error'}`)
+    return 'ok'
+  },
+
+  hermes_logs_list() {
+    const r = runHermesSilent('hermes', ['logs', 'list'])
+    if (!r.ok) {
+      // Fallback: read log files from ~/.hermes/logs/
+      const logsDir = path.join(hermesHome(), 'logs')
+      if (!fs.existsSync(logsDir)) return []
+      try {
+        return fs.readdirSync(logsDir)
+          .filter(f => f.endsWith('.log') || f.endsWith('.txt'))
+          .map(f => {
+            const stat = fs.statSync(path.join(logsDir, f))
+            return { name: f, size: stat.size, modified: stat.mtime.toISOString() }
+          })
+          .sort((a, b) => b.modified.localeCompare(a.modified))
+      } catch { return [] }
+    }
+    // Parse CLI output
+    const files = []
+    for (const line of r.stdout.split('\n')) {
+      const t = line.trim()
+      if (!t || t.startsWith('─') || t.startsWith('Name') || t.startsWith('=')) continue
+      const parts = t.split(/\s{2,}/)
+      if (parts.length >= 1) files.push({ name: parts[0], size: parts[1] || '', modified: parts[2] || '' })
+    }
+    return files
+  },
+
+  hermes_logs_read({ name, lines = 200, level } = {}) {
+    if (!name) throw new Error('log file name is required')
+    const args = ['logs', name, '-n', String(lines)]
+    if (level) args.push('--level', level)
+    const r = runHermesSilent('hermes', args)
+    if (!r.ok) {
+      // Fallback: direct file read
+      const logPath = path.join(hermesHome(), 'logs', name)
+      if (!fs.existsSync(logPath)) throw new Error(`Log file not found: ${name}`)
+      const content = fs.readFileSync(logPath, 'utf8')
+      const allLines = content.split('\n')
+      const tail = allLines.slice(-lines)
+      return tail.map(line => {
+        const m = line.match(/^(\S+\s+\S+)\s+(\w+)\s+(.*)/)
+        return m ? { timestamp: m[1], level: m[2], message: m[3], raw: line } : { raw: line }
+      }).filter(e => e.raw.trim())
+    }
+    return r.stdout.split('\n').filter(l => l.trim()).map(line => {
+      const m = line.match(/^(\S+\s+\S+)\s+(\w+)\s+(.*)/)
+      return m ? { timestamp: m[1], level: m[2], message: m[3], raw: line } : { raw: line }
+    })
+  },
+
+  hermes_skills_list() {
+    const skillsDir = path.join(hermesHome(), 'skills')
+    if (!fs.existsSync(skillsDir)) return []
+    const categories = []
+    try {
+      const entries = fs.readdirSync(skillsDir, { withFileTypes: true })
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const catDir = path.join(skillsDir, entry.name)
+          const skills = []
+          for (const file of fs.readdirSync(catDir)) {
+            if (!file.endsWith('.md')) continue
+            const filePath = path.join(catDir, file)
+            const content = fs.readFileSync(filePath, 'utf8')
+            const nameMatch = content.match(/^#\s+(.+)/m)
+            const descMatch = content.match(/^(?:##\s+)?(?:Description|描述)[:\s]*(.+)/mi) || content.match(/^[^#\n].{10,}/m)
+            skills.push({
+              file: file,
+              name: nameMatch ? nameMatch[1].trim() : file.replace('.md', ''),
+              description: descMatch ? descMatch[1].trim().slice(0, 200) : '',
+              path: filePath,
+            })
+          }
+          if (skills.length > 0) {
+            categories.push({ category: entry.name, skills })
+          }
+        } else if (entry.name.endsWith('.md')) {
+          // Top-level skill
+          const filePath = path.join(skillsDir, entry.name)
+          const content = fs.readFileSync(filePath, 'utf8')
+          const nameMatch = content.match(/^#\s+(.+)/m)
+          categories.push({
+            category: '_root',
+            skills: [{ file: entry.name, name: nameMatch ? nameMatch[1].trim() : entry.name.replace('.md', ''), description: '', path: filePath }]
+          })
+        }
+      }
+    } catch {}
+    return categories
+  },
+
+  hermes_skill_detail({ filePath } = {}) {
+    if (!filePath) throw new Error('filePath is required')
+    // Security: ensure path is within hermes skills dir
+    const skillsDir = path.join(hermesHome(), 'skills')
+    const resolved = path.resolve(filePath)
+    if (!resolved.startsWith(skillsDir)) throw new Error('Access denied')
+    if (!fs.existsSync(resolved)) throw new Error('Skill file not found')
+    return fs.readFileSync(resolved, 'utf8')
+  },
+
+  hermes_memory_read({ type = 'memory' } = {}) {
+    const home = hermesHome()
+    const fileName = type === 'user' ? 'USER.md' : 'MEMORY.md'
+    const filePath = path.join(home, 'memories', fileName)
+    if (!fs.existsSync(filePath)) return ''
+    return fs.readFileSync(filePath, 'utf8')
+  },
+
+  hermes_memory_write({ type = 'memory', content } = {}) {
+    if (content == null) throw new Error('content is required')
+    const home = hermesHome()
+    const memDir = path.join(home, 'memories')
+    fs.mkdirSync(memDir, { recursive: true })
+    const fileName = type === 'user' ? 'USER.md' : 'MEMORY.md'
+    const filePath = path.join(memDir, fileName)
+    fs.writeFileSync(filePath, content, 'utf8')
+    return 'ok'
   },
 
   async update_hermes() {

@@ -45,6 +45,7 @@ export function render() {
   let connectMode = 'local' // local | wsl2 | docker | custom
   let customGwUrl = ''      // 自定义 Gateway URL
   let connectMsg = ''       // 连接区消息
+  let modelConfigCollapsed = true // 模型配置默认折叠
 
   // 表单状态（跨 draw 保持，不被覆盖）
   let formBaseUrl = ''
@@ -178,36 +179,41 @@ export function render() {
 
       <!-- 模型配置区 -->
       <div class="card" style="margin-bottom:20px">
-        <div class="card-body" style="padding:20px">
-          <h3 style="margin:0 0 12px;font-size:15px">${t('engine.dashModelConfig')}</h3>
-          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
-            ${HERMES_PROVIDERS.map(p =>
-              `<button class="btn btn-sm btn-secondary hm-preset-btn" data-key="${p.key}" data-url="${esc(p.baseUrl)}" data-api="${p.api || 'openai-completions'}" style="font-size:11px;padding:2px 8px;${activePreset?.key === p.key ? 'opacity:1;font-weight:600' : 'opacity:0.6'}">${p.label}</button>`
-            ).join('')}
+        <div class="card-body" style="padding:0">
+          <div class="hm-cfg-toggle" style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;cursor:pointer;user-select:none">
+            <h3 style="margin:0;font-size:15px">${t('engine.dashModelConfig')}</h3>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" style="transition:transform .2s;transform:rotate(${modelConfigCollapsed ? '0' : '180'}deg);opacity:0.5"><polyline points="6 9 12 15 18 9"/></svg>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-            <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text-secondary)">
-              API Base URL
-              <input type="text" id="hm-cfg-baseurl" class="input" value="${esc(formBaseUrl)}" placeholder="https://gpt.qt.cool/v1" style="font-size:13px">
-            </label>
-            <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text-secondary)">
-              API Key
-              <input type="password" id="hm-cfg-apikey" class="input" value="${esc(formApiKey)}" placeholder="sk-..." style="font-size:13px">
-            </label>
-          </div>
-          <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:12px">
-            <label style="flex:1;display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text-secondary)">
-              ${t('engine.configModel')}
-              <div style="position:relative">
-                <input type="text" id="hm-cfg-model" class="input" value="${esc(formModel)}" placeholder="QC-B01" style="font-size:13px">
-                ${dropdownHtml}
-              </div>
-            </label>
-            <button class="btn btn-sm btn-secondary hm-fetch-models" style="white-space:nowrap;flex-shrink:0" ${fetchBusy ? 'disabled' : ''}>${fetchBusy ? t('engine.configFetching') : t('engine.configFetchModels')}</button>
-          </div>
-          <div id="hm-cfg-msg" style="font-size:12px;min-height:16px;margin-bottom:8px">${cfgMsg}</div>
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-primary btn-sm hm-save-model" ${modelBusy ? 'disabled' : ''}>${modelBusy ? '...' : t('engine.configSaveBtn')}</button>
+          <div style="${modelConfigCollapsed ? 'display:none' : 'padding:0 20px 20px'}">
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
+              ${HERMES_PROVIDERS.map(p =>
+                `<button class="btn btn-sm btn-secondary hm-preset-btn" data-key="${p.key}" data-url="${esc(p.baseUrl)}" data-api="${p.api || 'openai-completions'}" style="font-size:11px;padding:2px 8px;${activePreset?.key === p.key ? 'opacity:1;font-weight:600' : 'opacity:0.6'}">${p.label}</button>`
+              ).join('')}
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+              <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text-secondary)">
+                API Base URL
+                <input type="text" id="hm-cfg-baseurl" class="input" value="${esc(formBaseUrl)}" placeholder="https://gpt.qt.cool/v1" style="font-size:13px">
+              </label>
+              <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text-secondary)">
+                API Key
+                <input type="password" id="hm-cfg-apikey" class="input" value="${esc(formApiKey)}" placeholder="sk-..." style="font-size:13px">
+              </label>
+            </div>
+            <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:12px">
+              <label style="flex:1;display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text-secondary)">
+                ${t('engine.configModel')}
+                <div style="position:relative">
+                  <input type="text" id="hm-cfg-model" class="input" value="${esc(formModel)}" placeholder="QC-B01" style="font-size:13px">
+                  ${dropdownHtml}
+                </div>
+              </label>
+              <button class="btn btn-sm btn-secondary hm-fetch-models" style="white-space:nowrap;flex-shrink:0" ${fetchBusy ? 'disabled' : ''}>${fetchBusy ? t('engine.configFetching') : t('engine.configFetchModels')}</button>
+            </div>
+            <div id="hm-cfg-msg" style="font-size:12px;min-height:16px;margin-bottom:8px">${cfgMsg}</div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-primary btn-sm hm-save-model" ${modelBusy ? 'disabled' : ''}>${modelBusy ? '...' : t('engine.configSaveBtn')}</button>
+            </div>
           </div>
         </div>
       </div>
@@ -303,6 +309,12 @@ export function render() {
 
   function bind() {
     el.querySelector('.hm-dash-refresh')?.addEventListener('click', refresh)
+    // 模型配置折叠/展开
+    el.querySelector('.hm-cfg-toggle')?.addEventListener('click', () => {
+      syncFormFromDom()
+      modelConfigCollapsed = !modelConfigCollapsed
+      draw()
+    })
     // Gateway actions
     el.querySelector('.hm-dash-start')?.addEventListener('click', async () => {
       actionBusy = true; draw()
