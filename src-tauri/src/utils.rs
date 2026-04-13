@@ -110,15 +110,18 @@ pub fn resolve_openclaw_cli_path() -> Option<String> {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        for candidate in common_non_windows_cli_candidates() {
-            if candidate.exists() {
-                return Some(candidate.to_string_lossy().to_string());
-            }
-        }
+        // 优先通过 enhanced_path 搜索：其中 nvm/volta 等版本管理器路径排在 Homebrew 前面，
+        // 与 `which openclaw` 的优先级一致，避免残留的 Homebrew 旧版本被优先检测到
         let path = crate::commands::enhanced_path();
         let sep = ':';
         for dir in path.split(sep) {
             let candidate = std::path::Path::new(dir).join("openclaw");
+            if candidate.exists() {
+                return Some(candidate.to_string_lossy().to_string());
+            }
+        }
+        // 兜底：检查 enhanced_path 可能未覆盖到的固定路径（如 GUI 环境 PATH 受限时）
+        for candidate in common_non_windows_cli_candidates() {
             if candidate.exists() {
                 return Some(candidate.to_string_lossy().to_string());
             }

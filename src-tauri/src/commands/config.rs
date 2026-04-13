@@ -1891,6 +1891,23 @@ pub fn write_mcp_config(config: Value) -> Result<(), String> {
 /// macOS: 优先从 npm 包的 package.json 读取（含完整后缀），fallback 到 CLI
 /// Windows/Linux: 优先读文件系统，fallback 到 CLI
 async fn get_local_version() -> Option<String> {
+    // 优先从运行中的 openclaw 实例获取版本（openclaw status --json → runtimeVersion）
+    // 避免多实例共存时读取到非活跃安装的版本
+    if let Ok(output) = crate::utils::openclaw_command_async()
+        .args(["status", "--json"])
+        .output()
+        .await
+    {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if let Some(ver) = crate::commands::skills::extract_json_pub(&stdout)
+                .and_then(|v| v.get("runtimeVersion")?.as_str().map(String::from))
+            {
+                return Some(ver);
+            }
+        }
+    }
+
     #[cfg(target_os = "macos")]
     {
         if let Some(cli_path) = crate::utils::resolve_openclaw_cli_path() {
@@ -2636,6 +2653,17 @@ fn read_version_from_installation(cli_path: &std::path::Path) -> Option<String> 
                         return Some(ver.to_string());
                     }
                 }
+            }
+        }
+        // CLI 本体位于包目录中时（如 npm 全局安装：nvm、Homebrew 等），
+        // 直接读取同目录的 package.json（即该包自身的版本文件）
+        let own_pkg = dir.join("package.json");
+        if let Ok(content) = std::fs::read_to_string(&own_pkg) {
+            if let Some(ver) = serde_json::from_str::<serde_json::Value>(&content)
+                .ok()
+                .and_then(|v| v.get("version")?.as_str().map(String::from))
+            {
+                return Some(ver);
             }
         }
         // 根据 CLI 路径判断来源，决定 package.json 检查顺序
