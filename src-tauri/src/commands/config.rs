@@ -1891,6 +1891,23 @@ pub fn write_mcp_config(config: Value) -> Result<(), String> {
 /// macOS: 优先从 npm 包的 package.json 读取（含完整后缀），fallback 到 CLI
 /// Windows/Linux: 优先读文件系统，fallback 到 CLI
 async fn get_local_version() -> Option<String> {
+    // 优先从运行中的 openclaw 实例获取版本（openclaw status --json → runtimeVersion）
+    // 避免多实例共存时读取到非活跃安装的版本
+    if let Ok(output) = crate::utils::openclaw_command_async()
+        .args(["status", "--json"])
+        .output()
+        .await
+    {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if let Some(ver) = crate::commands::skills::extract_json_pub(&stdout)
+                .and_then(|v| v.get("runtimeVersion")?.as_str().map(String::from))
+            {
+                return Some(ver);
+            }
+        }
+    }
+
     #[cfg(target_os = "macos")]
     {
         if let Some(cli_path) = crate::utils::resolve_openclaw_cli_path() {
