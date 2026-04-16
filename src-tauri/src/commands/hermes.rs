@@ -39,7 +39,12 @@ static GW_APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
 fn hermes_gateway_url() -> String {
     // 先检查 panel config 中是否配置了自定义 URL
     if let Some(url) = super::read_panel_config_value()
-        .and_then(|v| v.get("hermes")?.get("gatewayUrl")?.as_str().map(String::from))
+        .and_then(|v| {
+            v.get("hermes")?
+                .get("gatewayUrl")?
+                .as_str()
+                .map(String::from)
+        })
         .filter(|s| !s.trim().is_empty())
     {
         return url.trim_end_matches('/').to_string();
@@ -67,7 +72,6 @@ fn kill_gateway_pid() -> bool {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        use std::os::unix::process::ExitStatusExt;
         let ok = std::process::Command::new("kill")
             .args(["-9", &pid.to_string()])
             .output()
@@ -177,7 +181,12 @@ async fn gateway_quick_health_check() -> bool {
         .no_proxy()
         .build();
     match client {
-        Ok(c) => c.get(&health_url).send().await.map(|r| r.status().is_success()).unwrap_or(false),
+        Ok(c) => c
+            .get(&health_url)
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false),
         Err(_) => false,
     }
 }
@@ -203,7 +212,9 @@ async fn do_restart_gateway() -> Result<(), String> {
         .append(true)
         .open(&log_path)
         .map_err(|e| format!("打开日志失败: {e}"))?;
-    let log_err = log_file.try_clone().map_err(|e| format!("克隆日志句柄失败: {e}"))?;
+    let log_err = log_file
+        .try_clone()
+        .map_err(|e| format!("克隆日志句柄失败: {e}"))?;
 
     let mut cmd = std::process::Command::new("hermes");
     cmd.args(["gateway", "run"])
@@ -229,7 +240,9 @@ async fn do_restart_gateway() -> Result<(), String> {
         }
     }
 
-    let child = cmd.spawn().map_err(|e| format!("启动 hermes gateway run 失败: {e}"))?;
+    let child = cmd
+        .spawn()
+        .map_err(|e| format!("启动 hermes gateway run 失败: {e}"))?;
     GW_PID.store(child.id(), Ordering::SeqCst);
 
     // 4. 等待端口可达（最多 15s）
@@ -237,7 +250,9 @@ async fn do_restart_gateway() -> Result<(), String> {
     let addr: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
     for _ in 0..30 {
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        if std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(500)).is_ok() {
+        if std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(500))
+            .is_ok()
+        {
             return Ok(());
         }
     }
@@ -248,11 +263,14 @@ async fn do_restart_gateway() -> Result<(), String> {
 fn emit_gateway_status(running: bool) {
     if let Some(app) = GW_APP_HANDLE.get() {
         let port = hermes_gateway_port();
-        let _ = app.emit("hermes-gateway-status", serde_json::json!({
-            "running": running,
-            "port": port,
-            "url": hermes_gateway_url(),
-        }));
+        let _ = app.emit(
+            "hermes-gateway-status",
+            serde_json::json!({
+                "running": running,
+                "port": port,
+                "url": hermes_gateway_url(),
+            }),
+        );
     }
 }
 
@@ -266,7 +284,10 @@ fn emit_guardian_log(msg: &str) {
 /// 启动 Guardian（如果尚未运行）
 fn start_guardian(app: &tauri::AppHandle) {
     let _ = GW_APP_HANDLE.set(app.clone());
-    if GW_GUARDIAN_ACTIVE.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+    if GW_GUARDIAN_ACTIVE
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok()
+    {
         GW_GUARDIAN_STOP.store(false, Ordering::SeqCst);
         tokio::spawn(gateway_guardian_loop());
     }
@@ -379,7 +400,11 @@ fn hermes_enhanced_path() -> String {
         extra.push("/usr/local/bin".into());
     }
 
-    let sep = if cfg!(target_os = "windows") { ";" } else { ":" };
+    let sep = if cfg!(target_os = "windows") {
+        ";"
+    } else {
+        ":"
+    };
     let mut parts: Vec<&str> = extra.iter().map(|s| s.as_str()).collect();
     if !current.is_empty() {
         parts.push(&current);
@@ -413,9 +438,7 @@ fn run_at_path(program: &str, args: &[&str], path: &str) -> Result<String, Strin
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     } else {
-        Err(String::from_utf8_lossy(&output.stderr)
-            .trim()
-            .to_string())
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
     }
 }
 
@@ -482,9 +505,7 @@ pub fn check_python() -> Result<Value, String> {
                 let path_result = find_executable_path(cmd, &enhanced);
                 result.insert(
                     "path".into(),
-                    path_result
-                        .map(Value::String)
-                        .unwrap_or(Value::Null),
+                    path_result.map(Value::String).unwrap_or(Value::Null),
                 );
 
                 found = true;
@@ -568,15 +589,25 @@ fn find_executable_path(name: &str, enhanced_path: &str) -> Option<String> {
 
 fn current_platform_key() -> &'static str {
     #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-    { "win-x64" }
+    {
+        "win-x64"
+    }
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    { "mac-arm64" }
+    {
+        "mac-arm64"
+    }
     #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-    { "mac-x64" }
+    {
+        "mac-x64"
+    }
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    { "linux-x64" }
+    {
+        "linux-x64"
+    }
     #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-    { "linux-arm64" }
+    {
+        "linux-arm64"
+    }
     #[cfg(not(any(
         all(target_os = "windows", target_arch = "x86_64"),
         all(target_os = "macos", target_arch = "aarch64"),
@@ -584,7 +615,9 @@ fn current_platform_key() -> &'static str {
         all(target_os = "linux", target_arch = "x86_64"),
         all(target_os = "linux", target_arch = "aarch64"),
     )))]
-    { "unknown" }
+    {
+        "unknown"
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -606,7 +639,9 @@ pub fn check_hermes() -> Result<Value, String> {
             // 提取版本号（格式可能是 "Hermes Agent v0.8.0" 或 "0.8.0"）
             let version = ver_raw
                 .split_whitespace()
-                .find(|s| s.starts_with('v') || s.chars().next().is_some_and(|c| c.is_ascii_digit()))
+                .find(|s| {
+                    s.starts_with('v') || s.chars().next().is_some_and(|c| c.is_ascii_digit())
+                })
                 .unwrap_or(&ver_raw)
                 .trim_start_matches('v')
                 .to_string();
@@ -642,7 +677,9 @@ pub fn check_hermes() -> Result<Value, String> {
     };
     result.insert(
         "managed".into(),
-        managed.map(|s| Value::String(s.into())).unwrap_or(Value::Null),
+        managed
+            .map(|s| Value::String(s.into()))
+            .unwrap_or(Value::Null),
     );
 
     // 3. 配置文件检测
@@ -769,7 +806,10 @@ pub async fn install_hermes(
     let enhanced = hermes_enhanced_path();
     match run_at_path("hermes", &["version"], &enhanced) {
         Ok(ver) => {
-            let _ = app.emit("hermes-install-log", format!("✅ Hermes Agent 安装成功: {ver}"));
+            let _ = app.emit(
+                "hermes-install-log",
+                format!("✅ Hermes Agent 安装成功: {ver}"),
+            );
             let _ = app.emit("hermes-install-progress", 100u32);
             let _ = app.emit(
                 "hermes-install-done",
@@ -838,7 +878,13 @@ async fn ensure_uv(app: &tauri::AppHandle) -> Result<String, String> {
         .await
         .map_err(|e| format!("uv 下载读取失败: {e}"))?;
 
-    let _ = app.emit("hermes-install-log", format!("下载完成 ({:.1}MB)，解压中...", bytes.len() as f64 / 1_048_576.0));
+    let _ = app.emit(
+        "hermes-install-log",
+        format!(
+            "下载完成 ({:.1}MB)，解压中...",
+            bytes.len() as f64 / 1_048_576.0
+        ),
+    );
     let _ = app.emit("hermes-install-progress", 12u32);
 
     // 创建目标目录
@@ -902,10 +948,12 @@ fn extract_uv_zip(data: &[u8], dest: &std::path::Path) -> Result<(), String> {
 /// Unix: 解压 tar.gz 格式的 uv 二进制
 #[cfg(not(target_os = "windows"))]
 fn extract_uv_tar_gz(data: &[u8], dest: &std::path::Path) -> Result<(), String> {
-    use std::io::Read;
     let gz = flate2::read::GzDecoder::new(std::io::Cursor::new(data));
     let mut archive = tar::Archive::new(gz);
-    for entry in archive.entries().map_err(|e| format!("tar 解析失败: {e}"))? {
+    for entry in archive
+        .entries()
+        .map_err(|e| format!("tar 解析失败: {e}"))?
+    {
         let mut entry = entry.map_err(|e| format!("tar 条目读取失败: {e}"))?;
         let path = entry
             .path()
@@ -914,10 +962,9 @@ fn extract_uv_tar_gz(data: &[u8], dest: &std::path::Path) -> Result<(), String> 
         if let Some(name) = path.file_name() {
             if name == "uv" {
                 let out_path = dest.join("uv");
-                let mut out_file = std::fs::File::create(&out_path)
-                    .map_err(|e| format!("创建文件失败: {e}"))?;
-                std::io::copy(&mut entry, &mut out_file)
-                    .map_err(|e| format!("写入失败: {e}"))?;
+                let mut out_file =
+                    std::fs::File::create(&out_path).map_err(|e| format!("创建文件失败: {e}"))?;
+                std::io::copy(&mut entry, &mut out_file).map_err(|e| format!("写入失败: {e}"))?;
                 return Ok(());
             }
         }
@@ -934,7 +981,10 @@ async fn install_via_uv_tool(
     uv_path: &str,
     extras: &[String],
 ) -> Result<(), String> {
-    let _ = app.emit("hermes-install-log", "📦 通过 uv tool install 从 GitHub 安装 Hermes Agent...");
+    let _ = app.emit(
+        "hermes-install-log",
+        "📦 通过 uv tool install 从 GitHub 安装 Hermes Agent...",
+    );
     let _ = app.emit("hermes-install-progress", 25u32);
 
     // 构造包名（PEP 508 格式: "pkg[extras] @ git+url"）
@@ -946,7 +996,9 @@ async fn install_via_uv_tool(
     };
 
     let mut cmd = tokio::process::Command::new(uv_path);
-    cmd.args(["tool", "install", "--force", &pkg, "--python", "3.11", "--with", "croniter"]);
+    cmd.args([
+        "tool", "install", "--force", &pkg, "--python", "3.11", "--with", "croniter",
+    ]);
 
     // 配置 PyPI 镜像（extras 的依赖仍从 PyPI 下载）
     if let Some(mirror) = pypi_mirror_url() {
@@ -966,7 +1018,10 @@ async fn install_via_uv_tool(
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
 
-    let _ = app.emit("hermes-install-log", format!("> uv tool install \"{}\" --python 3.11", pkg));
+    let _ = app.emit(
+        "hermes-install-log",
+        format!("> uv tool install \"{}\" --python 3.11", pkg),
+    );
 
     let child = cmd.spawn().map_err(|e| format!("启动安装进程失败: {e}"))?;
     let output = child
@@ -1008,7 +1063,10 @@ async fn install_via_uv_pip(
     uv_path: &str,
     extras: &[String],
 ) -> Result<(), String> {
-    let _ = app.emit("hermes-install-log", "📦 通过 uv venv + pip install 安装...");
+    let _ = app.emit(
+        "hermes-install-log",
+        "📦 通过 uv venv + pip install 安装...",
+    );
     let _ = app.emit("hermes-install-progress", 25u32);
 
     let home = dirs::home_dir().unwrap_or_default();
@@ -1016,7 +1074,10 @@ async fn install_via_uv_pip(
     let venv_str = venv_dir.to_string_lossy().to_string();
 
     // 创建 venv
-    let _ = app.emit("hermes-install-log", format!("> uv venv {venv_str} --python 3.11"));
+    let _ = app.emit(
+        "hermes-install-log",
+        format!("> uv venv {venv_str} --python 3.11"),
+    );
     let mut venv_cmd = tokio::process::Command::new(uv_path);
     venv_cmd.args(["venv", &venv_str, "--python", "3.11"]);
     super::apply_proxy_env_tokio(&mut venv_cmd);
@@ -1124,8 +1185,15 @@ pub async fn configure_hermes(
 
     // 创建子目录
     for dir in &[
-        "cron", "sessions", "logs", "memories", "skills", "pairing", "hooks",
-        "image_cache", "audio_cache",
+        "cron",
+        "sessions",
+        "logs",
+        "memories",
+        "skills",
+        "pairing",
+        "hooks",
+        "image_cache",
+        "audio_cache",
     ] {
         let _ = std::fs::create_dir_all(home.join(dir));
     }
@@ -1135,7 +1203,7 @@ pub async fn configure_hermes(
     let env_provider = match provider.as_str() {
         "anthropic" | "minimax" => "anthropic",
         "openrouter" => "openrouter",
-        _ => "openai",  // 所有 OpenAI 兼容的
+        _ => "openai", // 所有 OpenAI 兼容的
     };
 
     // 模型标识：Hermes 直接用模型名，不加 provider/ 前缀
@@ -1149,7 +1217,11 @@ pub async fn configure_hermes(
     let config_path = home.join("config.yaml");
     let base_url_line = if let Some(ref url) = base_url {
         let u = url.trim();
-        if !u.is_empty() { format!("  base_url: {u}\n") } else { String::new() }
+        if !u.is_empty() {
+            format!("  base_url: {u}\n")
+        } else {
+            String::new()
+        }
     } else {
         String::new()
     };
@@ -1188,9 +1260,13 @@ platforms:
     };
     // ClawPanel 管理的 key 列表（更新时覆盖，其他 key 保留）
     let managed_keys: Vec<&str> = vec![
-        "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY",
-        "OPENAI_BASE_URL", "ANTHROPIC_BASE_URL",
-        "GATEWAY_ALLOW_ALL_USERS", "API_SERVER_KEY",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "OPENROUTER_API_KEY",
+        "OPENAI_BASE_URL",
+        "ANTHROPIC_BASE_URL",
+        "GATEWAY_ALLOW_ALL_USERS",
+        "API_SERVER_KEY",
     ];
     let mut new_pairs: Vec<(String, String)> = vec![
         (env_key.into(), api_key.clone()),
@@ -1214,7 +1290,12 @@ platforms:
         let existing = std::fs::read_to_string(&env_path).unwrap_or_default();
         merge_env_file(&existing, &managed_keys, &new_pairs)
     } else {
-        new_pairs.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("\n") + "\n"
+        new_pairs
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n"
     };
     std::fs::write(&env_path, &env_content).map_err(|e| format!("写入 .env 失败: {e}"))?;
 
@@ -1329,11 +1410,7 @@ fn merge_hermes_config_yaml(
 }
 
 /// 合并 .env 文件：更新 managed_keys 对应的值，保留用户自定义的其他环境变量。
-fn merge_env_file(
-    existing: &str,
-    managed_keys: &[&str],
-    new_pairs: &[(String, String)],
-) -> String {
+fn merge_env_file(existing: &str, managed_keys: &[&str], new_pairs: &[(String, String)]) -> String {
     let mut result = Vec::new();
     let _new_keys: std::collections::HashSet<&str> =
         new_pairs.iter().map(|(k, _)| k.as_str()).collect();
@@ -1389,7 +1466,10 @@ pub async fn hermes_read_config() -> Result<Value, String> {
         if trimmed.starts_with("model:") {
             in_model = true;
             // model: "xxx" 单行格式
-            if let Some(v) = trimmed.strip_prefix("model:").map(|s| s.trim().trim_matches('"')) {
+            if let Some(v) = trimmed
+                .strip_prefix("model:")
+                .map(|s| s.trim().trim_matches('"'))
+            {
                 if !v.is_empty() && !v.contains(':') {
                     model_name = v.to_string();
                 }
@@ -1398,12 +1478,28 @@ pub async fn hermes_read_config() -> Result<Value, String> {
         }
         if in_model {
             if trimmed.starts_with("default:") {
-                model_name = trimmed.strip_prefix("default:").unwrap().trim().trim_matches('"').to_string();
+                model_name = trimmed
+                    .strip_prefix("default:")
+                    .unwrap()
+                    .trim()
+                    .trim_matches('"')
+                    .to_string();
             } else if trimmed.starts_with("base_url:") {
-                base_url = trimmed.strip_prefix("base_url:").unwrap().trim().trim_matches('"').to_string();
+                base_url = trimmed
+                    .strip_prefix("base_url:")
+                    .unwrap()
+                    .trim()
+                    .trim_matches('"')
+                    .to_string();
             } else if trimmed.starts_with("provider:") {
-                provider = trimmed.strip_prefix("provider:").unwrap().trim().trim_matches('"').to_string();
-            } else if !trimmed.is_empty() && !trimmed.starts_with('#') && !trimmed.starts_with('-') {
+                provider = trimmed
+                    .strip_prefix("provider:")
+                    .unwrap()
+                    .trim()
+                    .trim_matches('"')
+                    .to_string();
+            } else if !trimmed.is_empty() && !trimmed.starts_with('#') && !trimmed.starts_with('-')
+            {
                 in_model = false;
             }
         }
@@ -1417,15 +1513,27 @@ pub async fn hermes_read_config() -> Result<Value, String> {
         if trimmed.starts_with("OPENAI_API_KEY=") {
             api_key = trimmed.strip_prefix("OPENAI_API_KEY=").unwrap().to_string();
         } else if trimmed.starts_with("ANTHROPIC_API_KEY=") && api_key.is_empty() {
-            api_key = trimmed.strip_prefix("ANTHROPIC_API_KEY=").unwrap().to_string();
+            api_key = trimmed
+                .strip_prefix("ANTHROPIC_API_KEY=")
+                .unwrap()
+                .to_string();
         } else if trimmed.starts_with("OPENROUTER_API_KEY=") && api_key.is_empty() {
-            api_key = trimmed.strip_prefix("OPENROUTER_API_KEY=").unwrap().to_string();
+            api_key = trimmed
+                .strip_prefix("OPENROUTER_API_KEY=")
+                .unwrap()
+                .to_string();
         }
         // base_url from .env if not in config
         if trimmed.starts_with("OPENAI_BASE_URL=") && base_url.is_empty() {
-            base_url = trimmed.strip_prefix("OPENAI_BASE_URL=").unwrap().to_string();
+            base_url = trimmed
+                .strip_prefix("OPENAI_BASE_URL=")
+                .unwrap()
+                .to_string();
         } else if trimmed.starts_with("ANTHROPIC_BASE_URL=") && base_url.is_empty() {
-            base_url = trimmed.strip_prefix("ANTHROPIC_BASE_URL=").unwrap().to_string();
+            base_url = trimmed
+                .strip_prefix("ANTHROPIC_BASE_URL=")
+                .unwrap()
+                .to_string();
         }
     }
 
@@ -1464,7 +1572,13 @@ pub async fn hermes_fetch_models(
     let api = api_type.unwrap_or_else(|| "openai".into());
     let mut base = base_url.trim_end_matches('/').to_string();
     // 移除尾部的 chat/completions 等路径
-    for suffix in &["/chat/completions", "/completions", "/responses", "/messages", "/models"] {
+    for suffix in &[
+        "/chat/completions",
+        "/completions",
+        "/responses",
+        "/messages",
+        "/models",
+    ] {
         if base.ends_with(suffix) {
             base = base[..base.len() - suffix.len()].to_string();
         }
@@ -1472,48 +1586,69 @@ pub async fn hermes_fetch_models(
 
     let resp = match api.as_str() {
         "anthropic-messages" => {
-            if !base.ends_with("/v1") { base.push_str("/v1"); }
+            if !base.ends_with("/v1") {
+                base.push_str("/v1");
+            }
             client
                 .get(format!("{base}/models"))
                 .header("anthropic-version", "2023-06-01")
                 .header("x-api-key", &api_key)
-                .send().await
+                .send()
+                .await
         }
         "google-generative-ai" | "google-gemini" => {
             client
                 .get(format!("{base}/models?key={api_key}"))
-                .send().await
+                .send()
+                .await
         }
         _ => {
             client
                 .get(format!("{base}/models"))
                 .header("Authorization", format!("Bearer {api_key}"))
-                .send().await
+                .send()
+                .await
         }
-    }.map_err(|e| format!("请求失败: {e}"))?;
+    }
+    .map_err(|e| format!("请求失败: {e}"))?;
 
     if !resp.status().is_success() {
         let status = resp.status().as_u16();
         let body = resp.text().await.unwrap_or_default();
-        let short = if body.len() > 200 { &body[..200] } else { &body };
+        let short = if body.len() > 200 {
+            &body[..200]
+        } else {
+            &body
+        };
         return Err(format!("HTTP {status}: {short}"));
     }
 
-    let data: Value = resp.json().await.map_err(|e| format!("JSON 解析失败: {e}"))?;
+    let data: Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("JSON 解析失败: {e}"))?;
 
     let models: Vec<String> = if api.contains("google") {
         data.get("models")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|m| {
-                m.get("name").and_then(|n| n.as_str()).map(|s| s.replace("models/", ""))
-            }).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| {
+                        m.get("name")
+                            .and_then(|n| n.as_str())
+                            .map(|s| s.replace("models/", ""))
+                    })
+                    .collect()
+            })
             .unwrap_or_default()
     } else {
         data.get("data")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|m| {
-                m.get("id").and_then(|n| n.as_str()).map(String::from)
-            }).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| m.get("id").and_then(|n| n.as_str()).map(String::from))
+                    .collect()
+            })
             .unwrap_or_default()
     };
 
@@ -1530,7 +1665,8 @@ pub async fn hermes_fetch_models(
 pub async fn hermes_update_model(model: String) -> Result<String, String> {
     let home = hermes_home();
     let config_path = home.join("config.yaml");
-    let config_raw = std::fs::read_to_string(&config_path).map_err(|e| format!("读取 config.yaml 失败: {e}"))?;
+    let config_raw =
+        std::fs::read_to_string(&config_path).map_err(|e| format!("读取 config.yaml 失败: {e}"))?;
 
     // Hermes 直接用模型名，不加 provider/ 前缀
     let model_str = model.clone();
@@ -1565,7 +1701,10 @@ pub async fn hermes_update_model(model: String) -> Result<String, String> {
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub async fn hermes_gateway_action(app: tauri::AppHandle, action: String) -> Result<String, String> {
+pub async fn hermes_gateway_action(
+    app: tauri::AppHandle,
+    action: String,
+) -> Result<String, String> {
     let enhanced = hermes_enhanced_path();
     match action.as_str() {
         "start" => {
@@ -1576,7 +1715,12 @@ pub async fn hermes_gateway_action(app: tauri::AppHandle, action: String) -> Res
                 let addr: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
 
                 // 1. 如果端口已经可达，说明 Gateway 已在运行
-                if std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(300)).is_ok() {
+                if std::net::TcpStream::connect_timeout(
+                    &addr,
+                    std::time::Duration::from_millis(300),
+                )
+                .is_ok()
+                {
                     // 即使已在运行也启动 Guardian 守护
                     start_guardian(&app);
                     emit_gateway_status(true);
@@ -1587,7 +1731,12 @@ pub async fn hermes_gateway_action(app: tauri::AppHandle, action: String) -> Res
                 kill_gateway_pid();
                 // 如果仍有残留（非我们启动的），再 taskkill
                 tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-                if std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(200)).is_ok() {
+                if std::net::TcpStream::connect_timeout(
+                    &addr,
+                    std::time::Duration::from_millis(200),
+                )
+                .is_ok()
+                {
                     // 端口仍被占用，有残留进程
                     let _ = std::process::Command::new("taskkill")
                         .args(["/F", "/IM", "hermes.exe"])
@@ -1652,7 +1801,9 @@ pub async fn hermes_gateway_action(app: tauri::AppHandle, action: String) -> Res
                             // 前 3 秒每次都检查，之后检查日志是否有错误
                             if i > 6 {
                                 if let Ok(log) = std::fs::read_to_string(&log_path) {
-                                    if log.contains("failed to connect") || log.contains("Port") && log.contains("already in use") {
+                                    if log.contains("failed to connect")
+                                        || log.contains("Port") && log.contains("already in use")
+                                    {
                                         break; // 进程已报错，不再等待
                                     }
                                 }
@@ -1665,12 +1816,22 @@ pub async fn hermes_gateway_action(app: tauri::AppHandle, action: String) -> Res
                             Ok("Gateway 已启动".into())
                         } else {
                             let log_tail = std::fs::read_to_string(&log_path).unwrap_or_default();
-                            let tail: String = log_tail.lines().rev().take(20)
-                                .collect::<Vec<_>>().into_iter().rev()
-                                .collect::<Vec<_>>().join("\n");
+                            let tail: String = log_tail
+                                .lines()
+                                .rev()
+                                .take(20)
+                                .collect::<Vec<_>>()
+                                .into_iter()
+                                .rev()
+                                .collect::<Vec<_>>()
+                                .join("\n");
                             Err(format!(
                                 "Gateway 启动失败。\n日志:\n{}",
-                                if tail.is_empty() { "(日志为空)".to_string() } else { tail }
+                                if tail.is_empty() {
+                                    "(日志为空)".to_string()
+                                } else {
+                                    tail
+                                }
                             ))
                         }
                     }
@@ -1710,11 +1871,17 @@ pub async fn hermes_gateway_action(app: tauri::AppHandle, action: String) -> Res
                         GW_PID.store(child.id(), Ordering::SeqCst);
                         // 等待端口可达（最多 15s）
                         let port = hermes_gateway_port();
-                        let addr: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+                        let addr: std::net::SocketAddr =
+                            format!("127.0.0.1:{port}").parse().unwrap();
                         let mut ok = false;
                         for _ in 0..30 {
                             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                            if std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(500)).is_ok() {
+                            if std::net::TcpStream::connect_timeout(
+                                &addr,
+                                std::time::Duration::from_millis(500),
+                            )
+                            .is_ok()
+                            {
                                 ok = true;
                                 break;
                             }
@@ -1731,7 +1898,10 @@ pub async fn hermes_gateway_action(app: tauri::AppHandle, action: String) -> Res
                         // fallback: hermes gateway start
                         let mut fallback = tokio::process::Command::new("hermes");
                         fallback.args(["gateway", "start"]).env("PATH", &enhanced);
-                        let out = fallback.output().await.map_err(|e2| format!("启动失败: {e} / fallback: {e2}"))?;
+                        let out = fallback
+                            .output()
+                            .await
+                            .map_err(|e2| format!("启动失败: {e} / fallback: {e2}"))?;
                         if out.status.success() {
                             start_guardian(&app);
                             emit_gateway_status(true);
@@ -1739,7 +1909,10 @@ pub async fn hermes_gateway_action(app: tauri::AppHandle, action: String) -> Res
                         } else {
                             let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
                             Err(if stderr.is_empty() {
-                                format!("Gateway 启动失败 (exit {})", out.status.code().unwrap_or(-1))
+                                format!(
+                                    "Gateway 启动失败 (exit {})",
+                                    out.status.code().unwrap_or(-1)
+                                )
                             } else {
                                 stderr
                             })
@@ -1768,7 +1941,12 @@ pub async fn hermes_gateway_action(app: tauri::AppHandle, action: String) -> Res
                 let port = hermes_gateway_port();
                 let addr: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
                 tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-                if std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(300)).is_ok() {
+                if std::net::TcpStream::connect_timeout(
+                    &addr,
+                    std::time::Duration::from_millis(300),
+                )
+                .is_ok()
+                {
                     let _ = std::process::Command::new("taskkill")
                         .args(["/F", "/IM", "hermes.exe"])
                         .creation_flags(CREATE_NO_WINDOW)
@@ -1783,7 +1961,11 @@ pub async fn hermes_gateway_action(app: tauri::AppHandle, action: String) -> Res
                 Ok(_) if killed => Ok("Gateway 已停止".into()),
                 Ok(out) => {
                     let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
-                    if stderr.is_empty() { Ok("Gateway 已停止".into()) } else { Err(stderr) }
+                    if stderr.is_empty() {
+                        Ok("Gateway 已停止".into())
+                    } else {
+                        Err(stderr)
+                    }
                 }
                 Err(_) if killed => Ok("Gateway 已停止".into()),
                 Err(e) => Err(format!("停止失败: {e}")),
@@ -1897,7 +2079,12 @@ pub async fn hermes_detect_environments() -> Result<Value, String> {
 
                     // 3. 检测 WSL 里是否安装了 hermes
                     let hermes_check = std::process::Command::new("wsl")
-                        .args(["-e", "bash", "-lc", "command -v hermes && hermes --version 2>/dev/null || echo NOT_FOUND"])
+                        .args([
+                            "-e",
+                            "bash",
+                            "-lc",
+                            "command -v hermes && hermes --version 2>/dev/null || echo NOT_FOUND",
+                        ])
                         .creation_flags(CREATE_NO_WINDOW)
                         .output();
                     if let Ok(h_out) = hermes_check {
@@ -1921,7 +2108,8 @@ pub async fn hermes_detect_environments() -> Result<Value, String> {
                             .is_ok();
                             result["wsl2"]["gatewayRunning"] = serde_json::json!(reachable);
                             if reachable {
-                                result["wsl2"]["gatewayUrl"] = serde_json::json!(format!("http://{ip}:{port}"));
+                                result["wsl2"]["gatewayUrl"] =
+                                    serde_json::json!(format!("http://{ip}:{port}"));
                             }
                         }
                     }
@@ -1949,7 +2137,13 @@ pub async fn hermes_detect_environments() -> Result<Value, String> {
                 // 查找运行中的 hermes 相关容器
                 let ps_cmd = {
                     let mut cmd = std::process::Command::new("docker");
-                    cmd.args(["ps", "--format", "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Ports}}\t{{.Status}}", "--filter", "status=running"]);
+                    cmd.args([
+                        "ps",
+                        "--format",
+                        "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Ports}}\t{{.Status}}",
+                        "--filter",
+                        "status=running",
+                    ]);
                     #[cfg(target_os = "windows")]
                     cmd.creation_flags(CREATE_NO_WINDOW);
                     cmd.output()
@@ -1996,8 +2190,8 @@ pub async fn hermes_set_gateway_url(url: Option<String>) -> Result<String, Strin
     let config_path = config_paths.first().ok_or("找不到配置文件路径")?;
 
     let mut config = if config_path.exists() {
-        let content = std::fs::read_to_string(config_path)
-            .map_err(|e| format!("读取配置失败: {e}"))?;
+        let content =
+            std::fs::read_to_string(config_path).map_err(|e| format!("读取配置失败: {e}"))?;
         serde_json::from_str::<Value>(&content).unwrap_or_else(|_| serde_json::json!({}))
     } else {
         serde_json::json!({})
@@ -2020,13 +2214,11 @@ pub async fn hermes_set_gateway_url(url: Option<String>) -> Result<String, Strin
         }
     }
 
-    let json_str = serde_json::to_string_pretty(&config)
-        .map_err(|e| format!("序列化失败: {e}"))?;
+    let json_str = serde_json::to_string_pretty(&config).map_err(|e| format!("序列化失败: {e}"))?;
     if let Some(parent) = config_path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    std::fs::write(config_path, json_str)
-        .map_err(|e| format!("写入配置失败: {e}"))?;
+    std::fs::write(config_path, json_str).map_err(|e| format!("写入配置失败: {e}"))?;
 
     let current_url = hermes_gateway_url();
     Ok(format!("Gateway URL 已设置: {current_url}"))
@@ -2060,10 +2252,7 @@ pub async fn update_hermes(app: tauri::AppHandle) -> Result<String, String> {
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
 
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("升级失败: {e}"))?;
+    let output = cmd.output().await.map_err(|e| format!("升级失败: {e}"))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -2101,10 +2290,7 @@ pub async fn uninstall_hermes(clean_config: bool) -> Result<String, String> {
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
 
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("卸载失败: {e}"))?;
+    let output = cmd.output().await.map_err(|e| format!("卸载失败: {e}"))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -2112,9 +2298,7 @@ pub async fn uninstall_hermes(clean_config: bool) -> Result<String, String> {
     }
 
     // 清理 venv（如果存在）
-    let venv_dir = dirs::home_dir()
-        .unwrap_or_default()
-        .join(".hermes-venv");
+    let venv_dir = dirs::home_dir().unwrap_or_default().join(".hermes-venv");
     if venv_dir.exists() {
         let _ = std::fs::remove_dir_all(&venv_dir);
     }
@@ -2214,23 +2398,25 @@ pub async fn hermes_api_proxy(
         }
     }
 
-    let resp = req.send().await.map_err(|e| format!("Gateway 请求失败: {e}"))?;
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| format!("Gateway 请求失败: {e}"))?;
     let status = resp.status().as_u16();
     let text = resp.text().await.unwrap_or_default();
 
     // 尝试解析为 JSON，否则包装为字符串
-    let json_val: Value = serde_json::from_str(&text).unwrap_or_else(|_| {
-        serde_json::json!({ "raw": text })
-    });
+    let json_val: Value =
+        serde_json::from_str(&text).unwrap_or_else(|_| serde_json::json!({ "raw": text }));
 
     if status >= 400 {
         // 提取错误信息：支持 {"error": "msg"} 和 {"error": {"message": "msg"}} 两种格式
         let err_msg = json_val
             .get("error")
             .and_then(|v| {
-                v.as_str().map(String::from).or_else(|| {
-                    v.get("message").and_then(|m| m.as_str()).map(String::from)
-                })
+                v.as_str()
+                    .map(String::from)
+                    .or_else(|| v.get("message").and_then(|m| m.as_str()).map(String::from))
             })
             .unwrap_or_else(|| text.clone());
         return Err(err_msg);
@@ -2294,24 +2480,34 @@ pub async fn hermes_agent_run(
         req = req.header("Authorization", format!("Bearer {api_key}"));
     }
 
-    let resp = req.send().await.map_err(|e| format!("启动 run 失败: {e}"))?;
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| format!("启动 run 失败: {e}"))?;
     if !resp.status().is_success() {
         let status = resp.status().as_u16();
         let text = resp.text().await.unwrap_or_default();
         return Err(format!("HTTP {status}: {text}"));
     }
-    let body: Value = resp.json().await.map_err(|e| format!("解析响应失败: {e}"))?;
+    let body: Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("解析响应失败: {e}"))?;
     let run_id = body["run_id"]
         .as_str()
         .ok_or("响应中没有 run_id")?
         .to_string();
 
-    let _ = app.emit("hermes-run-started", serde_json::json!({ "run_id": &run_id }));
+    let _ = app.emit(
+        "hermes-run-started",
+        serde_json::json!({ "run_id": &run_id }),
+    );
 
     // 2. GET /v1/runs/{run_id}/events — SSE 事件流
     let events_url = format!("{gw_url}/v1/runs/{run_id}/events");
-    let sse_client = super::build_http_client(std::time::Duration::from_secs(300), Some("ClawPanel"))
-        .map_err(|e| format!("SSE 客户端创建失败: {e}"))?;
+    let sse_client =
+        super::build_http_client(std::time::Duration::from_secs(300), Some("ClawPanel"))
+            .map_err(|e| format!("SSE 客户端创建失败: {e}"))?;
 
     let mut sse_req = sse_client.get(&events_url);
     if !api_key.is_empty() {
@@ -2349,10 +2545,13 @@ pub async fn hermes_agent_run(
             }
             let data = trimmed[6..].trim();
             if data == "[DONE]" {
-                let _ = app.emit("hermes-run-done", serde_json::json!({
-                    "run_id": &run_id,
-                    "output": &final_output,
-                }));
+                let _ = app.emit(
+                    "hermes-run-done",
+                    serde_json::json!({
+                        "run_id": &run_id,
+                        "output": &final_output,
+                    }),
+                );
                 return Ok(run_id);
             }
 
@@ -2362,10 +2561,13 @@ pub async fn hermes_agent_run(
                     "message.delta" => {
                         if let Some(delta) = evt["delta"].as_str() {
                             final_output.push_str(delta);
-                            let _ = app.emit("hermes-run-delta", serde_json::json!({
-                                "run_id": &run_id,
-                                "delta": delta,
-                            }));
+                            let _ = app.emit(
+                                "hermes-run-delta",
+                                serde_json::json!({
+                                    "run_id": &run_id,
+                                    "delta": delta,
+                                }),
+                            );
                         }
                     }
                     "tool.started" | "tool.completed" | "tool.progress" | "tool.error" => {
@@ -2378,18 +2580,24 @@ pub async fn hermes_agent_run(
                         if let Some(output) = evt["output"].as_str() {
                             final_output = output.to_string();
                         }
-                        let _ = app.emit("hermes-run-done", serde_json::json!({
-                            "run_id": &run_id,
-                            "output": &final_output,
-                        }));
+                        let _ = app.emit(
+                            "hermes-run-done",
+                            serde_json::json!({
+                                "run_id": &run_id,
+                                "output": &final_output,
+                            }),
+                        );
                         return Ok(run_id);
                     }
                     "run.failed" => {
                         let err = evt["error"].as_str().unwrap_or("unknown error");
-                        let _ = app.emit("hermes-run-error", serde_json::json!({
-                            "run_id": &run_id,
-                            "error": err,
-                        }));
+                        let _ = app.emit(
+                            "hermes-run-error",
+                            serde_json::json!({
+                                "run_id": &run_id,
+                                "error": err,
+                            }),
+                        );
                         return Err(format!("Agent run failed: {err}"));
                     }
                     _ => {
@@ -2401,10 +2609,13 @@ pub async fn hermes_agent_run(
         }
     }
 
-    let _ = app.emit("hermes-run-done", serde_json::json!({
-        "run_id": &run_id,
-        "output": &final_output,
-    }));
+    let _ = app.emit(
+        "hermes-run-done",
+        serde_json::json!({
+            "run_id": &run_id,
+            "output": &final_output,
+        }),
+    );
     Ok(run_id)
 }
 
@@ -2538,13 +2749,11 @@ pub async fn hermes_logs_list() -> Result<Value, String> {
                     .modified()
                     .ok()
                     .and_then(|t| {
-                        t.duration_since(std::time::UNIX_EPOCH)
-                            .ok()
-                            .map(|d| {
-                                let secs = d.as_secs() as i64;
-                                // Simple ISO-ish format
-                                chrono_simple(secs)
-                            })
+                        t.duration_since(std::time::UNIX_EPOCH).ok().map(|d| {
+                            let secs = d.as_secs() as i64;
+                            // Simple ISO-ish format
+                            chrono_simple(secs)
+                        })
                     })
                     .unwrap_or_default();
                 (sz, mt)
@@ -2657,7 +2866,11 @@ fn parse_log_line(line: &str) -> ParsedLogLine {
         {
             let ts = format!("{maybe_date} {maybe_time}");
             let lvl = parts[2].to_string();
-            let msg = if parts.len() > 3 { parts[3].to_string() } else { String::new() };
+            let msg = if parts.len() > 3 {
+                parts[3].to_string()
+            } else {
+                String::new()
+            };
             return ParsedLogLine {
                 timestamp: Some(ts),
                 level: Some(lvl),
@@ -2783,7 +2996,11 @@ pub async fn hermes_skill_detail(file_path: String) -> Result<String, String> {
 #[tauri::command]
 pub async fn hermes_memory_read(r#type: Option<String>) -> Result<String, String> {
     let kind = r#type.as_deref().unwrap_or("memory");
-    let file_name = if kind == "user" { "USER.md" } else { "MEMORY.md" };
+    let file_name = if kind == "user" {
+        "USER.md"
+    } else {
+        "MEMORY.md"
+    };
     let file_path = hermes_home().join("memories").join(file_name);
     if !file_path.exists() {
         return Ok(String::new());
@@ -2792,11 +3009,18 @@ pub async fn hermes_memory_read(r#type: Option<String>) -> Result<String, String
 }
 
 #[tauri::command]
-pub async fn hermes_memory_write(r#type: Option<String>, content: String) -> Result<String, String> {
+pub async fn hermes_memory_write(
+    r#type: Option<String>,
+    content: String,
+) -> Result<String, String> {
     let kind = r#type.as_deref().unwrap_or("memory");
     let mem_dir = hermes_home().join("memories");
     std::fs::create_dir_all(&mem_dir).map_err(|e| format!("Failed to create dir: {e}"))?;
-    let file_name = if kind == "user" { "USER.md" } else { "MEMORY.md" };
+    let file_name = if kind == "user" {
+        "USER.md"
+    } else {
+        "MEMORY.md"
+    };
     let file_path = mem_dir.join(file_name);
     std::fs::write(&file_path, &content).map_err(|e| format!("Failed to write memory: {e}"))?;
     Ok("ok".into())

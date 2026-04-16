@@ -693,7 +693,8 @@ pub async fn save_messaging_platform(
             merge_channel_entry(channels_map, "discord", entry);
             // 仅在首次创建时设置默认值，不覆盖用户已有的设置
             if let Some(Value::Object(d)) = channels_map.get_mut("discord") {
-                d.entry("groupPolicy").or_insert(Value::String("allowlist".into()));
+                d.entry("groupPolicy")
+                    .or_insert(Value::String("allowlist".into()));
                 d.entry("dm").or_insert(json!({ "enabled": false }));
                 d.entry("retry").or_insert(json!({
                     "attempts": 3,

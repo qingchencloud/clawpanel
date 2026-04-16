@@ -45,7 +45,10 @@ fn default_openclaw_dir() -> PathBuf {
         }
         // dirs::home_dir() 作为补充（Windows API SHGetKnownFolderPath）
         if let Some(dh) = dirs::home_dir() {
-            if !candidates.iter().any(|c| panel_path_key(c) == panel_path_key(&dh)) {
+            if !candidates
+                .iter()
+                .any(|c| panel_path_key(c) == panel_path_key(&dh))
+            {
                 candidates.push(dh);
             }
         }
@@ -54,7 +57,9 @@ fn default_openclaw_dir() -> PathBuf {
             let combined = format!("{}{}", hd.trim(), hp.trim());
             let p = PathBuf::from(&combined);
             if !combined.is_empty()
-                && !candidates.iter().any(|c| panel_path_key(c) == panel_path_key(&p))
+                && !candidates
+                    .iter()
+                    .any(|c| panel_path_key(c) == panel_path_key(&p))
             {
                 candidates.push(p);
             }
