@@ -436,6 +436,7 @@
     "fallbackModels": "备选模型：",
     "fallbackNone": "无",
     "fallbackHint": "主模型不可用时，系统会自动切换到备选模型",
+    "configure": "配置",
     "primaryAutoSwitch": "主模型已自动切换为 {model}",
     "noProvider": "暂无服务商，点击「+ 添加服务商」开始配置",
     "noModel": "暂无模型，点击「+ 模型」添加",
