@@ -4948,6 +4948,83 @@ const handlers = {
     }
   },
 
+  // 模型测试（详细版 #Compat-1）：返回 {success, status, reqUrl, reqBody, respBody, reply, error, elapsedMs, usedApi}
+  async test_model_verbose({ baseUrl, apiKey, modelId, apiType = 'openai-completions' }) {
+    const type = ['anthropic', 'anthropic-messages'].includes(apiType) ? 'anthropic-messages'
+      : apiType === 'google-gemini' ? 'google-gemini'
+      : 'openai-completions'
+    let base = _normalizeBaseUrl(baseUrl)
+    if (type === 'anthropic-messages' && !/\/v1$/i.test(base)) base += '/v1'
+    const t0 = Date.now()
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 30000)
+
+    let usedApi, reqUrl, reqBody, headers, realUrl
+    if (type === 'anthropic-messages') {
+      usedApi = 'Anthropic Messages'
+      reqUrl = `${base}/messages`
+      realUrl = reqUrl
+      reqBody = { model: modelId, messages: [{ role: 'user', content: '你好，请用一句话回复' }], max_tokens: 200 }
+      headers = { 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01' }
+      if (apiKey) headers['x-api-key'] = apiKey
+    } else if (type === 'google-gemini') {
+      usedApi = 'Gemini'
+      reqUrl = `${base}/models/${encodeURIComponent(modelId)}:generateContent?key=***`
+      realUrl = `${base}/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(apiKey || '')}`
+      reqBody = { contents: [{ role: 'user', parts: [{ text: '你好，请用一句话回复' }] }] }
+      headers = { 'Content-Type': 'application/json' }
+    } else {
+      usedApi = 'Chat Completions'
+      reqUrl = `${base}/chat/completions`
+      realUrl = reqUrl
+      reqBody = { model: modelId, messages: [{ role: 'user', content: '你好，请用一句话回复' }], max_tokens: 200, stream: false }
+      headers = { 'Content-Type': 'application/json' }
+      if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+    }
+
+    let resp
+    try {
+      resp = await fetch(realUrl, { method: 'POST', headers, body: JSON.stringify(reqBody), signal: controller.signal })
+    } catch (e) {
+      clearTimeout(timer)
+      const elapsedMs = Date.now() - t0
+      const error = e.name === 'AbortError' ? '请求超时 (30s)' : (e.message || String(e))
+      return { success: false, status: 0, reqUrl, reqBody, respBody: '', reply: '', error, elapsedMs, usedApi }
+    }
+    clearTimeout(timer)
+    const elapsedMs = Date.now() - t0
+    const status = resp.status
+    const respBody = await resp.text().catch(() => '')
+
+    let reply = ''
+    try {
+      const v = JSON.parse(respBody)
+      if (Array.isArray(v.content)) {
+        reply = v.content.filter(b => b.type === 'text').map(b => b.text).join('')
+      }
+      if (!reply && v.candidates?.[0]?.content?.parts) {
+        reply = v.candidates[0].content.parts.map(p => p.text).filter(Boolean).join('')
+      }
+      if (!reply && v.choices?.[0]?.message) {
+        const msg = v.choices[0].message
+        reply = msg.content || (msg.reasoning_content ? `[reasoning] ${msg.reasoning_content}` : '')
+      }
+      if (!reply && v.output?.text) reply = v.output.text
+    } catch {}
+
+    const success = resp.ok && !!reply
+    let error = null
+    if (!resp.ok) {
+      try {
+        const v = JSON.parse(respBody)
+        error = v.error?.message || v.message || `HTTP ${status}`
+      } catch { error = `HTTP ${status}` }
+    } else if (!reply) {
+      error = 'API 已响应但未解析出内容'
+    }
+    return { success, status, reqUrl, reqBody, respBody, reply, error, elapsedMs, usedApi }
+  },
+
   async list_remote_models({ baseUrl, apiKey, apiType = 'openai-completions' }) {
     const type = ['anthropic', 'anthropic-messages'].includes(apiType) ? 'anthropic-messages'
       : apiType === 'google-gemini' ? 'google-gemini'

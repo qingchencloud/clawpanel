@@ -5227,6 +5227,182 @@ pub async fn test_model(
     Ok(reply)
 }
 
+/// 测试模型（详细版 #Compat-1）：返回完整 req/resp 信息，供前端 debug 面板展示
+/// 相比 test_model：
+/// - 不会因 400/422/429 等吞掉错误返回"连接正常"，一律如实回传 status + body
+/// - 返回结构化 JSON：success/status/req_url/req_body/resp_body/reply/error/elapsed_ms/used_api
+/// - 前端拿到后可以直接渲染 debug 面板，无需在 webview 里走外部 fetch（规避 status 0）
+#[tauri::command]
+pub async fn test_model_verbose(
+    base_url: String,
+    api_key: String,
+    model_id: String,
+    api_type: Option<String>,
+) -> Result<serde_json::Value, String> {
+    use std::time::Instant;
+    let api_type_norm =
+        normalize_model_api_type(api_type.as_deref().unwrap_or("openai-completions"));
+    let base = normalize_base_url_for_api(&base_url, api_type_norm);
+    let start = Instant::now();
+
+    let client =
+        crate::commands::build_http_client_no_proxy(std::time::Duration::from_secs(30), None)
+            .map_err(|e| format!("创建 HTTP 客户端失败: {e}"))?;
+
+    let (used_api, req_url, req_body_json, req_builder) = match api_type_norm {
+        "anthropic-messages" => {
+            let url = format!("{}/messages", base);
+            let body = json!({
+                "model": model_id,
+                "messages": [{"role": "user", "content": "你好，请用一句话回复"}],
+                "max_tokens": 200,
+            });
+            let mut req = client
+                .post(&url)
+                .header("anthropic-version", "2023-06-01")
+                .json(&body);
+            if !api_key.is_empty() {
+                req = req.header("x-api-key", api_key.clone());
+            }
+            ("Anthropic Messages", url, body, req)
+        }
+        "google-gemini" => {
+            let url_display = format!("{}/models/{}:generateContent?key=***", base, model_id);
+            let url_real = format!(
+                "{}/models/{}:generateContent?key={}",
+                base, model_id, api_key
+            );
+            let body = json!({
+                "contents": [{"role": "user", "parts": [{"text": "你好，请用一句话回复"}]}]
+            });
+            let req = client.post(&url_real).json(&body);
+            ("Gemini", url_display, body, req)
+        }
+        _ => {
+            let url = format!("{}/chat/completions", base);
+            let body = json!({
+                "model": model_id,
+                "messages": [{"role": "user", "content": "你好，请用一句话回复"}],
+                "max_tokens": 200,
+                "stream": false
+            });
+            let mut req = client.post(&url).json(&body);
+            if !api_key.is_empty() {
+                req = req.header("Authorization", format!("Bearer {api_key}"));
+            }
+            ("Chat Completions", url, body, req)
+        }
+    };
+
+    let resp_result = req_builder.send().await;
+    let elapsed_ms = start.elapsed().as_millis() as u64;
+
+    let resp = match resp_result {
+        Ok(r) => r,
+        Err(e) => {
+            let error = if e.is_timeout() {
+                "请求超时 (30s)".to_string()
+            } else if e.is_connect() {
+                format!("连接失败: {e}")
+            } else {
+                format!("请求失败: {e}")
+            };
+            return Ok(json!({
+                "success": false,
+                "status": 0,
+                "reqUrl": req_url,
+                "reqBody": req_body_json,
+                "respBody": "",
+                "reply": "",
+                "error": error,
+                "elapsedMs": elapsed_ms,
+                "usedApi": used_api,
+            }));
+        }
+    };
+
+    let status = resp.status();
+    let status_code = status.as_u16();
+    let text = resp.text().await.unwrap_or_default();
+
+    // 提取 reply 文本（兼容 OpenAI / Anthropic / Gemini / DashScope）
+    let reply = serde_json::from_str::<serde_json::Value>(&text)
+        .ok()
+        .and_then(|v| {
+            if let Some(arr) = v.get("content").and_then(|c| c.as_array()) {
+                let text = arr
+                    .iter()
+                    .filter(|b| b.get("type").and_then(|t| t.as_str()) == Some("text"))
+                    .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+                    .collect::<Vec<_>>()
+                    .join("");
+                if !text.is_empty() {
+                    return Some(text);
+                }
+            }
+            if let Some(t) = v
+                .get("candidates")
+                .and_then(|c| c.get(0))
+                .and_then(|c| c.get("content"))
+                .and_then(|c| c.get("parts"))
+                .and_then(|p| p.get(0))
+                .and_then(|p| p.get("text"))
+                .and_then(|t| t.as_str())
+                .filter(|s| !s.is_empty())
+            {
+                return Some(t.to_string());
+            }
+            if let Some(msg) = v
+                .get("choices")
+                .and_then(|c| c.get(0))
+                .and_then(|c| c.get("message"))
+            {
+                let content = msg.get("content").and_then(|c| c.as_str()).unwrap_or("");
+                if !content.is_empty() {
+                    return Some(content.to_string());
+                }
+                if let Some(rc) = msg
+                    .get("reasoning_content")
+                    .and_then(|c| c.as_str())
+                    .filter(|s| !s.is_empty())
+                {
+                    return Some(format!("[reasoning] {rc}"));
+                }
+            }
+            if let Some(t) = v
+                .get("output")
+                .and_then(|o| o.get("text"))
+                .and_then(|t| t.as_str())
+                .filter(|s| !s.is_empty())
+            {
+                return Some(t.to_string());
+            }
+            None
+        })
+        .unwrap_or_default();
+
+    let success = status.is_success() && !reply.is_empty();
+    let error = if !status.is_success() {
+        Some(extract_error_message(&text, status))
+    } else if reply.is_empty() {
+        Some("API 已响应但未解析出内容".to_string())
+    } else {
+        None
+    };
+
+    Ok(json!({
+        "success": success,
+        "status": status_code,
+        "reqUrl": req_url,
+        "reqBody": req_body_json,
+        "respBody": text,
+        "reply": reply,
+        "error": error,
+        "elapsedMs": elapsed_ms,
+        "usedApi": used_api,
+    }))
+}
+
 /// 获取服务商的远程模型列表（调用 /models 接口）
 #[tauri::command]
 pub async fn list_remote_models(

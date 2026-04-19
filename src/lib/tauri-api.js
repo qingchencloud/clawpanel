@@ -217,6 +217,7 @@ export const api = {
   getNpmRegistry: () => cachedInvoke('get_npm_registry', {}, 30000),
   setNpmRegistry: (registry) => { invalidate('get_npm_registry'); return invoke('set_npm_registry', { registry }) },
   testModel: (baseUrl, apiKey, modelId, apiType = null) => invoke('test_model', { baseUrl, apiKey, modelId, apiType }),
+  testModelVerbose: (baseUrl, apiKey, modelId, apiType = null) => invoke('test_model_verbose', { baseUrl, apiKey, modelId, apiType }),
   listRemoteModels: (baseUrl, apiKey, apiType = null) => invoke('list_remote_models', { baseUrl, apiKey, apiType }),
 
   // Agent 管理

@@ -1587,6 +1587,8 @@ function loadConfig() {
   _config.apiType = normalizeApiType(_config.apiType)
   if (_config.autoRounds === undefined) _config.autoRounds = 8
   if (!Array.isArray(_config.knowledgeFiles)) _config.knowledgeFiles = []
+  // #Compat-3 备用模型组：主模型失败时自动切换
+  if (!Array.isArray(_config.fallbackModels)) _config.fallbackModels = []
   return _config
 }
 
@@ -1718,7 +1720,102 @@ const TIMEOUT_TOTAL = 120_000    // 总超时 120 秒
 const TIMEOUT_CHUNK = 30_000     // 流式 chunk 间隔超时 30 秒
 const TIMEOUT_CONNECT = 30_000   // 连接超时 30 秒
 
+// #Compat-3: 收集所有可用的模型槽位（主模型 + 启用的备用模型）
+// 返回 [{ label, baseUrl, apiKey, model, apiType, isPrimary }, ...]
+function buildActiveSlots() {
+  const slots = []
+  // 主模型
+  if (_config.baseUrl && _config.model) {
+    slots.push({
+      label: t('assistant.slotPrimary'),
+      baseUrl: _config.baseUrl,
+      apiKey: _config.apiKey || '',
+      model: _config.model,
+      apiType: normalizeApiType(_config.apiType),
+      isPrimary: true,
+    })
+  }
+  // 备用模型（仅保留必填字段齐全 + enabled 的）
+  for (const fb of (_config.fallbackModels || [])) {
+    if (!fb || fb.enabled === false) continue
+    if (!fb.baseUrl || !fb.model) continue
+    const apiType = normalizeApiType(fb.apiType)
+    if (requiresApiKey(apiType) && !fb.apiKey) continue
+    slots.push({
+      label: fb.label || fb.model,
+      baseUrl: fb.baseUrl,
+      apiKey: fb.apiKey || '',
+      model: fb.model,
+      apiType,
+      isPrimary: false,
+    })
+  }
+  return slots
+}
+
+// #Compat-3: 判断错误是否应该触发 failover 切换到下一个槽位
+// - AbortError（用户手动中止）→ 不切
+// - 鉴权错误 401/403 → 不切（key 错了，切了也白切）
+// - 其它（网络/超时/429/5xx/400 请求格式错误/模型不存在）→ 切
+function isFailoverableError(err) {
+  if (!err) return false
+  if (err.name === 'AbortError') return false
+  const msg = (err.message || '').toLowerCase()
+  // 鉴权错误关键字：401/403/invalid api key/unauthorized/authentication
+  if (/\b(401|403)\b/.test(msg)) return false
+  if (/unauthorized|forbidden|invalid\s+api\s*key|authentication|api\s*key\s+(invalid|missing|expired)/i.test(msg)) return false
+  return true
+}
+
 async function callAI(messages, onChunk) {
+  const slots = buildActiveSlots()
+  if (slots.length === 0) {
+    throw new Error(t('assistant.errConfigFirst'))
+  }
+
+  let lastErr
+  for (let i = 0; i < slots.length; i++) {
+    const slot = slots[i]
+    try {
+      await callAIWithSlot(slot, messages, onChunk)
+      if (i > 0) {
+        console.log(`[assistant] Failover 成功：已切换到备用模型「${slot.label}」`)
+      }
+      return
+    } catch (err) {
+      lastErr = err
+      // 用户中止或鉴权错误：直接抛出，不 failover
+      if (!isFailoverableError(err)) throw err
+      // 最后一个槽位也失败了，抛出最终错误
+      if (i >= slots.length - 1) throw err
+      // 还有备用：通知用户并继续
+      const nextSlot = slots[i + 1]
+      const shortMsg = (err.message || '').slice(0, 80)
+      console.warn(`[assistant] 模型「${slot.label}」失败（${shortMsg}），切换到备用：${nextSlot.label}`)
+      onChunk(`\n\n> ${t('assistant.failoverNotice', { from: slot.label, to: nextSlot.label, err: shortMsg })}\n\n`)
+    }
+  }
+  throw lastErr
+}
+
+// 用指定槽位发起一次请求（原 callAI 的内部实现；通过临时替换 _config 实现槽位隔离）
+async function callAIWithSlot(slot, messages, onChunk) {
+  const savedConfig = _config
+  _config = {
+    ..._config,
+    baseUrl: slot.baseUrl,
+    apiKey: slot.apiKey,
+    model: slot.model,
+    apiType: slot.apiType,
+  }
+  try {
+    await _callAIOnce(messages, onChunk)
+  } finally {
+    _config = savedConfig
+  }
+}
+
+async function _callAIOnce(messages, onChunk) {
   const apiType = normalizeApiType(_config.apiType)
   if (!_config.baseUrl || !_config.model || (requiresApiKey(apiType) && !_config.apiKey)) {
     throw new Error(t('assistant.errConfigFirst'))
@@ -2977,6 +3074,22 @@ function showSettings() {
               <a href="${QTCOOL.site}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:11px">${icon('external-link', 11)} ${t('assistant.qtcoolLearnMore')}</a>
             </div>
           </div>
+
+          <!-- #Compat-3: 备用模型组（可折叠） -->
+          <details class="ast-fallback-section" id="ast-fallback-section" ${(c.fallbackModels || []).length ? 'open' : ''} style="margin-top:14px">
+            <summary style="cursor:pointer;padding:10px 14px;border-radius:var(--radius-md);background:var(--bg-secondary);border:1px solid var(--border-primary);display:flex;justify-content:space-between;align-items:center;gap:8px;list-style:none;user-select:none">
+              <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+                <span style="font-weight:600;font-size:var(--font-size-sm)">${icon('shield', 13)} ${t('assistant.fallbackModelsTitle')}</span>
+                <span style="font-size:11px;color:var(--text-tertiary);white-space:nowrap" id="ast-fallback-count">${(c.fallbackModels || []).filter(f => f && f.enabled !== false).length} ${t('assistant.fallbackEnabledSuffix')}</span>
+              </div>
+              <span class="ast-fallback-chevron" style="color:var(--text-tertiary);font-size:12px;transition:transform 0.2s">▼</span>
+            </summary>
+            <div style="padding:10px 4px 4px">
+              <div class="form-hint" style="margin-bottom:10px">${t('assistant.fallbackModelsDesc')}</div>
+              <div id="ast-fallback-list" style="display:flex;flex-direction:column;gap:10px"></div>
+              <button type="button" class="btn btn-sm btn-secondary" id="ast-fallback-add" style="margin-top:10px;width:100%">${icon('plus', 13)} ${t('assistant.fallbackAdd')}</button>
+            </div>
+          </details>
         </div>
         <div class="ast-tab-panel" data-panel="tools">
           <div class="form-hint" style="margin-bottom:10px">${t('assistant.toolsHint')}</div>
@@ -3091,6 +3204,89 @@ function showSettings() {
     </div>
   `
   document.body.appendChild(overlay)
+
+  // #Compat-3: 备用模型草稿（编辑态）——保存时才写回 _config.fallbackModels
+  const fallbackDrafts = JSON.parse(JSON.stringify(c.fallbackModels || []))
+  const fallbackListEl = overlay.querySelector('#ast-fallback-list')
+  const fallbackCountEl = overlay.querySelector('#ast-fallback-count')
+  const updateFallbackCount = () => {
+    if (!fallbackCountEl) return
+    const n = fallbackDrafts.filter(f => f && f.enabled !== false && f.baseUrl && f.model).length
+    fallbackCountEl.textContent = `${n} ${t('assistant.fallbackEnabledSuffix')}`
+  }
+  const renderFallbackList = () => {
+    if (!fallbackListEl) return
+    if (fallbackDrafts.length === 0) {
+      fallbackListEl.innerHTML = `<div class="form-hint" style="text-align:center;padding:16px 0;color:var(--text-tertiary);font-style:italic">${t('assistant.fallbackEmpty')}</div>`
+      updateFallbackCount()
+      return
+    }
+    fallbackListEl.innerHTML = fallbackDrafts.map((fb, idx) => `
+      <div class="ast-fallback-card" data-fb-idx="${idx}" style="border:1px solid var(--border-primary);border-radius:var(--radius-md);background:var(--bg-secondary);padding:10px 12px;${fb.enabled === false ? 'opacity:0.55;' : ''}">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:11px;color:var(--text-tertiary);font-weight:500">#${idx + 2}</span>
+          <input class="form-input ast-fb-label" placeholder="${t('assistant.fallbackLabelPlaceholder')}" value="${escHtml(fb.label || '')}" style="flex:1;font-size:12px;padding:4px 8px">
+          <label class="ast-switch-inline" title="${t('assistant.fallbackEnabled')}" style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-tertiary);cursor:pointer;white-space:nowrap">
+            <input type="checkbox" class="ast-fb-enabled" ${fb.enabled !== false ? 'checked' : ''} style="margin:0">
+            <span>${t('assistant.fallbackEnabled')}</span>
+          </label>
+          <button type="button" class="btn btn-xs btn-secondary ast-fb-remove" title="${t('assistant.fallbackRemove')}" style="padding:3px 8px;color:var(--error)">✕</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 120px;gap:6px;margin-bottom:6px">
+          <input class="form-input ast-fb-url" placeholder="${t('assistant.fallbackBaseUrlPlaceholder')}" value="${escHtml(fb.baseUrl || '')}" style="font-size:12px;padding:4px 8px">
+          <select class="form-input ast-fb-apitype" style="font-size:12px;padding:4px 8px">
+            ${API_TYPES.map(at => `<option value="${at.value}" ${normalizeApiType(fb.apiType) === at.value ? 'selected' : ''}>${at.label}</option>`).join('')}
+          </select>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+          <input class="form-input ast-fb-key" type="password" placeholder="${t('assistant.fallbackApiKeyPlaceholder')}" value="${escHtml(fb.apiKey || '')}" style="font-size:12px;padding:4px 8px">
+          <input class="form-input ast-fb-model" placeholder="${t('assistant.fallbackModelPlaceholder')}" value="${escHtml(fb.model || '')}" style="font-size:12px;padding:4px 8px">
+        </div>
+      </div>
+    `).join('')
+
+    // 绑定每张卡片的事件
+    fallbackListEl.querySelectorAll('.ast-fallback-card').forEach(card => {
+      const idx = parseInt(card.dataset.fbIdx, 10)
+      const sync = () => {
+        fallbackDrafts[idx] = {
+          ...fallbackDrafts[idx],
+          label: card.querySelector('.ast-fb-label').value.trim(),
+          baseUrl: card.querySelector('.ast-fb-url').value.trim(),
+          apiKey: card.querySelector('.ast-fb-key').value.trim(),
+          model: card.querySelector('.ast-fb-model').value.trim(),
+          apiType: normalizeApiType(card.querySelector('.ast-fb-apitype').value),
+          enabled: card.querySelector('.ast-fb-enabled').checked,
+        }
+        // 仅更新透明度和计数，不重渲染（避免输入框丢焦点）
+        card.style.opacity = fallbackDrafts[idx].enabled === false ? '0.55' : '1'
+        updateFallbackCount()
+      }
+      card.querySelectorAll('.ast-fb-label, .ast-fb-url, .ast-fb-key, .ast-fb-model, .ast-fb-apitype, .ast-fb-enabled').forEach(el => {
+        el.addEventListener('input', sync)
+        el.addEventListener('change', sync)
+      })
+      card.querySelector('.ast-fb-remove').onclick = () => {
+        fallbackDrafts.splice(idx, 1)
+        renderFallbackList()
+      }
+    })
+    updateFallbackCount()
+  }
+  renderFallbackList()
+  overlay.querySelector('#ast-fallback-add')?.addEventListener('click', () => {
+    // 默认从主模型推断 apiType，便于快速配同类备用
+    const mainApi = overlay.querySelector('#ast-apitype')?.value || _config.apiType || 'openai-completions'
+    fallbackDrafts.push({
+      label: '',
+      baseUrl: '',
+      apiKey: '',
+      model: '',
+      apiType: normalizeApiType(mainApi),
+      enabled: true,
+    })
+    renderFallbackList()
+  })
 
   // Tab 切换
   overlay.querySelectorAll('.ast-tab').forEach(tab => {
@@ -3527,91 +3723,34 @@ function showSettings() {
     btn.textContent = t('assistant.testing')
     resultEl.innerHTML = '<span style="color:var(--text-tertiary)">' + t('assistant.testSending') + '</span>'
 
-    // Web 模式下浏览器 fetch 受 CORS 限制，优先走后端代理
-    if (!window.__TAURI_INTERNALS__) {
-      const t0 = Date.now()
-      try {
-        const reply = await api.testModel(baseUrl, apiKey, model, selApiType)
-        const elapsed = Date.now() - t0
-        resultEl.innerHTML = buildTestResult({ success: true, elapsed, usedApi: selApiType, reqUrl: baseUrl, reqBody: {}, respStatus: 200, respBody: '', reply: reply || '(ok)' })
-      } catch (err) {
-        const elapsed = Date.now() - t0
-        resultEl.innerHTML = buildTestResult({ success: false, elapsed, usedApi: selApiType, reqUrl: baseUrl, reqBody: {}, respStatus: 0, respBody: '', error: err.message || String(err) })
-      }
-      btn.disabled = false; btn.textContent = t('assistant.testBtn')
-      return
-    }
-
-    const base = cleanBaseUrl(baseUrl, selApiType)
-    const hdrs = authHeaders(selApiType, apiKey)
-    const t0 = Date.now()
-
-    let respStatus = 0, respBody = '', reply = '', usedApi = '', reqUrl = '', reqBody = {}
-
+    // #Compat-1: 统一走 Rust reqwest（规避 webview fetch 的 status 0 / CORS 问题）
+    // Web 模式走 dev-api 的 /__api/test_model_verbose，Tauri 模式走 invoke('test_model_verbose')
     try {
-      if (selApiType === 'anthropic-messages') {
-        usedApi = 'Anthropic Messages'
-        reqUrl = base + '/messages'
-        reqBody = { model, messages: [{ role: 'user', content: '你好，请用一句话回复' }], max_tokens: 200 }
-        const resp = await fetch(reqUrl, { method: 'POST', headers: hdrs, body: JSON.stringify(reqBody), signal: AbortSignal.timeout(30000) })
-        respStatus = resp.status; respBody = await resp.text()
-        try {
-          const data = JSON.parse(respBody)
-          reply = data.content?.filter(b => b.type === 'text').map(b => b.text).join('') || ''
-        } catch {}
-      } else if (selApiType === 'google-gemini') {
-        usedApi = 'Gemini'
-        reqUrl = `${base}/models/${model}:generateContent?key=***`
-        reqBody = { contents: [{ role: 'user', parts: [{ text: '你好，请用一句话回复' }] }] }
-        const realUrl = `${base}/models/${model}:generateContent?key=${apiKey}`
-        const resp = await fetch(realUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(reqBody), signal: AbortSignal.timeout(30000) })
-        respStatus = resp.status; respBody = await resp.text()
-        try {
-          const data = JSON.parse(respBody)
-          reply = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
-        } catch {}
-      } else {
-        // OpenAI: Chat Completions + Responses fallback
-        usedApi = 'Chat Completions'
-        reqUrl = base + '/chat/completions'
-        reqBody = { model, messages: [{ role: 'user', content: '你好，请用一句话回复' }], max_tokens: 200 }
-        const resp = await fetch(reqUrl, { method: 'POST', headers: hdrs, body: JSON.stringify(reqBody), signal: AbortSignal.timeout(30000) })
-        respStatus = resp.status; respBody = await resp.text()
-
-        let fallback = false
-        if (!resp.ok && (respBody.includes('legacy protocol') || respBody.includes('/v1/responses') || respBody.includes('not supported'))) {
-          fallback = true
-        }
-
-        if (!fallback) {
-          try {
-            const data = JSON.parse(respBody)
-            const msg = data.choices?.[0]?.message
-            reply = msg?.content || msg?.reasoning_content || data.choices?.[0]?.text || data.output?.text || ''
-            if (!msg?.content && msg?.reasoning_content) reply = '[reasoning] ' + reply
-          } catch {}
-        }
-
-        if (fallback) {
-          usedApi = 'Responses'
-          reqUrl = base + '/responses'
-          reqBody = { model, input: [{ role: 'user', content: '你好，请用一句话回复' }], max_output_tokens: 200 }
-          try {
-            const resp2 = await fetch(reqUrl, { method: 'POST', headers: hdrs, body: JSON.stringify(reqBody), signal: AbortSignal.timeout(30000) })
-            respStatus = resp2.status; respBody = await resp2.text()
-            try { const d = JSON.parse(respBody); reply = d.output_text || d.output?.[0]?.content?.[0]?.text || '' } catch {}
-          } catch (err2) {
-            resultEl.innerHTML = buildTestResult({ success: false, elapsed: Date.now() - t0, usedApi, reqUrl, reqBody, respStatus: 0, respBody: '', error: err2.message })
-            btn.disabled = false; btn.textContent = t('assistant.testBtn'); return
-          }
-        }
-      }
+      const r = await api.testModelVerbose(baseUrl, apiKey, model, selApiType)
+      resultEl.innerHTML = buildTestResult({
+        success: !!r.success,
+        elapsed: r.elapsedMs || 0,
+        usedApi: r.usedApi || selApiType,
+        reqUrl: r.reqUrl || baseUrl,
+        reqBody: r.reqBody || {},
+        respStatus: r.status ?? 0,
+        respBody: r.respBody || '',
+        reply: r.reply || '',
+        error: r.error || null,
+      })
     } catch (err) {
-      resultEl.innerHTML = buildTestResult({ success: false, elapsed: Date.now() - t0, usedApi, reqUrl, reqBody, respStatus: 0, respBody: '', error: err.message })
-      btn.disabled = false; btn.textContent = t('assistant.testBtn'); return
+      // Rust 命令本身失败（如 client 构造失败），或 Web 模式网络异常
+      resultEl.innerHTML = buildTestResult({
+        success: false,
+        elapsed: 0,
+        usedApi: selApiType,
+        reqUrl: baseUrl,
+        reqBody: {},
+        respStatus: 0,
+        respBody: '',
+        error: err?.message || String(err),
+      })
     }
-
-    resultEl.innerHTML = buildTestResult({ success: !!reply, elapsed: Date.now() - t0, usedApi, reqUrl, reqBody, respStatus, respBody, reply })
     btn.disabled = false
     btn.textContent = t('assistant.testBtn')
   }
@@ -3842,6 +3981,17 @@ function showSettings() {
     }
     // 知识库
     _config.knowledgeFiles = kbFiles
+    // #Compat-3: 备用模型组（过滤掉空卡片）
+    _config.fallbackModels = fallbackDrafts
+      .filter(f => f && f.baseUrl && f.model)
+      .map(f => ({
+        label: f.label || f.model,
+        baseUrl: f.baseUrl,
+        apiKey: f.apiKey || '',
+        model: f.model,
+        apiType: normalizeApiType(f.apiType),
+        enabled: f.enabled !== false,
+      }))
     saveConfig()
     overlay.remove()
     // 更新 Header 标题和欢迎页
