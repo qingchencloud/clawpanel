@@ -12,6 +12,7 @@ import { icon, statusIcon } from '../lib/icons.js'
 import { QTCOOL, PROVIDER_PRESETS, API_TYPES as SHARED_API_TYPES, fetchQtcoolModels } from '../lib/model-presets.js'
 import { t } from '../lib/i18n.js'
 import { getActiveEngineId } from '../lib/engine-manager.js'
+import { enhanceModelCallError } from '../lib/model-error-diagnosis.js'
 
 // ── 常量 ──
 const STORAGE_KEY = 'clawpanel-assistant'
@@ -1910,7 +1911,8 @@ async function callChatCompletions(base, messages, onChunk) {
     } catch {
       if (errText) errMsg += `: ${errText.slice(0, 200)}`
     }
-    throw new Error(errMsg)
+    // #Compat-5: 识别 vLLM/Ollama 等本地服务端的常见拒绝消息，附加修复指引
+    throw new Error(enhanceModelCallError(errMsg))
   }
 
   // 检测响应是否为 SSE 流式
@@ -2004,7 +2006,8 @@ async function callResponsesAPI(base, messages, onChunk) {
     } catch {
       if (errText) errMsg += `: ${errText.slice(0, 200)}`
     }
-    throw new Error(errMsg)
+    // #Compat-5: 识别本地服务端拒绝消息，附加修复指引
+    throw new Error(enhanceModelCallError(errMsg))
   }
 
   await readSSEStream(resp, (json) => {
@@ -2063,7 +2066,8 @@ async function callAnthropicMessages(base, messages, onChunk) {
     } catch {
       if (errText) errMsg += `: ${errText.slice(0, 200)}`
     }
-    throw new Error(errMsg)
+    // #Compat-5: 识别本地服务端拒绝消息，附加修复指引
+    throw new Error(enhanceModelCallError(errMsg))
   }
 
   _lastDebugInfo.streaming = true
@@ -2131,7 +2135,8 @@ async function callGeminiGenerate(base, messages, onChunk) {
     const errText = await resp.text().catch(() => '')
     let errMsg = `API 错误 ${resp.status}`
     try { errMsg = JSON.parse(errText).error?.message || errMsg } catch {}
-    throw new Error(errMsg)
+    // #Compat-5: 识别本地服务端拒绝消息，附加修复指引
+    throw new Error(enhanceModelCallError(errMsg))
   }
 
   _lastDebugInfo.streaming = true
@@ -2580,7 +2585,9 @@ async function callAIWithTools(messages, onStatus, onToolProgress, onChunk) {
       const errText = await resp.text().catch(() => '')
       let errMsg = `API 错误 ${resp.status}`
       try { errMsg = JSON.parse(errText).error?.message || errMsg } catch {}
-      throw new Error(errMsg)
+      // #Compat-5: callAIWithTools 场景下 tools 带进 body 最容易踩 vLLM tool choice 限制，
+      // 识别并给出启动参数指引，避免用户一脸懵
+      throw new Error(enhanceModelCallError(errMsg))
     }
 
     // 流式累积状态
