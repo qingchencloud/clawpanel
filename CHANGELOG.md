@@ -5,6 +5,20 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.13.4] - 2026-04-20
+
+### 改进 (Improvements)
+
+- **模型列表 404 友好提示** — 部分服务商不提供 /models 列表接口（如 MiniMax 等），之前会显示 `HTTP 404 Not Found` 技术错误，现在改为弹窗提示「该服务商不支持自动获取，请手动填写模型 ID」，并提供一键进入手动添加流程
+- **助手设置「获取列表」走后端** — 改为通过 Rust 后端代理请求，解决部分服务商不返回 CORS 头导致桌面端 WebView 报 `Failed to fetch` 的问题
+- **HTTP 客户端支持 Brotli / Deflate** — reqwest 启用 brotli、deflate 解码，解决部分 API 返回压缩响应时 body 解析异常
+
+### 修复 (Fixes)
+
+- **测试按钮空响应** — 模型测试改用 stream: true + SSE 累积方式，绕开部分兼容网关 non-streaming 分支返回空 body 的已知 bug，行为与真实对话一致
+- **测试诊断信息增强** — 后端返回完整响应头、字节数、前 200 字节 hex dump，前端展示完整模型回复与请求详情，方便用户自查上游问题
+- **#236 Linux 全新系统部署失败** — 修复一键部署脚本中 npm 缓存被 root 拥有导致的 `EACCES` / `TAR_ENTRY_ERROR` 错误，新增缓存权限预检与自动修复，npm install 失败时自动清理 node_modules 后重试
+
 ## [0.13.3] - 2026-04-16
 
 ### 修复 (Fixes)

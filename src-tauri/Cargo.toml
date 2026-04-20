@@ -1,6 +1,6 @@
 [package]
 name = "clawpanel"
-version = "0.13.3"
+version = "0.13.4"
 edition = "2021"
 description = "ClawPanel - OpenClaw 可视化管理面板"
 authors = ["qingchencloud"]
