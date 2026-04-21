@@ -201,6 +201,29 @@ npm run dev              # Dev with hot reload
 npm run build && npm run serve  # Production
 ```
 
+## FAQ
+
+### Hot Update Caused UI Issues / Rolling Back to Built-in Version
+
+ClawPanel desktop supports frontend hot updates. Update files are stored at:
+
+| OS | Path |
+|----|------|
+| Windows | `%USERPROFILE%\.openclaw\clawpanel\web-update\` |
+| macOS / Linux | `~/.openclaw/clawpanel/web-update/` |
+
+If the UI looks broken after a hot update or you want to revert to the version bundled with the installer, simply delete that directory and restart:
+
+```bash
+# macOS / Linux
+rm -rf ~/.openclaw/clawpanel/web-update
+
+# Windows PowerShell
+Remove-Item -Recurse -Force "$env:USERPROFILE\.openclaw\clawpanel\web-update"
+```
+
+After restarting ClawPanel, the built-in frontend resources will be used automatically.
+
 ## Related Projects
 
 | Project | Description |

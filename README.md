@@ -902,6 +902,27 @@ sudo systemctl restart clawpanel  # 或 pm2 restart clawpanel
 3. 飞书：私聊测试需在「工作台」搜索机器人名称；群聊需通过「群设置 → 智能群助手」添加
 4. 钉钉：消息接收模式必须选择 **Stream 模式**
 
+### 热更新后界面异常 / 想回退到内嵌版本
+
+ClawPanel 桌面端支持前端热更新，更新文件存储在：
+
+| 系统 | 路径 |
+|------|------|
+| Windows | `%USERPROFILE%\.openclaw\clawpanel\web-update\` |
+| macOS / Linux | `~/.openclaw/clawpanel/web-update/` |
+
+如果热更新后界面显示异常或想回退到安装包自带的版本，删除该目录后重启即可：
+
+```bash
+# macOS / Linux
+rm -rf ~/.openclaw/clawpanel/web-update
+
+# Windows PowerShell
+Remove-Item -Recurse -Force "$env:USERPROFILE\.openclaw\clawpanel\web-update"
+```
+
+重启 ClawPanel 后将自动使用内嵌的前端资源。
+
 ## 相关项目
 
 | 项目 | 说明 |
