@@ -228,8 +228,9 @@ export function render() {
               <button class="btn btn-sm btn-secondary hm-fetch-models" style="white-space:nowrap;flex-shrink:0" ${fetchBusy ? 'disabled' : ''}>${fetchBusy ? t('engine.configFetching') : t('engine.configFetchModels')}</button>
             </div>
             <div id="hm-cfg-msg" style="font-size:12px;min-height:16px;margin-bottom:8px">${cfgMsg}</div>
-            <div style="display:flex;gap:8px">
+            <div style="display:flex;gap:8px;align-items:center">
               <button class="btn btn-primary btn-sm hm-save-model" ${modelBusy ? 'disabled' : ''}>${modelBusy ? '...' : t('engine.configSaveBtn')}</button>
+              <a href="#/h/env" style="font-size:11px;color:var(--text-tertiary);text-decoration:none;margin-left:auto" title=".env 文件高级编辑（自定义环境变量）">.env 高级编辑 →</a>
             </div>
           </div>
         </div>

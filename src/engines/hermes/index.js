@@ -108,6 +108,7 @@ export default {
       { path: '/h/services', loader: () => import('./pages/services.js') },
       { path: '/h/config', loader: () => import('./pages/config.js') },
       { path: '/h/channels', loader: () => import('./pages/channels.js') },
+      { path: '/h/env', loader: () => import('./pages/env-editor.js') },
       // 共用页面（引擎无关）
       { path: '/assistant', loader: () => import('../../pages/assistant.js') },
       { path: '/settings', loader: () => import('../../pages/settings.js') },

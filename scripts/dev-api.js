@@ -6845,6 +6845,135 @@ const handlers = {
     return []
   },
 
+  // =========================================================================
+  // .env editor (Step 4) — Web-mode implementations mirroring Rust behavior.
+  // The managed-key list is duplicated here since Rust's hermes_providers is
+  // not accessible from Node. Keep in sync with
+  //   src-tauri/src/commands/hermes_providers.rs::all_managed_env_keys
+  // whenever new providers are added to the registry.
+  // =========================================================================
+  _hermesManagedEnvKeys() {
+    return [
+      // Anthropic
+      'ANTHROPIC_API_KEY', 'ANTHROPIC_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN',
+      // Gemini
+      'GOOGLE_API_KEY', 'GEMINI_API_KEY', 'GEMINI_BASE_URL',
+      // DeepSeek
+      'DEEPSEEK_API_KEY', 'DEEPSEEK_BASE_URL',
+      // Z.AI / GLM
+      'GLM_API_KEY', 'ZAI_API_KEY', 'Z_AI_API_KEY', 'GLM_BASE_URL',
+      // Kimi
+      'KIMI_API_KEY', 'KIMI_BASE_URL',
+      // xAI
+      'XAI_API_KEY', 'XAI_BASE_URL',
+      // MiniMax intl + CN
+      'MINIMAX_API_KEY', 'MINIMAX_BASE_URL',
+      'MINIMAX_CN_API_KEY', 'MINIMAX_CN_BASE_URL',
+      // Alibaba DashScope
+      'DASHSCOPE_API_KEY', 'DASHSCOPE_BASE_URL',
+      // Hugging Face
+      'HF_TOKEN', 'HF_BASE_URL',
+      // Xiaomi
+      'XIAOMI_API_KEY', 'XIAOMI_BASE_URL',
+      // AI Gateway
+      'AI_GATEWAY_API_KEY', 'AI_GATEWAY_BASE_URL',
+      // OpenCode Zen + Go
+      'OPENCODE_ZEN_API_KEY', 'OPENCODE_ZEN_BASE_URL',
+      'OPENCODE_GO_API_KEY', 'OPENCODE_GO_BASE_URL',
+      // Kilocode
+      'KILOCODE_API_KEY', 'KILOCODE_BASE_URL',
+      // Copilot (PAT)
+      'COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN',
+      // OpenRouter
+      'OPENROUTER_API_KEY', 'OPENAI_BASE_URL',
+      // Copilot ACP
+      'COPILOT_ACP_BASE_URL',
+      // Custom placeholder
+      'CUSTOM_API_KEY', 'OPENAI_API_KEY',
+      // ClawPanel-specific
+      'GATEWAY_ALLOW_ALL_USERS', 'API_SERVER_KEY',
+    ]
+  },
+
+  hermes_env_read_unmanaged() {
+    const envPath = path.join(hermesHome(), '.env')
+    if (!fs.existsSync(envPath)) return []
+    const raw = fs.readFileSync(envPath, 'utf8')
+    const managed = new Set(this._hermesManagedEnvKeys())
+    const seen = new Set()
+    const out = []
+    for (const line of raw.split('\n')) {
+      const t = line.trim()
+      if (!t || t.startsWith('#')) continue
+      const eq = t.indexOf('=')
+      if (eq < 0) continue
+      const key = t.slice(0, eq).trim()
+      if (!key || managed.has(key) || seen.has(key)) continue
+      seen.add(key)
+      out.push([key, t.slice(eq + 1)])
+    }
+    return out
+  },
+
+  hermes_env_set({ key, value } = {}) {
+    key = (key || '').trim()
+    if (!key) throw new Error('Key cannot be empty')
+    if (!/^[A-Z0-9_]+$/i.test(key)) {
+      throw new Error(`Invalid env var key '${key}': only [A-Z0-9_] are allowed`)
+    }
+    const managed = new Set(this._hermesManagedEnvKeys())
+    if (managed.has(key)) {
+      throw new Error(`'${key}' is managed by ClawPanel; please configure it via the provider setup page`)
+    }
+    const envPath = path.join(hermesHome(), '.env')
+    fs.mkdirSync(path.dirname(envPath), { recursive: true })
+    const raw = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : ''
+    const lines = raw.split('\n')
+    const out = []
+    let replaced = false
+    for (const line of lines) {
+      const t = line.trim()
+      if (!t || t.startsWith('#')) { out.push(line); continue }
+      const eq = t.indexOf('=')
+      if (eq > 0 && t.slice(0, eq).trim() === key && !replaced) {
+        out.push(`${key}=${value == null ? '' : value}`)
+        replaced = true
+        continue
+      }
+      out.push(line)
+    }
+    if (!replaced) out.push(`${key}=${value == null ? '' : value}`)
+    let content = out.join('\n')
+    if (!content.endsWith('\n')) content += '\n'
+    fs.writeFileSync(envPath, content)
+    return null
+  },
+
+  hermes_env_delete({ key } = {}) {
+    key = (key || '').trim()
+    if (!key) throw new Error('Key cannot be empty')
+    const managed = new Set(this._hermesManagedEnvKeys())
+    if (managed.has(key)) {
+      throw new Error(`'${key}' is managed by ClawPanel; please configure it via the provider setup page`)
+    }
+    const envPath = path.join(hermesHome(), '.env')
+    if (!fs.existsSync(envPath)) return null
+    const raw = fs.readFileSync(envPath, 'utf8')
+    const lines = raw.split('\n')
+    const out = []
+    for (const line of lines) {
+      const t = line.trim()
+      if (!t || t.startsWith('#')) { out.push(line); continue }
+      const eq = t.indexOf('=')
+      if (eq > 0 && t.slice(0, eq).trim() === key) continue
+      out.push(line)
+    }
+    let content = out.join('\n')
+    if (!content.endsWith('\n')) content += '\n'
+    fs.writeFileSync(envPath, content)
+    return null
+  },
+
   async hermes_fetch_models({ baseUrl, apiKey, apiType, provider: _provider } = {}) {
     const api = apiType || 'openai'
     let base = baseUrl.replace(/\/+$/, '')
