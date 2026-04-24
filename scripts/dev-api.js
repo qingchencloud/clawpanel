@@ -2225,6 +2225,43 @@ function triggerGatewayReloadNonBlocking(reason) {
   }, 0)
 }
 
+// Gateway 重启的单飞行锁 + 2s 冷却（配合前端 gateway-restart-queue.js 的 3s 防抖）
+// 避免 issue #243 / #240：前端穿透节流时，后端也能合并重复请求
+let _gwRestartInflight = null
+let _gwRestartLastFinishedAt = 0
+const GW_RESTART_COOLDOWN_MS = 2000
+
+async function guardedGatewayRestart(source = 'unknown') {
+  if (process.env.DISABLE_GATEWAY_SPAWN === '1' || process.env.DISABLE_GATEWAY_SPAWN === 'true') {
+    throw new Error('本地 Gateway 启动已禁用（DISABLE_GATEWAY_SPAWN=1）')
+  }
+  if (!isMac && !isLinux) {
+    throw new Error('Windows 请使用 Tauri 桌面应用')
+  }
+
+  // 进行中的调用：复用同一个 Promise，不重复执行
+  if (_gwRestartInflight) {
+    return _gwRestartInflight
+  }
+
+  // 冷却期：刚重启完 2 秒内直接返回合并提示
+  if (Date.now() - _gwRestartLastFinishedAt < GW_RESTART_COOLDOWN_MS) {
+    return 'Gateway 刚重启过，本次请求已合并（冷却中）'
+  }
+
+  _gwRestartInflight = (async () => {
+    try {
+      await handlers.restart_service({ label: 'ai.openclaw.gateway' })
+      return 'Gateway 已重启'
+    } finally {
+      _gwRestartLastFinishedAt = Date.now()
+      _gwRestartInflight = null
+    }
+  })()
+
+  return _gwRestartInflight
+}
+
 // === macOS 服务管理 ===
 
 function macCheckService(label) {
@@ -3235,25 +3272,11 @@ const handlers = {
   },
 
   async reload_gateway() {
-    if (process.env.DISABLE_GATEWAY_SPAWN === '1' || process.env.DISABLE_GATEWAY_SPAWN === 'true') {
-      throw new Error('本地 Gateway 启动已禁用（DISABLE_GATEWAY_SPAWN=1）')
-    }
-    if (!isMac && !isLinux) {
-      throw new Error('Windows 请使用 Tauri 桌面应用')
-    }
-    await handlers.restart_service({ label: 'ai.openclaw.gateway' })
-    return 'Gateway 已重启'
+    return guardedGatewayRestart('reload_gateway')
   },
 
   async restart_gateway() {
-    if (process.env.DISABLE_GATEWAY_SPAWN === '1' || process.env.DISABLE_GATEWAY_SPAWN === 'true') {
-      throw new Error('本地 Gateway 启动已禁用（DISABLE_GATEWAY_SPAWN=1）')
-    }
-    if (!isMac && !isLinux) {
-      throw new Error('Windows 请使用 Tauri 桌面应用')
-    }
-    await handlers.restart_service({ label: 'ai.openclaw.gateway' })
-    return 'Gateway 已重启'
+    return guardedGatewayRestart('restart_gateway')
   },
 
   // === 消息渠道管理 ===

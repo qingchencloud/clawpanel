@@ -8,6 +8,7 @@ import { showModal, showConfirm } from '../components/modal.js'
 import { icon, statusIcon } from '../lib/icons.js'
 import { API_TYPES, PROVIDER_PRESETS, QTCOOL, MODEL_PRESETS, fetchQtcoolModels } from '../lib/model-presets.js'
 import { t } from '../lib/i18n.js'
+import { scheduleGatewayRestart, fireRestartNow, cancelPendingRestart, onRestartState } from '../lib/gateway-restart-queue.js'
 
 export async function render() {
   const page = document.createElement('div')
@@ -351,7 +352,8 @@ async function undo(page, state) {
   toast(t('models.undone'), 'info')
 }
 
-// 自动保存（防抖 300ms）
+// 自动保存（防抖 300ms）+ Gateway 重启队列（3s 防抖 + 单飞行锁）
+// 解决 issue #243 / #244 / #240：快速连续编辑不再触发多次重启
 let _saveTimer = null
 let _batchTestAbort = null // 批量测试终止控制器
 
@@ -359,6 +361,7 @@ export function cleanup() {
   clearTimeout(_saveTimer)
   _saveTimer = null
   if (_batchTestAbort) { _batchTestAbort.abort = true; _batchTestAbort = null }
+  cancelPendingRestart()
 }
 function autoSave(state) {
   clearTimeout(_saveTimer)
@@ -430,31 +433,44 @@ async function doAutoSave(state) {
     normalizeProviderUrls(state.config)
     await api.writeOpenclawConfig(state.config)
 
-    // 重启 Gateway 使配置生效（Gateway 不支持 SIGHUP 热重载）
-    toast(t('models.configSavedRestarting'), 'info')
-    try {
-      await api.restartGateway()
-      toast(t('models.configEffective'), 'success')
-    } catch (e) {
-      // 重启失败时提供手动重试按钮
-      const restartBtn = document.createElement('button')
-      restartBtn.className = 'btn btn-sm btn-primary'
-      restartBtn.textContent = t('models.retryRestart')
-      restartBtn.style.marginLeft = '8px'
-      restartBtn.onclick = async () => {
-        try {
-          toast(t('models.restarting'), 'info')
-          await api.restartGateway()
-          toast(t('models.restartOk'), 'success')
-        } catch (e2) {
-          toast(t('models.restartFailed') + ': ' + e2.message, 'error')
-        }
-      }
-      toast(t('models.configSavedGwFailed') + ': ' + e.message, 'warning', { action: restartBtn })
-    }
+    // 配置已写入。使用 3s 防抖 + 单飞行锁排队重启，避免快速连续编辑触发多次重启。
+    showRestartPendingToast()
+    scheduleGatewayRestart({ reason: 'models-page' })
   } catch (e) {
     toast(t('models.autoSaveFailed') + ': ' + e, 'error')
   }
+}
+
+function showRestartPendingToast() {
+  const applyNow = document.createElement('button')
+  applyNow.className = 'btn btn-sm btn-primary'
+  applyNow.textContent = t('models.applyNow')
+  applyNow.style.marginLeft = '8px'
+  applyNow.onclick = () => fireRestartNow()
+  toast(t('models.configQueued'), 'info', { action: applyNow, duration: 3500 })
+}
+
+/**
+ * 处理重启队列事件并展示 toast。监听在模块级别，全生命周期生效。
+ * - succeeded → 成功提示
+ * - failed    → 失败提示 + 重试按钮
+ */
+function handleRestartState(ev) {
+  if (ev.event === 'succeeded') {
+    toast(t('models.configEffective'), 'success')
+  } else if (ev.event === 'failed') {
+    const retryBtn = document.createElement('button')
+    retryBtn.className = 'btn btn-sm btn-primary'
+    retryBtn.textContent = t('models.retryRestart')
+    retryBtn.style.marginLeft = '8px'
+    retryBtn.onclick = () => scheduleGatewayRestart({ delay: 0, reason: 'retry' })
+    toast(t('models.configSavedGwFailed') + ': ' + ev.error, 'warning', { action: retryBtn, duration: 6000 })
+  }
+}
+
+let _restartStateOff = null
+if (typeof window !== 'undefined' && !_restartStateOff) {
+  _restartStateOff = onRestartState(handleRestartState)
 }
 
 // 更新撤销按钮状态

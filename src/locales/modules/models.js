@@ -148,6 +148,8 @@ export default {
   saveFailed: _('保存失败', 'Save failed', '儲存失敗', '保存失敗', '저장 실패'),
   autoSaveFailed: _('自动保存失败', 'Auto-save failed', '自動儲存失敗'),
   configSavedRestarting: _('配置已保存，正在重启 Gateway...', 'Config saved, restarting Gateway...', '設定已儲存，正在重啟 Gateway...'),
+  configQueued: _('配置已保存，即将重载 Gateway…', 'Config saved. Gateway will reload shortly…', '設定已儲存，即將重載 Gateway…'),
+  applyNow: _('立即生效', 'Apply now', '立即生效'),
   configEffective: _('配置已生效，Gateway 已重启', 'Config applied, Gateway restarted', '設定已生效，Gateway 已重啟'),
   retryRestart: _('重试', 'Retry', '重試'),
   restarting: _('正在重启 Gateway...', 'Restarting Gateway...', '正在重啟 Gateway...'),

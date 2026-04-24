@@ -4963,15 +4963,52 @@ async fn reload_gateway_internal(app: Option<&tauri::AppHandle>) -> Result<Strin
     }
 }
 
+/// 全局 Gateway 重启 mutex（单飞行锁）
+/// 保证同时只有一个重启操作在运行，彻底避免僵尸进程堆积（issue #243）
+static RESTART_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+/// 上一次重启完成的时间戳（用于 2 秒冷却，防止穿透式重复调用）
+static LAST_RESTART_FINISHED_AT: std::sync::Mutex<Option<std::time::Instant>> =
+    std::sync::Mutex::new(None);
+
+const RESTART_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// 带单飞行锁和 2s 冷却的 restart 入口
+/// 即使前端穿透节流发来多个请求，后端也只串行执行，且 2s 内不重复
+async fn restart_gateway_guarded(app: Option<&tauri::AppHandle>) -> Result<String, String> {
+    // 获取 mutex：并发调用时串行化
+    let _guard = RESTART_MUTEX.lock().await;
+
+    // 2 秒冷却：如果刚刚才完成一次重启，跳过本次（配置已被前一次生效）
+    let last_finished = {
+        let guard = LAST_RESTART_FINISHED_AT.lock().unwrap();
+        *guard
+    };
+    if let Some(last) = last_finished {
+        if last.elapsed() < RESTART_COOLDOWN {
+            return Ok("Gateway 刚重启过，本次请求已合并（冷却中）".to_string());
+        }
+    }
+
+    let result = reload_gateway_internal(app).await;
+
+    // 无论成功失败都记录时间，避免失败后被重试风暴压爆
+    {
+        let mut guard = LAST_RESTART_FINISHED_AT.lock().unwrap();
+        *guard = Some(std::time::Instant::now());
+    }
+
+    result
+}
+
 #[tauri::command]
 pub async fn reload_gateway(app: tauri::AppHandle) -> Result<String, String> {
-    reload_gateway_internal(Some(&app)).await
+    restart_gateway_guarded(Some(&app)).await
 }
 
 /// 重启 Gateway 服务（与 reload_gateway 相同实现）
 #[tauri::command]
 pub async fn restart_gateway(app: tauri::AppHandle) -> Result<String, String> {
-    reload_gateway_internal(Some(&app)).await
+    restart_gateway_guarded(Some(&app)).await
 }
 
 /// 运行 openclaw doctor --fix 自动修复配置问题
