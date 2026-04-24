@@ -196,6 +196,7 @@ export const api = {
   probeGatewayPort: () => invoke('probe_gateway_port'),
   diagnoseGatewayConnection: () => invoke('diagnose_gateway_connection'),
   guardianStatus: () => invoke('guardian_status'),
+  checkCiaoWindowsHideBug: () => invoke('check_ciao_windowshide_bug'),
 
   // 配置（读缓存，写清缓存）
   getVersionInfo: () => cachedInvoke('get_version_info', {}, 30000),

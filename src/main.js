@@ -344,6 +344,17 @@ async function boot() {
     setTimeout(() => splash.remove(), 500)
   }
 
+  // 启动 3 秒后提示 @homebridge/ciao cmd 弹窗问题（仅 Windows 受影响）
+  // 只在桌面端跑——Web 模式下的 dev-api.js 桩会直接返回 affected:false
+  setTimeout(async () => {
+    try {
+      const { checkAndWarnCiaoBug } = await import('./lib/ciao-bug-warning.js')
+      checkAndWarnCiaoBug()
+    } catch (err) {
+      console.debug('[ciao-bug] module skipped:', err)
+    }
+  }, 3000)
+
   // 默认密码提醒横幅
   if (sessionStorage.getItem('clawpanel_must_change_pw') === '1') {
     const banner = document.createElement('div')

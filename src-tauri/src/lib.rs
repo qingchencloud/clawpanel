@@ -130,6 +130,7 @@ pub fn run() {
             service::guardian_status,
             // 诊断
             diagnose::diagnose_gateway_connection,
+            diagnose::check_ciao_windowshide_bug,
             // 日志
             logs::read_log_tail,
             logs::search_log,

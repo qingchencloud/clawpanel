@@ -364,3 +364,151 @@ pub async fn diagnose_gateway_connection() -> DiagnoseResult {
         summary,
     }
 }
+
+// =============================================================================
+// @homebridge/ciao Windows cmd popup bug detection
+//
+// Upstream issue:  https://github.com/homebridge/ciao/issues/64
+// Upstream PR:     https://github.com/homebridge/ciao/pull/65   (still open)
+//
+// Symptom on Windows: every 15-30s a cmd.exe / conhost.exe window flashes while
+// Gateway is running. Root cause is @homebridge/ciao < 1.3.7 calling
+// `child_process.exec("arp -a ...", callback)` without `{ windowsHide: true }`.
+//
+// This is NOT a ClawPanel bug — we only expose a detection command so the
+// dashboard can surface a clear, actionable hint to users rather than silently
+// inheriting third-party noise.
+// =============================================================================
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CiaoCheckResult {
+    /// Whether the bug is affecting the current installation
+    pub affected: bool,
+    /// Platform quick-check (non-Windows installations can never be affected)
+    pub platform: String,
+    /// Detected @homebridge/ciao version if the package is installed
+    pub version: Option<String>,
+    /// Absolute path to NetworkManager.js (when detected)
+    pub network_manager_path: Option<String>,
+    /// Human-readable detail for the UI
+    pub detail: String,
+}
+
+/// Resolve the openclaw CLI module root — directory containing the installed
+/// package's `package.json`. Returns None when the CLI cannot be located.
+fn openclaw_module_root() -> Option<std::path::PathBuf> {
+    let cli = crate::utils::resolve_openclaw_cli_path()?;
+    let cli_path = std::path::PathBuf::from(&cli);
+
+    // The CLI entrypoint is typically `<module_root>/dist/entry.js` or
+    // similar. Walk up until we find a `package.json`, stopping at the
+    // nearest node_modules boundary.
+    let mut current = cli_path.parent()?.to_path_buf();
+    for _ in 0..6 {
+        if current.join("package.json").is_file() {
+            return Some(current);
+        }
+        current = current.parent()?.to_path_buf();
+    }
+    None
+}
+
+/// Check the `@homebridge/ciao` package bundled with openclaw. Only runs on
+/// Windows since the bug does not manifest on other platforms.
+#[tauri::command]
+pub fn check_ciao_windowshide_bug() -> CiaoCheckResult {
+    let platform = std::env::consts::OS.to_string();
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        return CiaoCheckResult {
+            affected: false,
+            platform,
+            version: None,
+            network_manager_path: None,
+            detail: "Non-Windows platform — bug does not manifest here.".into(),
+        };
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let Some(root) = openclaw_module_root() else {
+            return CiaoCheckResult {
+                affected: false,
+                platform,
+                version: None,
+                network_manager_path: None,
+                detail: "openclaw CLI not installed; nothing to check.".into(),
+            };
+        };
+
+        let ciao_dir = root.join("node_modules").join("@homebridge").join("ciao");
+        if !ciao_dir.is_dir() {
+            return CiaoCheckResult {
+                affected: false,
+                platform,
+                version: None,
+                network_manager_path: None,
+                detail: "@homebridge/ciao not found in openclaw dependencies.".into(),
+            };
+        }
+
+        // Read version for reporting only — we do not key off it to avoid
+        // lying to the user if someone backports the fix without bumping.
+        let version = std::fs::read_to_string(ciao_dir.join("package.json"))
+            .ok()
+            .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+            .and_then(|v| v.get("version").and_then(|s| s.as_str()).map(String::from));
+
+        let nm_path = ciao_dir.join("lib").join("NetworkManager.js");
+        if !nm_path.is_file() {
+            return CiaoCheckResult {
+                affected: false,
+                platform,
+                version,
+                network_manager_path: None,
+                detail: "NetworkManager.js not found; skipping scan.".into(),
+            };
+        }
+
+        let content = match std::fs::read_to_string(&nm_path) {
+            Ok(text) => text,
+            Err(err) => {
+                return CiaoCheckResult {
+                    affected: false,
+                    platform,
+                    version,
+                    network_manager_path: Some(nm_path.to_string_lossy().to_string()),
+                    detail: format!("Unable to read NetworkManager.js: {err}"),
+                };
+            }
+        };
+
+        // Detection heuristic: look for the Windows ARP call and check whether
+        // the third argument is an options object or the callback. A fixed
+        // version uses  exec("arp -a ...", { windowsHide: true }, callback).
+        // The buggy version uses  exec("arp -a ...", (error, stdout) => ...).
+        let affected = content.lines().any(|line| {
+            let trimmed = line.trim_start();
+            trimmed.contains(".exec(\"arp -a")
+                && !trimmed.contains("windowsHide")
+                && !trimmed.contains("windows_hide")
+        });
+
+        let detail = if affected {
+            "Detected @homebridge/ciao without windowsHide option — cmd.exe will flash every 15-30s while Gateway runs. See upstream issues #64 / #65."
+                .into()
+        } else {
+            "No buggy @homebridge/ciao pattern detected.".into()
+        };
+
+        CiaoCheckResult {
+            affected,
+            platform,
+            version,
+            network_manager_path: Some(nm_path.to_string_lossy().to_string()),
+            detail,
+        }
+    }
+}

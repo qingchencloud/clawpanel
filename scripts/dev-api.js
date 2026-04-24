@@ -4699,6 +4699,29 @@ const handlers = {
     })
   },
 
+  // @homebridge/ciao windowsHide bug — Windows only. Linux/macOS stubs return false.
+  // See https://github.com/homebridge/ciao/issues/64 and PR #65.
+  check_ciao_windowshide_bug() {
+    const platform = process.platform
+    if (platform !== 'win32') {
+      return {
+        affected: false,
+        platform,
+        version: null,
+        networkManagerPath: null,
+        detail: 'Non-Windows platform — bug does not manifest here.',
+      }
+    }
+    // Web 模式极少跑在 Windows 上，这里提供最小桩实现保持接口一致
+    return {
+      affected: false,
+      platform,
+      version: null,
+      networkManagerPath: null,
+      detail: 'Ciao bug detection is only performed in the Tauri desktop build.',
+    }
+  },
+
   async diagnose_gateway_connection() {
     const steps = []
     const ocDir = openclawDir()
