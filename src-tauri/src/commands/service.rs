@@ -1162,6 +1162,7 @@ mod platform {
     static ACTIVE_GATEWAY_CHILD: Mutex<Option<u32>> = Mutex::new(None);
 
     /// 检查 Gateway 端口是否有响应（阻塞式 HTTP /health，3s 超时）
+    /// 单次探测；若需要对瞬态抖动更宽容，使用 `is_gateway_port_responsive_with_retry`
     fn is_gateway_port_responsive(port: u16) -> bool {
         use std::io::{Read, Write as IoWrite};
         use std::net::TcpStream;
@@ -1185,6 +1186,25 @@ mod platform {
             }
             _ => false,
         }
+    }
+
+    /// 带重试的 /health 健康检查：issue #244 的关键修复
+    ///
+    /// 原 cleanup 只做 1 次 /health 判断，若 Gateway 刚启动仍在做初始化（加载插件、
+    /// 连接数据库、等 network warm-up），一次请求就可能超时，被误判为僵尸并 kill —
+    /// 接着 start_service_impl 又会 Hidden-start 一个新实例，循环往复。
+    ///
+    /// 改为 retries 次重试、每次间隔 interval 后才定性，给健康 Gateway 更宽容的启动窗口。
+    fn is_gateway_port_responsive_with_retry(port: u16, retries: u32, interval: Duration) -> bool {
+        for attempt in 0..retries {
+            if attempt > 0 {
+                std::thread::sleep(interval);
+            }
+            if is_gateway_port_responsive(port) {
+                return true;
+            }
+        }
+        false
     }
 
     /// 从 netstat 输出中提取监听指定端口的所有 PID
@@ -1217,7 +1237,10 @@ mod platform {
     }
 
     /// 清理残留的僵尸 Gateway 进程（启动时调用，防止 Windows 重启后多进程堆积）
-    /// 增强：检测端口占用但 /health 无响应的僵尸进程，强制杀掉
+    ///
+    /// issue #244 修复：原实现只做 1 次 /health 检测，Gateway 刚 ready 仍在跑
+    /// startup hooks / channel connect 时，单次探测可能超时 → 被误杀 → 触发 Hidden-start
+    /// 又起一个新的，循环往复。改为 3 次重试（间隔 800ms）才算"真僵尸"。
     pub(crate) fn cleanup_zombie_gateway_processes() {
         let port = crate::commands::gateway_listen_port();
         let pids = find_listening_pids(port);
@@ -1225,8 +1248,9 @@ mod platform {
             return;
         }
 
-        // 先检查 /health 是否有响应 —— 如果端口有进程但无响应，说明是僵尸
-        let responsive = is_gateway_port_responsive(port);
+        // 带重试的 /health 检测 —— 最多等 3 * 800ms = 2.4s 才判定僵尸
+        let responsive =
+            is_gateway_port_responsive_with_retry(port, 3, std::time::Duration::from_millis(800));
 
         for pid in &pids {
             let pid = *pid;
@@ -1239,19 +1263,20 @@ mod platform {
 
                 if is_gateway {
                     if !responsive {
-                        // /health 无响应 → 僵尸进程，无条件杀掉（包括"已知好进程"）
+                        // 3 次 /health 全部失败 → 僵尸进程，强制终止
                         super::guardian_log(&format!(
-                            "检测到僵尸 Gateway 进程 (PID {pid})：端口 {port} 占用但 /health 无响应，强制终止"
+                            "检测到僵尸 Gateway 进程 (PID {pid})：端口 {port} 占用但 /health 连续 3 次无响应，强制终止"
                         ));
                         kill_process_tree(pid);
                     } else if Some(pid) != our_pid {
                         // /health 有响应但不是当前实例启动的 → 采纳为已知进程，不杀
                         super::guardian_log(&format!(
-                            "检测到外部启动的 Gateway 进程 (PID {pid})：/health 正常响应，已采纳"
+                            "检测到健康的 Gateway 进程 (PID {pid})：/health 正常响应，已采纳"
                         ));
                         let mut known = LAST_KNOWN_GATEWAY_PID.lock().unwrap();
                         *known = Some(pid);
                     }
+                    // is_gateway + responsive + 本就是我们的 PID → 无需任何操作
                 }
             }
             // 读不到命令行时，不做假设，避免误杀其他进程
