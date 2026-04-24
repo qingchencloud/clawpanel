@@ -397,6 +397,8 @@ pub struct CiaoCheckResult {
 
 /// Resolve the openclaw CLI module root — directory containing the installed
 /// package's `package.json`. Returns None when the CLI cannot be located.
+/// Only compiled on Windows since ciao bug detection is Windows-only.
+#[cfg(target_os = "windows")]
 fn openclaw_module_root() -> Option<std::path::PathBuf> {
     let cli = crate::utils::resolve_openclaw_cli_path()?;
     let cli_path = std::path::PathBuf::from(&cli);
@@ -422,13 +424,13 @@ pub fn check_ciao_windowshide_bug() -> CiaoCheckResult {
 
     #[cfg(not(target_os = "windows"))]
     {
-        return CiaoCheckResult {
+        CiaoCheckResult {
             affected: false,
             platform,
             version: None,
             network_manager_path: None,
             detail: "Non-Windows platform — bug does not manifest here.".into(),
-        };
+        }
     }
 
     #[cfg(target_os = "windows")]
