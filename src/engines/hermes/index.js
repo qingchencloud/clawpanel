@@ -76,7 +76,9 @@ export default {
       items: [
         { route: '/h/dashboard', label: t('sidebar.dashboard'), icon: 'dashboard' },
         { route: '/h/chat', label: t('sidebar.chat'), icon: 'chat' },
+        { route: '/h/sessions', label: t('sidebar.sessions'), icon: 'inbox' },
         { route: '/h/logs', label: t('sidebar.logs'), icon: 'logs' },
+        { route: '/h/usage', label: t('sidebar.usage'), icon: 'bar-chart' },
       ]
     }, {
       section: t('sidebar.sectionManage'),
@@ -84,6 +86,7 @@ export default {
         { route: '/h/skills', label: t('sidebar.skills'), icon: 'skills' },
         { route: '/h/memory', label: t('sidebar.memory'), icon: 'memory' },
         { route: '/h/cron', label: t('sidebar.cron'), icon: 'clock' },
+        { route: '/h/extensions', label: t('sidebar.extensions'), icon: 'package' },
       ]
     }, {
       section: '',
@@ -101,10 +104,13 @@ export default {
       { path: '/h/setup', loader: () => import('./pages/setup.js') },
       { path: '/h/dashboard', loader: () => import('./pages/dashboard.js') },
       { path: '/h/chat', loader: () => import('./pages/chat.js') },
+      { path: '/h/sessions', loader: () => import('./pages/sessions.js') },
       { path: '/h/logs', loader: () => import('./pages/logs.js') },
+      { path: '/h/usage', loader: () => import('./pages/usage.js') },
       { path: '/h/skills', loader: () => import('./pages/skills.js') },
       { path: '/h/memory', loader: () => import('./pages/memory.js') },
       { path: '/h/cron', loader: () => import('./pages/cron.js') },
+      { path: '/h/extensions', loader: () => import('./pages/extensions.js') },
       { path: '/h/services', loader: () => import('./pages/services.js') },
       { path: '/h/config', loader: () => import('./pages/config.js') },
       { path: '/h/channels', loader: () => import('./pages/channels.js') },

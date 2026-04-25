@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"ClawPanel 默认权限","local":true,"windows":["main"],"permissions":["core:default","shell:allow-open","autostart:allow-enable","autostart:allow-disable","autostart:allow-is-enabled"]}}
+{"default":{"identifier":"default","description":"ClawPanel 默认权限","local":true,"windows":["main"],"permissions":["core:default","core:window:allow-set-theme","shell:allow-open","autostart:allow-enable","autostart:allow-disable","autostart:allow-is-enabled"]}}

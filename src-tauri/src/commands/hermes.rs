@@ -2745,15 +2745,20 @@ pub async fn hermes_agent_run(
 pub async fn hermes_sessions_list(
     source: Option<String>,
     limit: Option<usize>,
+    profile: Option<String>,
 ) -> Result<Value, String> {
-    let mut args = vec!["sessions", "export", "-"];
-    let source_owned;
-    if let Some(s) = &source {
-        source_owned = s.clone();
-        args.push("--source");
-        args.push(&source_owned);
+    let mut args: Vec<String> = Vec::new();
+    if let Some(p) = profile.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        args.push("--profile".into());
+        args.push(p.to_string());
     }
-    let output = match run_silent("hermes", &args) {
+    args.extend(["sessions", "export", "-"].iter().map(|s| s.to_string()));
+    if let Some(s) = source.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        args.push("--source".into());
+        args.push(s.to_string());
+    }
+    let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let output = match run_silent("hermes", &refs) {
         Ok(s) => s,
         Err(_) => return Ok(serde_json::json!([])),
     };
@@ -2764,6 +2769,25 @@ pub async fn hermes_sessions_list(
             continue;
         }
         if let Ok(obj) = serde_json::from_str::<Value>(t) {
+            // Extra numeric fields for Usage analytics. Carry through as-is so
+            // the frontend can aggregate without another round-trip. Missing
+            // fields fall back to 0 / null rather than breaking the shape.
+            //
+            // `started_at` is a POSIX seconds timestamp produced by the
+            // official Hermes CLI export. We also surface it under that name
+            // (matching the web UI contract) so the Usage store can group
+            // sessions by day without needing a separate parse.
+            let started_at = obj
+                .get("started_at")
+                .and_then(|v| v.as_u64())
+                .unwrap_or_else(|| {
+                    // Fallback: parse `created_at` as ISO8601 → epoch seconds.
+                    obj.get("created_at")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                        .map(|dt| dt.timestamp() as u64)
+                        .unwrap_or(0)
+                });
             sessions.push(serde_json::json!({
                 "id": obj.get("session_id").or(obj.get("id")).and_then(|v| v.as_str()).unwrap_or(""),
                 "title": obj.get("title").or(obj.get("name")).and_then(|v| v.as_str()).unwrap_or(""),
@@ -2772,6 +2796,14 @@ pub async fn hermes_sessions_list(
                 "created_at": obj.get("created_at").or(obj.get("createdAt")).and_then(|v| v.as_str()).unwrap_or(""),
                 "updated_at": obj.get("updated_at").or(obj.get("updatedAt")).and_then(|v| v.as_str()).unwrap_or(""),
                 "message_count": obj.get("message_count").and_then(|v| v.as_u64()).unwrap_or(0),
+                // --- Usage analytics fields ---
+                "started_at": started_at,
+                "input_tokens": obj.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
+                "output_tokens": obj.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
+                "cache_read_tokens": obj.get("cache_read_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
+                "cache_write_tokens": obj.get("cache_write_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
+                "estimated_cost_usd": obj.get("estimated_cost_usd").and_then(|v| v.as_f64()),
+                "actual_cost_usd": obj.get("actual_cost_usd").and_then(|v| v.as_f64()),
             }));
         }
     }
@@ -2789,9 +2821,254 @@ pub async fn hermes_sessions_list(
 }
 
 #[tauri::command]
-pub async fn hermes_session_detail(session_id: String) -> Result<Value, String> {
-    let output = run_silent("hermes", &["sessions", "export", "-"])
-        .map_err(|e| format!("Failed to read sessions: {e}"))?;
+pub async fn hermes_sessions_summary_list(
+    source: Option<String>,
+    limit: Option<usize>,
+    profile: Option<String>,
+) -> Result<Value, String> {
+    let lim = limit.unwrap_or(80).clamp(1, 500);
+    let mut args: Vec<String> = Vec::new();
+    if let Some(p) = profile.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        args.push("--profile".into());
+        args.push(p.to_string());
+    }
+    args.extend(
+        ["sessions", "list", "--limit"]
+            .iter()
+            .map(|s| s.to_string()),
+    );
+    args.push(lim.to_string());
+    if let Some(s) = source.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        args.push("--source".into());
+        args.push(s.to_string());
+    }
+    let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let output = match run_silent("hermes", &refs) {
+        Ok(s) => s,
+        Err(_) => return Ok(serde_json::json!([])),
+    };
+    let sep = regex::Regex::new(r"\s{2,}").map_err(|e| e.to_string())?;
+    let mut has_titles = false;
+    let mut sessions: Vec<Value> = Vec::new();
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed == "No sessions found." || trimmed.starts_with('─') {
+            continue;
+        }
+        if trimmed.contains("Title") && trimmed.contains("Preview") && trimmed.contains("ID") {
+            has_titles = true;
+            continue;
+        }
+        if trimmed.contains("Preview") && trimmed.contains("Last Active") && trimmed.contains("ID")
+        {
+            has_titles = false;
+            continue;
+        }
+        let cols: Vec<&str> = sep
+            .split(trimmed)
+            .filter(|s| !s.trim().is_empty())
+            .collect();
+        if cols.len() < 3 {
+            continue;
+        }
+        let id = cols.last().copied().unwrap_or("").trim();
+        if id.is_empty() {
+            continue;
+        }
+        let (title, preview, last_active, parsed_source) = if has_titles {
+            let title = cols.first().copied().unwrap_or("").trim();
+            let preview = cols.get(1).copied().unwrap_or("").trim();
+            let last_active = cols.get(2).copied().unwrap_or("").trim();
+            (
+                if title == "—" { "" } else { title },
+                preview,
+                last_active,
+                source.as_deref().unwrap_or(""),
+            )
+        } else {
+            let preview = cols.first().copied().unwrap_or("").trim();
+            let last_active = cols.get(1).copied().unwrap_or("").trim();
+            let parsed_source = cols
+                .get(2)
+                .copied()
+                .unwrap_or(source.as_deref().unwrap_or(""))
+                .trim();
+            ("", preview, last_active, parsed_source)
+        };
+        sessions.push(serde_json::json!({
+            "id": id,
+            "title": title,
+            "source": parsed_source,
+            "model": "",
+            "created_at": "",
+            "updated_at": "",
+            "last_active_label": last_active,
+            "preview": preview,
+            "message_count": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+        }));
+    }
+    Ok(Value::Array(sessions))
+}
+
+#[tauri::command]
+pub async fn hermes_usage_analytics(
+    days: Option<u64>,
+    profile: Option<String>,
+) -> Result<Value, String> {
+    let days = days.unwrap_or(30).clamp(1, 365);
+    let cutoff = chrono::Utc::now().timestamp() - (days as i64 * 86_400);
+    let sessions = hermes_sessions_list(None, None, profile).await?;
+    let mut total_input: u64 = 0;
+    let mut total_output: u64 = 0;
+    let mut total_cache_read: u64 = 0;
+    let mut total_cache_write: u64 = 0;
+    let mut total_estimated_cost = 0.0_f64;
+    let mut total_actual_cost = 0.0_f64;
+    let mut total_sessions: u64 = 0;
+    let mut daily: std::collections::BTreeMap<String, serde_json::Map<String, Value>> =
+        std::collections::BTreeMap::new();
+    let mut by_model: std::collections::BTreeMap<String, serde_json::Map<String, Value>> =
+        std::collections::BTreeMap::new();
+    if let Some(arr) = sessions.as_array() {
+        for s in arr {
+            let started = s.get("started_at").and_then(|v| v.as_i64()).unwrap_or(0);
+            if started > 0 && started < cutoff {
+                continue;
+            }
+            let input = s.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+            let output = s.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+            let cache_read = s
+                .get("cache_read_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let cache_write = s
+                .get("cache_write_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let estimated = s
+                .get("estimated_cost_usd")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            let actual = s
+                .get("actual_cost_usd")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            total_input += input;
+            total_output += output;
+            total_cache_read += cache_read;
+            total_cache_write += cache_write;
+            total_estimated_cost += estimated;
+            total_actual_cost += actual;
+            total_sessions += 1;
+            let day = if started > 0 {
+                chrono::DateTime::from_timestamp(started, 0)
+                    .map(|dt| dt.format("%Y-%m-%d").to_string())
+                    .unwrap_or_else(|| "unknown".into())
+            } else {
+                "unknown".into()
+            };
+            let d = daily.entry(day.clone()).or_insert_with(|| {
+                let mut m = serde_json::Map::new();
+                m.insert("day".into(), Value::String(day));
+                m.insert("input_tokens".into(), Value::from(0_u64));
+                m.insert("output_tokens".into(), Value::from(0_u64));
+                m.insert("cache_read_tokens".into(), Value::from(0_u64));
+                m.insert("estimated_cost".into(), Value::from(0.0));
+                m.insert("actual_cost".into(), Value::from(0.0));
+                m.insert("sessions".into(), Value::from(0_u64));
+                m
+            });
+            *d.get_mut("input_tokens").unwrap() =
+                Value::from(d["input_tokens"].as_u64().unwrap_or(0) + input);
+            *d.get_mut("output_tokens").unwrap() =
+                Value::from(d["output_tokens"].as_u64().unwrap_or(0) + output);
+            *d.get_mut("cache_read_tokens").unwrap() =
+                Value::from(d["cache_read_tokens"].as_u64().unwrap_or(0) + cache_read);
+            *d.get_mut("estimated_cost").unwrap() =
+                Value::from(d["estimated_cost"].as_f64().unwrap_or(0.0) + estimated);
+            *d.get_mut("actual_cost").unwrap() =
+                Value::from(d["actual_cost"].as_f64().unwrap_or(0.0) + actual);
+            *d.get_mut("sessions").unwrap() = Value::from(d["sessions"].as_u64().unwrap_or(0) + 1);
+            let model = s
+                .get("model")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if !model.is_empty() {
+                let model_key = model.clone();
+                let m = by_model.entry(model_key.clone()).or_insert_with(|| {
+                    let mut row = serde_json::Map::new();
+                    row.insert("model".into(), Value::String(model_key));
+                    row.insert("input_tokens".into(), Value::from(0_u64));
+                    row.insert("output_tokens".into(), Value::from(0_u64));
+                    row.insert("estimated_cost".into(), Value::from(0.0));
+                    row.insert("sessions".into(), Value::from(0_u64));
+                    row
+                });
+                *m.get_mut("input_tokens").unwrap() =
+                    Value::from(m["input_tokens"].as_u64().unwrap_or(0) + input);
+                *m.get_mut("output_tokens").unwrap() =
+                    Value::from(m["output_tokens"].as_u64().unwrap_or(0) + output);
+                *m.get_mut("estimated_cost").unwrap() =
+                    Value::from(m["estimated_cost"].as_f64().unwrap_or(0.0) + estimated);
+                *m.get_mut("sessions").unwrap() =
+                    Value::from(m["sessions"].as_u64().unwrap_or(0) + 1);
+            }
+        }
+    }
+    let mut models: Vec<Value> = by_model.into_values().map(Value::Object).collect();
+    models.sort_by(|a, b| {
+        let at = a["input_tokens"].as_u64().unwrap_or(0) + a["output_tokens"].as_u64().unwrap_or(0);
+        let bt = b["input_tokens"].as_u64().unwrap_or(0) + b["output_tokens"].as_u64().unwrap_or(0);
+        bt.cmp(&at)
+    });
+    Ok(serde_json::json!({
+        "daily": daily.into_values().map(Value::Object).collect::<Vec<_>>(),
+        "by_model": models,
+        "totals": {
+            "total_input": total_input,
+            "total_output": total_output,
+            "total_cache_read": total_cache_read,
+            "total_cache_write": total_cache_write,
+            "total_estimated_cost": total_estimated_cost,
+            "total_actual_cost": total_actual_cost,
+            "total_sessions": total_sessions,
+            "total_api_calls": 0,
+        },
+        "period_days": days,
+        "skills": {
+            "summary": {
+                "total_skill_loads": 0,
+                "total_skill_edits": 0,
+                "total_skill_actions": 0,
+                "distinct_skills_used": 0,
+            },
+            "top_skills": [],
+        },
+    }))
+}
+
+#[tauri::command]
+pub async fn hermes_session_detail(
+    session_id: String,
+    profile: Option<String>,
+) -> Result<Value, String> {
+    let mut args: Vec<String> = Vec::new();
+    if let Some(p) = profile.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        args.push("--profile".into());
+        args.push(p.to_string());
+    }
+    args.extend(
+        ["sessions", "export", "-", "--session-id"]
+            .iter()
+            .map(|s| s.to_string()),
+    );
+    args.push(session_id.clone());
+    let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let output =
+        run_silent("hermes", &refs).map_err(|e| format!("Failed to read sessions: {e}"))?;
     for line in output.lines() {
         let t = line.trim();
         if t.is_empty() {
@@ -2837,14 +3114,113 @@ pub async fn hermes_session_detail(session_id: String) -> Result<Value, String> 
 }
 
 #[tauri::command]
-pub async fn hermes_session_delete(session_id: String) -> Result<String, String> {
-    run_silent("hermes", &["sessions", "delete", &session_id, "--yes"])?;
+pub async fn hermes_session_delete(
+    session_id: String,
+    profile: Option<String>,
+) -> Result<String, String> {
+    let mut args: Vec<String> = Vec::new();
+    if let Some(p) = profile.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        args.push("--profile".into());
+        args.push(p.to_string());
+    }
+    args.extend(["sessions", "delete"].iter().map(|s| s.to_string()));
+    args.push(session_id);
+    args.push("--yes".into());
+    let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    run_silent("hermes", &refs)?;
     Ok("ok".into())
 }
 
 #[tauri::command]
-pub async fn hermes_session_rename(session_id: String, title: String) -> Result<String, String> {
-    run_silent("hermes", &["sessions", "rename", &session_id, &title])?;
+pub async fn hermes_session_rename(
+    session_id: String,
+    title: String,
+    profile: Option<String>,
+) -> Result<String, String> {
+    let mut args: Vec<String> = Vec::new();
+    if let Some(p) = profile.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        args.push("--profile".into());
+        args.push(p.to_string());
+    }
+    args.extend(["sessions", "rename"].iter().map(|s| s.to_string()));
+    args.push(session_id);
+    args.push(title);
+    let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    run_silent("hermes", &refs)?;
+    Ok("ok".into())
+}
+
+#[tauri::command]
+pub async fn hermes_profiles_list() -> Result<Value, String> {
+    let output = match run_silent("hermes", &["profile", "list"]) {
+        Ok(s) => s,
+        Err(_) => return Ok(serde_json::json!({ "active": "default", "profiles": [] })),
+    };
+    let mut active = "default".to_string();
+    let mut profiles: Vec<Value> = Vec::new();
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty()
+            || trimmed.contains("Profile")
+            || trimmed.starts_with('─')
+            || trimmed.starts_with('-')
+        {
+            continue;
+        }
+        let is_active = trimmed.starts_with('◆');
+        let row = trimmed.trim_start_matches('◆').trim();
+        let parts: Vec<&str> = row.split_whitespace().collect();
+        if parts.len() < 3 {
+            continue;
+        }
+        let name = parts[0];
+        if name != "default"
+            && !name
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+        {
+            continue;
+        }
+        let gateway_idx = parts
+            .iter()
+            .position(|p| *p == "running" || *p == "stopped")
+            .unwrap_or(2);
+        if gateway_idx <= 1 || gateway_idx >= parts.len() {
+            continue;
+        }
+        let model = parts[1..gateway_idx].join(" ");
+        let gateway = parts[gateway_idx];
+        let alias = parts.get(gateway_idx + 1).copied().unwrap_or("—");
+        if is_active {
+            active = name.to_string();
+        }
+        profiles.push(serde_json::json!({
+            "name": name,
+            "active": is_active,
+            "model": if model == "—" { "" } else { &model },
+            "gatewayRunning": gateway == "running",
+            "alias": if alias == "—" { "" } else { alias },
+        }));
+    }
+    if !profiles
+        .iter()
+        .any(|p| p.get("active").and_then(|v| v.as_bool()).unwrap_or(false))
+    {
+        if let Some(p) = profiles
+            .iter_mut()
+            .find(|p| p.get("name").and_then(|v| v.as_str()) == Some("default"))
+        {
+            if let Some(obj) = p.as_object_mut() {
+                obj.insert("active".to_string(), Value::Bool(true));
+            }
+        }
+    }
+    Ok(serde_json::json!({ "active": active, "profiles": profiles }))
+}
+
+#[tauri::command]
+pub async fn hermes_profile_use(name: String) -> Result<String, String> {
+    run_silent("hermes", &["profile", "use", &name])?;
     Ok("ok".into())
 }
 
@@ -3014,84 +3390,219 @@ fn parse_log_line(line: &str) -> ParsedLogLine {
     }
 }
 
+/// Extract the first `# Heading` or the first long prose line from Markdown,
+/// used as a skill's canonical name/description. Mirrors hermes-web-ui's
+/// `extractDescription()` behaviour — first non-empty/non-heading line,
+/// truncated to 200 chars.
+fn md_first_heading(content: &str) -> Option<String> {
+    content
+        .lines()
+        .find(|l| l.starts_with("# "))
+        .map(|l| l[2..].trim().to_string())
+}
+
+fn md_first_description(content: &str) -> String {
+    content
+        .lines()
+        .find(|l| !l.starts_with('#') && !l.trim().is_empty() && l.trim().len() > 10)
+        .map(|l| {
+            let s = l.trim();
+            if s.len() > 200 {
+                format!("{}...", &s[..200])
+            } else {
+                s.to_string()
+            }
+        })
+        .unwrap_or_default()
+}
+
+/// Read `config.yaml` and return the list of `skills.disabled` entries.
+/// Gracefully handles missing file / missing section → empty list.
+///
+/// The disable mechanism matches upstream `hermes-web-ui`:
+///
+/// ```yaml
+/// skills:
+///   disabled:
+///     - web_search
+///     - file_tools
+/// ```
+fn read_disabled_skills() -> Vec<String> {
+    let config_path = hermes_home().join("config.yaml");
+    let raw = match std::fs::read_to_string(&config_path) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    let mut disabled: Vec<String> = Vec::new();
+    let mut in_skills = false;
+    let mut in_disabled = false;
+    for line in raw.lines() {
+        // Strip trailing comments.
+        let line = match line.find('#') {
+            Some(i) => &line[..i],
+            None => line,
+        };
+        let trimmed_full = line.trim_end();
+        if trimmed_full.is_empty() {
+            continue;
+        }
+        let indent = trimmed_full.len() - trimmed_full.trim_start().len();
+        let body = trimmed_full.trim_start();
+
+        if indent == 0 {
+            in_skills = body.starts_with("skills:");
+            in_disabled = false;
+        } else if in_skills && indent == 2 && body.starts_with("disabled:") {
+            in_disabled = true;
+        } else if in_skills && in_disabled && indent >= 4 && body.starts_with("- ") {
+            // Strip the `- ` prefix and any surrounding quotes.
+            let name = body
+                .trim_start_matches("- ")
+                .trim()
+                .trim_matches('"')
+                .trim_matches('\'');
+            if !name.is_empty() {
+                disabled.push(name.to_string());
+            }
+        } else if indent <= 2 {
+            // Left the disabled list.
+            in_disabled = false;
+        }
+    }
+    disabled
+}
+
+/// Shape returned to the frontend — kept compatible with the previous
+/// version (file/name/description/path) while adding `enabled` and the
+/// optional `isDir`/`category` fields that `hermes-web-ui` also uses.
 #[tauri::command]
 pub async fn hermes_skills_list() -> Result<Value, String> {
     let skills_dir = hermes_home().join("skills");
     if !skills_dir.exists() {
         return Ok(serde_json::json!([]));
     }
+    let disabled_names = read_disabled_skills();
+    let is_enabled = |name: &str| -> bool { !disabled_names.iter().any(|d| d == name) };
+
     let mut categories: Vec<Value> = Vec::new();
     let entries =
         std::fs::read_dir(&skills_dir).map_err(|e| format!("Failed to read skills dir: {e}"))?;
+
     for entry in entries.flatten() {
         let ft = match entry.file_type() {
             Ok(t) => t,
             Err(_) => continue,
         };
-        let name = entry.file_name().to_string_lossy().to_string();
+        let cat_name = entry.file_name().to_string_lossy().to_string();
+        if cat_name.starts_with('.') {
+            continue;
+        }
+
         if ft.is_dir() {
-            let cat_dir = skills_dir.join(&name);
+            let cat_dir = skills_dir.join(&cat_name);
+
+            // Category description from optional DESCRIPTION.md
+            let cat_desc = std::fs::read_to_string(cat_dir.join("DESCRIPTION.md"))
+                .ok()
+                .map(|c| {
+                    md_first_heading(&c)
+                        .unwrap_or_else(|| c.trim().lines().next().unwrap_or("").to_string())
+                })
+                .unwrap_or_default();
+
             let mut skills: Vec<Value> = Vec::new();
             if let Ok(files) = std::fs::read_dir(&cat_dir) {
                 for f in files.flatten() {
                     let fname = f.file_name().to_string_lossy().to_string();
-                    if !fname.ends_with(".md") {
+                    let fpath = cat_dir.join(&fname);
+                    let ftype = match f.file_type() {
+                        Ok(t) => t,
+                        Err(_) => continue,
+                    };
+
+                    // v0.14.1 structured skill: <category>/<skill>/SKILL.md
+                    if ftype.is_dir() {
+                        let skill_md = fpath.join("SKILL.md");
+                        if !skill_md.exists() {
+                            continue;
+                        }
+                        let content = std::fs::read_to_string(&skill_md).unwrap_or_default();
+                        let display = md_first_heading(&content).unwrap_or_else(|| fname.clone());
+                        let desc = md_first_description(&content);
+                        skills.push(serde_json::json!({
+                            "file": fname.clone(),
+                            "name": display,
+                            "slug": fname.clone(),
+                            "description": desc,
+                            "path": skill_md.to_string_lossy(),
+                            "skill_dir": fpath.to_string_lossy(),
+                            "isDir": true,
+                            "enabled": is_enabled(&fname),
+                        }));
                         continue;
                     }
-                    let fpath = cat_dir.join(&fname);
+
+                    // Legacy flat skill: <category>/<name>.md
+                    if !fname.ends_with(".md") || fname == "DESCRIPTION.md" {
+                        continue;
+                    }
                     let content = std::fs::read_to_string(&fpath).unwrap_or_default();
-                    let skill_name = content
-                        .lines()
-                        .find(|l| l.starts_with("# "))
-                        .map(|l| l[2..].trim().to_string())
-                        .unwrap_or_else(|| fname.trim_end_matches(".md").to_string());
-                    let description = content
-                        .lines()
-                        .find(|l| {
-                            !l.starts_with('#') && !l.trim().is_empty() && l.trim().len() > 10
-                        })
-                        .map(|l| {
-                            let s = l.trim();
-                            if s.len() > 200 {
-                                format!("{}...", &s[..200])
-                            } else {
-                                s.to_string()
-                            }
-                        })
-                        .unwrap_or_default();
+                    let slug = fname.trim_end_matches(".md").to_string();
+                    let display = md_first_heading(&content).unwrap_or_else(|| slug.clone());
+                    let desc = md_first_description(&content);
                     skills.push(serde_json::json!({
                         "file": fname,
-                        "name": skill_name,
-                        "description": description,
+                        "name": display,
+                        "slug": slug.clone(),
+                        "description": desc,
                         "path": fpath.to_string_lossy(),
+                        "isDir": false,
+                        "enabled": is_enabled(&slug),
                     }));
                 }
             }
             if !skills.is_empty() {
+                skills.sort_by(|a, b| {
+                    a["name"]
+                        .as_str()
+                        .unwrap_or("")
+                        .cmp(b["name"].as_str().unwrap_or(""))
+                });
                 categories.push(serde_json::json!({
-                    "category": name,
+                    "category": cat_name,
+                    "description": cat_desc,
                     "skills": skills,
                 }));
             }
-        } else if name.ends_with(".md") {
-            let fpath = skills_dir.join(&name);
+        } else if cat_name.ends_with(".md") && cat_name != "DESCRIPTION.md" {
+            // Uncategorized top-level skill file.
+            let fpath = skills_dir.join(&cat_name);
             let content = std::fs::read_to_string(&fpath).unwrap_or_default();
-            let skill_name = content
-                .lines()
-                .find(|l| l.starts_with("# "))
-                .map(|l| l[2..].trim().to_string())
-                .unwrap_or_else(|| name.trim_end_matches(".md").to_string());
+            let slug = cat_name.trim_end_matches(".md").to_string();
+            let display = md_first_heading(&content).unwrap_or_else(|| slug.clone());
             categories.push(serde_json::json!({
                 "category": "_root",
+                "description": "",
                 "skills": [{
-                    "file": name,
-                    "name": skill_name,
-                    "description": "",
+                    "file": cat_name,
+                    "name": display,
+                    "slug": slug.clone(),
+                    "description": md_first_description(&content),
                     "path": fpath.to_string_lossy(),
+                    "isDir": false,
+                    "enabled": is_enabled(&slug),
                 }],
             }));
         }
     }
+
+    categories.sort_by(|a, b| {
+        a["category"]
+            .as_str()
+            .unwrap_or("")
+            .cmp(b["category"].as_str().unwrap_or(""))
+    });
+
     Ok(Value::Array(categories))
 }
 
@@ -3111,14 +3622,262 @@ pub async fn hermes_skill_detail(file_path: String) -> Result<String, String> {
     std::fs::read_to_string(&canonical).map_err(|e| format!("Failed to read skill: {e}"))
 }
 
+// ============================================================================
+// Skills — enable/disable toggle (Phase 3)
+// ============================================================================
+
+/// Toggle a skill's enabled state by mutating `config.yaml`'s
+/// `skills.disabled` list. Matches the behaviour of hermes-web-ui's
+/// `PUT /api/hermes/skills/toggle`.
+///
+/// * `enabled = true`  → remove `name` from disabled list
+/// * `enabled = false` → add `name` to disabled list
+///
+/// A `config.yaml.bak-<epoch>` backup is written before any mutation so
+/// users can always recover a broken config.
+#[tauri::command]
+pub async fn hermes_skill_toggle(name: String, enabled: bool) -> Result<Value, String> {
+    if name.is_empty() {
+        return Err("Skill name is required".into());
+    }
+    let config_path = hermes_home().join("config.yaml");
+    let raw = std::fs::read_to_string(&config_path)
+        .map_err(|e| format!("Failed to read config.yaml: {e}"))?;
+
+    // Write a timestamped backup before any mutation.
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let backup_path = hermes_home().join(format!("config.yaml.bak-{ts}"));
+    let _ = std::fs::write(&backup_path, &raw);
+
+    let patched = patch_yaml_toggle_skill(&raw, &name, enabled);
+    std::fs::write(&config_path, &patched)
+        .map_err(|e| format!("Failed to write config.yaml: {e}"))?;
+
+    Ok(serde_json::json!({
+        "ok": true,
+        "skill": name,
+        "enabled": enabled,
+        "backup": backup_path.to_string_lossy(),
+    }))
+}
+
+/// YAML patcher: add/remove `name` from `skills.disabled[]`.
+///
+/// Careful to preserve line ordering + indentation + other sections so that
+/// user-edited comments and custom keys survive round-trips.
+fn patch_yaml_toggle_skill(raw: &str, name: &str, enabled: bool) -> String {
+    let mut lines: Vec<String> = raw.lines().map(str::to_string).collect();
+
+    // Find `skills:` top-level key.
+    let skills_idx = lines.iter().position(|l| {
+        let trimmed = l.trim_end();
+        let indent = trimmed.len() - trimmed.trim_start().len();
+        indent == 0 && trimmed.trim_start().starts_with("skills:")
+    });
+
+    // If no `skills:` block exists yet, synthesize one.
+    if skills_idx.is_none() {
+        if enabled {
+            // Already enabled (not in any disabled list). Nothing to do.
+            return raw.to_string();
+        }
+        // Append a new skills.disabled block.
+        if !raw.is_empty() && !raw.ends_with('\n') {
+            lines.push(String::new());
+        }
+        lines.push("skills:".to_string());
+        lines.push("  disabled:".to_string());
+        lines.push(format!("    - {name}"));
+        lines.push(String::new());
+        return lines.join("\n");
+    }
+
+    let skills_idx = skills_idx.unwrap();
+
+    // Find `disabled:` under skills.
+    let mut disabled_idx: Option<usize> = None;
+    let mut i = skills_idx + 1;
+    while i < lines.len() {
+        let trimmed = lines[i].trim_end();
+        let indent = trimmed.len() - trimmed.trim_start().len();
+        if !trimmed.is_empty() && indent == 0 {
+            break; // left the skills block
+        }
+        if indent == 2 && trimmed.trim_start().starts_with("disabled:") {
+            disabled_idx = Some(i);
+            break;
+        }
+        i += 1;
+    }
+
+    // Create a `disabled:` list if absent.
+    if disabled_idx.is_none() {
+        if enabled {
+            // Already not disabled — nothing to do.
+            return raw.to_string();
+        }
+        let insert_at = skills_idx + 1;
+        lines.insert(insert_at, "  disabled:".to_string());
+        lines.insert(insert_at + 1, format!("    - {name}"));
+        return lines.join("\n");
+    }
+
+    let disabled_idx = disabled_idx.unwrap();
+
+    // Collect existing list item line indices + their values.
+    let mut item_rows: Vec<(usize, String)> = Vec::new();
+    let mut j = disabled_idx + 1;
+    while j < lines.len() {
+        let trimmed = lines[j].trim_end();
+        let indent = trimmed.len() - trimmed.trim_start().len();
+        if !trimmed.is_empty() && indent < 4 {
+            break;
+        }
+        let body = trimmed.trim_start();
+        if body.starts_with("- ") {
+            let v = body
+                .trim_start_matches("- ")
+                .trim()
+                .trim_matches('"')
+                .trim_matches('\'')
+                .to_string();
+            item_rows.push((j, v));
+        }
+        j += 1;
+    }
+
+    let has_item = item_rows.iter().any(|(_, v)| v == name);
+
+    if enabled {
+        // Remove all rows that match.
+        if !has_item {
+            return raw.to_string();
+        }
+        let to_remove: Vec<usize> = item_rows
+            .iter()
+            .filter(|(_, v)| v == name)
+            .map(|(i, _)| *i)
+            .collect();
+        for idx in to_remove.iter().rev() {
+            lines.remove(*idx);
+        }
+    } else {
+        if has_item {
+            return raw.to_string();
+        }
+        // Insert right after the `disabled:` key line or at the end of
+        // existing items — whichever produces stable ordering.
+        let insert_at = item_rows
+            .last()
+            .map(|(i, _)| *i + 1)
+            .unwrap_or(disabled_idx + 1);
+        lines.insert(insert_at, format!("    - {name}"));
+    }
+
+    lines.join("\n")
+}
+
+/// Recursively list all files inside a skill directory. Returns an array
+/// of `{ path, name, isDir }` where `path` is relative to `~/.hermes/`.
+/// Skips the top-level `SKILL.md` because the UI already renders it
+/// separately in the detail pane.
+#[tauri::command]
+pub async fn hermes_skill_files(category: String, skill: String) -> Result<Value, String> {
+    let skills_root = hermes_home().join("skills");
+    let skill_dir = skills_root.join(&category).join(&skill);
+    if !skill_dir.exists() || !skill_dir.is_dir() {
+        return Ok(serde_json::json!([]));
+    }
+
+    let mut out: Vec<Value> = Vec::new();
+    fn walk(root: &PathBuf, rel_base: &str, out: &mut Vec<Value>) {
+        let entries = match std::fs::read_dir(root) {
+            Ok(e) => e,
+            Err(_) => return,
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            let rel = if rel_base.is_empty() {
+                name.clone()
+            } else {
+                format!("{rel_base}/{name}")
+            };
+            let full = root.join(&name);
+            let is_dir = full.is_dir();
+            // Skip the flagship SKILL.md at the root level.
+            if rel_base.is_empty() && name == "SKILL.md" {
+                continue;
+            }
+            out.push(serde_json::json!({
+                "path": rel,
+                "name": name,
+                "isDir": is_dir,
+            }));
+            if is_dir {
+                walk(&full, &rel, out);
+            }
+        }
+    }
+    walk(&skill_dir, "", &mut out);
+    out.sort_by(|a, b| {
+        a["path"]
+            .as_str()
+            .unwrap_or("")
+            .cmp(b["path"].as_str().unwrap_or(""))
+    });
+    Ok(Value::Array(out))
+}
+
+/// Write (create/update) a skill file. Path must be inside
+/// `~/.hermes/skills/`. Intermediate directories are auto-created.
+#[tauri::command]
+pub async fn hermes_skill_write(file_path: String, content: String) -> Result<String, String> {
+    let skills_dir = hermes_home().join("skills");
+    let target = PathBuf::from(&file_path);
+
+    // Ensure the target lives under the skills directory. We compare
+    // absolute-normalized paths to allow writing *new* files (which cannot
+    // be canonicalized yet) while still rejecting traversal.
+    let skills_canon = skills_dir
+        .canonicalize()
+        .map_err(|e| format!("Skills dir not accessible: {e}"))?;
+    let target_abs = if target.is_absolute() {
+        target.clone()
+    } else {
+        skills_dir.join(&target)
+    };
+    let parent = target_abs
+        .parent()
+        .ok_or_else(|| "Invalid target path".to_string())?;
+    std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create dir: {e}"))?;
+    let parent_canon = parent
+        .canonicalize()
+        .map_err(|e| format!("Path error: {e}"))?;
+    if !parent_canon.starts_with(&skills_canon) {
+        return Err("Access denied".into());
+    }
+    std::fs::write(&target_abs, &content).map_err(|e| format!("Failed to write skill: {e}"))?;
+    Ok("ok".into())
+}
+
+/// Resolve `memory|user|soul` to its filename inside `~/.hermes/memories/`.
+fn memory_file_name(kind: &str) -> Option<&'static str> {
+    match kind {
+        "memory" => Some("MEMORY.md"),
+        "user" => Some("USER.md"),
+        "soul" => Some("SOUL.md"),
+        _ => None,
+    }
+}
+
 #[tauri::command]
 pub async fn hermes_memory_read(r#type: Option<String>) -> Result<String, String> {
     let kind = r#type.as_deref().unwrap_or("memory");
-    let file_name = if kind == "user" {
-        "USER.md"
-    } else {
-        "MEMORY.md"
-    };
+    let file_name = memory_file_name(kind)
+        .ok_or_else(|| format!("Invalid memory kind '{kind}' (expected memory|user|soul)"))?;
     let file_path = hermes_home().join("memories").join(file_name);
     if !file_path.exists() {
         return Ok(String::new());
@@ -3132,16 +3891,100 @@ pub async fn hermes_memory_write(
     content: String,
 ) -> Result<String, String> {
     let kind = r#type.as_deref().unwrap_or("memory");
+    let file_name = memory_file_name(kind)
+        .ok_or_else(|| format!("Invalid memory kind '{kind}' (expected memory|user|soul)"))?;
     let mem_dir = hermes_home().join("memories");
     std::fs::create_dir_all(&mem_dir).map_err(|e| format!("Failed to create dir: {e}"))?;
-    let file_name = if kind == "user" {
-        "USER.md"
-    } else {
-        "MEMORY.md"
-    };
     let file_path = mem_dir.join(file_name);
     std::fs::write(&file_path, &content).map_err(|e| format!("Failed to write memory: {e}"))?;
     Ok("ok".into())
+}
+
+/// Read all memory sections (memory/user/soul) in one call, returning content
+/// + last-modified UNIX timestamp (seconds) for each. A missing file yields an
+/// empty string and `None` mtime — the caller shows "not yet written" state.
+///
+/// Shape matches `hermes-web-ui`'s `GET /api/hermes/memory` response so the
+/// frontend can mirror the official UI's three-column layout.
+#[tauri::command]
+pub async fn hermes_memory_read_all() -> Result<Value, String> {
+    let mem_dir = hermes_home().join("memories");
+    let section = |kind: &str| -> (String, Option<u64>) {
+        let name = match memory_file_name(kind) {
+            Some(n) => n,
+            None => return (String::new(), None),
+        };
+        let path = mem_dir.join(name);
+        if !path.exists() {
+            return (String::new(), None);
+        }
+        let content = std::fs::read_to_string(&path).unwrap_or_default();
+        let mtime = std::fs::metadata(&path)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs());
+        (content, mtime)
+    };
+    let (memory, memory_mtime) = section("memory");
+    let (user, user_mtime) = section("user");
+    let (soul, soul_mtime) = section("soul");
+    Ok(serde_json::json!({
+        "memory": memory,
+        "user": user,
+        "soul": soul,
+        "memory_mtime": memory_mtime,
+        "user_mtime": user_mtime,
+        "soul_mtime": soul_mtime,
+    }))
+}
+
+fn downloads_dir_fallback() -> PathBuf {
+    dirs::download_dir()
+        .or_else(dirs::home_dir)
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+fn safe_download_filename(name: &str) -> String {
+    name.chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            _ => c,
+        })
+        .collect()
+}
+
+/// Read an entire log file and save it to the user's Downloads/ClawPanel
+/// directory. We refuse path traversal and only allow files whose canonical
+/// path lives inside `~/.hermes/logs/`.
+#[tauri::command]
+pub async fn hermes_logs_download(name: String) -> Result<Value, String> {
+    // Reject traversal before any disk access.
+    if name.is_empty() || name.contains("..") || name.contains('/') || name.contains('\\') {
+        return Err("Invalid log file name".into());
+    }
+    let logs_dir = hermes_home().join("logs");
+    let file_path = logs_dir.join(&name);
+    // Canonicalize both sides to ensure symlinks/relative segments can't
+    // escape the logs directory.
+    let canon_dir = logs_dir
+        .canonicalize()
+        .map_err(|e| format!("Logs dir not found: {e}"))?;
+    let canon_file = file_path
+        .canonicalize()
+        .map_err(|e| format!("Log file not found: {e}"))?;
+    if !canon_file.starts_with(&canon_dir) {
+        return Err("Access denied".into());
+    }
+    let content =
+        std::fs::read_to_string(&canon_file).map_err(|e| format!("Failed to read log: {e}"))?;
+    let out_dir = downloads_dir_fallback().join("ClawPanel");
+    std::fs::create_dir_all(&out_dir).map_err(|e| format!("Failed to create download dir: {e}"))?;
+    let out_path = out_dir.join(safe_download_filename(&name));
+    std::fs::write(&out_path, content).map_err(|e| format!("Failed to save log: {e}"))?;
+    Ok(serde_json::json!({
+        "path": out_path.to_string_lossy().to_string(),
+    }))
 }
 
 // ============================================================================
@@ -3509,6 +4352,255 @@ pub fn hermes_env_delete(key: String) -> Result<(), String> {
     }
     std::fs::write(&env_path, content).map_err(|e| format!("Failed to write .env: {e}"))?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn hermes_config_raw_read() -> Result<Value, String> {
+    let path = hermes_home().join("config.yaml");
+    let yaml = std::fs::read_to_string(&path).unwrap_or_default();
+    Ok(serde_json::json!({ "yaml": yaml }))
+}
+
+#[tauri::command]
+pub fn hermes_config_raw_write(yaml_text: String) -> Result<Value, String> {
+    let path = hermes_home().join("config.yaml");
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create config dir: {e}"))?;
+    }
+    if path.exists() {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let backup = path.with_extension(format!("yaml.bak-{ts}"));
+        let _ = std::fs::copy(&path, backup);
+    }
+    std::fs::write(&path, yaml_text).map_err(|e| format!("Failed to write config.yaml: {e}"))?;
+    Ok(serde_json::json!({ "ok": true }))
+}
+
+#[tauri::command]
+pub fn hermes_env_reveal(key: String) -> Result<Value, String> {
+    let key = key.trim().to_string();
+    if key.is_empty() {
+        return Err("Key cannot be empty".into());
+    }
+    let env_path = hermes_home().join(".env");
+    let raw =
+        std::fs::read_to_string(&env_path).map_err(|e| format!("Failed to read .env: {e}"))?;
+    for (k, v, _) in parse_env_file_lines(&raw) {
+        if k == key {
+            return Ok(serde_json::json!({ "key": key, "value": v }));
+        }
+    }
+    Err(format!("{key} not found in .env"))
+}
+
+fn hermes_dashboard_theme_name(raw: &str) -> String {
+    let mut in_dashboard = false;
+    for line in raw.lines() {
+        let t = line.trim();
+        if t.is_empty() || t.starts_with('#') {
+            continue;
+        }
+        let indent = line.len() - line.trim_start().len();
+        if indent == 0 {
+            in_dashboard = t == "dashboard:" || t.starts_with("dashboard:");
+            if t.starts_with("dashboard:") && t != "dashboard:" {
+                return t
+                    .trim_start_matches("dashboard:")
+                    .trim()
+                    .trim_matches('"')
+                    .trim_matches('\'')
+                    .to_string();
+            }
+            continue;
+        }
+        if in_dashboard && t.starts_with("theme:") {
+            return t
+                .trim_start_matches("theme:")
+                .trim()
+                .trim_matches('"')
+                .trim_matches('\'')
+                .to_string();
+        }
+    }
+    "default".into()
+}
+
+fn patch_dashboard_theme(raw: &str, name: &str) -> String {
+    let mut out: Vec<String> = Vec::new();
+    let mut in_dashboard = false;
+    let mut dashboard_seen = false;
+    let mut theme_written = false;
+    for line in raw.lines() {
+        let t = line.trim();
+        let indent = line.len() - line.trim_start().len();
+        if indent == 0 && !t.is_empty() && !t.starts_with('#') {
+            if in_dashboard && !theme_written {
+                out.push(format!("  theme: {name}"));
+                theme_written = true;
+            }
+            in_dashboard = t == "dashboard:" || t.starts_with("dashboard:");
+            if in_dashboard {
+                dashboard_seen = true;
+            }
+        }
+        if in_dashboard && indent > 0 && t.starts_with("theme:") {
+            out.push(format!("{}theme: {name}", " ".repeat(indent)));
+            theme_written = true;
+            continue;
+        }
+        out.push(line.to_string());
+    }
+    if in_dashboard && !theme_written {
+        out.push(format!("  theme: {name}"));
+    }
+    if !dashboard_seen {
+        if out.last().map(|s| !s.is_empty()).unwrap_or(false) {
+            out.push(String::new());
+        }
+        out.push("dashboard:".into());
+        out.push(format!("  theme: {name}"));
+    }
+    let mut content = out.join("\n");
+    if !content.ends_with('\n') {
+        content.push('\n');
+    }
+    content
+}
+
+#[tauri::command]
+pub fn hermes_dashboard_themes() -> Result<Value, String> {
+    let config_raw = std::fs::read_to_string(hermes_home().join("config.yaml")).unwrap_or_default();
+    let active = hermes_dashboard_theme_name(&config_raw);
+    let mut themes = vec![
+        serde_json::json!({ "name": "default", "label": "Default", "description": "Hermes default dashboard theme" }),
+        serde_json::json!({ "name": "midnight", "label": "Midnight", "description": "Dark blue dashboard theme" }),
+        serde_json::json!({ "name": "ember", "label": "Ember", "description": "Warm dashboard theme" }),
+        serde_json::json!({ "name": "mono", "label": "Mono", "description": "Monochrome dashboard theme" }),
+        serde_json::json!({ "name": "cyberpunk", "label": "Cyberpunk", "description": "Neon dashboard theme" }),
+        serde_json::json!({ "name": "rose", "label": "Rose", "description": "Soft rose dashboard theme" }),
+    ];
+    let dir = hermes_home().join("dashboard-themes");
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let ext_ok = path
+                .extension()
+                .and_then(|s| s.to_str())
+                .map(|s| s.eq_ignore_ascii_case("yaml") || s.eq_ignore_ascii_case("yml"))
+                .unwrap_or(false);
+            if !ext_ok {
+                continue;
+            }
+            if let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
+                themes.push(serde_json::json!({
+                    "name": name,
+                    "label": name,
+                    "description": "User dashboard theme",
+                }));
+            }
+        }
+    }
+    Ok(serde_json::json!({ "themes": themes, "active": active }))
+}
+
+#[tauri::command]
+pub fn hermes_dashboard_theme_set(name: String) -> Result<Value, String> {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err("Theme name cannot be empty".into());
+    }
+    let path = hermes_home().join("config.yaml");
+    let raw = std::fs::read_to_string(&path).unwrap_or_default();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create config dir: {e}"))?;
+    }
+    std::fs::write(&path, patch_dashboard_theme(&raw, &name))
+        .map_err(|e| format!("Failed to write config.yaml: {e}"))?;
+    Ok(serde_json::json!({ "ok": true, "theme": name }))
+}
+
+fn scan_dashboard_plugins() -> Vec<Value> {
+    let mut plugins = Vec::new();
+    let mut seen = std::collections::HashSet::<String>::new();
+    let roots = [hermes_home().join("plugins")];
+    for root in roots {
+        if let Ok(entries) = std::fs::read_dir(root) {
+            for entry in entries.flatten() {
+                let dir = entry.path();
+                if !dir.is_dir() {
+                    continue;
+                }
+                let manifest = dir.join("dashboard").join("manifest.json");
+                if !manifest.exists() {
+                    continue;
+                }
+                let raw = match std::fs::read_to_string(&manifest) {
+                    Ok(s) => s,
+                    Err(_) => continue,
+                };
+                let data: Value = match serde_json::from_str(&raw) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+                let name = data
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| dir.file_name().and_then(|s| s.to_str()))
+                    .unwrap_or("");
+                if name.is_empty() || !seen.insert(name.to_string()) {
+                    continue;
+                }
+                let tab = data.get("tab").cloned().unwrap_or_else(
+                    || serde_json::json!({ "path": format!("/{name}"), "position": "end" }),
+                );
+                plugins.push(serde_json::json!({
+                    "name": name,
+                    "label": data.get("label").and_then(|v| v.as_str()).unwrap_or(name),
+                    "description": data.get("description").and_then(|v| v.as_str()).unwrap_or(""),
+                    "icon": data.get("icon").and_then(|v| v.as_str()).unwrap_or("Puzzle"),
+                    "version": data.get("version").and_then(|v| v.as_str()).unwrap_or("0.0.0"),
+                    "tab": tab,
+                    "slots": data.get("slots").cloned().unwrap_or_else(|| serde_json::json!([])),
+                    "entry": data.get("entry").and_then(|v| v.as_str()).unwrap_or("dist/index.js"),
+                    "css": data.get("css").cloned().unwrap_or(Value::Null),
+                    "has_api": data.get("api").is_some(),
+                    "source": "user",
+                }));
+            }
+        }
+    }
+    plugins
+}
+
+#[tauri::command]
+pub fn hermes_dashboard_plugins() -> Result<Value, String> {
+    Ok(Value::Array(scan_dashboard_plugins()))
+}
+
+#[tauri::command]
+pub fn hermes_dashboard_plugins_rescan() -> Result<Value, String> {
+    let plugins = scan_dashboard_plugins();
+    Ok(serde_json::json!({ "ok": true, "count": plugins.len() }))
+}
+
+#[tauri::command]
+pub fn hermes_toolsets_list() -> Result<Value, String> {
+    let output = run_silent("hermes", &["tools", "list", "--platform", "cli"]).unwrap_or_default();
+    Ok(serde_json::json!({ "raw": output }))
+}
+
+#[tauri::command]
+pub fn hermes_cron_jobs_list() -> Result<Value, String> {
+    let path = hermes_home().join("cron").join("jobs.json");
+    if !path.exists() {
+        return Ok(Value::Array(Vec::new()));
+    }
+    let raw =
+        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read cron jobs: {e}"))?;
+    serde_json::from_str::<Value>(&raw).map_err(|e| format!("Failed to parse cron jobs: {e}"))
 }
 
 // ============================================================================

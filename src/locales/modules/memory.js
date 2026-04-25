@@ -35,7 +35,7 @@ export default {
   readFileFailed: _('读取文件失败', 'Failed to read file', '讀取檔案失敗'),
   fileSaved: _('文件已保存', 'File saved', '檔案已儲存'),
   saveFailed: _('保存失败', 'Save failed', '儲存失敗'),
-  downloaded: _('已下载 {name}', 'Downloaded {name}', '已下載 {name}'),
+  downloaded: _('已交给浏览器下载 {name}，请查看默认下载目录', 'Download started for {name}; check your default downloads folder', '已交給瀏覽器下載 {name}，請查看預設下載目錄'),
   downloadFailed: _('下载失败', 'Download failed', '下載失敗'),
   exported: _('已导出: {label} → {path}', 'Exported: {label} → {path}'),
   exportFailed: _('打包下载失败', 'Export failed', '打包下載失敗'),

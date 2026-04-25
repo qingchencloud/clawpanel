@@ -25,6 +25,16 @@ function hermesHome() {
   return process.env.HERMES_HOME || HERMES_HOME
 }
 
+/** Resolve memory kind (memory|user|soul) → markdown file name. */
+function memoryFileName(kind) {
+  switch (kind) {
+    case 'memory': return 'MEMORY.md'
+    case 'user':   return 'USER.md'
+    case 'soul':   return 'SOUL.md'
+    default:       return null
+  }
+}
+
 function uvBinDir() {
   if (isWindows) {
     const appdata = process.env.APPDATA
@@ -6996,7 +7006,7 @@ const handlers = {
     const envPath = path.join(hermesHome(), '.env')
     if (!fs.existsSync(envPath)) return []
     const raw = fs.readFileSync(envPath, 'utf8')
-    const managed = new Set(this._hermesManagedEnvKeys())
+    const managed = new Set(handlers._hermesManagedEnvKeys())
     const seen = new Set()
     const out = []
     for (const line of raw.split('\n')) {
@@ -7018,7 +7028,7 @@ const handlers = {
     if (!/^[A-Z0-9_]+$/i.test(key)) {
       throw new Error(`Invalid env var key '${key}': only [A-Z0-9_] are allowed`)
     }
-    const managed = new Set(this._hermesManagedEnvKeys())
+    const managed = new Set(handlers._hermesManagedEnvKeys())
     if (managed.has(key)) {
       throw new Error(`'${key}' is managed by ClawPanel; please configure it via the provider setup page`)
     }
@@ -7049,7 +7059,7 @@ const handlers = {
   hermes_env_delete({ key } = {}) {
     key = (key || '').trim()
     if (!key) throw new Error('Key cannot be empty')
-    const managed = new Set(this._hermesManagedEnvKeys())
+    const managed = new Set(handlers._hermesManagedEnvKeys())
     if (managed.has(key)) {
       throw new Error(`'${key}' is managed by ClawPanel; please configure it via the provider setup page`)
     }
@@ -7069,6 +7079,121 @@ const handlers = {
     if (!content.endsWith('\n')) content += '\n'
     fs.writeFileSync(envPath, content)
     return null
+  },
+
+  hermes_env_reveal({ key } = {}) {
+    key = (key || '').trim()
+    if (!key) throw new Error('Key cannot be empty')
+    const envPath = path.join(hermesHome(), '.env')
+    if (!fs.existsSync(envPath)) throw new Error('.env not found')
+    for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+      const t = line.trim()
+      if (!t || t.startsWith('#')) continue
+      const eq = t.indexOf('=')
+      if (eq > 0 && t.slice(0, eq).trim() === key) return { key, value: t.slice(eq + 1) }
+    }
+    throw new Error(`${key} not found in .env`)
+  },
+
+  hermes_config_raw_read() {
+    const configPath = path.join(hermesHome(), 'config.yaml')
+    return { yaml: fs.existsSync(configPath) ? fs.readFileSync(configPath, 'utf8') : '' }
+  },
+
+  hermes_config_raw_write({ yamlText } = {}) {
+    const configPath = path.join(hermesHome(), 'config.yaml')
+    fs.mkdirSync(path.dirname(configPath), { recursive: true })
+    if (fs.existsSync(configPath)) fs.copyFileSync(configPath, `${configPath}.bak-${Math.floor(Date.now() / 1000)}`)
+    fs.writeFileSync(configPath, yamlText || '')
+    return { ok: true }
+  },
+
+  hermes_dashboard_themes() {
+    const configPath = path.join(hermesHome(), 'config.yaml')
+    const raw = fs.existsSync(configPath) ? fs.readFileSync(configPath, 'utf8') : ''
+    const active = (raw.match(/^\s*theme:\s*["']?([^"'\n#]+)["']?/m)?.[1] || 'default').trim()
+    const themes = [
+      { name: 'default', label: 'Default', description: 'Hermes default dashboard theme' },
+      { name: 'midnight', label: 'Midnight', description: 'Dark blue dashboard theme' },
+      { name: 'ember', label: 'Ember', description: 'Warm dashboard theme' },
+      { name: 'mono', label: 'Mono', description: 'Monochrome dashboard theme' },
+      { name: 'cyberpunk', label: 'Cyberpunk', description: 'Neon dashboard theme' },
+      { name: 'rose', label: 'Rose', description: 'Soft rose dashboard theme' },
+    ]
+    const dir = path.join(hermesHome(), 'dashboard-themes')
+    if (fs.existsSync(dir)) {
+      for (const file of fs.readdirSync(dir)) {
+        if (!/\.ya?ml$/i.test(file)) continue
+        const name = path.basename(file).replace(/\.ya?ml$/i, '')
+        if (!themes.some(t => t.name === name)) themes.push({ name, label: name, description: 'User dashboard theme' })
+      }
+    }
+    return { themes, active }
+  },
+
+  hermes_dashboard_theme_set({ name } = {}) {
+    name = (name || '').trim()
+    if (!name) throw new Error('Theme name cannot be empty')
+    const configPath = path.join(hermesHome(), 'config.yaml')
+    fs.mkdirSync(path.dirname(configPath), { recursive: true })
+    const raw = fs.existsSync(configPath) ? fs.readFileSync(configPath, 'utf8') : ''
+    let content
+    if (/^dashboard:\s*$/m.test(raw)) {
+      content = /^\s+theme:/m.test(raw)
+        ? raw.replace(/^(\s+)theme:.*$/m, `$1theme: ${name}`)
+        : raw.replace(/^dashboard:\s*$/m, `dashboard:\n  theme: ${name}`)
+    } else {
+      content = `${raw.replace(/\s*$/, '')}\n\ndashboard:\n  theme: ${name}\n`
+    }
+    fs.writeFileSync(configPath, content)
+    return { ok: true, theme: name }
+  },
+
+  hermes_dashboard_plugins() {
+    const root = path.join(hermesHome(), 'plugins')
+    if (!fs.existsSync(root)) return []
+    const out = []
+    const seen = new Set()
+    for (const name of fs.readdirSync(root)) {
+      const dir = path.join(root, name)
+      const manifest = path.join(dir, 'dashboard', 'manifest.json')
+      if (!fs.existsSync(manifest)) continue
+      try {
+        const data = JSON.parse(fs.readFileSync(manifest, 'utf8'))
+        const id = data.name || name
+        if (!id || seen.has(id)) continue
+        seen.add(id)
+        out.push({
+          name: id,
+          label: data.label || id,
+          description: data.description || '',
+          icon: data.icon || 'Puzzle',
+          version: data.version || '0.0.0',
+          tab: data.tab || { path: `/${id}`, position: 'end' },
+          slots: data.slots || [],
+          entry: data.entry || 'dist/index.js',
+          css: data.css || null,
+          has_api: !!data.api,
+          source: 'user',
+        })
+      } catch {}
+    }
+    return out
+  },
+
+  hermes_dashboard_plugins_rescan() {
+    return { ok: true, count: handlers.hermes_dashboard_plugins().length }
+  },
+
+  hermes_toolsets_list() {
+    const r = runHermesSilent('hermes', ['tools', 'list', '--platform', 'cli'])
+    return { raw: r.ok ? r.stdout : '' }
+  },
+
+  hermes_cron_jobs_list() {
+    const jobsPath = path.join(hermesHome(), 'cron', 'jobs.json')
+    if (!fs.existsSync(jobsPath)) return []
+    return JSON.parse(fs.readFileSync(jobsPath, 'utf8'))
   },
 
   async hermes_fetch_models({ baseUrl, apiKey, apiType, provider: _provider } = {}) {
@@ -7196,8 +7321,10 @@ const handlers = {
   // Hermes Sessions / Logs / Skills / Memory
   // =========================================================================
 
-  hermes_sessions_list({ source, limit } = {}) {
-    const args = ['sessions', 'export', '-']
+  hermes_sessions_list({ source, limit, profile } = {}) {
+    const args = []
+    if (profile) args.push('--profile', profile)
+    args.push('sessions', 'export', '-')
     if (source) args.push('--source', source)
     const r = runHermesSilent('hermes', args)
     if (!r.ok) return []
@@ -7207,6 +7334,14 @@ const handlers = {
       if (!t) continue
       try {
         const obj = JSON.parse(t)
+        // `started_at` may arrive as POSIX seconds from the Hermes CLI. Fall
+        // back to parsing `created_at` as ISO8601 so the Usage view can group
+        // sessions by day even on older Hermes builds.
+        let startedAt = typeof obj.started_at === 'number' ? obj.started_at : 0
+        if (!startedAt && obj.created_at) {
+          const ms = Date.parse(obj.created_at)
+          if (!Number.isNaN(ms)) startedAt = Math.floor(ms / 1000)
+        }
         sessions.push({
           id: obj.session_id || obj.id || '',
           title: obj.title || obj.name || '',
@@ -7215,6 +7350,14 @@ const handlers = {
           created_at: obj.created_at || obj.createdAt || '',
           updated_at: obj.updated_at || obj.updatedAt || '',
           message_count: obj.message_count || (obj.messages ? obj.messages.length : 0),
+          // Usage analytics fields (match Rust backend shape).
+          started_at: startedAt,
+          input_tokens: Number(obj.input_tokens || 0),
+          output_tokens: Number(obj.output_tokens || 0),
+          cache_read_tokens: Number(obj.cache_read_tokens || 0),
+          cache_write_tokens: Number(obj.cache_write_tokens || 0),
+          estimated_cost_usd: typeof obj.estimated_cost_usd === 'number' ? obj.estimated_cost_usd : null,
+          actual_cost_usd: typeof obj.actual_cost_usd === 'number' ? obj.actual_cost_usd : null,
         })
       } catch {}
     }
@@ -7223,9 +7366,127 @@ const handlers = {
     return sessions
   },
 
-  hermes_session_detail({ sessionId } = {}) {
+  hermes_sessions_summary_list({ source, limit, profile } = {}) {
+    const lim = Math.max(1, Math.min(Number(limit || 80), 500))
+    const args = []
+    if (profile) args.push('--profile', profile)
+    args.push('sessions', 'list', '--limit', String(lim))
+    if (source) args.push('--source', source)
+    const r = runHermesSilent('hermes', args)
+    if (!r.ok) return []
+    const sessions = []
+    let hasTitles = false
+    for (const line of r.stdout.split('\n')) {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed === 'No sessions found.' || trimmed.startsWith('─')) continue
+      if (trimmed.includes('Title') && trimmed.includes('Preview') && trimmed.includes('ID')) { hasTitles = true; continue }
+      if (trimmed.includes('Preview') && trimmed.includes('Last Active') && trimmed.includes('ID')) { hasTitles = false; continue }
+      const cols = trimmed.split(/\s{2,}/).filter(Boolean)
+      if (cols.length < 3) continue
+      const id = cols[cols.length - 1]
+      if (!id) continue
+      if (hasTitles) {
+        sessions.push({
+          id,
+          title: cols[0] === '—' ? '' : cols[0],
+          source: source || '',
+          model: '',
+          created_at: '',
+          updated_at: '',
+          last_active_label: cols[2] || '',
+          preview: cols[1] || '',
+          message_count: 0,
+          input_tokens: 0,
+          output_tokens: 0,
+        })
+      } else {
+        sessions.push({
+          id,
+          title: '',
+          source: cols[2] || source || '',
+          model: '',
+          created_at: '',
+          updated_at: '',
+          last_active_label: cols[1] || '',
+          preview: cols[0] || '',
+          message_count: 0,
+          input_tokens: 0,
+          output_tokens: 0,
+        })
+      }
+    }
+    return sessions
+  },
+
+  async hermes_usage_analytics({ days = 30, profile } = {}) {
+    days = Math.max(1, Math.min(Number(days || 30), 365))
+    const cutoff = Math.floor(Date.now() / 1000) - days * 86400
+    const sessions = await handlers.hermes_sessions_list({ profile })
+    const daily = new Map()
+    const byModel = new Map()
+    const totals = {
+      total_input: 0,
+      total_output: 0,
+      total_cache_read: 0,
+      total_cache_write: 0,
+      total_estimated_cost: 0,
+      total_actual_cost: 0,
+      total_sessions: 0,
+      total_api_calls: 0,
+    }
+    for (const s of Array.isArray(sessions) ? sessions : []) {
+      const started = Number(s.started_at || 0)
+      if (started > 0 && started < cutoff) continue
+      const input = Number(s.input_tokens || 0)
+      const output = Number(s.output_tokens || 0)
+      const cacheRead = Number(s.cache_read_tokens || 0)
+      const cacheWrite = Number(s.cache_write_tokens || 0)
+      const estimated = Number(s.estimated_cost_usd || 0)
+      const actual = Number(s.actual_cost_usd || 0)
+      totals.total_input += input
+      totals.total_output += output
+      totals.total_cache_read += cacheRead
+      totals.total_cache_write += cacheWrite
+      totals.total_estimated_cost += estimated
+      totals.total_actual_cost += actual
+      totals.total_sessions += 1
+      const day = started > 0 ? new Date(started * 1000).toISOString().slice(0, 10) : 'unknown'
+      if (!daily.has(day)) daily.set(day, { day, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, estimated_cost: 0, actual_cost: 0, sessions: 0 })
+      const d = daily.get(day)
+      d.input_tokens += input
+      d.output_tokens += output
+      d.cache_read_tokens += cacheRead
+      d.estimated_cost += estimated
+      d.actual_cost += actual
+      d.sessions += 1
+      const model = s.model || ''
+      if (model) {
+        if (!byModel.has(model)) byModel.set(model, { model, input_tokens: 0, output_tokens: 0, estimated_cost: 0, sessions: 0 })
+        const m = byModel.get(model)
+        m.input_tokens += input
+        m.output_tokens += output
+        m.estimated_cost += estimated
+        m.sessions += 1
+      }
+    }
+    return {
+      daily: [...daily.values()],
+      by_model: [...byModel.values()].sort((a, b) => (b.input_tokens + b.output_tokens) - (a.input_tokens + a.output_tokens)),
+      totals,
+      period_days: days,
+      skills: {
+        summary: { total_skill_loads: 0, total_skill_edits: 0, total_skill_actions: 0, distinct_skills_used: 0 },
+        top_skills: [],
+      },
+    }
+  },
+
+  hermes_session_detail({ sessionId, profile } = {}) {
     if (!sessionId) throw new Error('sessionId is required')
-    const r = runHermesSilent('hermes', ['sessions', 'export', '-'])
+    const args = []
+    if (profile) args.push('--profile', profile)
+    args.push('sessions', 'export', '-', '--session-id', sessionId)
+    const r = runHermesSilent('hermes', args)
     if (!r.ok) throw new Error('Failed to read sessions')
     for (const line of r.stdout.split('\n')) {
       const t = line.trim()
@@ -7251,17 +7512,64 @@ const handlers = {
     throw new Error('Session not found')
   },
 
-  hermes_session_delete({ sessionId } = {}) {
+  hermes_session_delete({ sessionId, profile } = {}) {
     if (!sessionId) throw new Error('sessionId is required')
-    const r = runHermesSilent('hermes', ['sessions', 'delete', sessionId, '--yes'])
+    const args = []
+    if (profile) args.push('--profile', profile)
+    args.push('sessions', 'delete', sessionId, '--yes')
+    const r = runHermesSilent('hermes', args)
     if (!r.ok) throw new Error(`Failed to delete session: ${r.stderr || 'unknown error'}`)
     return 'ok'
   },
 
-  hermes_session_rename({ sessionId, title } = {}) {
+  hermes_session_rename({ sessionId, title, profile } = {}) {
     if (!sessionId || !title) throw new Error('sessionId and title are required')
-    const r = runHermesSilent('hermes', ['sessions', 'rename', sessionId, title])
+    const args = []
+    if (profile) args.push('--profile', profile)
+    args.push('sessions', 'rename', sessionId, title)
+    const r = runHermesSilent('hermes', args)
     if (!r.ok) throw new Error(`Failed to rename session: ${r.stderr || 'unknown error'}`)
+    return 'ok'
+  },
+
+  hermes_profiles_list() {
+    const r = runHermesSilent('hermes', ['profile', 'list'])
+    if (!r.ok) return { active: 'default', profiles: [] }
+    let active = 'default'
+    const profiles = []
+    for (const line of r.stdout.split('\n')) {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed.includes('Profile') || trimmed.startsWith('─') || trimmed.startsWith('-')) continue
+      const isActive = trimmed.startsWith('◆')
+      const row = trimmed.replace(/^◆/, '').trim()
+      const parts = row.split(/\s+/)
+      if (parts.length < 3) continue
+      const name = parts[0]
+      if (name !== 'default' && !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(name)) continue
+      const gatewayIdx = parts.findIndex(p => p === 'running' || p === 'stopped')
+      if (gatewayIdx <= 1) continue
+      const model = parts.slice(1, gatewayIdx).join(' ')
+      const alias = parts[gatewayIdx + 1] || ''
+      if (isActive) active = name
+      profiles.push({
+        name,
+        active: isActive,
+        model: model === '—' ? '' : model,
+        gatewayRunning: parts[gatewayIdx] === 'running',
+        alias: alias === '—' ? '' : alias,
+      })
+    }
+    if (!profiles.some(p => p.active)) {
+      const d = profiles.find(p => p.name === 'default')
+      if (d) d.active = true
+    }
+    return { active, profiles }
+  },
+
+  hermes_profile_use({ name } = {}) {
+    if (!name) throw new Error('name is required')
+    const r = runHermesSilent('hermes', ['profile', 'use', name])
+    if (!r.ok) throw new Error(`Failed to switch profile: ${r.stderr || 'unknown error'}`)
     return 'ok'
   },
 
@@ -7318,47 +7626,99 @@ const handlers = {
   hermes_skills_list() {
     const skillsDir = path.join(hermesHome(), 'skills')
     if (!fs.existsSync(skillsDir)) return []
+    const disabled = readHermesDisabledSkills()
+    const isEnabled = (name) => !disabled.includes(name)
+
     const categories = []
     try {
       const entries = fs.readdirSync(skillsDir, { withFileTypes: true })
       for (const entry of entries) {
+        if (entry.name.startsWith('.')) continue
         if (entry.isDirectory()) {
           const catDir = path.join(skillsDir, entry.name)
+          // Category description from DESCRIPTION.md if present
+          let catDesc = ''
+          try {
+            const dmPath = path.join(catDir, 'DESCRIPTION.md')
+            if (fs.existsSync(dmPath)) {
+              const raw = fs.readFileSync(dmPath, 'utf8')
+              const heading = raw.match(/^#\s+(.+)/m)
+              catDesc = (heading ? heading[1] : raw.trim().split('\n')[0] || '').trim().slice(0, 200)
+            }
+          } catch {}
+
           const skills = []
-          for (const file of fs.readdirSync(catDir)) {
-            if (!file.endsWith('.md')) continue
-            const filePath = path.join(catDir, file)
+          for (const sub of fs.readdirSync(catDir, { withFileTypes: true })) {
+            if (sub.name === 'DESCRIPTION.md') continue
+
+            // v0.14.1 structured skill: SKILL.md inside a directory
+            if (sub.isDirectory()) {
+              const skillMd = path.join(catDir, sub.name, 'SKILL.md')
+              if (!fs.existsSync(skillMd)) continue
+              const content = fs.readFileSync(skillMd, 'utf8')
+              const nameMatch = content.match(/^#\s+(.+)/m)
+              const descMatch = content.match(/^[^#\n].{10,}/m)
+              skills.push({
+                file: sub.name,
+                name: nameMatch ? nameMatch[1].trim() : sub.name,
+                slug: sub.name,
+                description: descMatch ? descMatch[0].trim().slice(0, 200) : '',
+                path: skillMd,
+                skill_dir: path.join(catDir, sub.name),
+                isDir: true,
+                enabled: isEnabled(sub.name),
+              })
+              continue
+            }
+
+            if (!sub.name.endsWith('.md')) continue
+            const filePath = path.join(catDir, sub.name)
             const content = fs.readFileSync(filePath, 'utf8')
             const nameMatch = content.match(/^#\s+(.+)/m)
-            const descMatch = content.match(/^(?:##\s+)?(?:Description|描述)[:\s]*(.+)/mi) || content.match(/^[^#\n].{10,}/m)
+            const descMatch = content.match(/^[^#\n].{10,}/m)
+            const slug = sub.name.replace(/\.md$/, '')
             skills.push({
-              file: file,
-              name: nameMatch ? nameMatch[1].trim() : file.replace('.md', ''),
-              description: descMatch ? descMatch[1].trim().slice(0, 200) : '',
+              file: sub.name,
+              name: nameMatch ? nameMatch[1].trim() : slug,
+              slug,
+              description: descMatch ? descMatch[0].trim().slice(0, 200) : '',
               path: filePath,
+              isDir: false,
+              enabled: isEnabled(slug),
             })
           }
+
           if (skills.length > 0) {
-            categories.push({ category: entry.name, skills })
+            skills.sort((a, b) => a.name.localeCompare(b.name))
+            categories.push({ category: entry.name, description: catDesc, skills })
           }
-        } else if (entry.name.endsWith('.md')) {
-          // Top-level skill
+        } else if (entry.name.endsWith('.md') && entry.name !== 'DESCRIPTION.md') {
           const filePath = path.join(skillsDir, entry.name)
           const content = fs.readFileSync(filePath, 'utf8')
           const nameMatch = content.match(/^#\s+(.+)/m)
+          const slug = entry.name.replace(/\.md$/, '')
           categories.push({
             category: '_root',
-            skills: [{ file: entry.name, name: nameMatch ? nameMatch[1].trim() : entry.name.replace('.md', ''), description: '', path: filePath }]
+            description: '',
+            skills: [{
+              file: entry.name,
+              name: nameMatch ? nameMatch[1].trim() : slug,
+              slug,
+              description: '',
+              path: filePath,
+              isDir: false,
+              enabled: isEnabled(slug),
+            }],
           })
         }
       }
     } catch {}
+    categories.sort((a, b) => a.category.localeCompare(b.category))
     return categories
   },
 
   hermes_skill_detail({ filePath } = {}) {
     if (!filePath) throw new Error('filePath is required')
-    // Security: ensure path is within hermes skills dir
     const skillsDir = path.join(hermesHome(), 'skills')
     const resolved = path.resolve(filePath)
     if (!resolved.startsWith(skillsDir)) throw new Error('Access denied')
@@ -7366,9 +7726,57 @@ const handlers = {
     return fs.readFileSync(resolved, 'utf8')
   },
 
+  hermes_skill_toggle({ name, enabled } = {}) {
+    if (!name) throw new Error('Skill name is required')
+    const configPath = path.join(hermesHome(), 'config.yaml')
+    if (!fs.existsSync(configPath)) throw new Error('config.yaml not found')
+    const raw = fs.readFileSync(configPath, 'utf8')
+    // Backup
+    const backup = path.join(hermesHome(), `config.yaml.bak-${Math.floor(Date.now() / 1000)}`)
+    try { fs.writeFileSync(backup, raw) } catch {}
+    const patched = patchHermesYamlToggleSkill(raw, name, !!enabled)
+    fs.writeFileSync(configPath, patched)
+    return { ok: true, skill: name, enabled: !!enabled, backup }
+  },
+
+  hermes_skill_files({ category, skill } = {}) {
+    if (!category || !skill) throw new Error('category and skill are required')
+    const skillDir = path.join(hermesHome(), 'skills', category, skill)
+    if (!fs.existsSync(skillDir) || !fs.statSync(skillDir).isDirectory()) return []
+    const out = []
+    const walk = (root, relBase) => {
+      for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+        if (relBase === '' && entry.name === 'SKILL.md') continue
+        const rel = relBase ? `${relBase}/${entry.name}` : entry.name
+        const full = path.join(root, entry.name)
+        const isDir = entry.isDirectory()
+        out.push({ path: rel, name: entry.name, isDir })
+        if (isDir) walk(full, rel)
+      }
+    }
+    walk(skillDir, '')
+    out.sort((a, b) => a.path.localeCompare(b.path))
+    return out
+  },
+
+  hermes_skill_write({ filePath, content } = {}) {
+    if (!filePath) throw new Error('filePath is required')
+    if (content == null) throw new Error('content is required')
+    const skillsDir = path.join(hermesHome(), 'skills')
+    const targetAbs = path.isAbsolute(filePath) ? filePath : path.join(skillsDir, filePath)
+    const parent = path.dirname(targetAbs)
+    fs.mkdirSync(parent, { recursive: true })
+    const parentReal = fs.realpathSync(parent)
+    const skillsReal = fs.realpathSync(skillsDir)
+    if (!parentReal.startsWith(skillsReal)) throw new Error('Access denied')
+    fs.writeFileSync(targetAbs, content, 'utf8')
+    return 'ok'
+  },
+
   hermes_memory_read({ type = 'memory' } = {}) {
     const home = hermesHome()
-    const fileName = type === 'user' ? 'USER.md' : 'MEMORY.md'
+    const fileName = memoryFileName(type)
+    if (!fileName) throw new Error(`Invalid memory kind '${type}' (expected memory|user|soul)`)
     const filePath = path.join(home, 'memories', fileName)
     if (!fs.existsSync(filePath)) return ''
     return fs.readFileSync(filePath, 'utf8')
@@ -7377,12 +7785,52 @@ const handlers = {
   hermes_memory_write({ type = 'memory', content } = {}) {
     if (content == null) throw new Error('content is required')
     const home = hermesHome()
+    const fileName = memoryFileName(type)
+    if (!fileName) throw new Error(`Invalid memory kind '${type}' (expected memory|user|soul)`)
     const memDir = path.join(home, 'memories')
     fs.mkdirSync(memDir, { recursive: true })
-    const fileName = type === 'user' ? 'USER.md' : 'MEMORY.md'
     const filePath = path.join(memDir, fileName)
     fs.writeFileSync(filePath, content, 'utf8')
     return 'ok'
+  },
+
+  hermes_memory_read_all() {
+    const home = hermesHome()
+    const memDir = path.join(home, 'memories')
+    const readSection = (kind) => {
+      const name = memoryFileName(kind)
+      if (!name) return ['', null]
+      const p = path.join(memDir, name)
+      if (!fs.existsSync(p)) return ['', null]
+      const content = fs.readFileSync(p, 'utf8')
+      const mtime = Math.floor(fs.statSync(p).mtimeMs / 1000)
+      return [content, mtime]
+    }
+    const [memory, memory_mtime] = readSection('memory')
+    const [user, user_mtime] = readSection('user')
+    const [soul, soul_mtime] = readSection('soul')
+    return { memory, user, soul, memory_mtime, user_mtime, soul_mtime }
+  },
+
+  hermes_logs_download({ name, saveToDisk = false } = {}) {
+    if (!name) throw new Error('log file name is required')
+    // Reject traversal (mirror the Rust-side check)
+    if (name.includes('..') || name.includes('/') || name.includes('\\')) {
+      throw new Error('Invalid log file name')
+    }
+    const logsDir = path.join(hermesHome(), 'logs')
+    const filePath = path.join(logsDir, name)
+    const resolved = fs.realpathSync(filePath)
+    const canonDir = fs.realpathSync(logsDir)
+    if (!resolved.startsWith(canonDir)) throw new Error('Access denied')
+    const content = fs.readFileSync(resolved, 'utf8')
+    if (!saveToDisk) return content
+    const outDir = path.join(os.homedir(), 'Downloads', 'ClawPanel')
+    fs.mkdirSync(outDir, { recursive: true })
+    const safeName = name.replace(/[\\/:*?"<>|]/g, '_')
+    const outPath = path.join(outDir, safeName)
+    fs.writeFileSync(outPath, content)
+    return { path: outPath }
   },
 
   async update_hermes() {

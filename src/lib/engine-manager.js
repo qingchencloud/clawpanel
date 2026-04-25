@@ -82,6 +82,10 @@ export async function activateEngine(id, persist = true) {
 
   _activeEngine = engine
 
+  // 给 <body> 设置 data-active-engine 属性，供全局组件（sidebar 等）做
+  // 引擎级样式切换（e.g. Hermes 激活时 sidebar 套 editorial luxury 主题）
+  try { document.body.dataset.activeEngine = engine.id } catch {}
+
   // 注册引擎路由 + 设置默认路由
   const routes = engine.getRoutes()
   for (const r of routes) {

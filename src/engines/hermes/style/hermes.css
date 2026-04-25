@@ -1,0 +1,5686 @@
+/**
+ * Hermes Agent — Editorial Luxury UI
+ * ----------------------------------------------------------
+ * Style archetype: Minimal Single Column + Liquid Glass hints
+ * Mood:            editorial, premium, sophisticated (Hermes = messenger of the gods)
+ * Palette:         warm black + muted gold (#CA8A04) + warm off-white
+ * Typography:      Serif display (Playfair → Georgia fallback)
+ *                  + Inter body + JetBrains Mono code
+ *
+ * Scoped under `[data-engine="hermes"]`. OpenClaw is never touched.
+ *
+ * Design principles:
+ *   1. Restraint over density. Lots of whitespace.
+ *   2. Hairline borders, never heavy fills.
+ *   3. ONE accent color (gold). Use sparingly.
+ *   4. Serif italic for editorial eyebrow labels.
+ *   5. Subtle radial glow for depth, NEVER hard shadows.
+ *   6. Hover = color shift + 1px border, never scale/translate.
+ */
+
+/* ==========================================================================
+ * 0 · Design tokens — light theme (warm off-white, gold)
+ * ==========================================================================
+ */
+[data-engine="hermes"] {
+  /* Surfaces — warm, paper-like */
+  --hm-surface-0: #FAFAF9;       /* page background (warm off-white) */
+  --hm-surface-1: #ffffff;       /* raised panel */
+  --hm-surface-2: #F5F5F4;       /* subtle inset / hover */
+  --hm-surface-3: #E7E5E4;       /* input background */
+
+  /* Hairline borders */
+  --hm-border:         rgba(28, 25, 23, 0.08);
+  --hm-border-subtle:  rgba(28, 25, 23, 0.04);
+  --hm-border-strong:  rgba(28, 25, 23, 0.20);
+
+  /* Text — warm not cool */
+  --hm-text-primary:   #1C1917;     /* stone-900 */
+  --hm-text-secondary: #44403C;     /* stone-700 */
+  --hm-text-tertiary:  #78716C;     /* stone-500 */
+  --hm-text-muted:     #A8A29E;     /* stone-400 */
+  --hm-text-inverse:   #FAFAF9;
+
+  /* Gold accent — the only feature color */
+  --hm-accent:        #CA8A04;      /* amber-600 */
+  --hm-accent-hover:  #A16207;      /* amber-700 */
+  --hm-accent-soft:   rgba(202, 138, 4, 0.08);
+  --hm-accent-ring:   rgba(202, 138, 4, 0.22);
+
+  /* State colors — desaturated, editorial */
+  --hm-success:       #65A30D;      /* lime-600 */
+  --hm-success-soft:  rgba(101, 163, 13, 0.10);
+  --hm-error:         #B91C1C;      /* red-700 */
+  --hm-error-soft:    rgba(185, 28, 28, 0.08);
+  --hm-warn:          #B45309;      /* amber-700 */
+  --hm-warn-soft:     rgba(180, 83, 9, 0.08);
+  --hm-info:          #0369A1;      /* sky-700 */
+  --hm-info-soft:     rgba(3, 105, 161, 0.08);
+
+  /* Fonts — editorial stack, no network imports */
+  --hm-font-serif: 'Playfair Display', 'Cormorant Garamond', 'Iowan Old Style',
+                   'Palatino Linotype', Palatino, Georgia, 'Times New Roman',
+                   'Noto Serif SC', 'Source Han Serif SC', serif;
+  --hm-font-sans:  'Inter', 'IBM Plex Sans', -apple-system, BlinkMacSystemFont,
+                   'Segoe UI', 'PingFang SC', 'Noto Sans SC', sans-serif;
+  --hm-font-mono:  'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Mono',
+                   'Fira Code', Consolas, 'Liberation Mono', monospace;
+
+  /* Radii — soft but not round */
+  --hm-radius-sm: 4px;
+  --hm-radius-md: 8px;
+  --hm-radius-lg: 12px;
+  --hm-radius-xl: 20px;
+
+  /* Shadows — no heavy drops; a warm ring instead */
+  --hm-shadow-sm: 0 1px 0 rgba(28, 25, 23, 0.03);
+  --hm-shadow-md: 0 1px 2px rgba(28, 25, 23, 0.04),
+                  0 8px 24px rgba(28, 25, 23, 0.04);
+  --hm-shadow-lg: 0 2px 4px rgba(28, 25, 23, 0.04),
+                  0 24px 48px rgba(28, 25, 23, 0.06);
+  --hm-glow-gold: 0 0 0 1px var(--hm-accent-ring),
+                  0 12px 32px rgba(202, 138, 4, 0.15);
+
+  /* Motion — slower, more deliberate */
+  --hm-ease:       cubic-bezier(0.22, 1, 0.36, 1);
+  --hm-ease-serif: cubic-bezier(0.4, 0, 0.2, 1);
+  --hm-dur-fast:   180ms;
+  --hm-dur-normal: 280ms;
+  --hm-dur-slow:   500ms;
+}
+
+/* Dark theme overrides — warm black, not cool slate */
+[data-theme="dark"] [data-engine="hermes"],
+[data-engine="hermes"][data-theme="dark"] {
+  --hm-surface-0: #0C0A09;         /* stone-950 warm black */
+  --hm-surface-1: #1C1917;         /* stone-900 */
+  --hm-surface-2: #292524;         /* stone-800 */
+  --hm-surface-3: #44403C;         /* stone-700 */
+
+  --hm-border:         rgba(250, 250, 249, 0.08);
+  --hm-border-subtle:  rgba(250, 250, 249, 0.04);
+  --hm-border-strong:  rgba(250, 250, 249, 0.20);
+
+  --hm-text-primary:   #FAFAF9;
+  --hm-text-secondary: #D6D3D1;    /* stone-300 */
+  --hm-text-tertiary:  #A8A29E;    /* stone-400 */
+  --hm-text-muted:     #78716C;    /* stone-500 */
+  --hm-text-inverse:   #1C1917;
+
+  --hm-accent:        #EAB308;      /* amber-500 slightly brighter for dark */
+  --hm-accent-hover:  #FACC15;      /* amber-400 */
+  --hm-accent-soft:   rgba(234, 179, 8, 0.12);
+  --hm-accent-ring:   rgba(234, 179, 8, 0.28);
+
+  --hm-success:       #84CC16;      /* lime-500 */
+  --hm-success-soft:  rgba(132, 204, 22, 0.14);
+  --hm-error:         #EF4444;      /* red-500 */
+  --hm-error-soft:    rgba(239, 68, 68, 0.12);
+  --hm-warn:          #F59E0B;      /* amber-500 */
+  --hm-warn-soft:     rgba(245, 158, 11, 0.12);
+  --hm-info:          #0EA5E9;      /* sky-500 */
+  --hm-info-soft:     rgba(14, 165, 233, 0.12);
+
+  --hm-shadow-sm: 0 1px 0 rgba(0, 0, 0, 0.3);
+  --hm-shadow-md: 0 1px 2px rgba(0, 0, 0, 0.4),
+                  0 8px 24px rgba(0, 0, 0, 0.4);
+  --hm-shadow-lg: 0 2px 4px rgba(0, 0, 0, 0.4),
+                  0 24px 60px rgba(0, 0, 0, 0.6);
+  --hm-glow-gold: 0 0 0 1px var(--hm-accent-ring),
+                  0 12px 40px rgba(234, 179, 8, 0.22);
+}
+
+/* ==========================================================================
+ * 1 · Page shell — editorial breathing room
+ * ==========================================================================
+ */
+[data-engine="hermes"].page {
+  padding: 40px 48px 64px;
+  max-width: 1280px;
+  margin: 0 auto;
+  font-family: var(--hm-font-sans);
+  color: var(--hm-text-primary);
+  background: var(--hm-surface-0);
+  position: relative;
+  font-feature-settings: 'ss01', 'cv11';
+  font-size: 14px;
+  line-height: 1.55;
+  letter-spacing: -0.005em;
+}
+
+/* ==========================================================================
+ * 2 · Hero — editorial big serif title
+ * ==========================================================================
+ */
+[data-engine="hermes"] .hm-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 32px;
+  padding: 32px 0 28px;
+  margin-bottom: 32px;
+  border-bottom: 1px solid var(--hm-border);
+  position: relative;
+}
+
+/* Very subtle gold shimmer behind the title */
+[data-engine="hermes"] .hm-hero::before {
+  content: '';
+  position: absolute;
+  top: -40px;
+  left: -80px;
+  width: 400px;
+  height: 280px;
+  background: radial-gradient(
+    ellipse at top left,
+    var(--hm-accent-soft) 0%,
+    transparent 60%
+  );
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0;
+  transition: opacity var(--hm-dur-slow) var(--hm-ease);
+}
+[data-engine="hermes"] .hm-hero[data-state="running"]::before { opacity: 1; }
+
+[data-engine="hermes"] .hm-hero-title,
+[data-engine="hermes"] .hm-hero-actions {
+  position: relative;
+  z-index: 1;
+}
+
+[data-engine="hermes"] .hm-hero-title {
+  flex: 1;
+  min-width: 0;
+}
+
+[data-engine="hermes"] .hm-hero-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--hm-font-serif);
+  font-style: italic;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--hm-accent);
+  margin-bottom: 14px;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+[data-engine="hermes"] .hm-hero-eyebrow::after {
+  content: '';
+  width: 24px;
+  height: 1px;
+  background: var(--hm-accent);
+  opacity: 0.4;
+  margin-left: 4px;
+}
+
+[data-engine="hermes"] .hm-hero-h1 {
+  font-family: var(--hm-font-serif);
+  font-size: 44px;
+  font-weight: 500;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--hm-text-primary);
+  margin: 0 0 10px 0;
+  font-feature-settings: 'liga', 'dlig', 'kern';
+}
+
+[data-engine="hermes"] .hm-hero-sub {
+  font-family: var(--hm-font-mono);
+  font-size: 12px;
+  color: var(--hm-text-tertiary);
+  letter-spacing: 0.02em;
+}
+
+[data-engine="hermes"] .hm-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Live dot — pulsing gold when running, warm red when stopped */
+[data-engine="hermes"] .hm-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  position: relative;
+  flex-shrink: 0;
+}
+[data-engine="hermes"] .hm-dot.hm-dot--run {
+  background: var(--hm-accent);
+  box-shadow: 0 0 0 3px var(--hm-accent-soft);
+}
+[data-engine="hermes"] .hm-dot.hm-dot--run::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  background: var(--hm-accent);
+  opacity: 0.3;
+  animation: hm-pulse 2.4s var(--hm-ease-serif) infinite;
+}
+[data-engine="hermes"] .hm-dot.hm-dot--stop {
+  background: var(--hm-error);
+  box-shadow: 0 0 0 3px var(--hm-error-soft);
+}
+[data-engine="hermes"] .hm-dot.hm-dot--idle {
+  background: var(--hm-text-muted);
+  box-shadow: 0 0 0 3px rgba(168, 162, 158, 0.15);
+}
+
+@keyframes hm-pulse {
+  0%   { transform: scale(1);   opacity: 0.5; }
+  70%  { transform: scale(3);   opacity: 0; }
+  100% { transform: scale(3);   opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-engine="hermes"] .hm-dot::after { animation: none; }
+}
+
+/* ==========================================================================
+ * 3 · KPI grid — editorial data cards
+ * ==========================================================================
+ */
+[data-engine="hermes"] .hm-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  /* Removed the gap+background "bleed" trick — it caused empty grid
+     cells (when card count ≠ columns × rows) to render as visible
+     placeholder rectangles. Instead, draw hairline dividers with
+     per-card inset box-shadows; empty cells stay blank. */
+  gap: 0;
+  background: var(--hm-surface-1);
+  border: 1px solid var(--hm-border);
+  border-radius: var(--hm-radius-md);
+  margin-bottom: 40px;
+  overflow: hidden;
+}
+
+[data-engine="hermes"] .hm-kpi {
+  position: relative;
+  padding: 22px 24px 20px;
+  background: var(--hm-surface-1);
+  /* Hairline dividers using inset shadow so they only draw on cells
+     that actually contain a card, never on empty grid slots. */
+  box-shadow:
+    inset -1px 0 0 var(--hm-border),
+    inset 0 -1px 0 var(--hm-border);
+  transition: background var(--hm-dur-normal) var(--hm-ease);
+  overflow: hidden;
+}
+
+[data-engine="hermes"] .hm-kpi:hover {
+  background: var(--hm-surface-2);
+}
+
+[data-engine="hermes"] .hm-kpi.hm-kpi--link {
+  cursor: pointer;
+  border: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  width: 100%;
+}
+[data-engine="hermes"] .hm-kpi.hm-kpi--link::after {
+  content: '→';
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  color: var(--hm-text-muted);
+  font-size: 14px;
+  transition: transform var(--hm-dur-normal) var(--hm-ease),
+              color var(--hm-dur-fast) var(--hm-ease);
+}
+[data-engine="hermes"] .hm-kpi.hm-kpi--link:hover::after {
+  transform: translateX(4px);
+  color: var(--hm-accent);
+}
+
+/* Tone = tiny thin underline under the label, not a bar */
+[data-engine="hermes"] .hm-kpi-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--hm-font-serif);
+  font-style: italic;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--hm-text-tertiary);
+  margin-bottom: 14px;
+  text-transform: none;
+  letter-spacing: 0.01em;
+}
+
+[data-engine="hermes"] .hm-kpi[data-tone="success"] .hm-kpi-label { color: var(--hm-success); }
+[data-engine="hermes"] .hm-kpi[data-tone="error"]   .hm-kpi-label { color: var(--hm-error); }
+[data-engine="hermes"] .hm-kpi[data-tone="warn"]    .hm-kpi-label { color: var(--hm-warn); }
+[data-engine="hermes"] .hm-kpi[data-tone="info"]    .hm-kpi-label { color: var(--hm-info); }
+[data-engine="hermes"] .hm-kpi[data-tone="accent"]  .hm-kpi-label { color: var(--hm-accent); }
+
+[data-engine="hermes"] .hm-kpi-label .hm-kpi-icon,
+[data-engine="hermes"] .hm-kpi-label svg {
+  width: 12px;
+  height: 12px;
+  opacity: 0.65;
+}
+
+[data-engine="hermes"] .hm-kpi-value {
+  font-family: var(--hm-font-serif);
+  font-size: 26px;
+  font-weight: 500;
+  line-height: 1.1;
+  color: var(--hm-text-primary);
+  letter-spacing: -0.015em;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  word-break: break-word;
+}
+
+[data-engine="hermes"] .hm-kpi-value .hm-kpi-unit {
+  font-family: var(--hm-font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--hm-text-muted);
+  letter-spacing: 0.02em;
+}
+
+[data-engine="hermes"] .hm-kpi-foot {
+  margin-top: 10px;
+  font-family: var(--hm-font-mono);
+  font-size: 11px;
+  color: var(--hm-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+}
+
+[data-engine="hermes"] .hm-kpi-foot .hm-kpi-delta {
+  color: var(--hm-success);
+  font-weight: 500;
+}
+[data-engine="hermes"] .hm-kpi-foot .hm-kpi-delta--down {
+  color: var(--hm-error);
+}
+
+[data-engine="hermes"] .hm-native-dashboard-hint {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin: -8px 2px 20px;
+  color: var(--hm-text-muted);
+  font-family: var(--hm-font-mono);
+  font-size: 11px;
+}
+[data-engine="hermes"] .hm-native-dashboard-link {
+  border: 0;
+  background: transparent;
+  color: var(--hm-text-secondary);
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 30%, transparent);
+  text-underline-offset: 3px;
+}
+[data-engine="hermes"] .hm-native-dashboard-link:hover {
+  color: var(--hm-accent);
+}
+
+/* ==========================================================================
+ * 4 · Panel — clean section container
+ * ==========================================================================
+ */
+[data-engine="hermes"] .hm-panel {
+  background: var(--hm-surface-1);
+  border: 1px solid var(--hm-border);
+  border-radius: var(--hm-radius-md);
+  margin-bottom: 24px;
+  overflow: hidden;
+  /* Soft paper-lift elevation on cream page — gives cards presence
+     without breaking the whisper-thin editorial aesthetic. */
+  box-shadow:
+    0 1px 2px rgba(28, 25, 23, 0.03),
+    0 2px 6px rgba(28, 25, 23, 0.035);
+  transition: border-color var(--hm-dur-normal) var(--hm-ease),
+              box-shadow  var(--hm-dur-normal) var(--hm-ease);
+}
+[data-theme="dark"] [data-engine="hermes"] .hm-panel {
+  /* In dark mode the warm-black surfaces already read as elevated; drop
+     the drop-shadow so we don't muddy the depth. */
+  box-shadow: none;
+}
+
+[data-engine="hermes"] .hm-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 28px 18px;
+  border-bottom: 1px solid var(--hm-border-subtle);
+}
+
+[data-engine="hermes"] .hm-panel-header.hm-panel-header--toggle {
+  cursor: pointer;
+  transition: background var(--hm-dur-fast) var(--hm-ease);
+}
+[data-engine="hermes"] .hm-panel-header.hm-panel-header--toggle:hover {
+  background: var(--hm-surface-2);
+}
+
+[data-engine="hermes"] .hm-panel-title {
+  font-family: var(--hm-font-serif);
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--hm-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-transform: none;
+}
+
+/* editorial italic style instead of uppercase ops */
+[data-engine="hermes"] .hm-panel-title::before {
+  content: '';
+  font-family: var(--hm-font-serif);
+  font-style: italic;
+  color: var(--hm-accent);
+}
+
+[data-engine="hermes"] .hm-panel-title .hm-panel-title-icon {
+  width: 15px;
+  height: 15px;
+  color: var(--hm-accent);
+}
+
+[data-engine="hermes"] .hm-panel-title .hm-panel-title-count {
+  padding: 2px 9px;
+  background: var(--hm-accent-soft);
+  border-radius: 999px;
+  font-family: var(--hm-font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--hm-accent);
+  letter-spacing: 0.02em;
+  font-style: normal;
+  margin-left: 4px;
+}
+
+[data-engine="hermes"] .hm-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+[data-engine="hermes"] .hm-panel-body {
+  padding: 24px 28px 26px;
+}
+[data-engine="hermes"] .hm-panel-body--tight {
+  padding: 16px 24px 18px;
+}
+[data-engine="hermes"] .hm-panel-body--none {
+  padding: 0;
+}
+
+[data-engine="hermes"] .hm-panel-chevron {
+  width: 14px;
+  height: 14px;
+  color: var(--hm-text-tertiary);
+  transition: transform var(--hm-dur-normal) var(--hm-ease);
+}
+[data-engine="hermes"] .hm-panel-header.is-open .hm-panel-chevron {
+  transform: rotate(180deg);
+}
+
+/* ==========================================================================
+ * 5 · Buttons — editorial restraint
+ * ==========================================================================
+ */
+[data-engine="hermes"] .hm-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 18px;
+  height: 38px;
+  border-radius: var(--hm-radius-sm);
+  border: 1px solid var(--hm-border-strong);
+  background: transparent;
+  color: var(--hm-text-primary);
+  font-family: var(--hm-font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.005em;
+  cursor: pointer;
+  transition: all var(--hm-dur-fast) var(--hm-ease);
+  white-space: nowrap;
+  user-select: none;
+}
+[data-engine="hermes"] .hm-btn:hover:not(:disabled) {
+  border-color: var(--hm-text-primary);
+  background: var(--hm-surface-2);
+}
+[data-engine="hermes"] .hm-btn:active:not(:disabled) { opacity: 0.85; }
+[data-engine="hermes"] .hm-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+[data-engine="hermes"] .hm-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--hm-accent-ring);
+  border-color: var(--hm-accent);
+}
+
+[data-engine="hermes"] .hm-btn--sm {
+  height: 30px;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+/* Primary = gold fill (the hero CTA) */
+[data-engine="hermes"] .hm-btn--primary {
+  background: var(--hm-text-primary);
+  color: var(--hm-text-inverse);
+  border-color: var(--hm-text-primary);
+  font-weight: 500;
+}
+[data-engine="hermes"] .hm-btn--primary:hover:not(:disabled) {
+  background: var(--hm-surface-2);
+  color: var(--hm-text-primary);
+  border-color: var(--hm-text-primary);
+}
+[data-theme="dark"] [data-engine="hermes"] .hm-btn--primary {
+  background: var(--hm-text-primary);
+  color: var(--hm-text-inverse);
+}
+[data-theme="dark"] [data-engine="hermes"] .hm-btn--primary:hover:not(:disabled) {
+  background: var(--hm-surface-3);
+  color: var(--hm-text-primary);
+}
+
+/* CTA = the main action, gold */
+[data-engine="hermes"] .hm-btn--cta {
+  background: var(--hm-accent);
+  color: #1C1917;
+  border-color: var(--hm-accent);
+  font-family: var(--hm-font-serif);
+  font-weight: 500;
+  font-size: 13px;
+  letter-spacing: 0.005em;
+  padding: 9px 22px;
+}
+[data-engine="hermes"] .hm-btn--cta:hover:not(:disabled) {
+  background: var(--hm-accent-hover);
+  border-color: var(--hm-accent-hover);
+  box-shadow: var(--hm-glow-gold);
+}
+[data-theme="dark"] [data-engine="hermes"] .hm-btn--cta {
+  color: #0C0A09;
+}
+
+[data-engine="hermes"] .hm-btn--danger {
+  color: var(--hm-error);
+  border-color: transparent;
+  background: var(--hm-error-soft);
+}
+[data-engine="hermes"] .hm-btn--danger:hover:not(:disabled) {
+  background: var(--hm-error);
+  color: var(--hm-text-inverse);
+  border-color: var(--hm-error);
+}
+
+[data-engine="hermes"] .hm-btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--hm-text-tertiary);
+}
+[data-engine="hermes"] .hm-btn--ghost:hover:not(:disabled) {
+  color: var(--hm-text-primary);
+  background: var(--hm-surface-2);
+  border-color: var(--hm-border);
+}
+
+[data-engine="hermes"] .hm-btn--icon {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--hm-text-tertiary);
+}
+[data-engine="hermes"] .hm-btn--icon:hover:not(:disabled) {
+  color: var(--hm-accent);
+  border-color: transparent;
+  background: var(--hm-accent-soft);
+}
+
+/* ==========================================================================
+ * 6 · Pills — minimal tag selectors
+ * ==========================================================================
+ */
+[data-engine="hermes"] .hm-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+[data-engine="hermes"] .hm-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  background: transparent;
+  border: 1px solid var(--hm-border);
+  border-radius: 999px;
+  font-family: var(--hm-font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--hm-text-secondary);
+  cursor: pointer;
+  transition: all var(--hm-dur-fast) var(--hm-ease);
+  user-select: none;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+[data-engine="hermes"] .hm-pill:hover {
+  border-color: var(--hm-text-secondary);
+  color: var(--hm-text-primary);
+}
+[data-engine="hermes"] .hm-pill.is-active {
+  background: var(--hm-text-primary);
+  border-color: var(--hm-text-primary);
+  color: var(--hm-text-inverse);
+  font-weight: 500;
+}
+[data-engine="hermes"] .hm-pill.is-active::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--hm-accent);
+  box-shadow: 0 0 0 2px rgba(202, 138, 4, 0.25);
+}
+
+/* ==========================================================================
+ * 7 · Form controls — understated, print-inspired
+ * ==========================================================================
+ */
+[data-engine="hermes"] .hm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+[data-engine="hermes"] .hm-field-label {
+  font-family: var(--hm-font-serif);
+  font-style: italic;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--hm-text-tertiary);
+  letter-spacing: 0.01em;
+  text-transform: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+[data-engine="hermes"] .hm-input {
+  font-family: var(--hm-font-mono);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 10px 14px;
+  height: 40px;
+  border: 1px solid var(--hm-border);
+  background: var(--hm-surface-0);
+  color: var(--hm-text-primary);
+  border-radius: var(--hm-radius-sm);
+  transition: border-color var(--hm-dur-fast) var(--hm-ease),
+              box-shadow var(--hm-dur-fast) var(--hm-ease),
+              background var(--hm-dur-fast) var(--hm-ease);
+  width: 100%;
+  outline: none;
+}
+[data-engine="hermes"] .hm-input:focus {
+  border-color: var(--hm-accent);
+  box-shadow: 0 0 0 3px var(--hm-accent-ring);
+  background: var(--hm-surface-1);
+}
+[data-engine="hermes"] .hm-input::placeholder {
+  color: var(--hm-text-muted);
+  opacity: 0.7;
+}
+
+[data-engine="hermes"] .hm-field-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+/* ==========================================================================
+ * 8 · Code & terminal blocks
+ * ==========================================================================
+ */
+[data-engine="hermes"] .hm-code {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--hm-surface-2);
+  border: 1px solid var(--hm-border-subtle);
+  border-radius: 3px;
+  font-family: var(--hm-font-mono);
+  font-size: 11.5px;
+  color: var(--hm-text-primary);
+  letter-spacing: 0;
+}
+
+[data-engine="hermes"] .hm-term {
+  font-family: var(--hm-font-mono);
+  font-size: 12px;
+  line-height: 1.65;
+  padding: 18px 20px;
+  background: #1C1917;
+  color: #E7E5E4;
+  border: 1px solid var(--hm-border);
+  border-radius: var(--hm-radius-sm);
+  overflow-x: auto;
+}
+[data-engine="hermes"] .hm-term .hm-muted {
+  color: #A8A29E;
+}
+
+/* ==========================================================================
+ * 9 · Table
+ * ==========================================================================
+ */
+[data-engine="hermes"] .hm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+[data-engine="hermes"] .hm-table thead th {
+  text-align: left;
+  font-family: var(--hm-font-serif);
+  font-style: italic;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--hm-text-tertiary);
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--hm-border);
+  background: var(--hm-surface-0);
+}
+[data-engine="hermes"] .hm-table tbody td {
+  padding: 15px 24px;
+  border-bottom: 1px solid var(--hm-border-subtle);
+  color: var(--hm-text-secondary);
+  vertical-align: top;
+}
+[data-engine="hermes"] .hm-table tbody tr {
+  transition: background var(--hm-dur-fast) var(--hm-ease);
+}
+[data-engine="hermes"] .hm-table tbody tr:hover {
+  background: var(--hm-surface-2);
+}
+[data-engine="hermes"] .hm-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* ==========================================================================
+ * 10 · Utilities
+ * ==========================================================================
+ */
+[data-engine="hermes"] .hm-hr {
+  height: 1px;
+  background: var(--hm-border);
+  margin: 24px 0;
+  border: none;
+}
+
+[data-engine="hermes"] .hm-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-family: var(--hm-font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+  background: var(--hm-surface-2);
+  color: var(--hm-text-secondary);
+  border: 1px solid var(--hm-border);
+}
+[data-engine="hermes"] .hm-badge--success {
+  color: var(--hm-success);
+  background: var(--hm-success-soft);
+  border-color: transparent;
+}
+[data-engine="hermes"] .hm-badge--error {
+  color: var(--hm-error);
+  background: var(--hm-error-soft);
+  border-color: transparent;
+}
+[data-engine="hermes"] .hm-badge--warn {
+  color: var(--hm-warn);
+  background: var(--hm-warn-soft);
+  border-color: transparent;
+}
+[data-engine="hermes"] .hm-badge--accent {
+  color: var(--hm-accent);
+  background: var(--hm-accent-soft);
+  border-color: transparent;
+}
+
+[data-engine="hermes"] .hm-muted {
+  color: var(--hm-text-muted);
+  font-size: 11.5px;
+  font-family: var(--hm-font-mono);
+  letter-spacing: 0.01em;
+}
+
+[data-engine="hermes"] .hm-stack {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+[data-engine="hermes"] .hm-stack--v {
+  flex-direction: column;
+  align-items: stretch;
+}
+[data-engine="hermes"] .hm-spacer { flex: 1; }
+
+/* Skeleton loader */
+[data-engine="hermes"] .hm-skel {
+  background: linear-gradient(
+    90deg,
+    var(--hm-surface-2) 0%,
+    var(--hm-surface-3) 50%,
+    var(--hm-surface-2) 100%
+  );
+  background-size: 200% 100%;
+  border-radius: 3px;
+  animation: hm-skel 1.8s ease-in-out infinite;
+}
+@keyframes hm-skel {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ==========================================================================
+ * 11 · Dropdown
+ * ==========================================================================
+ */
+[data-engine="hermes"] .hm-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--hm-surface-1);
+  border: 1px solid var(--hm-border);
+  border-radius: var(--hm-radius-sm);
+  box-shadow: var(--hm-shadow-lg);
+  z-index: 50;
+  font-family: var(--hm-font-mono);
+  padding: 4px;
+}
+
+[data-engine="hermes"] .hm-dropdown-item {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--hm-text-secondary);
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background var(--hm-dur-fast) var(--hm-ease),
+              color var(--hm-dur-fast) var(--hm-ease);
+}
+[data-engine="hermes"] .hm-dropdown-item:hover {
+  background: var(--hm-accent-soft);
+  color: var(--hm-text-primary);
+}
+[data-engine="hermes"] .hm-dropdown-item.is-selected {
+  background: var(--hm-accent-soft);
+  color: var(--hm-accent);
+  font-weight: 500;
+}
+
+/* Custom scrollbar */
+[data-engine="hermes"] ::-webkit-scrollbar        { width: 10px; height: 10px; }
+[data-engine="hermes"] ::-webkit-scrollbar-track  { background: transparent; }
+[data-engine="hermes"] ::-webkit-scrollbar-thumb  {
+  background: var(--hm-border-strong);
+  border-radius: 999px;
+  border: 3px solid var(--hm-surface-0);
+}
+[data-engine="hermes"] ::-webkit-scrollbar-thumb:hover {
+  background: var(--hm-text-tertiary);
+}
+
+/* ==========================================================================
+ * 12 · Page shell — editorial gutter for pages that still use .page
+ *     (dashboard / cron / setup / env-editor / services / config / channels).
+ *     Custom hermes-*-page shells (memory/logs/skills/chat/usage) set their
+ *     own padding and opt out.
+ * ==========================================================================
+ */
+/* Same-element form (no space) because `.page` shares the host div with
+   `data-engine`. The descendant form silently misses every Hermes page
+   that uses the shared shell. */
+[data-engine="hermes"].page {
+  /* Generous 40/48 gutter matches the custom editorial shells so switching
+     between dashboard / cron / services / memory doesn't feel like hopping
+     between two different products. */
+  padding: 40px 48px 56px;
+  max-width: 1280px;
+}
+@media (max-width: 960px) {
+  [data-engine="hermes"].page {
+    padding: 28px 24px 40px;
+  }
+}
+@media (max-width: 480px) {
+  [data-engine="hermes"].page {
+    padding: 20px 16px 32px;
+  }
+}
+
+[data-engine="hermes"] .page-header h1 {
+  font-family: var(--hm-font-serif);
+  font-size: 32px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--hm-text-primary);
+  margin: 0;
+}
+[data-engine="hermes"] .page-header {
+  padding-bottom: 20px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--hm-border);
+}
+
+/* Re-style .card on non-refreshed Hermes pages for consistency */
+[data-engine="hermes"] .card {
+  background: var(--hm-surface-1);
+  border: 1px solid var(--hm-border);
+  border-radius: var(--hm-radius-md);
+  box-shadow: none;
+}
+[data-engine="hermes"] .card-body { padding: 22px 26px; }
+
+/* ==========================================================================
+ * 13 · Global sidebar + content when Hermes engine is active
+ * ==========================================================================
+ * Applied via `body[data-active-engine="hermes"]` — OpenClaw unaffected.
+ * We define the same tokens here so global components (sidebar etc.) can
+ * consume them through standard var() resolution without knowing Hermes.
+ */
+body[data-active-engine="hermes"] {
+  /* Warm off-white page */
+  background: #FAFAF9;
+}
+
+body[data-active-engine="hermes"] #content {
+  background: #FAFAF9;
+}
+
+/* ---- Sidebar shell ---- */
+body[data-active-engine="hermes"] #sidebar {
+  background: #FFFFFF;
+  border-right: 1px solid rgba(28, 25, 23, 0.08);
+  font-family: 'Inter', 'IBM Plex Sans', -apple-system, BlinkMacSystemFont,
+               'Segoe UI', 'PingFang SC', 'Noto Sans SC', sans-serif;
+}
+
+/* Header (logo + title + collapse) */
+body[data-active-engine="hermes"] .sidebar-header {
+  border-bottom: 1px solid rgba(28, 25, 23, 0.06);
+  padding: 20px 18px;
+  height: auto;
+}
+body[data-active-engine="hermes"] .sidebar-title {
+  font-family: 'Playfair Display', 'Cormorant Garamond', 'Iowan Old Style',
+               'Palatino Linotype', Palatino, Georgia, 'Times New Roman', serif;
+  font-size: 19px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: #1C1917;
+}
+body[data-active-engine="hermes"] .sidebar-collapse-btn,
+body[data-active-engine="hermes"] .sidebar-close-btn {
+  color: #A8A29E;
+  background: transparent;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  transition: color 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+body[data-active-engine="hermes"] .sidebar-collapse-btn:hover,
+body[data-active-engine="hermes"] .sidebar-close-btn:hover {
+  color: #CA8A04;
+}
+
+/* Engine switcher — gold accent */
+body[data-active-engine="hermes"] .engine-switcher {
+  border-bottom: 1px solid rgba(28, 25, 23, 0.06);
+  padding: 14px 14px 16px;
+}
+body[data-active-engine="hermes"] .engine-switcher-label {
+  font-family: 'Playfair Display', 'Cormorant Garamond', Georgia, serif;
+  font-style: italic;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: #78716C;
+  padding: 0 4px 8px;
+}
+body[data-active-engine="hermes"] .engine-current {
+  padding: 10px 12px;
+  border: 1px solid rgba(202, 138, 4, 0.25);
+  border-radius: 6px;
+  background: rgba(202, 138, 4, 0.05);
+  color: #1C1917;
+  font-size: 13px;
+  font-weight: 500;
+  transition: border-color 180ms, background 180ms;
+}
+body[data-active-engine="hermes"] .engine-current:hover {
+  border-color: #CA8A04;
+  background: rgba(202, 138, 4, 0.10);
+}
+body[data-active-engine="hermes"] .engine-icon { color: #CA8A04; }
+body[data-active-engine="hermes"] .engine-dropdown {
+  background: #FFFFFF;
+  border: 1px solid rgba(28, 25, 23, 0.08);
+  box-shadow: 0 1px 2px rgba(28, 25, 23, 0.04), 0 8px 24px rgba(28, 25, 23, 0.08);
+  border-radius: 8px;
+  padding: 4px;
+}
+body[data-active-engine="hermes"] .engine-option {
+  padding: 8px 10px;
+  border-radius: 4px;
+  color: #44403C;
+}
+body[data-active-engine="hermes"] .engine-option:hover {
+  background: rgba(202, 138, 4, 0.08);
+  color: #1C1917;
+}
+body[data-active-engine="hermes"] .engine-option.active,
+body[data-active-engine="hermes"] .engine-active-check {
+  color: #CA8A04;
+  font-weight: 500;
+}
+
+/* Section titles — italic serif */
+body[data-active-engine="hermes"] .nav-section-title {
+  font-family: 'Playfair Display', 'Cormorant Garamond', Georgia, serif;
+  font-style: italic;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: #A8A29E;
+  padding: 14px 14px 6px;
+}
+
+/* Nav items — minimal with gold active indicator */
+body[data-active-engine="hermes"] .sidebar-nav {
+  padding: 4px 10px;
+}
+body[data-active-engine="hermes"] .nav-item {
+  padding: 9px 14px;
+  border-radius: 6px;
+  color: #44403C;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.005em;
+  transition: background 180ms cubic-bezier(0.22, 1, 0.36, 1),
+              color 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
+}
+body[data-active-engine="hermes"] .nav-item:hover {
+  background: rgba(28, 25, 23, 0.04);
+  color: #1C1917;
+}
+body[data-active-engine="hermes"] .nav-item.active {
+  background: rgba(202, 138, 4, 0.08);
+  color: #CA8A04;
+  font-weight: 500;
+}
+/* Thin gold accent line on active item (left edge) */
+body[data-active-engine="hermes"] .nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 16px;
+  background: #CA8A04;
+  border-radius: 2px;
+}
+body[data-active-engine="hermes"] .nav-item svg {
+  opacity: 0.6;
+  width: 16px;
+  height: 16px;
+}
+body[data-active-engine="hermes"] .nav-item.active svg {
+  opacity: 1;
+  color: #CA8A04;
+}
+
+/* Footer (theme/lang/meta) */
+body[data-active-engine="hermes"] .sidebar-footer {
+  border-top: 1px solid rgba(28, 25, 23, 0.06);
+  padding: 8px 10px;
+}
+body[data-active-engine="hermes"] #btn-theme-toggle,
+body[data-active-engine="hermes"] .lang-trigger {
+  padding: 8px 14px;
+  border-radius: 6px;
+  color: #78716C;
+  font-size: 12.5px;
+  transition: background 180ms, color 180ms;
+}
+body[data-active-engine="hermes"] #btn-theme-toggle:hover,
+body[data-active-engine="hermes"] .lang-trigger:hover {
+  background: rgba(28, 25, 23, 0.04);
+  color: #1C1917;
+}
+body[data-active-engine="hermes"] .lang-dropdown {
+  background: #FFFFFF;
+  border: 1px solid rgba(28, 25, 23, 0.08);
+  box-shadow: 0 -4px 16px rgba(28, 25, 23, 0.08);
+  border-radius: 8px;
+}
+body[data-active-engine="hermes"] .lang-option {
+  padding: 8px 12px;
+  border-radius: 4px;
+  color: #44403C;
+  font-size: 12.5px;
+}
+body[data-active-engine="hermes"] .lang-option:hover {
+  background: rgba(202, 138, 4, 0.06);
+}
+body[data-active-engine="hermes"] .lang-option.active,
+body[data-active-engine="hermes"] .lang-option-check {
+  color: #CA8A04;
+  font-weight: 500;
+}
+body[data-active-engine="hermes"] .lang-option-code {
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Consolas, monospace;
+  font-size: 10.5px;
+  color: #A8A29E;
+}
+
+/* Footer meta strip (version + link) */
+body[data-active-engine="hermes"] .sidebar-meta {
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Consolas, monospace;
+  font-size: 10.5px;
+  padding: 8px 14px 4px;
+  color: #A8A29E;
+}
+body[data-active-engine="hermes"] .sidebar-link {
+  color: #A8A29E;
+  transition: color 180ms;
+}
+body[data-active-engine="hermes"] .sidebar-link:hover {
+  color: #CA8A04;
+}
+body[data-active-engine="hermes"] .sidebar-version { color: #A8A29E; }
+
+/* ---- Dark mode variants ---- */
+[data-theme="dark"] body[data-active-engine="hermes"],
+body[data-active-engine="hermes"][data-theme="dark"] {
+  background: #0C0A09;
+}
+[data-theme="dark"] body[data-active-engine="hermes"] #content {
+  background: #0C0A09;
+}
+[data-theme="dark"] body[data-active-engine="hermes"] #sidebar {
+  background: #131210;
+  border-right-color: rgba(250, 250, 249, 0.06);
+}
+[data-theme="dark"] body[data-active-engine="hermes"] .sidebar-header {
+  border-bottom-color: rgba(250, 250, 249, 0.06);
+}
+[data-theme="dark"] body[data-active-engine="hermes"] .sidebar-title {
+  color: #FAFAF9;
+}
+[data-theme="dark"] body[data-active-engine="hermes"] .engine-switcher {
+  border-bottom-color: rgba(250, 250, 249, 0.06);
+}
+[data-theme="dark"] body[data-active-engine="hermes"] .engine-switcher-label,
+[data-theme="dark"] body[data-active-engine="hermes"] .nav-section-title {
+  color: #78716C;
+}
+[data-theme="dark"] body[data-active-engine="hermes"] .engine-current {
+  border-color: rgba(234, 179, 8, 0.35);
+  background: rgba(234, 179, 8, 0.08);
+  color: #FAFAF9;
+}
+[data-theme="dark"] body[data-active-engine="hermes"] .engine-current:hover {
+  border-color: #EAB308;
+  background: rgba(234, 179, 8, 0.14);
+}
+[data-theme="dark"] body[data-active-engine="hermes"] .engine-icon,
+[data-theme="dark"] body[data-active-engine="hermes"] .engine-option.active,
+[data-theme="dark"] body[data-active-engine="hermes"] .engine-active-check {
+  color: #EAB308;
+}
+[data-theme="dark"] body[data-active-engine="hermes"] .engine-dropdown {
+  background: #1C1917;
+  border-color: rgba(250, 250, 249, 0.08);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+}
+[data-theme="dark"] body[data-active-engine="hermes"] .engine-option {
+  color: #D6D3D1;
+}
+[data-theme="dark"] body[data-active-engine="hermes"] .engine-option:hover {
+  background: rgba(234, 179, 8, 0.10);
+  color: #FAFAF9;
+}
+[data-theme="dark"] body[data-active-engine="hermes"] .nav-item {
+  color: #D6D3D1;
+}
+[data-theme="dark"] body[data-active-engine="hermes"] .nav-item:hover {
+  background: rgba(250, 250, 249, 0.05);
+  color: #FAFAF9;
+}
+[data-theme="dark"] body[data-active-engine="hermes"] .nav-item.active {
+  background: rgba(234, 179, 8, 0.12);
+  color: #EAB308;
+}
+[data-theme="dark"] body[data-active-engine="hermes"] .nav-item.active::before {
+  background: #EAB308;
+}
+[data-theme="dark"] body[data-active-engine="hermes"] .nav-item.active svg {
+  color: #EAB308;
+}
+[data-theme="dark"] body[data-active-engine="hermes"] .sidebar-footer {
+  border-top-color: rgba(250, 250, 249, 0.06);
+}
+[data-theme="dark"] body[data-active-engine="hermes"] #btn-theme-toggle,
+[data-theme="dark"] body[data-active-engine="hermes"] .lang-trigger {
+  color: #A8A29E;
+}
+[data-theme="dark"] body[data-active-engine="hermes"] #btn-theme-toggle:hover,
+[data-theme="dark"] body[data-active-engine="hermes"] .lang-trigger:hover {
+  background: rgba(250, 250, 249, 0.05);
+  color: #FAFAF9;
+}
+[data-theme="dark"] body[data-active-engine="hermes"] .lang-dropdown {
+  background: #1C1917;
+  border-color: rgba(250, 250, 249, 0.08);
+}
+[data-theme="dark"] body[data-active-engine="hermes"] .lang-option {
+  color: #D6D3D1;
+}
+[data-theme="dark"] body[data-active-engine="hermes"] .lang-option:hover {
+  background: rgba(234, 179, 8, 0.08);
+}
+[data-theme="dark"] body[data-active-engine="hermes"] .lang-option.active,
+[data-theme="dark"] body[data-active-engine="hermes"] .lang-option-check {
+  color: #EAB308;
+}
+[data-theme="dark"] body[data-active-engine="hermes"] .sidebar-meta,
+[data-theme="dark"] body[data-active-engine="hermes"] .sidebar-link,
+[data-theme="dark"] body[data-active-engine="hermes"] .sidebar-version {
+  color: #78716C;
+}
+[data-theme="dark"] body[data-active-engine="hermes"] .sidebar-link:hover {
+  color: #EAB308;
+}
+
+/* ==========================================================================
+ * 14 · Legacy .hermes-* class overrides (setup/logs/skills/memory pages)
+ * ==========================================================================
+ * Existing pages (setup.js, chat.js, logs.js, etc.) use `.hermes-*` class
+ * names defined in src/style/pages.css. Since the JS bind()s them by class
+ * name we can't just delete them — instead we re-skin them while still
+ * scoped to [data-engine="hermes"].
+ */
+
+/* ---- Phase indicator (setup wizard steps) ---- */
+[data-engine="hermes"] .hermes-phases {
+  display: flex;
+  align-items: center;
+  margin: 4px 0 36px;
+  padding: 20px 24px;
+  background: var(--hm-surface-1);
+  border: 1px solid var(--hm-border);
+  border-radius: var(--hm-radius-md);
+}
+[data-engine="hermes"] .hermes-phase {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+[data-engine="hermes"] .hermes-phase-dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--hm-surface-0);
+  border: 1px solid var(--hm-border-strong);
+  font-family: var(--hm-font-serif);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--hm-text-tertiary);
+  transition: all var(--hm-dur-normal) var(--hm-ease);
+}
+[data-engine="hermes"] .hermes-phase.active .hermes-phase-dot {
+  background: var(--hm-accent);
+  color: #1C1917;
+  border-color: var(--hm-accent);
+  box-shadow: var(--hm-glow-gold);
+}
+[data-engine="hermes"] .hermes-phase.done .hermes-phase-dot {
+  background: transparent;
+  border-color: var(--hm-accent);
+  color: var(--hm-accent);
+}
+[data-engine="hermes"] .hermes-phase.done .hermes-phase-dot svg {
+  stroke: var(--hm-accent);
+}
+[data-engine="hermes"] .hermes-phase-label {
+  font-family: var(--hm-font-serif);
+  font-style: italic;
+  font-size: 12px;
+  color: var(--hm-text-tertiary);
+  white-space: nowrap;
+}
+[data-engine="hermes"] .hermes-phase.active .hermes-phase-label {
+  color: var(--hm-accent);
+  font-weight: 500;
+  font-style: normal;
+}
+[data-engine="hermes"] .hermes-phase.done .hermes-phase-label {
+  color: var(--hm-text-secondary);
+  font-style: normal;
+}
+[data-engine="hermes"] .hermes-phase-line {
+  flex: 1;
+  height: 1px;
+  background: var(--hm-border-strong);
+  margin: 0 6px;
+  opacity: 0.5;
+}
+[data-engine="hermes"] .hermes-phase.done + .hermes-phase-line,
+[data-engine="hermes"] .hermes-phase-line:has(+ .hermes-phase.active),
+[data-engine="hermes"] .hermes-phase.done ~ .hermes-phase-line {
+  background: var(--hm-accent);
+  opacity: 1;
+}
+
+/* ---- Detection rows ---- */
+[data-engine="hermes"] .hermes-detect-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+[data-engine="hermes"] .hermes-detect-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--hm-border-subtle);
+  border-radius: var(--hm-radius-sm);
+  background: var(--hm-surface-0);
+  font-family: var(--hm-font-mono);
+  font-size: 12.5px;
+  color: var(--hm-text-secondary);
+  transition: background var(--hm-dur-fast) var(--hm-ease);
+}
+[data-engine="hermes"] .hermes-detect-row.ok {
+  color: var(--hm-text-primary);
+  border-color: var(--hm-success-soft);
+  background: var(--hm-success-soft);
+}
+[data-engine="hermes"] .hermes-detect-row.warn {
+  color: var(--hm-warn);
+  border-color: var(--hm-warn-soft);
+  background: var(--hm-warn-soft);
+}
+[data-engine="hermes"] .hermes-detect-row svg {
+  flex-shrink: 0;
+}
+
+/* ---- Form fields ---- */
+[data-engine="hermes"] .hermes-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+[data-engine="hermes"] .hermes-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+[data-engine="hermes"] .hermes-field > span {
+  font-family: var(--hm-font-serif);
+  font-style: italic;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--hm-text-tertiary);
+  letter-spacing: 0;
+}
+[data-engine="hermes"] .hermes-field .input,
+[data-engine="hermes"] input.input,
+[data-engine="hermes"] textarea.input,
+[data-engine="hermes"] select.input {
+  font-family: var(--hm-font-mono);
+  font-size: 13px;
+  padding: 10px 14px;
+  height: 40px;
+  border: 1px solid var(--hm-border);
+  background: var(--hm-surface-0);
+  color: var(--hm-text-primary);
+  border-radius: var(--hm-radius-sm);
+  transition: border-color var(--hm-dur-fast) var(--hm-ease),
+              box-shadow var(--hm-dur-fast) var(--hm-ease);
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+[data-engine="hermes"] .hermes-field .input:focus,
+[data-engine="hermes"] input.input:focus,
+[data-engine="hermes"] textarea.input:focus,
+[data-engine="hermes"] select.input:focus {
+  border-color: var(--hm-accent);
+  box-shadow: 0 0 0 3px var(--hm-accent-ring);
+  background: var(--hm-surface-1);
+}
+[data-engine="hermes"] .hermes-field .input::placeholder,
+[data-engine="hermes"] input.input::placeholder {
+  color: var(--hm-text-muted);
+}
+
+/* ---- Progress bar ---- */
+[data-engine="hermes"] .hermes-progress {
+  height: 4px;
+  background: var(--hm-surface-3);
+  border-radius: 2px;
+  overflow: hidden;
+}
+[data-engine="hermes"] .hermes-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--hm-accent), #EAB308);
+  border-radius: 2px;
+  transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+[data-engine="hermes"] .hermes-progress-bar.error {
+  background: linear-gradient(90deg, var(--hm-error), #DC2626);
+}
+[data-engine="hermes"] .hermes-install-status {
+  padding: 14px 16px;
+  background: var(--hm-surface-0);
+  border: 1px solid var(--hm-border);
+  border-radius: var(--hm-radius-sm);
+  margin-bottom: 14px;
+}
+[data-engine="hermes"] .hermes-progress-text {
+  font-family: var(--hm-font-mono) !important;
+  letter-spacing: 0.02em;
+}
+
+/* ---- Log panel ---- */
+[data-engine="hermes"] .hermes-log-panel {
+  border: 1px solid var(--hm-border);
+  border-radius: var(--hm-radius-sm);
+  overflow: hidden;
+  background: #1C1917;
+}
+[data-engine="hermes"] .hermes-log-content {
+  max-height: 260px;
+  min-height: 80px;
+  overflow-y: auto;
+  padding: 14px 16px;
+  font-family: var(--hm-font-mono);
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: #D6D3D1;
+  background: #1C1917;
+}
+[data-engine="hermes"] .hermes-log-content div {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+[data-engine="hermes"] .hermes-log-content:empty::before {
+  content: '// waiting for stream…';
+  color: #78716C;
+  font-style: italic;
+}
+
+/* ---- Install-info checklist ---- */
+[data-engine="hermes"] .hermes-install-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 4px;
+}
+
+/* ---- Mode switch buttons ---- */
+[data-engine="hermes"] .hermes-mode-btn.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  height: 36px;
+  border-radius: var(--hm-radius-sm);
+  border: 1px solid var(--hm-border-strong);
+  background: transparent;
+  color: var(--hm-text-primary);
+  font-family: var(--hm-font-sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--hm-dur-fast) var(--hm-ease);
+}
+[data-engine="hermes"] .hermes-mode-btn.btn-primary {
+  background: var(--hm-text-primary);
+  color: var(--hm-text-inverse);
+  border-color: var(--hm-text-primary);
+}
+[data-theme="dark"] [data-engine="hermes"] .hermes-mode-btn.btn-primary {
+  background: var(--hm-accent);
+  color: #0C0A09;
+  border-color: var(--hm-accent);
+}
+[data-engine="hermes"] .hermes-mode-btn.btn-secondary:hover {
+  border-color: var(--hm-text-primary);
+  background: var(--hm-surface-2);
+}
+
+/* ---- Preset provider buttons (in configure phase) ---- */
+[data-engine="hermes"] .hermes-preset-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 14px;
+  background: transparent;
+  border: 1px solid var(--hm-border);
+  border-radius: 999px;
+  font-family: var(--hm-font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--hm-text-secondary);
+  cursor: pointer;
+  transition: all var(--hm-dur-fast) var(--hm-ease);
+  white-space: nowrap;
+}
+[data-engine="hermes"] .hermes-preset-btn:hover {
+  border-color: var(--hm-text-secondary);
+  color: var(--hm-text-primary);
+}
+
+/* ---- Config form / fetch models button ---- */
+[data-engine="hermes"] .hermes-fetch-models,
+[data-engine="hermes"] .hermes-config-save,
+[data-engine="hermes"] .hermes-config-skip,
+[data-engine="hermes"] .hermes-gw-start,
+[data-engine="hermes"] .hermes-gw-next,
+[data-engine="hermes"] .hermes-go-dashboard,
+[data-engine="hermes"] .hermes-install-btn,
+[data-engine="hermes"] .hermes-custom-connect {
+  font-family: var(--hm-font-sans) !important;
+}
+
+/* ---- Model dropdown ---- */
+[data-engine="hermes"] .hermes-model-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--hm-surface-1);
+  border: 1px solid var(--hm-border);
+  border-radius: var(--hm-radius-sm);
+  box-shadow: var(--hm-shadow-lg);
+  z-index: 50;
+  padding: 4px;
+}
+[data-engine="hermes"] .hermes-model-option {
+  padding: 8px 12px;
+  font-family: var(--hm-font-mono);
+  font-size: 12px;
+  color: var(--hm-text-secondary);
+  cursor: pointer;
+  border-radius: 3px;
+  transition: all var(--hm-dur-fast) var(--hm-ease);
+}
+[data-engine="hermes"] .hermes-model-option:hover {
+  background: var(--hm-accent-soft);
+  color: var(--hm-text-primary);
+}
+
+/* ---- Global .btn overrides (since setup uses generic .btn classes) ---- */
+[data-engine="hermes"] .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 18px;
+  height: 38px;
+  border-radius: var(--hm-radius-sm);
+  border: 1px solid var(--hm-border-strong);
+  background: transparent;
+  color: var(--hm-text-primary);
+  font-family: var(--hm-font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--hm-dur-fast) var(--hm-ease);
+  white-space: nowrap;
+}
+[data-engine="hermes"] .btn:hover:not(:disabled) {
+  border-color: var(--hm-text-primary);
+  background: var(--hm-surface-2);
+}
+[data-engine="hermes"] .btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+[data-engine="hermes"] .btn-primary {
+  background: var(--hm-accent);
+  color: #1C1917;
+  border-color: var(--hm-accent);
+  font-family: var(--hm-font-serif);
+  font-weight: 500;
+}
+[data-engine="hermes"] .btn-primary:hover:not(:disabled) {
+  background: var(--hm-accent-hover);
+  border-color: var(--hm-accent-hover);
+  color: #1C1917;
+  box-shadow: var(--hm-glow-gold);
+}
+[data-theme="dark"] [data-engine="hermes"] .btn-primary {
+  color: #0C0A09;
+}
+[data-theme="dark"] [data-engine="hermes"] .btn-primary:hover:not(:disabled) {
+  color: #0C0A09;
+}
+/* .btn-secondary intentionally inherits default .btn appearance */
+
+[data-engine="hermes"] .btn-sm {
+  height: 30px;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+[data-engine="hermes"] .btn-text {
+  background: transparent;
+  border: none;
+  color: var(--hm-text-tertiary);
+  font-size: 13px;
+  padding: 6px 10px;
+  transition: color var(--hm-dur-fast) var(--hm-ease);
+}
+[data-engine="hermes"] .btn-text:hover {
+  color: var(--hm-accent);
+  background: transparent;
+}
+[data-engine="hermes"] .btn-icon {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--hm-text-tertiary);
+  border-radius: var(--hm-radius-sm);
+  cursor: pointer;
+  transition: all var(--hm-dur-fast) var(--hm-ease);
+}
+[data-engine="hermes"] .btn-icon:hover {
+  color: var(--hm-accent);
+  background: var(--hm-accent-soft);
+}
+
+/* ---- Generic .input override (used by setup phase forms) ---- */
+[data-engine="hermes"] .input {
+  font-family: var(--hm-font-mono);
+  font-size: 13px;
+  padding: 10px 14px;
+  height: 40px;
+  border: 1px solid var(--hm-border);
+  background: var(--hm-surface-0);
+  color: var(--hm-text-primary);
+  border-radius: var(--hm-radius-sm);
+  transition: border-color var(--hm-dur-fast) var(--hm-ease),
+              box-shadow var(--hm-dur-fast) var(--hm-ease);
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+[data-engine="hermes"] .input:focus {
+  border-color: var(--hm-accent);
+  box-shadow: 0 0 0 3px var(--hm-accent-ring);
+  background: var(--hm-surface-1);
+}
+
+/* ---- Chat page (chat.js uses .hermes-chat-*) ---- */
+[data-engine="hermes"] .hermes-chat-header {
+  background: var(--hm-surface-1);
+  border-bottom: 1px solid var(--hm-border);
+  padding: 18px 28px;
+}
+[data-engine="hermes"] .hermes-chat-messages {
+  background: var(--hm-surface-0);
+  padding: 28px 36px;
+}
+[data-engine="hermes"] .hermes-chat-bubble {
+  max-width: 75%;
+  padding: 12px 18px;
+  border-radius: 14px;
+  font-family: var(--hm-font-sans);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+[data-engine="hermes"] .hermes-chat-bubble.user {
+  background: var(--hm-text-primary);
+  color: var(--hm-text-inverse);
+  border-bottom-right-radius: 4px;
+  box-shadow: none;
+}
+[data-theme="dark"] [data-engine="hermes"] .hermes-chat-bubble.user {
+  background: var(--hm-accent);
+  color: #0C0A09;
+}
+[data-engine="hermes"] .hermes-chat-bubble.assistant {
+  background: var(--hm-surface-1);
+  color: var(--hm-text-primary);
+  border: 1px solid var(--hm-border);
+  border-bottom-left-radius: 4px;
+  box-shadow: none;
+}
+[data-engine="hermes"] .hermes-chat-input-area {
+  background: var(--hm-surface-1);
+  border-top: 1px solid var(--hm-border);
+  padding: 14px 28px 22px;
+}
+[data-engine="hermes"] .hermes-chat-empty::before {
+  background: var(--hm-accent-soft);
+}
+
+/* ---- Logs page ---- */
+[data-engine="hermes"] .hm-logs-header {
+  background: var(--hm-surface-1);
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--hm-border);
+}
+[data-engine="hermes"] .hm-log-entry {
+  font-family: var(--hm-font-mono);
+}
+
+/* ---- Skills page containers ---- */
+[data-engine="hermes"] .hm-skills-header {
+  background: var(--hm-surface-1);
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--hm-border);
+}
+
+/* ==========================================================================
+ * 15 · Memory page (three-section editorial layout)
+ * ==========================================================================
+ */
+/* NB: page shell uses same-element selector (no space) because logs.js etc.
+   put both `data-engine` and `.hermes-X-page` on the SAME div, not on a
+   parent/child pair. The descendant-combinator form silently failed and
+   left every page shell padding-less, hugging the viewport edges. */
+[data-engine="hermes"].hermes-memory-page {
+  padding: 40px 48px 64px;
+  max-width: 1280px;
+  margin: 0 auto;
+  font-family: var(--hm-font-sans);
+  color: var(--hm-text-primary);
+  background: var(--hm-surface-0);
+}
+
+[data-engine="hermes"] .hm-mem-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--hm-font-mono);
+  font-size: 11px;
+  color: var(--hm-text-tertiary);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+[data-engine="hermes"] .hm-mem-sep { opacity: 0.5; }
+
+[data-engine="hermes"] .hm-mem-desc {
+  font-family: var(--hm-font-serif);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--hm-text-tertiary);
+  line-height: 1.65;
+  margin-bottom: 14px;
+}
+
+/* Memory edit button — promote the ghost CTA to a visible outline chip
+   so users recognise it as an action, not inline meta-text. */
+[data-engine="hermes"] .hm-mem-edit {
+  border-color: var(--hm-border-strong, rgba(28, 25, 23, 0.18));
+  color: var(--hm-text-secondary);
+  background: var(--hm-surface-1);
+}
+[data-engine="hermes"] .hm-mem-edit:hover:not(:disabled) {
+  color: var(--hm-accent);
+  border-color: var(--hm-accent);
+  background: var(--hm-accent-soft);
+}
+[data-theme="dark"] [data-engine="hermes"] .hm-mem-edit {
+  background: transparent;
+  border-color: rgba(250, 250, 249, 0.14);
+}
+
+/* Memory textarea — use tag+class selector to outrank `.hm-input`'s
+   `height: 40px` (same class-count as .hm-mem-editor, so the bare-class form
+   was a coin-flip). Make it markedly tall so users get a real writing
+   surface, and let it fill any extra card height through min-height: 50vh. */
+[data-engine="hermes"] textarea.hm-mem-editor {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: clamp(320px, 50vh, 560px);
+  max-height: 70vh;
+  resize: vertical;
+  box-sizing: border-box;
+  line-height: 1.65;
+  padding: 16px 18px;
+  font-size: 13.5px;
+  font-family: var(--hm-font-mono);
+  background: var(--hm-surface-0);
+  border: 1px solid var(--hm-border);
+  border-radius: var(--hm-radius-sm);
+  color: var(--hm-text-primary);
+  transition: border-color var(--hm-dur-fast) var(--hm-ease),
+              box-shadow var(--hm-dur-fast) var(--hm-ease);
+}
+[data-engine="hermes"] textarea.hm-mem-editor:focus {
+  outline: none;
+  border-color: var(--hm-accent);
+  box-shadow: 0 0 0 3px var(--hm-accent-ring);
+  background: var(--hm-surface-1);
+}
+[data-engine="hermes"] textarea.hm-mem-editor::placeholder {
+  color: var(--hm-text-muted);
+  opacity: 0.6;
+  font-style: italic;
+}
+
+[data-engine="hermes"].hm-mem-modal-overlay .modal {
+  width: min(920px, calc(100vw - 32px));
+}
+
+[data-engine="hermes"] .hm-mem-modal-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+[data-engine="hermes"] textarea.hm-mem-modal-editor {
+  min-height: min(62vh, 620px);
+  max-height: 70vh;
+}
+
+[data-engine="hermes"] .hm-mem-modal-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+[data-engine="hermes"] .hm-mem-empty {
+  padding: 18px 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+[data-engine="hermes"] .hm-mem-empty-title {
+  font-family: var(--hm-font-serif);
+  font-style: italic;
+  color: var(--hm-text-tertiary);
+  font-size: 14px;
+}
+
+[data-engine="hermes"] .hm-mem-rendered {
+  font-family: var(--hm-font-sans);
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--hm-text-primary);
+}
+[data-engine="hermes"] .hm-mem-rendered h2,
+[data-engine="hermes"] .hm-mem-rendered h3,
+[data-engine="hermes"] .hm-mem-rendered h4 {
+  font-family: var(--hm-font-serif);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+[data-engine="hermes"] .hm-mem-rendered h2 { font-size: 22px; margin: 18px 0 8px; }
+[data-engine="hermes"] .hm-mem-rendered h3 { font-size: 18px; margin: 14px 0 6px; }
+[data-engine="hermes"] .hm-mem-rendered h4 {
+  font-size: 15px;
+  font-style: italic;
+  margin: 12px 0 4px;
+  color: var(--hm-accent);
+}
+[data-engine="hermes"] .hm-mem-rendered pre {
+  background: var(--hm-surface-2);
+  border: 1px solid var(--hm-border-subtle);
+  border-radius: var(--hm-radius-sm);
+  padding: 12px 14px;
+  margin: 8px 0;
+  overflow-x: auto;
+  font-family: var(--hm-font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+}
+[data-engine="hermes"] .hm-mem-rendered code {
+  font-family: var(--hm-font-mono);
+  font-size: 12.5px;
+  background: var(--hm-surface-2);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+[data-engine="hermes"] .hm-mem-rendered pre code {
+  background: transparent;
+  padding: 0;
+}
+[data-engine="hermes"] .hm-mem-rendered a {
+  color: var(--hm-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ==========================================================================
+ * 16 · Logs page (editorial layout with sidebar + live entries)
+ * ==========================================================================
+ */
+[data-engine="hermes"].hermes-logs-page {
+  padding: 40px 48px 48px;
+  max-width: none;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--hm-surface-0);
+  font-family: var(--hm-font-sans);
+  color: var(--hm-text-primary);
+  box-sizing: border-box;
+}
+[data-engine="hermes"].hermes-logs-page .hm-hero {
+  margin-bottom: 24px;
+  flex-shrink: 0;
+}
+
+[data-engine="hermes"] .hm-logs-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 18px;
+  flex: 1;
+  min-height: 0;
+}
+
+[data-engine="hermes"] .hm-logs-sidebar {
+  background: var(--hm-surface-1);
+  border: 1px solid var(--hm-border);
+  border-radius: var(--hm-radius-md);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow:
+    0 1px 2px rgba(28, 25, 23, 0.03),
+    0 2px 6px rgba(28, 25, 23, 0.035);
+}
+[data-theme="dark"] [data-engine="hermes"] .hm-logs-sidebar { box-shadow: none; }
+[data-engine="hermes"] .hm-logs-sidebar-title {
+  padding: 14px 18px 12px;
+  border-bottom: 1px solid var(--hm-border-subtle);
+  background: var(--hm-surface-0);
+}
+
+[data-engine="hermes"] .hm-logs-file-list {
+  overflow-y: auto;
+  padding: 6px;
+  flex: 1;
+}
+
+[data-engine="hermes"] .hm-logs-file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 9px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--hm-radius-sm);
+  color: var(--hm-text-secondary);
+  cursor: pointer;
+  font-family: var(--hm-font-mono);
+  font-size: 12px;
+  text-align: left;
+  transition: all var(--hm-dur-fast) var(--hm-ease);
+}
+[data-engine="hermes"] .hm-logs-file-item:hover {
+  background: var(--hm-surface-2);
+  color: var(--hm-text-primary);
+}
+[data-engine="hermes"] .hm-logs-file-item.is-active {
+  background: var(--hm-accent-soft);
+  color: var(--hm-accent);
+  font-weight: 500;
+}
+[data-engine="hermes"] .hm-logs-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+[data-engine="hermes"] .hm-logs-file-size {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  color: var(--hm-text-muted);
+  margin-left: 8px;
+}
+
+[data-engine="hermes"] .hm-logs-main {
+  background: var(--hm-surface-1);
+  border: 1px solid var(--hm-border);
+  border-radius: var(--hm-radius-md);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  box-shadow:
+    0 1px 2px rgba(28, 25, 23, 0.03),
+    0 2px 6px rgba(28, 25, 23, 0.035);
+}
+
+[data-engine="hermes"] .hm-logs-toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  padding: 14px 18px 12px;
+  border-bottom: 1px solid var(--hm-border-subtle);
+  background: var(--hm-surface-0);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+[data-engine="hermes"] .hm-logs-toolbar-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 110px;
+}
+[data-engine="hermes"] .hm-logs-toolbar-item--grow {
+  flex: 1;
+  min-width: 200px;
+}
+[data-engine="hermes"] .hm-logs-toolbar-actions {
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+[data-engine="hermes"] .hm-logs-count {
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--hm-border-subtle);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+[data-engine="hermes"] .hm-logs-content {
+  flex: 1;
+  overflow-y: auto;
+  font-family: var(--hm-font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 6px 0;
+  background: var(--hm-surface-0);
+  min-height: 0;
+}
+[data-engine="hermes"] .hm-logs-loading,
+[data-engine="hermes"] .hm-logs-empty-content {
+  padding: 40px 24px;
+  text-align: center;
+}
+
+/* --- Log entry row --- */
+[data-engine="hermes"] .hm-log-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 4px 20px;
+  border-left: 2px solid transparent;
+  transition: background var(--hm-dur-fast) var(--hm-ease);
+  min-width: 0;
+}
+[data-engine="hermes"] .hm-log-entry:hover {
+  background: var(--hm-surface-2);
+}
+[data-engine="hermes"] .hm-log-entry[data-tone="error"]    { border-left-color: var(--hm-error); }
+[data-engine="hermes"] .hm-log-entry[data-tone="warn"]     { border-left-color: var(--hm-warn); }
+[data-engine="hermes"] .hm-log-entry[data-tone="info"]     { border-left-color: var(--hm-info); }
+[data-engine="hermes"] .hm-log-entry[data-tone="debug"]    { border-left-color: var(--hm-text-muted); }
+[data-engine="hermes"] .hm-log-entry--raw {
+  padding-left: 22px;
+  color: var(--hm-text-tertiary);
+}
+
+[data-engine="hermes"] .hm-log-time {
+  flex-shrink: 0;
+  color: var(--hm-text-muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 64px;
+}
+
+[data-engine="hermes"] .hm-log-level {
+  flex-shrink: 0;
+  display: inline-block;
+  min-width: 48px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: center;
+  background: var(--hm-surface-3);
+  color: var(--hm-text-secondary);
+}
+[data-engine="hermes"] .hm-log-level[data-tone="error"] {
+  background: var(--hm-error-soft); color: var(--hm-error);
+}
+[data-engine="hermes"] .hm-log-level[data-tone="warn"] {
+  background: var(--hm-warn-soft); color: var(--hm-warn);
+}
+[data-engine="hermes"] .hm-log-level[data-tone="info"] {
+  background: var(--hm-info-soft); color: var(--hm-info);
+}
+[data-engine="hermes"] .hm-log-level[data-tone="debug"] {
+  background: transparent; color: var(--hm-text-muted);
+}
+
+[data-engine="hermes"] .hm-log-logger {
+  flex-shrink: 0;
+  color: var(--hm-text-tertiary);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-engine="hermes"] .hm-log-msg {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  color: var(--hm-text-secondary);
+  flex: 1;
+}
+[data-engine="hermes"] .hm-log-entry[data-tone="error"] .hm-log-msg { color: var(--hm-error); }
+[data-engine="hermes"] .hm-log-entry[data-tone="warn"] .hm-log-msg  { color: var(--hm-warn); }
+
+/* --- Access log decoration --- */
+[data-engine="hermes"] .hm-log-access {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  flex: 1;
+}
+[data-engine="hermes"] .hm-log-method {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--hm-text-primary);
+  padding: 0 6px;
+  background: var(--hm-surface-2);
+  border-radius: 3px;
+  font-size: 11px;
+}
+[data-engine="hermes"] .hm-log-path {
+  color: var(--hm-accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+[data-engine="hermes"] .hm-log-status {
+  flex-shrink: 0;
+  font-weight: 600;
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 3px;
+}
+[data-engine="hermes"] .hm-log-status--2xx {
+  color: var(--hm-success); background: var(--hm-success-soft);
+}
+[data-engine="hermes"] .hm-log-status--3xx {
+  color: var(--hm-warn); background: var(--hm-warn-soft);
+}
+[data-engine="hermes"] .hm-log-status--4xx,
+[data-engine="hermes"] .hm-log-status--5xx {
+  color: var(--hm-error); background: var(--hm-error-soft);
+}
+
+/* --- Search highlight mark --- */
+[data-engine="hermes"] mark.hm-log-hl {
+  background: var(--hm-accent-soft);
+  color: var(--hm-accent);
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+/* Active tail button state */
+[data-engine="hermes"] .hm-logs-tail.is-active {
+  color: var(--hm-accent);
+  background: var(--hm-accent-soft);
+  border-color: transparent;
+}
+
+/* ==========================================================================
+ * 17 · Cron / Jobs page
+ * ==========================================================================
+ */
+[data-engine="hermes"] .hm-cron-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+[data-engine="hermes"] .hm-cron-item {
+  margin-bottom: 0;
+  transition: border-color var(--hm-dur-fast) var(--hm-ease),
+              box-shadow var(--hm-dur-normal) var(--hm-ease);
+}
+[data-engine="hermes"] .hm-cron-item:hover {
+  border-color: var(--hm-border-strong);
+  box-shadow: var(--hm-shadow-md);
+}
+[data-engine="hermes"] .hm-cron-item[data-state="paused"]   { opacity: 0.75; }
+[data-engine="hermes"] .hm-cron-item[data-state="disabled"] { opacity: 0.55; }
+
+/* --- Card head (title + actions) --- */
+[data-engine="hermes"] .hm-cron-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--hm-border-subtle);
+}
+[data-engine="hermes"] .hm-cron-head-left {
+  flex: 1;
+  min-width: 0;
+}
+[data-engine="hermes"] .hm-cron-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+[data-engine="hermes"] .hm-cron-name {
+  font-family: var(--hm-font-serif);
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--hm-text-primary);
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 360px;
+}
+[data-engine="hermes"] .hm-cron-prompt {
+  font-family: var(--hm-font-sans);
+  font-size: 12.5px;
+  color: var(--hm-text-tertiary);
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+[data-engine="hermes"] .hm-cron-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* --- Meta grid --- */
+[data-engine="hermes"] .hm-cron-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px 24px;
+  padding: 14px 22px 18px;
+}
+[data-engine="hermes"] .hm-cron-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+[data-engine="hermes"] .hm-cron-meta-label {
+  font-family: var(--hm-font-serif);
+  font-style: italic;
+  font-size: 11px;
+  color: var(--hm-text-tertiary);
+}
+[data-engine="hermes"] .hm-cron-meta-value {
+  font-family: var(--hm-font-mono);
+  font-size: 12px;
+  color: var(--hm-text-primary);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+[data-engine="hermes"] .hm-cron-rel {
+  color: var(--hm-text-muted);
+  font-size: 11px;
+}
+[data-engine="hermes"] .hm-cron-last-ok {
+  color: var(--hm-success);
+  font-weight: 500;
+}
+[data-engine="hermes"] .hm-cron-last-err {
+  color: var(--hm-error);
+  font-weight: 500;
+  cursor: help;
+}
+
+[data-engine="hermes"] .hm-cron-schedule-desc {
+  color: var(--hm-text-primary);
+}
+[data-engine="hermes"] .hm-cron-schedule-expr {
+  font-size: 11px;
+}
+
+/* Skills tags row inside cron card */
+[data-engine="hermes"] .hm-cron-meta-item--skills { grid-column: 1 / -1; }
+[data-engine="hermes"] .hm-cron-skill-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  margin-right: 4px;
+  border: 1px solid var(--hm-border);
+  border-radius: 999px;
+  font-family: var(--hm-font-mono);
+  font-size: 10.5px;
+  color: var(--hm-text-secondary);
+  background: var(--hm-surface-2);
+}
+
+/* --- Error row (last_error) --- */
+[data-engine="hermes"] .hm-cron-err {
+  border-top: 1px solid var(--hm-border-subtle);
+  padding: 12px 22px;
+  background: var(--hm-error-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+[data-engine="hermes"] .hm-cron-err-label {
+  font-family: var(--hm-font-serif);
+  font-style: italic;
+  font-size: 11px;
+  color: var(--hm-error);
+}
+[data-engine="hermes"] .hm-cron-err-msg {
+  font-family: var(--hm-font-mono);
+  font-size: 11.5px;
+  color: var(--hm-error);
+  background: transparent;
+  border: none;
+  padding: 0;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+/* ==========================================================================
+ * 18 · Skills page (sidebar + detail + file browser)
+ * ==========================================================================
+ *
+ * Matches the memory/logs/cron editorial family: warm off-white surfaces,
+ * hairline borders, serif display + sans body + mono code.
+ */
+
+/* ---- Pill variants reused elsewhere (status tags) ---- */
+[data-engine="hermes"] .hm-pill--ok {
+  color: var(--hm-success);
+  border-color: color-mix(in srgb, var(--hm-success) 35%, transparent);
+  background: color-mix(in srgb, var(--hm-success) 8%, transparent);
+}
+[data-engine="hermes"] .hm-pill--muted {
+  color: var(--hm-text-tertiary);
+  border-color: var(--hm-border);
+  background: var(--hm-surface-2);
+}
+
+/* ---- Page shell ---- */
+[data-engine="hermes"].hermes-skills-page {
+  /* Bottom padding restored so the two-column card doesn't kiss the viewport
+     edge — matches the logs page gutter (40/48/48). */
+  padding: 40px 48px 48px;
+  max-width: none;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--hm-surface-0);
+  font-family: var(--hm-font-sans);
+  color: var(--hm-text-primary);
+  box-sizing: border-box;
+}
+
+[data-engine="hermes"] .hm-skills-count-inline {
+  color: var(--hm-text-tertiary);
+  font-family: var(--hm-font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.01em;
+}
+
+/* ---- Two-column layout ---- */
+[data-engine="hermes"] .hm-skills-layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 0;
+  /* Full frame so the two-column skills workspace reads as one card on
+     the cream page, not as floating search + empty state. */
+  border: 1px solid var(--hm-border);
+  border-radius: var(--hm-radius-md);
+  margin-top: 24px;
+  margin-bottom: 24px;
+  background: var(--hm-surface-1);
+  overflow: hidden;
+  box-shadow:
+    0 1px 2px rgba(28, 25, 23, 0.03),
+    0 2px 6px rgba(28, 25, 23, 0.035);
+}
+[data-theme="dark"] [data-engine="hermes"] .hm-skills-layout { box-shadow: none; }
+
+/* ---- Sidebar ---- */
+[data-engine="hermes"] .hm-skills-sidebar {
+  border-right: 1px solid var(--hm-border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--hm-surface-1);
+}
+
+[data-engine="hermes"] .hm-skills-sidebar-search {
+  position: relative;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--hm-border-subtle);
+  background: var(--hm-surface-1);
+  flex-shrink: 0;
+}
+[data-engine="hermes"] .hm-skills-search-icon {
+  position: absolute;
+  left: 26px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--hm-text-tertiary);
+  pointer-events: none;
+  display: inline-flex;
+}
+[data-engine="hermes"] .hm-skills-search-input {
+  width: 100%;
+  padding: 7px 10px 7px 30px;
+  background: var(--hm-surface-0);
+  border: 1px solid var(--hm-border);
+  border-radius: var(--hm-radius-sm);
+  color: var(--hm-text-primary);
+  font-size: 13px;
+  font-family: var(--hm-font-sans);
+  transition: all 0.15s ease;
+  box-sizing: border-box;
+}
+[data-engine="hermes"] .hm-skills-search-input:focus {
+  outline: none;
+  border-color: var(--hm-accent);
+  box-shadow: 0 0 0 2px rgba(202, 138, 4, 0.12);
+}
+[data-engine="hermes"] .hm-skills-search-input::placeholder {
+  color: var(--hm-text-tertiary);
+}
+
+[data-engine="hermes"] .hm-skills-sidebar-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 0 14px;
+}
+[data-engine="hermes"] .hm-skills-loading {
+  padding: 18px 18px;
+}
+[data-engine="hermes"] .hm-skills-empty {
+  padding: 42px 20px;
+  text-align: center;
+  color: var(--hm-text-tertiary);
+  font-family: var(--hm-font-serif);
+  font-style: italic;
+  font-size: 13.5px;
+}
+
+/* ---- Categories ---- */
+[data-engine="hermes"] .hm-skill-category {
+  margin: 4px 0 8px;
+}
+
+[data-engine="hermes"] .hm-skill-cat-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 16px;
+  border: none;
+  background: transparent;
+  color: var(--hm-text-secondary);
+  font-family: var(--hm-font-sans);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+[data-engine="hermes"] .hm-skill-cat-header:hover {
+  color: var(--hm-text-primary);
+}
+[data-engine="hermes"] .hm-skill-cat-arrow {
+  color: var(--hm-text-tertiary);
+  transition: transform 0.18s ease;
+  display: inline-flex;
+  width: 14px;
+  justify-content: center;
+}
+[data-engine="hermes"] .hm-skill-cat-header.is-collapsed .hm-skill-cat-arrow {
+  transform: rotate(-90deg);
+}
+[data-engine="hermes"] .hm-skill-cat-name {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[data-engine="hermes"] .hm-skill-cat-count {
+  font-family: var(--hm-font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--hm-surface-2);
+  color: var(--hm-text-tertiary);
+  border: 1px solid var(--hm-border-subtle);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+[data-engine="hermes"] .hm-skill-cat-desc {
+  padding: 0 16px 6px 38px;
+  color: var(--hm-text-tertiary);
+  font-family: var(--hm-font-serif);
+  font-style: italic;
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+[data-engine="hermes"] .hm-skill-cat-items {
+  padding: 2px 0 4px;
+}
+
+/* ---- Skill item button ---- */
+[data-engine="hermes"] .hm-skill-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 16px 7px 32px;
+  border: none;
+  background: transparent;
+  color: var(--hm-text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+  border-left: 2px solid transparent;
+  box-sizing: border-box;
+}
+[data-engine="hermes"] .hm-skill-item:hover {
+  background: var(--hm-surface-2);
+}
+[data-engine="hermes"] .hm-skill-item.is-active {
+  background: var(--hm-accent-soft);
+  border-left-color: var(--hm-accent);
+}
+[data-engine="hermes"] .hm-skill-item.is-disabled .hm-skill-name,
+[data-engine="hermes"] .hm-skill-item.is-disabled .hm-skill-desc {
+  color: var(--hm-text-tertiary);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--hm-text-tertiary) 40%, transparent);
+  text-decoration-thickness: 1px;
+}
+
+[data-engine="hermes"] .hm-skill-info {
+  flex: 1;
+  min-width: 0;
+}
+[data-engine="hermes"] .hm-skill-name {
+  font-size: 13px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--hm-text-primary);
+}
+[data-engine="hermes"] .hm-skill-desc {
+  font-size: 11px;
+  color: var(--hm-text-tertiary);
+  line-height: 1.4;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* ---- Toggle switch ---- */
+[data-engine="hermes"] .hm-switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 30px;
+  height: 16px;
+  cursor: pointer;
+  display: inline-block;
+}
+[data-engine="hermes"] .hm-switch-track {
+  position: absolute;
+  inset: 0;
+  background: var(--hm-border);
+  border-radius: 999px;
+  transition: background 0.18s ease;
+}
+[data-engine="hermes"] .hm-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  background: var(--hm-surface-0);
+  border-radius: 50%;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+[data-engine="hermes"] .hm-switch.is-on .hm-switch-track {
+  background: var(--hm-accent);
+}
+[data-engine="hermes"] .hm-switch.is-on .hm-switch-thumb {
+  transform: translateX(14px);
+  background: #FFFFFF;
+}
+[data-engine="hermes"] .hm-switch.is-busy {
+  opacity: 0.55;
+  cursor: progress;
+}
+[data-engine="hermes"] .hm-switch.is-busy .hm-switch-thumb {
+  animation: hm-switch-pulse 0.9s ease-in-out infinite;
+}
+@keyframes hm-switch-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+
+/* ---- Main detail pane ---- */
+[data-engine="hermes"] .hm-skills-main {
+  overflow-y: auto;
+  padding: 28px 36px 40px;
+  min-width: 0;
+  background: var(--hm-surface-0);
+}
+
+[data-engine="hermes"] .hm-skills-detail-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 320px;
+  gap: 10px;
+  color: var(--hm-text-tertiary);
+  text-align: center;
+}
+[data-engine="hermes"] .hm-skills-detail-empty-title {
+  font-family: var(--hm-font-serif);
+  font-size: 18px;
+  color: var(--hm-text-secondary);
+  letter-spacing: -0.005em;
+  margin-top: 14px;
+}
+[data-engine="hermes"] .hm-skills-detail-empty-sub {
+  font-family: var(--hm-font-serif);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--hm-text-tertiary);
+}
+
+/* ---- Detail head ---- */
+[data-engine="hermes"] .hm-skills-detail-head {
+  padding-bottom: 16px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--hm-border);
+}
+[data-engine="hermes"] .hm-skills-detail-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-family: var(--hm-font-serif);
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  color: var(--hm-text-primary);
+}
+[data-engine="hermes"] .hm-skills-title-cat {
+  color: var(--hm-text-tertiary);
+  font-size: 16px;
+}
+[data-engine="hermes"] .hm-skills-title-sep {
+  color: var(--hm-text-tertiary);
+  font-size: 16px;
+}
+[data-engine="hermes"] .hm-skills-title-name {
+  font-weight: 500;
+}
+[data-engine="hermes"] .hm-skills-status {
+  align-self: center;
+  margin-left: 4px;
+  font-family: var(--hm-font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+[data-engine="hermes"] .hm-skills-detail-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-family: var(--hm-font-mono);
+  font-size: 11.5px;
+  color: var(--hm-text-tertiary);
+  letter-spacing: 0.01em;
+}
+
+/* ---- Detail body / markdown ---- */
+[data-engine="hermes"] .hm-skills-detail-body {
+  padding-bottom: 20px;
+}
+[data-engine="hermes"] .hm-skills-markdown {
+  font-family: var(--hm-font-sans);
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--hm-text-primary);
+}
+[data-engine="hermes"] .hm-skills-markdown p { margin: 0 0 10px; }
+[data-engine="hermes"] .hm-skills-markdown h2,
+[data-engine="hermes"] .hm-skills-markdown h3,
+[data-engine="hermes"] .hm-skills-markdown h4,
+[data-engine="hermes"] .hm-skills-markdown h5 {
+  font-family: var(--hm-font-serif);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--hm-text-primary);
+}
+[data-engine="hermes"] .hm-skills-markdown h2 { font-size: 20px; margin: 20px 0 8px; }
+[data-engine="hermes"] .hm-skills-markdown h3 { font-size: 17px; margin: 16px 0 6px; }
+[data-engine="hermes"] .hm-skills-markdown h4 {
+  font-size: 14.5px;
+  font-style: italic;
+  color: var(--hm-accent);
+  margin: 14px 0 4px;
+}
+[data-engine="hermes"] .hm-skills-markdown h5 {
+  font-size: 13px;
+  color: var(--hm-text-secondary);
+  margin: 12px 0 4px;
+}
+[data-engine="hermes"] .hm-skills-markdown ul {
+  margin: 4px 0 10px;
+  padding-left: 22px;
+}
+[data-engine="hermes"] .hm-skills-markdown li {
+  margin: 2px 0;
+  line-height: 1.7;
+}
+[data-engine="hermes"] .hm-skills-markdown pre {
+  background: var(--hm-surface-2);
+  border: 1px solid var(--hm-border-subtle);
+  border-radius: var(--hm-radius-sm);
+  padding: 12px 14px;
+  margin: 10px 0;
+  overflow-x: auto;
+  font-family: var(--hm-font-mono);
+  font-size: 12px;
+  line-height: 1.65;
+}
+[data-engine="hermes"] .hm-skills-markdown code {
+  font-family: var(--hm-font-mono);
+  font-size: 12.5px;
+  background: var(--hm-surface-2);
+  padding: 1px 6px;
+  border-radius: 3px;
+  color: var(--hm-text-primary);
+}
+[data-engine="hermes"] .hm-skills-markdown pre code {
+  background: transparent;
+  padding: 0;
+}
+[data-engine="hermes"] .hm-skills-markdown a {
+  color: var(--hm-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+[data-engine="hermes"] .hm-skills-markdown strong { font-weight: 600; }
+[data-engine="hermes"] .hm-skills-markdown em { font-style: italic; }
+
+/* ---- Attached files section ---- */
+[data-engine="hermes"] .hm-skills-files {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--hm-border);
+}
+[data-engine="hermes"] .hm-skills-files-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+[data-engine="hermes"] .hm-skills-files-label {
+  font-family: var(--hm-font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--hm-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+[data-engine="hermes"] .hm-skills-files-count {
+  font-family: var(--hm-font-mono);
+  font-size: 10.5px;
+  color: var(--hm-text-tertiary);
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--hm-surface-2);
+  border: 1px solid var(--hm-border-subtle);
+}
+[data-engine="hermes"] .hm-skills-files-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+[data-engine="hermes"] .hm-skills-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--hm-border);
+  border-radius: var(--hm-radius-sm);
+  background: var(--hm-surface-1);
+  color: var(--hm-text-secondary);
+  font-family: var(--hm-font-mono);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-engine="hermes"] .hm-skills-file-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-engine="hermes"] .hm-skills-file-chip:hover {
+  border-color: var(--hm-accent);
+  color: var(--hm-accent);
+  background: var(--hm-surface-0);
+}
+
+/* ---- Breadcrumb for file view ---- */
+[data-engine="hermes"] .hm-skills-detail-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--hm-border);
+  flex-wrap: wrap;
+}
+[data-engine="hermes"] .hm-skills-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--hm-border);
+  border-radius: var(--hm-radius-sm);
+  background: var(--hm-surface-1);
+  color: var(--hm-text-secondary);
+  font-family: var(--hm-font-sans);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+[data-engine="hermes"] .hm-skills-back-btn:hover {
+  color: var(--hm-accent);
+  border-color: var(--hm-accent);
+}
+[data-engine="hermes"] .hm-skills-breadcrumb-sep {
+  color: var(--hm-text-tertiary);
+}
+[data-engine="hermes"] .hm-skills-breadcrumb-path {
+  font-family: var(--hm-font-mono);
+  font-size: 11.5px;
+  color: var(--hm-text-tertiary);
+  word-break: break-all;
+}
+
+/* Responsive: collapse sidebar on narrow viewports */
+@media (max-width: 960px) {
+  [data-engine="hermes"] .hm-skills-layout {
+    grid-template-columns: 260px 1fr;
+  }
+  [data-engine="hermes"].hermes-skills-page {
+    padding: 28px 24px 40px;
+  }
+  [data-engine="hermes"] .hm-skills-main {
+    padding: 22px 24px 36px;
+  }
+}
+@media (max-width: 720px) {
+  [data-engine="hermes"] .hm-skills-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+  [data-engine="hermes"] .hm-skills-sidebar {
+    border-right: none;
+    border-bottom: 1px solid var(--hm-border);
+    max-height: 40vh;
+  }
+}
+
+/* ==========================================================================
+ * 19 · Chat page (editorial luxury re-write)
+ * ==========================================================================
+ *
+ * Mirrors the official Hermes web UI's ChatPanel but styled with the warm
+ * off-white / serif-display / gold-accent system shared across dashboard,
+ * memory, skills, logs and cron.
+ */
+
+/* ---- Page shell ---- */
+[data-engine="hermes"].hermes-chat-page {
+  height: 100vh;
+  width: 100%;
+  max-width: none;
+  display: flex;
+  flex-direction: column;
+  background: var(--hm-surface-0);
+  color: var(--hm-text-primary);
+  font-family: var(--hm-font-sans);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* Switched from grid (`280px 1fr`) to flex so collapsing the sidebar
+   releases its width back to the chat area. The grid version pinned the
+   first track at 280px regardless of the inner element's width:0 — the
+   sidebar shrank inside its track but the empty 280px slot stayed. */
+[data-engine="hermes"] .hm-chat-shell {
+  flex: 1;
+  width: 100%;
+  max-width: none;
+  min-height: 0;
+  display: flex;
+  position: relative;
+}
+
+[data-engine="hermes"] .hm-chat-sidebar-backdrop {
+  display: none;
+}
+
+/* ---- Sidebar ---- */
+[data-engine="hermes"] .hm-chat-sidebar {
+  width: 280px;
+  min-width: 0;
+  flex: 0 0 280px;
+  border-right: 1px solid var(--hm-border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--hm-surface-1);
+  overflow: hidden;
+  transition: width 0.22s ease, opacity 0.22s ease;
+}
+[data-engine="hermes"] .hm-chat-sidebar.is-collapsed {
+  width: 0;
+  flex-basis: 0;
+  border-right-color: transparent;
+  pointer-events: none;
+  opacity: 0;
+}
+[data-engine="hermes"] .hm-chat-shell.is-sidebar-collapsed .hm-chat-sidebar {
+  display: none;
+}
+
+/* Main column — absorbs leftover horizontal space when sidebar collapses. */
+[data-engine="hermes"] .hm-chat-main {
+  flex: 1 1 0;
+  width: 0;
+  min-width: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+[data-engine="hermes"] .hm-chat-shell.is-sidebar-collapsed .hm-chat-main {
+  width: 100%;
+  flex-basis: 100%;
+}
+
+[data-engine="hermes"] .hm-chat-sidebar-profile {
+  position: relative;
+  padding: 12px 14px 4px;
+}
+[data-engine="hermes"] .hm-chat-profile-toggle {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--hm-border);
+  border-radius: 999px;
+  background: var(--hm-surface-0);
+  color: var(--hm-text-primary);
+  font-family: var(--hm-font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+[data-engine="hermes"] .hm-chat-profile-toggle:hover:not(:disabled) {
+  color: var(--hm-accent);
+  border-color: var(--hm-accent);
+  background: var(--hm-accent-soft);
+}
+[data-engine="hermes"] .hm-chat-profile-toggle:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+[data-engine="hermes"] .hm-chat-profile-toggle.is-open {
+  border-color: var(--hm-accent);
+  color: var(--hm-accent);
+}
+[data-engine="hermes"] .hm-chat-profile-name {
+  flex: 1;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-engine="hermes"] .hm-chat-profile-caret {
+  display: inline-flex;
+  transform: rotate(90deg);
+  opacity: 0.7;
+}
+[data-engine="hermes"] .hm-chat-profile-toggle.is-open .hm-chat-profile-caret {
+  transform: rotate(-90deg);
+}
+[data-engine="hermes"] .hm-chat-profile-menu {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  top: 100%;
+  margin-top: 4px;
+  z-index: 30;
+  background: var(--hm-surface-1);
+  border: 1px solid var(--hm-border);
+  border-radius: var(--hm-radius-sm);
+  box-shadow: var(--hm-shadow-md);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+}
+[data-engine="hermes"] .hm-chat-profile-menu-head,
+[data-engine="hermes"] .hm-chat-profile-menu-foot {
+  padding: 8px 14px;
+  font-family: var(--hm-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--hm-text-tertiary);
+  background: var(--hm-surface-0);
+  border-bottom: 1px solid var(--hm-border-subtle);
+}
+[data-engine="hermes"] .hm-chat-profile-menu-foot {
+  border-bottom: none;
+  border-top: 1px solid var(--hm-border-subtle);
+  text-transform: none;
+  letter-spacing: 0.01em;
+  font-size: 10.5px;
+}
+[data-engine="hermes"] .hm-chat-profile-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--hm-border-subtle);
+  color: var(--hm-text-primary);
+  font-family: var(--hm-font-mono);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+[data-engine="hermes"] .hm-chat-profile-item:last-of-type {
+  border-bottom: none;
+}
+[data-engine="hermes"] .hm-chat-profile-item:hover:not(:disabled) {
+  background: var(--hm-accent-soft);
+  color: var(--hm-accent);
+}
+[data-engine="hermes"] .hm-chat-profile-item.is-active {
+  color: var(--hm-accent);
+  background: color-mix(in srgb, var(--hm-accent) 6%, transparent);
+}
+[data-engine="hermes"] .hm-chat-profile-item:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+[data-engine="hermes"] .hm-chat-profile-item-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-engine="hermes"] .hm-chat-profile-item-badge {
+  font-size: 9.5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--hm-success) 16%, transparent);
+  color: var(--hm-success);
+}
+[data-engine="hermes"] .hm-chat-profile-item-active {
+  display: inline-flex;
+}
+
+[data-engine="hermes"] .hm-chat-sidebar-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+[data-engine="hermes"] .hm-chat-select-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--hm-border);
+  border-radius: 50%;
+  background: var(--hm-surface-0);
+  color: var(--hm-text-secondary);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+[data-engine="hermes"] .hm-chat-select-toggle:hover {
+  color: var(--hm-accent);
+  border-color: var(--hm-accent);
+  background: var(--hm-accent-soft);
+}
+[data-engine="hermes"] .hm-chat-select-toggle.is-active {
+  color: var(--hm-accent);
+  border-color: var(--hm-accent);
+  background: var(--hm-accent-soft);
+}
+
+[data-engine="hermes"] .hm-chat-bulkbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px 10px;
+  border-bottom: 1px solid var(--hm-border-subtle);
+  font-family: var(--hm-font-mono);
+  font-size: 11px;
+  color: var(--hm-text-secondary);
+}
+[data-engine="hermes"] .hm-chat-bulkbar-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--hm-border-subtle);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--hm-text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+}
+[data-engine="hermes"] .hm-chat-bulkbar-select-all:hover {
+  color: var(--hm-accent);
+  border-color: var(--hm-accent);
+  background: var(--hm-accent-soft);
+}
+[data-engine="hermes"] .hm-chat-bulkbar-count {
+  flex: 1;
+  text-align: right;
+  letter-spacing: 0.02em;
+}
+[data-engine="hermes"] .hm-chat-bulkbar-delete {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--hm-error) 30%, transparent);
+  border-radius: 999px;
+  background: var(--hm-error-soft);
+  color: var(--hm-error);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+}
+[data-engine="hermes"] .hm-chat-bulkbar-delete:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+[data-engine="hermes"] .hm-chat-bulkbar-delete:not(:disabled):hover {
+  background: color-mix(in srgb, var(--hm-error) 18%, transparent);
+}
+
+[data-engine="hermes"] .hm-chat-session-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 6px;
+  border: none;
+  background: transparent;
+  color: var(--hm-text-tertiary);
+  cursor: pointer;
+  border-radius: 50%;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+[data-engine="hermes"] .hm-chat-session-check:hover,
+[data-engine="hermes"] .hm-chat-session-check.is-on {
+  color: var(--hm-accent);
+  background: var(--hm-accent-soft);
+}
+[data-engine="hermes"] .hm-chat-session-item.is-selected {
+  border-color: color-mix(in srgb, var(--hm-accent) 35%, transparent);
+  background: color-mix(in srgb, var(--hm-accent) 8%, transparent);
+}
+[data-engine="hermes"] .hm-chat-sidebar.is-select-mode .hm-chat-session-actions {
+  display: none;
+}
+
+[data-engine="hermes"].hm-sessions-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+[data-engine="hermes"] .hm-sessions-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid var(--hm-border);
+  border-radius: var(--hm-radius-lg);
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--hm-accent) 15%, transparent), transparent 34%),
+    var(--hm-surface-1);
+  box-shadow: var(--hm-shadow-sm);
+}
+[data-engine="hermes"] .hm-sessions-eyebrow {
+  font-family: var(--hm-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  color: var(--hm-accent);
+  margin-bottom: 8px;
+}
+[data-engine="hermes"] .hm-sessions-hero h1 {
+  margin: 0 0 8px;
+  font-size: clamp(24px, 3vw, 34px);
+  letter-spacing: -0.04em;
+  color: var(--hm-text-primary);
+}
+[data-engine="hermes"] .hm-sessions-hero p {
+  margin: 0;
+  max-width: 620px;
+  color: var(--hm-text-secondary);
+}
+[data-engine="hermes"] .hm-sessions-hero-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+[data-engine="hermes"] .hm-sessions-btn,
+[data-engine="hermes"] .hm-sessions-bulkbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--hm-border);
+  border-radius: 999px;
+  background: var(--hm-surface-0);
+  color: var(--hm-text-primary);
+  padding: 8px 13px;
+  font-size: 12px;
+  font-family: var(--hm-font-mono);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+[data-engine="hermes"] .hm-sessions-btn:hover:not(:disabled),
+[data-engine="hermes"] .hm-sessions-bulkbar button:hover:not(:disabled) {
+  color: var(--hm-accent);
+  border-color: var(--hm-accent);
+  background: var(--hm-accent-soft);
+  transform: translateY(-1px);
+}
+[data-engine="hermes"] .hm-sessions-btn:disabled,
+[data-engine="hermes"] .hm-sessions-bulkbar button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+[data-engine="hermes"] .hm-sessions-btn.is-danger,
+[data-engine="hermes"] .hm-sessions-bulkbar button.is-danger {
+  color: var(--hm-error);
+  border-color: color-mix(in srgb, var(--hm-error) 32%, transparent);
+  background: var(--hm-error-soft);
+}
+[data-engine="hermes"] .hm-sessions-btn.is-ghost {
+  background: transparent;
+}
+[data-engine="hermes"] .hm-sessions-profile-select,
+[data-engine="hermes"] .hm-sessions-toolbar select {
+  border: 1px solid var(--hm-border);
+  border-radius: 999px;
+  background: var(--hm-surface-0);
+  color: var(--hm-text-primary);
+  padding: 8px 12px;
+  font-family: var(--hm-font-mono);
+  font-size: 12px;
+  outline: none;
+}
+[data-engine="hermes"] .hm-sessions-profile-static {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--hm-border);
+  border-radius: 999px;
+  color: var(--hm-text-secondary);
+  font-family: var(--hm-font-mono);
+  font-size: 12px;
+}
+[data-engine="hermes"] .hm-sessions-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+[data-engine="hermes"] .hm-sessions-stats > div,
+[data-engine="hermes"] .hm-session-stat-grid > div {
+  padding: 14px;
+  border: 1px solid var(--hm-border-subtle);
+  border-radius: var(--hm-radius-sm);
+  background: var(--hm-surface-1);
+}
+[data-engine="hermes"] .hm-sessions-stats span,
+[data-engine="hermes"] .hm-session-stat-grid span {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--hm-text-tertiary);
+  font-size: 10.5px;
+  font-family: var(--hm-font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+[data-engine="hermes"] .hm-sessions-stats strong,
+[data-engine="hermes"] .hm-session-stat-grid strong {
+  color: var(--hm-text-primary);
+  font-size: 20px;
+  word-break: break-word;
+}
+[data-engine="hermes"] .hm-sessions-shell {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  gap: 16px;
+  min-height: 560px;
+}
+[data-engine="hermes"] .hm-sessions-list-panel,
+[data-engine="hermes"] .hm-session-detail {
+  border: 1px solid var(--hm-border);
+  border-radius: var(--hm-radius-lg);
+  background: var(--hm-surface-1);
+  overflow: hidden;
+  min-height: 0;
+}
+[data-engine="hermes"] .hm-sessions-list-panel {
+  display: flex;
+  flex-direction: column;
+}
+[data-engine="hermes"] .hm-sessions-toolbar {
+  display: flex;
+  gap: 8px;
+  padding: 14px;
+  border-bottom: 1px solid var(--hm-border-subtle);
+}
+[data-engine="hermes"] .hm-sessions-search {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid var(--hm-border);
+  border-radius: 999px;
+  background: var(--hm-surface-0);
+  padding: 0 11px;
+  color: var(--hm-text-tertiary);
+}
+[data-engine="hermes"] .hm-sessions-search input {
+  width: 100%;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--hm-text-primary);
+  padding: 9px 0;
+  font-size: 12px;
+}
+[data-engine="hermes"] .hm-sessions-bulkbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--hm-border-subtle);
+  background: color-mix(in srgb, var(--hm-surface-0) 70%, transparent);
+}
+[data-engine="hermes"] .hm-sessions-bulkbar button {
+  padding: 6px 10px;
+  font-size: 11px;
+}
+[data-engine="hermes"] .hm-sessions-list {
+  overflow: auto;
+  padding: 10px;
+}
+[data-engine="hermes"] .hm-session-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 11px;
+  margin-bottom: 8px;
+  border: 1px solid transparent;
+  border-radius: var(--hm-radius-sm);
+  background: transparent;
+  color: var(--hm-text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+[data-engine="hermes"] .hm-session-row:hover,
+[data-engine="hermes"] .hm-session-row.is-active {
+  border-color: color-mix(in srgb, var(--hm-accent) 28%, transparent);
+  background: var(--hm-accent-soft);
+}
+[data-engine="hermes"] .hm-session-row.is-selected {
+  border-color: color-mix(in srgb, var(--hm-accent) 42%, transparent);
+  background: color-mix(in srgb, var(--hm-accent) 10%, transparent);
+}
+[data-engine="hermes"] .hm-session-row-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--hm-accent);
+}
+[data-engine="hermes"] .hm-session-row-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+[data-engine="hermes"] .hm-session-row-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-engine="hermes"] .hm-session-row-preview {
+  color: var(--hm-text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-engine="hermes"] .hm-session-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+[data-engine="hermes"] .hm-session-row-meta span {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--hm-surface-0);
+  color: var(--hm-text-tertiary);
+  font-family: var(--hm-font-mono);
+  font-size: 10px;
+}
+[data-engine="hermes"] .hm-session-row-time {
+  color: var(--hm-text-tertiary);
+  font-family: var(--hm-font-mono);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+[data-engine="hermes"] .hm-sessions-loading,
+[data-engine="hermes"] .hm-sessions-empty,
+[data-engine="hermes"] .hm-session-empty-messages {
+  padding: 28px 14px;
+  color: var(--hm-text-tertiary);
+  text-align: center;
+  font-family: var(--hm-font-mono);
+  font-size: 12px;
+}
+[data-engine="hermes"] .hm-session-detail {
+  display: flex;
+  flex-direction: column;
+}
+[data-engine="hermes"] .hm-session-detail.is-empty {
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+  color: var(--hm-text-tertiary);
+  padding: 34px;
+}
+[data-engine="hermes"] .hm-session-detail.is-empty h3 {
+  margin: 0;
+  color: var(--hm-text-primary);
+}
+[data-engine="hermes"] .hm-session-detail.is-empty p {
+  margin: 0;
+  max-width: 380px;
+}
+[data-engine="hermes"] .hm-session-detail-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px;
+  border-bottom: 1px solid var(--hm-border-subtle);
+}
+[data-engine="hermes"] .hm-session-detail-kicker {
+  margin-bottom: 8px;
+  color: var(--hm-accent);
+  font-family: var(--hm-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+[data-engine="hermes"] .hm-session-detail h2 {
+  margin: 0 0 8px;
+  color: var(--hm-text-primary);
+  font-size: 24px;
+  letter-spacing: -0.03em;
+}
+[data-engine="hermes"] .hm-session-detail-id {
+  color: var(--hm-text-tertiary);
+  font-family: var(--hm-font-mono);
+  font-size: 11px;
+  word-break: break-all;
+}
+[data-engine="hermes"] .hm-session-detail-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  justify-content: flex-end;
+}
+[data-engine="hermes"] .hm-session-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px 20px;
+}
+[data-engine="hermes"] .hm-session-stat-grid strong {
+  font-size: 15px;
+}
+[data-engine="hermes"] .hm-session-message-list {
+  flex: 1;
+  overflow: auto;
+  padding: 18px 20px 22px;
+}
+[data-engine="hermes"] .hm-session-msg {
+  margin-bottom: 12px;
+  padding: 13px;
+  border: 1px solid var(--hm-border-subtle);
+  border-radius: var(--hm-radius-sm);
+  background: var(--hm-surface-0);
+}
+[data-engine="hermes"] .hm-session-msg-role {
+  margin-bottom: 7px;
+  color: var(--hm-accent);
+  font-family: var(--hm-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+[data-engine="hermes"] .hm-session-msg-body {
+  white-space: pre-wrap;
+  color: var(--hm-text-primary);
+  line-height: 1.58;
+  font-size: 13px;
+}
+@media (max-width: 980px) {
+  [data-engine="hermes"] .hm-sessions-hero,
+  [data-engine="hermes"] .hm-session-detail-head {
+    flex-direction: column;
+  }
+  [data-engine="hermes"] .hm-sessions-shell {
+    grid-template-columns: 1fr;
+  }
+  [data-engine="hermes"] .hm-sessions-stats,
+  [data-engine="hermes"] .hm-session-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  [data-engine="hermes"] .hm-sessions-stats,
+  [data-engine="hermes"] .hm-session-stat-grid {
+    grid-template-columns: 1fr;
+  }
+  [data-engine="hermes"] .hm-sessions-toolbar,
+  [data-engine="hermes"] .hm-sessions-hero-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  [data-engine="hermes"] .hm-session-row {
+    grid-template-columns: 24px minmax(0, 1fr);
+  }
+  [data-engine="hermes"] .hm-session-row-time {
+    grid-column: 2;
+  }
+}
+
+[data-engine="hermes"] .hm-chat-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px 10px;
+  flex-shrink: 0;
+}
+[data-engine="hermes"] .hm-chat-sidebar-title {
+  font-family: var(--hm-font-sans);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--hm-text-tertiary);
+}
+[data-engine="hermes"] .hm-chat-new-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--hm-border);
+  border-radius: 50%;
+  background: var(--hm-surface-0);
+  color: var(--hm-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+[data-engine="hermes"] .hm-chat-new-btn:hover {
+  color: var(--hm-accent);
+  border-color: var(--hm-accent);
+  background: var(--hm-accent-soft);
+}
+
+[data-engine="hermes"] .hm-chat-sidebar-tip {
+  padding: 0 18px 12px;
+  border-bottom: 1px solid var(--hm-border-subtle);
+  font-family: var(--hm-font-mono);
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--hm-text-tertiary);
+}
+
+[data-engine="hermes"] .hm-chat-sidebar-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 8px 18px;
+}
+
+[data-engine="hermes"] .hm-chat-sidebar-loading,
+[data-engine="hermes"] .hm-chat-sidebar-empty {
+  padding: 30px 12px;
+  text-align: center;
+  font-family: var(--hm-font-serif);
+  font-style: italic;
+  color: var(--hm-text-tertiary);
+  font-size: 13px;
+}
+
+[data-engine="hermes"] .hm-chat-group {
+  margin: 2px 0 4px;
+}
+[data-engine="hermes"] .hm-chat-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 9px 12px 6px;
+  border: none;
+  background: transparent;
+  color: var(--hm-text-tertiary);
+  cursor: pointer;
+  font-family: var(--hm-font-sans);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  transition: color 0.15s ease;
+}
+[data-engine="hermes"] .hm-chat-group-head:hover {
+  color: var(--hm-text-secondary);
+}
+[data-engine="hermes"] .hm-chat-group-head--static {
+  cursor: default;
+  color: var(--hm-accent);
+}
+[data-engine="hermes"] .hm-chat-group-head--static:hover {
+  color: var(--hm-accent);
+}
+[data-engine="hermes"] .hm-chat-group-arrow {
+  display: inline-flex;
+  transition: transform 0.15s ease;
+  transform: rotate(90deg);
+  color: var(--hm-text-tertiary);
+}
+[data-engine="hermes"] .hm-chat-group-head.is-collapsed .hm-chat-group-arrow {
+  transform: rotate(0deg);
+}
+[data-engine="hermes"] .hm-chat-group-label {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[data-engine="hermes"] .hm-chat-group-count {
+  font-family: var(--hm-font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--hm-text-tertiary);
+  background: var(--hm-surface-2);
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--hm-border-subtle);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* ---- Session item ---- */
+[data-engine="hermes"] .hm-chat-session-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px 8px 14px;
+  border: none;
+  background: transparent;
+  color: var(--hm-text-primary);
+  cursor: pointer;
+  text-align: left;
+  border-left: 2px solid transparent;
+  border-radius: 0 var(--hm-radius-sm) var(--hm-radius-sm) 0;
+  transition: background 0.12s ease;
+  position: relative;
+}
+[data-engine="hermes"] .hm-chat-session-item:hover {
+  background: var(--hm-surface-2);
+}
+[data-engine="hermes"] .hm-chat-session-item:hover .hm-chat-session-del {
+  opacity: 1;
+}
+[data-engine="hermes"] .hm-chat-session-item.is-active {
+  background: var(--hm-accent-soft);
+  border-left-color: var(--hm-accent);
+}
+[data-engine="hermes"] .hm-chat-session-item.is-active .hm-chat-session-title {
+  color: var(--hm-accent);
+  font-weight: 500;
+}
+[data-engine="hermes"] .hm-chat-session-item.is-live .hm-chat-session-title {
+  color: var(--hm-accent);
+}
+
+[data-engine="hermes"] .hm-chat-session-main {
+  flex: 1;
+  min-width: 0;
+}
+[data-engine="hermes"] .hm-chat-session-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+[data-engine="hermes"] .hm-chat-session-title {
+  flex: 1;
+  font-size: 13px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--hm-text-primary);
+}
+[data-engine="hermes"] .hm-chat-session-spinner {
+  flex-shrink: 0;
+  color: var(--hm-accent);
+  animation: hm-chat-spin 1.1s linear infinite;
+}
+[data-engine="hermes"] .hm-chat-session-pin {
+  flex-shrink: 0;
+  color: var(--hm-accent);
+  opacity: 0.85;
+}
+[data-engine="hermes"] .hm-chat-session-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-family: var(--hm-font-sans);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--hm-accent);
+  background: var(--hm-accent-soft);
+}
+[data-engine="hermes"] .hm-chat-live-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--hm-accent);
+  animation: hm-chat-live-pulse 2s ease-in-out infinite;
+}
+@keyframes hm-chat-live-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.4; transform: scale(0.7); }
+}
+@keyframes hm-chat-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+[data-engine="hermes"] .hm-chat-session-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+[data-engine="hermes"] .hm-chat-session-model {
+  font-family: var(--hm-font-mono);
+  font-size: 10px;
+  color: var(--hm-accent);
+  background: var(--hm-accent-soft);
+  padding: 0 5px;
+  line-height: 15px;
+  border-radius: 3px;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[data-engine="hermes"] .hm-chat-session-time {
+  font-family: var(--hm-font-mono);
+  font-size: 10.5px;
+  color: var(--hm-text-tertiary);
+  letter-spacing: 0.01em;
+}
+
+/* Always show the delete button at low opacity so users know it's there;
+   bump to full opacity on row hover. Pure-on-hover discoverability bug
+   was making people think "sessions can't be deleted". */
+[data-engine="hermes"] .hm-chat-session-del {
+  flex-shrink: 0;
+  opacity: 0.45;
+  padding: 4px;
+  border: none;
+  background: transparent;
+  color: var(--hm-text-tertiary);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+[data-engine="hermes"] .hm-chat-session-del:hover {
+  color: var(--hm-error);
+  background: var(--hm-error-soft);
+}
+[data-engine="hermes"] .hm-chat-session-actions {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+[data-engine="hermes"] .hm-chat-session-action {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 7px;
+  border: 1px solid var(--hm-border-subtle);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--hm-surface-0) 76%, transparent);
+  color: var(--hm-text-tertiary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+[data-engine="hermes"] .hm-chat-session-action:hover {
+  color: var(--hm-text-primary);
+  background: var(--hm-surface-0);
+  border-color: var(--hm-border);
+}
+[data-engine="hermes"] .hm-chat-session-del {
+  opacity: 1;
+}
+[data-engine="hermes"] .hm-chat-session-del span {
+  font-size: 11px;
+  line-height: 1;
+}
+[data-engine="hermes"] .hm-chat-session-del:hover {
+  color: var(--hm-error);
+  background: var(--hm-error-soft);
+  border-color: color-mix(in srgb, var(--hm-error) 30%, transparent);
+}
+[data-engine="hermes"] .hm-chat-session-menu {
+  padding: 0;
+}
+
+/* ---- Main area ---- */
+[data-engine="hermes"] .hm-chat-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--hm-surface-0);
+}
+
+[data-engine="hermes"] .hm-chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 28px;
+  border-bottom: 1px solid var(--hm-border);
+  flex-shrink: 0;
+  background: var(--hm-surface-0);
+  gap: 16px;
+}
+[data-engine="hermes"] .hm-chat-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+[data-engine="hermes"] .hm-chat-toggle-sidebar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 5px 7px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--hm-text-tertiary);
+  cursor: pointer;
+  border-radius: 999px;
+  transition: all 0.15s ease;
+  font-family: var(--hm-font-sans);
+  font-size: 12px;
+}
+[data-engine="hermes"] .hm-chat-toggle-sidebar span {
+  display: none;
+}
+[data-engine="hermes"] .hm-chat-toggle-sidebar:hover {
+  color: var(--hm-text-primary);
+  background: var(--hm-surface-2);
+}
+[data-engine="hermes"] .hm-chat-toggle-sidebar.is-collapsed {
+  border-color: var(--hm-border-subtle);
+  background: var(--hm-surface-1);
+  color: var(--hm-text-secondary);
+}
+[data-engine="hermes"] .hm-chat-toggle-sidebar.is-collapsed span {
+  display: inline;
+}
+[data-engine="hermes"] .hm-chat-header-title-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  overflow: hidden;
+}
+[data-engine="hermes"] .hm-chat-header-title {
+  font-family: var(--hm-font-serif);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--hm-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[data-engine="hermes"] .hm-chat-source-badge {
+  flex-shrink: 0;
+  font-family: var(--hm-font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--hm-text-tertiary);
+  background: var(--hm-surface-2);
+  border: 1px solid var(--hm-border-subtle);
+  padding: 1px 7px;
+  border-radius: 999px;
+  line-height: 16px;
+}
+
+[data-engine="hermes"] .hm-chat-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+[data-engine="hermes"] .hm-chat-gw-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--hm-border);
+  border-radius: 999px;
+  background: var(--hm-surface-1);
+  font-family: var(--hm-font-mono);
+  font-size: 10.5px;
+  color: var(--hm-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+[data-engine="hermes"] .hm-chat-gw-status.is-online {
+  color: var(--hm-success);
+  border-color: color-mix(in srgb, var(--hm-success) 30%, transparent);
+  background: color-mix(in srgb, var(--hm-success) 6%, transparent);
+}
+[data-engine="hermes"] .hm-chat-gw-status.is-offline {
+  color: var(--hm-warn, #CA8A04);
+  border-color: color-mix(in srgb, var(--hm-warn, #CA8A04) 30%, transparent);
+  background: color-mix(in srgb, var(--hm-warn, #CA8A04) 6%, transparent);
+}
+/* "GATEWAY" label — muted prefix, always grey regardless of state tint */
+[data-engine="hermes"] .hm-chat-gw-label {
+  color: var(--hm-text-tertiary);
+  font-family: var(--hm-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  font-weight: 500;
+}
+[data-engine="hermes"] .hm-chat-gw-status .hm-chat-gw-text {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+[data-engine="hermes"] .hm-chat-gw-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--hm-text-tertiary);
+}
+[data-engine="hermes"] .hm-chat-gw-status.is-online .hm-chat-gw-dot {
+  background: var(--hm-success);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--hm-success) 20%, transparent);
+}
+[data-engine="hermes"] .hm-chat-gw-model {
+  color: var(--hm-text-secondary);
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 10.5px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+  padding-left: 4px;
+  border-left: 1px solid var(--hm-border);
+  margin-left: 2px;
+}
+
+/* ---- Messages area ---- */
+[data-engine="hermes"] .hm-chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  background: var(--hm-surface-0);
+}
+[data-engine="hermes"] .hm-chat-jump-bottom {
+  position: absolute;
+  right: 32px;
+  bottom: 112px;
+  z-index: 8;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid var(--hm-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--hm-surface-0) 88%, transparent);
+  color: var(--hm-text-secondary);
+  box-shadow: var(--hm-shadow-sm);
+  font-family: var(--hm-font-mono);
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition: opacity 0.18s ease, transform 0.18s ease, color 0.15s ease, background 0.15s ease;
+}
+[data-engine="hermes"] .hm-chat-jump-bottom.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+[data-engine="hermes"] .hm-chat-jump-bottom:hover {
+  color: var(--hm-accent);
+  background: var(--hm-accent-soft);
+}
+[data-engine="hermes"] .hm-chat-messages-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--hm-text-tertiary);
+  text-align: center;
+  min-height: 320px;
+}
+[data-engine="hermes"] .hm-chat-empty-title {
+  font-family: var(--hm-font-serif);
+  font-size: 18px;
+  color: var(--hm-text-secondary);
+  letter-spacing: -0.005em;
+}
+[data-engine="hermes"] .hm-chat-empty-sub {
+  font-family: var(--hm-font-serif);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--hm-text-tertiary);
+}
+
+/* ---- Message bubbles ---- */
+[data-engine="hermes"] .hm-chat-msg { display: flex; flex-direction: column; }
+[data-engine="hermes"] .hm-chat-msg--user { align-items: flex-end; }
+[data-engine="hermes"] .hm-chat-msg--assistant { align-items: flex-start; }
+[data-engine="hermes"] .hm-chat-msg--system { align-items: center; }
+
+[data-engine="hermes"] .hm-chat-msg-body {
+  display: flex;
+  gap: 10px;
+  max-width: min(78%, 760px);
+  align-items: flex-start;
+}
+[data-engine="hermes"] .hm-chat-shell.is-sidebar-collapsed .hm-chat-msg-body {
+  max-width: min(82%, 820px);
+}
+[data-engine="hermes"] .hm-chat-msg--user .hm-chat-msg-body { flex-direction: row-reverse; }
+
+[data-engine="hermes"] .hm-chat-msg-avatar {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--hm-font-serif);
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--hm-accent);
+  background: var(--hm-accent-soft);
+  border: 1px solid color-mix(in srgb, var(--hm-accent) 25%, transparent);
+  margin-top: 2px;
+}
+
+[data-engine="hermes"] .hm-chat-msg-content-wrap {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+[data-engine="hermes"] .hm-chat-msg-bubble {
+  padding: 12px 16px;
+  font-size: 14px;
+  line-height: 1.7;
+  border-radius: var(--hm-radius-md);
+  word-break: break-word;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+[data-engine="hermes"] .hm-chat-msg--user .hm-chat-msg-bubble {
+  background: var(--hm-accent-soft);
+  color: var(--hm-text-primary);
+  border: 1px solid color-mix(in srgb, var(--hm-accent) 16%, transparent);
+  font-family: var(--hm-font-serif);
+  font-size: 14.5px;
+  line-height: 1.7;
+}
+[data-engine="hermes"] .hm-chat-msg--assistant .hm-chat-msg-bubble {
+  background: var(--hm-surface-1);
+  color: var(--hm-text-primary);
+  border: 1px solid var(--hm-border-subtle);
+}
+[data-engine="hermes"] .hm-chat-msg--system .hm-chat-msg-bubble {
+  background: var(--hm-error-soft);
+  color: var(--hm-error);
+  border: 1px solid color-mix(in srgb, var(--hm-error) 25%, transparent);
+  font-family: var(--hm-font-mono);
+  font-size: 12.5px;
+  max-width: 90%;
+}
+
+[data-engine="hermes"] .hm-chat-msg-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 0 4px;
+}
+[data-engine="hermes"] .hm-chat-msg--user .hm-chat-msg-footer {
+  justify-content: flex-end;
+}
+[data-engine="hermes"] .hm-chat-msg-time {
+  font-family: var(--hm-font-mono);
+  font-size: 10.5px;
+  color: var(--hm-text-tertiary);
+  letter-spacing: 0.01em;
+}
+[data-engine="hermes"] .hm-chat-msg-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 1px solid var(--hm-border-subtle);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--hm-text-tertiary);
+  font-family: var(--hm-font-mono);
+  font-size: 10px;
+  line-height: 1.2;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(1px);
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+[data-engine="hermes"] .hm-chat-msg:hover .hm-chat-msg-copy,
+[data-engine="hermes"] .hm-chat-msg-copy:focus-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+[data-engine="hermes"] .hm-chat-msg-copy:hover {
+  color: var(--hm-accent);
+  background: var(--hm-accent-soft);
+  border-color: color-mix(in srgb, var(--hm-accent) 24%, transparent);
+}
+
+/* Markdown inside message content */
+[data-engine="hermes"] .hm-chat-msg-content p { margin: 0 0 8px; }
+[data-engine="hermes"] .hm-chat-msg-content p:last-child { margin-bottom: 0; }
+[data-engine="hermes"] .hm-chat-msg-content h2,
+[data-engine="hermes"] .hm-chat-msg-content h3,
+[data-engine="hermes"] .hm-chat-msg-content h4,
+[data-engine="hermes"] .hm-chat-msg-content h5 {
+  font-family: var(--hm-font-serif);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--hm-text-primary);
+}
+[data-engine="hermes"] .hm-chat-msg-content h2 { font-size: 18px; margin: 14px 0 6px; }
+[data-engine="hermes"] .hm-chat-msg-content h3 { font-size: 16px; margin: 12px 0 5px; }
+[data-engine="hermes"] .hm-chat-msg-content h4 {
+  font-size: 14px;
+  font-style: italic;
+  color: var(--hm-accent);
+  margin: 10px 0 4px;
+}
+[data-engine="hermes"] .hm-chat-msg-content h5 {
+  font-size: 13px;
+  color: var(--hm-text-secondary);
+  margin: 10px 0 4px;
+}
+[data-engine="hermes"] .hm-chat-msg-content ul {
+  margin: 4px 0 8px;
+  padding-left: 22px;
+}
+[data-engine="hermes"] .hm-chat-msg-content li { margin: 2px 0; line-height: 1.65; }
+[data-engine="hermes"] .hm-chat-msg-content code {
+  font-family: var(--hm-font-mono);
+  font-size: 12.5px;
+  background: var(--hm-surface-2);
+  padding: 1px 6px;
+  border-radius: 3px;
+  color: var(--hm-accent);
+}
+[data-engine="hermes"] .hm-chat-msg-content pre {
+  background: var(--hm-surface-2);
+  border: 1px solid var(--hm-border-subtle);
+  border-radius: var(--hm-radius-sm);
+  padding: 10px 12px;
+  margin: 8px 0;
+  overflow-x: auto;
+  font-family: var(--hm-font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+}
+[data-engine="hermes"] .hm-chat-msg-content pre.hm-chat-code-block {
+  position: relative;
+  padding-top: 34px;
+}
+[data-engine="hermes"] .hm-chat-code-copy {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--hm-border-subtle);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--hm-surface-0) 82%, transparent);
+  color: var(--hm-text-tertiary);
+  font-family: var(--hm-font-mono);
+  font-size: 10px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+[data-engine="hermes"] .hm-chat-code-block:hover .hm-chat-code-copy,
+[data-engine="hermes"] .hm-chat-code-copy:focus-visible {
+  opacity: 1;
+}
+[data-engine="hermes"] .hm-chat-code-copy:hover {
+  color: var(--hm-accent);
+  background: var(--hm-accent-soft);
+}
+[data-engine="hermes"] .hm-chat-msg-content pre code {
+  background: transparent;
+  padding: 0;
+  color: var(--hm-text-primary);
+}
+[data-engine="hermes"] .hm-chat-msg-content a {
+  color: var(--hm-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+[data-engine="hermes"] .hm-chat-msg-content strong { font-weight: 600; }
+[data-engine="hermes"] .hm-chat-msg-content em { font-style: italic; }
+
+/* Streaming dots pulse (shown while first delta hasn't arrived) */
+[data-engine="hermes"] .hm-chat-streaming-dots {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px 0;
+}
+[data-engine="hermes"] .hm-chat-streaming-dots span {
+  width: 6px;
+  height: 6px;
+  background: var(--hm-text-tertiary);
+  border-radius: 50%;
+  animation: hm-chat-dots 1.4s infinite ease-in-out;
+}
+[data-engine="hermes"] .hm-chat-streaming-dots span:nth-child(2) { animation-delay: 0.2s; }
+[data-engine="hermes"] .hm-chat-streaming-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes hm-chat-dots {
+  0%, 80%, 100% { opacity: 0.25; transform: scale(0.7); }
+  40%           { opacity: 1; transform: scale(1); }
+}
+
+/* ---- Tool messages ---- */
+[data-engine="hermes"] .hm-chat-msg--tool {
+  align-items: flex-start;
+  padding-left: 42px;  /* align with assistant content, not avatar */
+}
+[data-engine="hermes"] .hm-chat-tool-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: var(--hm-radius-sm);
+  font-family: var(--hm-font-sans);
+  font-size: 11px;
+  color: var(--hm-text-tertiary);
+  max-width: 100%;
+}
+[data-engine="hermes"] .hm-chat-tool-line.is-expandable {
+  cursor: pointer;
+  background: var(--hm-surface-1);
+  border: 1px solid var(--hm-border-subtle);
+  transition: all 0.15s ease;
+}
+[data-engine="hermes"] .hm-chat-tool-line.is-expandable:hover {
+  border-color: var(--hm-accent);
+  color: var(--hm-text-secondary);
+}
+[data-engine="hermes"] .hm-chat-tool-chevron {
+  display: inline-flex;
+  transition: transform 0.15s ease;
+}
+[data-engine="hermes"] .hm-chat-tool-chevron.is-open {
+  transform: rotate(90deg);
+}
+[data-engine="hermes"] .hm-chat-tool-icon {
+  display: inline-flex;
+  color: var(--hm-text-tertiary);
+}
+[data-engine="hermes"] .hm-chat-tool-name {
+  font-family: var(--hm-font-mono);
+  font-size: 11px;
+  color: var(--hm-text-primary);
+  font-weight: 500;
+}
+[data-engine="hermes"] .hm-chat-tool-preview {
+  color: var(--hm-text-tertiary);
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[data-engine="hermes"] .hm-chat-tool-err {
+  font-size: 9.5px;
+  color: var(--hm-error);
+  background: var(--hm-error-soft);
+  padding: 1px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+[data-engine="hermes"] .hm-chat-tool-spinner {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--hm-text-tertiary);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: hm-chat-spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+[data-engine="hermes"] .hm-chat-tool-details {
+  margin-top: 4px;
+  margin-left: 10px;
+  border-left: 2px solid var(--hm-border);
+  padding-left: 12px;
+}
+[data-engine="hermes"] .hm-chat-tool-section {
+  margin-bottom: 6px;
+}
+[data-engine="hermes"] .hm-chat-tool-label {
+  font-family: var(--hm-font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--hm-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 3px;
+}
+[data-engine="hermes"] .hm-chat-tool-code {
+  background: var(--hm-surface-2);
+  border: 1px solid var(--hm-border-subtle);
+  border-radius: var(--hm-radius-sm);
+  padding: 8px 10px;
+  font-family: var(--hm-font-mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--hm-text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 280px;
+  overflow-y: auto;
+  margin: 0;
+}
+
+/* ---- Streaming indicator (thinking + live tool calls) ---- */
+[data-engine="hermes"] .hm-chat-streaming {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 42px;
+}
+[data-engine="hermes"] .hm-chat-streaming-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--hm-font-serif);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--hm-text-tertiary);
+}
+[data-engine="hermes"] .hm-chat-streaming-pulse {
+  width: 8px;
+  height: 8px;
+  background: var(--hm-accent);
+  border-radius: 50%;
+  animation: hm-chat-live-pulse 1.6s ease-in-out infinite;
+}
+[data-engine="hermes"] .hm-chat-live-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+[data-engine="hermes"] .hm-chat-live-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: var(--hm-radius-sm);
+  background: var(--hm-surface-1);
+  border: 1px solid var(--hm-border-subtle);
+  font-size: 11px;
+  color: var(--hm-text-secondary);
+  max-width: fit-content;
+}
+[data-engine="hermes"] .hm-chat-live-tool-icon {
+  display: inline-flex;
+  color: var(--hm-text-tertiary);
+}
+[data-engine="hermes"] .hm-chat-live-tool-name {
+  font-family: var(--hm-font-mono);
+  color: var(--hm-text-primary);
+}
+[data-engine="hermes"] .hm-chat-live-tool-preview {
+  color: var(--hm-text-tertiary);
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Input area ---- */
+[data-engine="hermes"] .hm-chat-input-area {
+  flex-shrink: 0;
+  padding: 16px 48px 18px;
+  border-top: 1px solid var(--hm-border);
+  background: var(--hm-surface-0);
+  position: relative;
+}
+
+[data-engine="hermes"] .hm-chat-input-wrap {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  background: var(--hm-surface-1);
+  border: 1px solid var(--hm-border);
+  border-radius: var(--hm-radius-md);
+  padding: 10px 12px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+[data-engine="hermes"] .hm-chat-input-wrap:focus-within {
+  border-color: var(--hm-accent);
+  box-shadow: 0 0 0 2px rgba(202, 138, 4, 0.12);
+}
+
+[data-engine="hermes"] .hm-chat-input {
+  flex: 1;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--hm-text-primary);
+  font-family: var(--hm-font-serif);
+  font-size: 14.5px;
+  line-height: 1.6;
+  max-height: 160px;
+  min-height: 22px;
+  overflow-y: auto;
+  padding: 2px 2px;
+}
+[data-engine="hermes"] .hm-chat-input::placeholder {
+  color: var(--hm-text-tertiary);
+  font-style: italic;
+}
+[data-engine="hermes"] .hm-chat-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+[data-engine="hermes"] .hm-chat-input-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+[data-engine="hermes"] .hm-chat-send-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: var(--hm-accent);
+  color: #FFFFFF;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+[data-engine="hermes"] .hm-chat-send-btn:hover:not(:disabled) {
+  background: var(--hm-accent-hover, var(--hm-accent));
+  transform: translateX(1px);
+}
+[data-engine="hermes"] .hm-chat-send-btn:disabled {
+  background: var(--hm-surface-2);
+  color: var(--hm-text-tertiary);
+  cursor: not-allowed;
+}
+
+/* ---- Token usage strip (above textarea) ----
+   Sits between the slash menu and the input wrap. Pills are minimal,
+   monospace, and use accent tint for cost so it draws the eye without
+   being shouty. The whole bar can be hidden by `display:none` on the
+   element itself; we just don't render it when usage is zero. */
+[data-engine="hermes"] .hm-chat-usage-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  max-width: 760px;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 0 2px;
+  flex-wrap: wrap;
+}
+[data-engine="hermes"] .hm-chat-shell.is-sidebar-collapsed .hm-chat-input-wrap,
+[data-engine="hermes"] .hm-chat-shell.is-sidebar-collapsed .hm-chat-usage-bar {
+  max-width: 820px;
+}
+[data-engine="hermes"] .hm-chat-usage-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--hm-surface-1);
+  border: 1px solid var(--hm-border-subtle);
+  font-family: var(--hm-font-mono);
+  font-size: 10.5px;
+  color: var(--hm-text-secondary);
+  letter-spacing: 0.01em;
+  line-height: 1.4;
+}
+[data-engine="hermes"] .hm-chat-usage-pill[data-kind="cost"] {
+  background: var(--hm-accent-soft);
+  border-color: transparent;
+  color: var(--hm-accent);
+  font-weight: 600;
+}
+[data-engine="hermes"] .hm-chat-usage-pill[data-kind="cache"] {
+  color: var(--hm-text-tertiary);
+}
+[data-engine="hermes"] .hm-chat-usage-label {
+  text-transform: uppercase;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--hm-text-tertiary);
+  font-weight: 500;
+}
+[data-engine="hermes"] .hm-chat-usage-value {
+  color: var(--hm-text-primary);
+  font-weight: 600;
+}
+[data-engine="hermes"] .hm-chat-usage-pill[data-kind="cost"] .hm-chat-usage-value {
+  color: var(--hm-accent);
+}
+
+/* ---- Slash menu ---- */
+[data-engine="hermes"] .hm-chat-slash-menu {
+  position: absolute;
+  left: 48px;
+  right: 48px;
+  bottom: calc(100% + 4px);
+  background: var(--hm-surface-0);
+  border: 1px solid var(--hm-border);
+  border-radius: var(--hm-radius-md);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.06);
+  padding: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+  z-index: 5;
+  bottom: auto;
+  top: auto;
+  transform: translateY(-100%);
+  /* The slash menu is anchored INSIDE the input area (bottom: 100%). */
+}
+[data-engine="hermes"] .hm-chat-input-area .hm-chat-slash-menu {
+  position: absolute;
+  left: 48px;
+  right: 48px;
+  bottom: calc(100% - 4px);
+  top: auto;
+  transform: translateY(-6px);
+}
+[data-engine="hermes"] .hm-chat-slash-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--hm-text-primary);
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--hm-radius-sm);
+  transition: background 0.12s ease;
+}
+[data-engine="hermes"] .hm-chat-slash-item:hover {
+  background: var(--hm-accent-soft);
+}
+[data-engine="hermes"] .hm-chat-slash-cmd {
+  font-family: var(--hm-font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--hm-accent);
+  min-width: 72px;
+}
+[data-engine="hermes"] .hm-chat-slash-desc {
+  font-family: var(--hm-font-sans);
+  font-size: 12px;
+  color: var(--hm-text-tertiary);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Context menu ---- */
+.hm-chat-ctxmenu {
+  position: fixed;
+  z-index: 10000;
+  background: var(--hm-surface-0, #FFFCF5);
+  border: 1px solid var(--hm-border, #E5E0D0);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  padding: 4px;
+  min-width: 180px;
+  font-family: var(--hm-font-sans, sans-serif);
+}
+.hm-chat-ctxmenu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  color: var(--hm-text-primary, #1C1917);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.12s ease;
+}
+.hm-chat-ctxmenu-item:hover {
+  background: var(--hm-accent-soft, rgba(202, 138, 4, 0.06));
+}
+.hm-chat-ctxmenu-item.is-danger {
+  color: var(--hm-error, #B91C1C);
+}
+.hm-chat-ctxmenu-item.is-danger:hover {
+  background: var(--hm-error-soft, rgba(185, 28, 28, 0.06));
+}
+
+/* ---- Rename modal input (reuses .modal-overlay/.modal from modal.js) ---- */
+[data-engine="hermes"] .hm-chat-rename-input,
+.hm-chat-rename-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--hm-border, #E5E0D0);
+  border-radius: 6px;
+  background: var(--hm-surface-0, #FFFCF5);
+  color: var(--hm-text-primary, #1C1917);
+  font-family: var(--hm-font-serif, serif);
+  font-size: 14px;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.hm-chat-rename-input:focus {
+  border-color: var(--hm-accent, #CA8A04);
+  box-shadow: 0 0 0 2px rgba(202, 138, 4, 0.15);
+}
+
+/* ---- Stop button (replaces Send during streaming) ---- */
+[data-engine="hermes"] .hm-chat-stop-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid color-mix(in srgb, var(--hm-error) 40%, transparent);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--hm-error) 10%, transparent);
+  color: var(--hm-error);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+[data-engine="hermes"] .hm-chat-stop-btn:hover {
+  background: color-mix(in srgb, var(--hm-error) 18%, transparent);
+  border-color: var(--hm-error);
+}
+[data-engine="hermes"] .hm-chat-input-wrap.is-streaming {
+  border-color: color-mix(in srgb, var(--hm-accent) 30%, transparent);
+  background: color-mix(in srgb, var(--hm-accent) 3%, var(--hm-surface-1));
+}
+
+/* ---- Session Search modal (Ctrl+K) ---- */
+.hm-chat-search-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10500;
+  background: rgba(28, 25, 23, 0.35);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 12vh 16px 16px;
+  animation: hm-chat-search-fade 0.15s ease;
+}
+@keyframes hm-chat-search-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+[data-engine="hermes"] .hm-chat-search-panel,
+.hm-chat-search-panel[data-engine="hermes"] {
+  width: 100%;
+  max-width: 560px;
+  max-height: 70vh;
+  background: var(--hm-surface-0, #FFFCF5);
+  border: 1px solid var(--hm-border, #E5E0D0);
+  border-radius: 10px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: hm-chat-search-slide 0.2s ease;
+  font-family: var(--hm-font-sans, sans-serif);
+  color: var(--hm-text-primary, #1C1917);
+}
+@keyframes hm-chat-search-slide {
+  from { transform: translateY(-8px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+.hm-chat-search-panel .hm-chat-search-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--hm-border-subtle, #EDE8D9);
+  background: var(--hm-surface-1, #FAF7EE);
+}
+.hm-chat-search-panel .hm-chat-search-icon {
+  color: var(--hm-text-tertiary);
+  flex-shrink: 0;
+}
+.hm-chat-search-panel .hm-chat-search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--hm-text-primary, #1C1917);
+  font-family: var(--hm-font-serif, serif);
+  font-size: 16px;
+  line-height: 1.4;
+  padding: 2px 0;
+}
+.hm-chat-search-panel .hm-chat-search-input::placeholder {
+  color: var(--hm-text-tertiary);
+  font-style: italic;
+}
+.hm-chat-search-panel .hm-chat-search-kbd {
+  font-family: var(--hm-font-mono, monospace);
+  font-size: 10px;
+  color: var(--hm-text-tertiary);
+  padding: 2px 6px;
+  border: 1px solid var(--hm-border);
+  border-radius: 4px;
+  background: var(--hm-surface-0);
+  letter-spacing: 0.03em;
+}
+
+.hm-chat-search-panel .hm-chat-search-results {
+  overflow-y: auto;
+  flex: 1;
+  padding: 6px 0 8px;
+}
+.hm-chat-search-panel .hm-chat-search-empty {
+  padding: 36px 20px;
+  text-align: center;
+  color: var(--hm-text-tertiary);
+  font-family: var(--hm-font-serif, serif);
+  font-style: italic;
+  font-size: 13.5px;
+}
+
+.hm-chat-search-panel .hm-chat-search-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 18px;
+  border: none;
+  background: transparent;
+  color: var(--hm-text-primary, #1C1917);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s ease;
+  border-left: 2px solid transparent;
+}
+.hm-chat-search-panel .hm-chat-search-item:hover,
+.hm-chat-search-panel .hm-chat-search-item.is-active {
+  background: var(--hm-accent-soft, rgba(202, 138, 4, 0.08));
+  border-left-color: var(--hm-accent, #CA8A04);
+}
+.hm-chat-search-panel .hm-chat-search-item-main {
+  flex: 1;
+  min-width: 0;
+}
+.hm-chat-search-panel .hm-chat-search-item-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13.5px;
+  color: var(--hm-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hm-chat-search-panel .hm-chat-search-item-src {
+  font-family: var(--hm-font-mono, monospace);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--hm-text-tertiary);
+  background: var(--hm-surface-2, #F1ECDC);
+  border: 1px solid var(--hm-border-subtle);
+  padding: 1px 5px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.hm-chat-search-panel .hm-chat-search-item-snippet {
+  margin-top: 3px;
+  font-family: var(--hm-font-serif, serif);
+  font-style: italic;
+  font-size: 12px;
+  color: var(--hm-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hm-chat-search-panel .hm-chat-search-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.hm-chat-search-panel .hm-chat-search-item-model {
+  font-family: var(--hm-font-mono, monospace);
+  font-size: 10px;
+  color: var(--hm-accent, #CA8A04);
+  background: var(--hm-accent-soft);
+  padding: 0 5px;
+  border-radius: 3px;
+  line-height: 15px;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hm-chat-search-panel .hm-chat-search-item-time {
+  font-family: var(--hm-font-mono, monospace);
+  font-size: 10.5px;
+  color: var(--hm-text-tertiary);
+}
+
+.hm-chat-search-panel .hm-chat-search-foot {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 18px;
+  border-top: 1px solid var(--hm-border-subtle);
+  background: var(--hm-surface-1);
+  font-family: var(--hm-font-mono, monospace);
+  font-size: 10.5px;
+  color: var(--hm-text-tertiary);
+}
+.hm-chat-search-panel .hm-chat-search-foot kbd {
+  font-family: var(--hm-font-mono, monospace);
+  font-size: 10px;
+  padding: 1px 5px;
+  border: 1px solid var(--hm-border);
+  border-radius: 3px;
+  background: var(--hm-surface-0);
+  color: var(--hm-text-secondary);
+  margin: 0 1px;
+}
+
+[data-engine="hermes"].hm-usage-page {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 28px 30px 40px;
+  color: var(--hm-text-primary);
+}
+[data-engine="hermes"] .hm-usage-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+[data-engine="hermes"] .hm-usage-hero-copy {
+  min-width: 0;
+}
+[data-engine="hermes"] .hm-usage-eyebrow {
+  font-family: var(--hm-font-mono, monospace);
+  font-size: 10.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--hm-text-tertiary);
+  margin-bottom: 10px;
+}
+[data-engine="hermes"] .hm-usage-title {
+  margin: 0;
+  font-family: var(--hm-font-serif, serif);
+  font-size: clamp(32px, 4vw, 44px);
+  line-height: 1.02;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  color: var(--hm-text-primary);
+}
+[data-engine="hermes"] .hm-usage-desc {
+  margin: 10px 0 0;
+  max-width: 720px;
+  color: var(--hm-text-secondary);
+  font-size: 14px;
+  line-height: 1.7;
+}
+[data-engine="hermes"] .hm-usage-refresh {
+  flex-shrink: 0;
+}
+[data-engine="hermes"] .hm-usage-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+[data-engine="hermes"] .hm-usage-loading,
+[data-engine="hermes"] .hm-usage-empty,
+[data-engine="hermes"] .hm-usage-error-card {
+  border: 1px solid var(--hm-border);
+  border-radius: 18px;
+  background: var(--hm-surface-0);
+  box-shadow: 0 16px 36px rgba(28, 25, 23, 0.05);
+}
+[data-engine="hermes"] .hm-usage-loading,
+[data-engine="hermes"] .hm-usage-empty {
+  padding: 56px 24px;
+  text-align: center;
+  color: var(--hm-text-tertiary);
+  font-family: var(--hm-font-serif, serif);
+  font-style: italic;
+  font-size: 15px;
+}
+[data-engine="hermes"] .hm-usage-error-card {
+  padding: 24px;
+}
+[data-engine="hermes"] .hm-usage-error-title {
+  font-family: var(--hm-font-serif, serif);
+  font-size: 24px;
+  color: var(--hm-text-primary);
+  margin-bottom: 8px;
+}
+[data-engine="hermes"] .hm-usage-error-text {
+  color: var(--hm-error);
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+[data-engine="hermes"] .hm-usage-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+[data-engine="hermes"] .hm-usage-stat-card {
+  min-height: 132px;
+  padding: 18px 18px 16px;
+  border-radius: 18px;
+  border: 1px solid var(--hm-border);
+  background: var(--hm-surface-0);
+  box-shadow: 0 16px 36px rgba(28, 25, 23, 0.05);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+[data-engine="hermes"] .hm-usage-stat-card.is-accent {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--hm-accent) 9%, var(--hm-surface-0)) 0%, var(--hm-surface-0) 100%);
+}
+[data-engine="hermes"] .hm-usage-stat-card.is-muted {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--hm-text-primary) 3%, var(--hm-surface-0)) 0%, var(--hm-surface-0) 100%);
+}
+[data-engine="hermes"] .hm-usage-stat-label {
+  font-family: var(--hm-font-mono, monospace);
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--hm-text-tertiary);
+}
+[data-engine="hermes"] .hm-usage-stat-value {
+  margin-top: 10px;
+  font-family: var(--hm-font-serif, serif);
+  font-size: clamp(28px, 3vw, 36px);
+  line-height: 1.04;
+  color: var(--hm-text-primary);
+  letter-spacing: -0.03em;
+}
+[data-engine="hermes"] .hm-usage-stat-sub {
+  margin-top: 10px;
+  color: var(--hm-text-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+}
+[data-engine="hermes"] .hm-usage-card {
+  border: 1px solid var(--hm-border);
+  border-radius: 20px;
+  background: var(--hm-surface-0);
+  box-shadow: 0 16px 36px rgba(28, 25, 23, 0.05);
+  padding: 18px 20px 20px;
+}
+[data-engine="hermes"] .hm-usage-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+[data-engine="hermes"] .hm-usage-card-title {
+  margin: 0;
+  font-family: var(--hm-font-serif, serif);
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.15;
+  color: var(--hm-text-primary);
+}
+[data-engine="hermes"] .hm-usage-model-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+[data-engine="hermes"] .hm-usage-model-row {
+  display: grid;
+  grid-template-columns: minmax(0, 180px) 1fr 72px;
+  align-items: center;
+  gap: 12px;
+}
+[data-engine="hermes"] .hm-usage-model-name,
+[data-engine="hermes"] .hm-usage-model-meta {
+  font-family: var(--hm-font-mono, monospace);
+  font-size: 12px;
+}
+[data-engine="hermes"] .hm-usage-model-name {
+  color: var(--hm-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-engine="hermes"] .hm-usage-model-meta {
+  color: var(--hm-text-tertiary);
+  text-align: right;
+}
+[data-engine="hermes"] .hm-usage-model-track {
+  position: relative;
+  height: 14px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--hm-text-primary) 6%, var(--hm-surface-2));
+  overflow: hidden;
+}
+[data-engine="hermes"] .hm-usage-model-bar {
+  height: 100%;
+  min-width: 2px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--hm-accent) 0%, color-mix(in srgb, var(--hm-accent) 72%, #f6c453) 100%);
+}
+[data-engine="hermes"] .hm-usage-empty-inline {
+  padding: 12px 0 4px;
+  color: var(--hm-text-tertiary);
+  font-size: 13px;
+}
+[data-engine="hermes"] .hm-usage-card--trend {
+  padding-bottom: 16px;
+}
+[data-engine="hermes"] .hm-usage-trend-wrap {
+  position: relative;
+  height: 232px;
+  margin-bottom: 8px;
+}
+[data-engine="hermes"] .hm-usage-trend-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+[data-engine="hermes"] .hm-usage-trend-grid {
+  stroke: color-mix(in srgb, var(--hm-border) 88%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 4 6;
+}
+[data-engine="hermes"] .hm-usage-trend-area {
+  fill: url(#hm-usage-trend-fill);
+}
+[data-engine="hermes"] .hm-usage-trend-bar {
+  fill: color-mix(in srgb, var(--hm-accent) 30%, transparent);
+}
+[data-engine="hermes"] .hm-usage-trend-line {
+  fill: none;
+  stroke: var(--hm-accent);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+[data-engine="hermes"] .hm-usage-trend-dot {
+  fill: var(--hm-accent);
+  stroke: var(--hm-surface-0);
+  stroke-width: 1.5;
+}
+[data-engine="hermes"] .hm-usage-trend-range {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  color: var(--hm-text-tertiary);
+  font-family: var(--hm-font-mono, monospace);
+  font-size: 10.5px;
+}
+[data-engine="hermes"] .hm-usage-table-wrap {
+  overflow-x: auto;
+}
+[data-engine="hermes"] .hm-usage-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+[data-engine="hermes"] .hm-usage-table th {
+  text-align: left;
+  padding: 9px 8px;
+  border-bottom: 1px solid var(--hm-border);
+  color: var(--hm-text-tertiary);
+  font-family: var(--hm-font-mono, monospace);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+[data-engine="hermes"] .hm-usage-table td {
+  padding: 9px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--hm-border) 82%, transparent);
+  color: var(--hm-text-secondary);
+  font-family: var(--hm-font-mono, monospace);
+  font-size: 12px;
+}
+[data-engine="hermes"] .hm-usage-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+[data-engine="hermes"].hm-services-page {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 28px 30px 40px;
+  color: var(--hm-text-primary);
+}
+[data-engine="hermes"] .hm-services-desc {
+  margin: 0 0 18px;
+  max-width: 760px;
+  color: var(--hm-text-secondary);
+  font-size: 14px;
+  line-height: 1.7;
+}
+[data-engine="hermes"] .hm-services-msg {
+  margin: 14px 0 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--hm-border);
+  border-radius: 14px;
+  background: var(--hm-surface-1);
+  font-family: var(--hm-font-mono, monospace);
+  font-size: 12px;
+  line-height: 1.6;
+}
+[data-engine="hermes"] .hm-services-msg[data-tone="success"] {
+  color: var(--hm-success);
+  border-color: color-mix(in srgb, var(--hm-success) 24%, var(--hm-border));
+  background: color-mix(in srgb, var(--hm-success) 7%, var(--hm-surface-1));
+}
+[data-engine="hermes"] .hm-services-msg[data-tone="error"] {
+  color: var(--hm-error);
+  border-color: color-mix(in srgb, var(--hm-error) 24%, var(--hm-border));
+  background: color-mix(in srgb, var(--hm-error) 8%, var(--hm-surface-1));
+}
+[data-engine="hermes"] .hm-services-msg[data-tone="warn"] {
+  color: var(--hm-warn);
+  border-color: color-mix(in srgb, var(--hm-warn) 28%, var(--hm-border));
+  background: color-mix(in srgb, var(--hm-warn) 10%, var(--hm-surface-1));
+}
+[data-engine="hermes"] .hm-services-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+[data-engine="hermes"] .hm-services-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+[data-engine="hermes"] .hm-services-row {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+[data-engine="hermes"] .hm-services-row-label {
+  color: var(--hm-text-tertiary);
+  font-family: var(--hm-font-serif, serif);
+  font-style: italic;
+  font-size: 12px;
+  line-height: 1.5;
+}
+[data-engine="hermes"] .hm-services-row-value {
+  color: var(--hm-text-primary);
+  font-size: 13px;
+  line-height: 1.7;
+  word-break: break-word;
+}
+[data-engine="hermes"] .hm-services-row-value.is-mono {
+  font-family: var(--hm-font-mono, monospace);
+  font-size: 12px;
+  color: var(--hm-text-secondary);
+}
+[data-engine="hermes"] .hm-services-note {
+  color: var(--hm-text-secondary);
+  font-size: 13px;
+  line-height: 1.65;
+}
+[data-engine="hermes"] .hm-services-env-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+[data-engine="hermes"] .hm-services-env-card {
+  border: 1px solid var(--hm-border);
+  border-radius: 16px;
+  background: var(--hm-surface-1);
+  padding: 14px 16px;
+}
+[data-engine="hermes"] .hm-services-env-title {
+  font-family: var(--hm-font-serif, serif);
+  font-size: 18px;
+  line-height: 1.2;
+  color: var(--hm-text-primary);
+  margin-bottom: 8px;
+}
+[data-engine="hermes"] .hm-services-env-meta {
+  color: var(--hm-text-secondary);
+  font-family: var(--hm-font-mono, monospace);
+  font-size: 11.5px;
+  line-height: 1.7;
+  word-break: break-word;
+}
+[data-engine="hermes"] .hm-services-inline-msg {
+  font-family: var(--hm-font-mono, monospace);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+[data-engine="hermes"] .hm-services-inline-msg[data-tone="success"] {
+  color: var(--hm-success);
+}
+[data-engine="hermes"] .hm-services-inline-msg[data-tone="error"] {
+  color: var(--hm-error);
+}
+[data-engine="hermes"] .hm-services-inline-msg[data-tone="warn"] {
+  color: var(--hm-warn);
+}
+[data-engine="hermes"] .hm-services-health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+}
+[data-engine="hermes"] .hm-services-health-card {
+  border: 1px solid var(--hm-border);
+  border-radius: 16px;
+  background: var(--hm-surface-1);
+  padding: 14px 16px;
+  min-height: 88px;
+}
+[data-engine="hermes"] .hm-services-health-key {
+  font-family: var(--hm-font-mono, monospace);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--hm-text-tertiary);
+}
+[data-engine="hermes"] .hm-services-health-value {
+  margin-top: 10px;
+  font-family: var(--hm-font-serif, serif);
+  font-size: 22px;
+  line-height: 1.2;
+  color: var(--hm-text-primary);
+  word-break: break-word;
+}
+[data-engine="hermes"] .hm-services-json-wrap {
+  margin-top: 16px;
+}
+[data-engine="hermes"] .hm-services-json-wrap summary {
+  cursor: pointer;
+  color: var(--hm-text-secondary);
+  font-size: 12px;
+  font-family: var(--hm-font-mono, monospace);
+}
+[data-engine="hermes"] .hm-services-json {
+  margin-top: 10px;
+  max-height: 260px;
+}
+[data-engine="hermes"] .hm-services-empty {
+  padding: 18px 0 4px;
+  color: var(--hm-text-tertiary);
+  font-family: var(--hm-font-serif, serif);
+  font-style: italic;
+  font-size: 15px;
+}
+[data-engine="hermes"] .hm-services-action-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+[data-engine="hermes"] .hm-services-mode {
+  appearance: none;
+}
+
+@media (max-width: 960px) {
+  [data-engine="hermes"].hm-usage-page {
+    padding: 24px 22px 34px;
+  }
+  [data-engine="hermes"] .hm-usage-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  [data-engine="hermes"].hm-services-page {
+    padding: 24px 22px 34px;
+  }
+  [data-engine="hermes"] .hm-services-grid {
+    grid-template-columns: 1fr;
+  }
+  [data-engine="hermes"] .hm-services-action-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  [data-engine="hermes"] .hm-usage-hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  [data-engine="hermes"] .hm-usage-refresh {
+    width: 100%;
+  }
+  [data-engine="hermes"] .hm-usage-stat-grid {
+    grid-template-columns: 1fr;
+  }
+  [data-engine="hermes"] .hm-usage-model-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  [data-engine="hermes"] .hm-usage-model-meta {
+    text-align: left;
+  }
+  [data-engine="hermes"] .hm-usage-table th,
+  [data-engine="hermes"] .hm-usage-table td {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+  [data-engine="hermes"] .hm-services-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  [data-engine="hermes"] .hm-services-env-grid,
+  [data-engine="hermes"] .hm-services-health-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- Responsive breakpoints ---- */
+@media (max-width: 960px) {
+  [data-engine="hermes"] .hm-chat-sidebar {
+    width: 240px;
+    flex-basis: 240px;
+  }
+  [data-engine="hermes"] .hm-chat-messages {
+    padding: 24px 28px;
+  }
+  [data-engine="hermes"] .hm-chat-input-area {
+    padding: 14px 28px 16px;
+  }
+  [data-engine="hermes"] .hm-chat-header {
+    padding: 14px 20px;
+  }
+}
+@media (max-width: 720px) {
+  [data-engine="hermes"] .hm-chat-sidebar-backdrop {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 19;
+    opacity: 1;
+    pointer-events: auto;
+    background: rgba(28, 25, 23, 0.28);
+    backdrop-filter: blur(2px);
+    transition: opacity 0.18s ease;
+  }
+  [data-engine="hermes"] .hm-chat-shell.is-sidebar-collapsed .hm-chat-sidebar-backdrop {
+    opacity: 0;
+    pointer-events: none;
+  }
+  [data-engine="hermes"] .hm-chat-shell.is-sidebar-collapsed .hm-chat-sidebar {
+    display: flex;
+  }
+  [data-engine="hermes"] .hm-chat-sidebar {
+    /* Below 720px the sidebar floats over the main column instead of
+       sharing the row, so the chat surface gets the full viewport. */
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 280px;
+    flex-basis: 280px;
+    z-index: 20;
+    box-shadow: 2px 0 16px rgba(0, 0, 0, 0.08);
+  }
+  [data-engine="hermes"] .hm-chat-sidebar.is-collapsed {
+    transform: translateX(-100%);
+  }
+  [data-engine="hermes"] .hm-chat-messages {
+    padding: 20px 18px;
+  }
+  [data-engine="hermes"] .hm-chat-jump-bottom {
+    right: 18px;
+    bottom: 106px;
+  }
+  [data-engine="hermes"] .hm-chat-input-area {
+    padding: 12px 18px 14px;
+  }
+  [data-engine="hermes"] .hm-chat-msg-body {
+    max-width: 92%;
+  }
+  [data-engine="hermes"] .hm-chat-input-area .hm-chat-slash-menu {
+    left: 18px;
+    right: 18px;
+  }
+}
+
+@media (max-width: 860px) {
+  [data-engine="hermes"].hm-extensions-page .hm-grid--2 {
+    grid-template-columns: 1fr !important;
+  }
+
+  [data-engine="hermes"].hm-extensions-page .hm-kpi-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+

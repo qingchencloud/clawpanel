@@ -21,6 +21,7 @@ import { initFeatureGates } from './lib/feature-gates.js'
 import { registerEngine, initEngineManager, getActiveEngine, getActiveEngineId, onEngineChange } from './lib/engine-manager.js'
 import openclawEngine from './engines/openclaw/index.js'
 import hermesEngine from './engines/hermes/index.js'
+import xintianEngine from './engines/xintian/index.js'
 
 // 样式
 import './style/variables.css'
@@ -33,6 +34,9 @@ import './style/agents.css'
 import './style/debug.css'
 import './style/assistant.css'
 import './style/ai-drawer.css'
+// 引擎专属样式（scope 到 [data-engine="<id>"] 子树，不影响其他引擎）
+import './engines/hermes/style/hermes.css'
+import './engines/xintian/style/xintian.css'
 
 // 初始化主题 + 国际化
 initTheme()
@@ -316,6 +320,7 @@ async function boot() {
   // 注册引擎
   registerEngine(openclawEngine)
   registerEngine(hermesEngine)
+  registerEngine(xintianEngine)
 
   // 初始化引擎管理器：读取 clawpanel.json 的 engineMode，注册对应路由
   await initEngineManager()

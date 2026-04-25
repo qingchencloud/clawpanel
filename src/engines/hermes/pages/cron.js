@@ -69,6 +69,7 @@ const ICONS = {
 export function render() {
   const el = document.createElement('div')
   el.className = 'page'
+  el.dataset.engine = 'hermes'
 
   let jobs = []
   let gwOnline = false
@@ -86,20 +87,75 @@ export function render() {
       const info = await api.checkHermes()
       gwOnline = !!info?.gatewayRunning
     } catch (_) {}
-    if (gwOnline) await loadJobs()
+    await loadJobs()
     loading = false
     draw()
   }
 
   async function loadJobs() {
     try {
-      const data = await gw('/api/jobs')
-      jobs = data.jobs || []
+      if (gwOnline) {
+        const data = await gw('/api/jobs')
+        jobs = data.jobs || []
+      } else {
+        const data = await api.hermesCronJobsList()
+        jobs = Array.isArray(data) ? data : []
+      }
       errorMsg = ''
     } catch (e) {
-      errorMsg = String(e.message || e)
-      jobs = []
+      try {
+        const data = await api.hermesCronJobsList()
+        jobs = Array.isArray(data) ? data : []
+        errorMsg = ''
+      } catch (_) {
+        errorMsg = String(e.message || e)
+        jobs = []
+      }
     }
+  }
+
+  // ── 主渲染 ──
+
+  // ── Helpers ──
+
+  /**
+   * Derive a semantic job state label.
+   * Priority: running > paused > disabled > scheduled
+   * Mirrors the logic used by hermes-web-ui's JobCard.vue.
+   */
+  function jobStateOf(j) {
+    if (j.state === 'running') return 'running'
+    if (j.state === 'paused' || j.paused) return 'paused'
+    if (j.enabled === false) return 'disabled'
+    return 'scheduled'
+  }
+
+  /** Format any server-side timestamp (ISO / epoch-sec / epoch-ms) → local. */
+  function fmtJobTime(ts) {
+    if (!ts && ts !== 0) return '—'
+    let d
+    if (typeof ts === 'number') {
+      d = new Date(ts > 1e12 ? ts : ts * 1000)
+    } else {
+      d = new Date(ts)
+    }
+    if (isNaN(d.getTime())) return String(ts)
+    const pad = (n) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  }
+
+  /** Human-friendly "in X minutes" hint for next_run_at. */
+  function relativeFuture(ts) {
+    if (!ts && ts !== 0) return ''
+    let d
+    if (typeof ts === 'number') d = new Date(ts > 1e12 ? ts : ts * 1000)
+    else d = new Date(ts)
+    const diff = Math.floor((d.getTime() - Date.now()) / 1000)
+    if (diff < 0) return t('engine.cronOverdue')
+    if (diff < 60) return t('engine.cronInSeconds').replace('{n}', diff)
+    if (diff < 3600) return t('engine.cronInMinutes').replace('{n}', Math.floor(diff / 60))
+    if (diff < 86400) return t('engine.cronInHours').replace('{n}', Math.floor(diff / 3600))
+    return t('engine.cronInDays').replace('{n}', Math.floor(diff / 86400))
   }
 
   // ── 主渲染 ──
@@ -107,88 +163,189 @@ export function render() {
   function draw() {
     if (editingJob) { drawForm(); return }
     const total = jobs.length
-    const active = jobs.filter(j => !j.paused).length
-    const paused = total - active
+    const runningCount = jobs.filter(j => jobStateOf(j) === 'running').length
+    const paused = jobs.filter(j => jobStateOf(j) === 'paused').length
+    const failed = jobs.filter(j => j.last_status && j.last_status !== 'ok').length
 
     el.innerHTML = `
-      <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-        <h1 style="margin:0">${t('engine.hermesCronTitle')}</h1>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-sm btn-secondary hm-cron-refresh" title="Refresh" style="padding:4px 10px">${ICONS.refresh}</button>
-          <button class="btn btn-primary btn-sm hm-cron-create" ${!gwOnline ? 'disabled' : ''}>${t('engine.cronCreate')}</button>
+      <!-- Editorial hero -->
+      <div class="hm-hero" data-state="${gwOnline ? 'running' : 'stopped'}">
+        <div class="hm-hero-title">
+          <div class="hm-hero-eyebrow">
+            <span class="hm-dot hm-dot--${gwOnline ? 'run' : 'stop'}"></span>
+            ${t('engine.cronEyebrow')}
+          </div>
+          <h1 class="hm-hero-h1">${t('engine.hermesCronTitle')}</h1>
+          <div class="hm-hero-sub">${total} ${t('engine.cronJobs')} · ${runningCount} ${t('engine.cronRunning').toLowerCase()}</div>
+        </div>
+        <div class="hm-hero-actions">
+          <button class="hm-btn hm-btn--ghost hm-btn--sm hm-cron-refresh" ${!gwOnline || loading ? 'disabled' : ''} title="${t('engine.logsRefresh')}">
+            ${ICONS.refresh} ${t('engine.logsRefresh')}
+          </button>
+          <button class="hm-btn hm-btn--cta hm-cron-create" ${!gwOnline ? 'disabled' : ''}>
+            + ${t('engine.cronCreate')}
+          </button>
         </div>
       </div>
-      ${errorMsg ? `<div style="color:var(--error);font-size:13px;margin-bottom:12px;padding:8px 12px;background:var(--error-muted, #fee2e2);border-radius:6px">${esc(errorMsg)}</div>` : ''}
+
+      ${errorMsg ? `
+        <div class="hm-panel" style="margin-bottom:16px">
+          <div class="hm-panel-body hm-panel-body--tight">
+            <div style="color:var(--hm-error);font-family:var(--hm-font-mono);font-size:12.5px">${esc(errorMsg)}</div>
+          </div>
+        </div>
+      ` : ''}
+
       ${!gwOnline ? `
-        <div class="card"><div class="card-body" style="padding:32px;text-align:center;color:var(--text-tertiary)">
-          <div style="margin-bottom:8px">${ICONS.clock.replace('width="14"', 'width="32"').replace('height="14"', 'height="32"')}</div>
-          ${t('engine.chatGatewayOffline')}
+        <div class="hm-panel"><div class="hm-panel-body" style="text-align:center;padding:40px 28px">
+          <div style="margin-bottom:10px;color:var(--hm-text-muted)">${ICONS.clock.replace('width="14"', 'width="32"').replace('height="14"', 'height="32"')}</div>
+          <div style="font-family:var(--hm-font-serif);font-style:italic;font-size:15px;color:var(--hm-text-tertiary)">${t('engine.chatGatewayOffline')}</div>
         </div></div>
       ` : ''}
+
       ${gwOnline && !loading ? `
-        <!-- 统计卡片 -->
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
-          <div class="card"><div class="card-body" style="padding:12px 16px">
-            <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:4px">${t('engine.cronTotal')}</div>
-            <div style="font-size:20px;font-weight:700">${total}</div>
-          </div></div>
-          <div class="card"><div class="card-body" style="padding:12px 16px">
-            <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:4px">${t('engine.cronRunning')}</div>
-            <div style="font-size:20px;font-weight:700;color:var(--success,#22c55e)">${active}</div>
-          </div></div>
-          <div class="card"><div class="card-body" style="padding:12px 16px">
-            <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:4px">${t('engine.cronPaused')}</div>
-            <div style="font-size:20px;font-weight:700;color:var(--text-tertiary)">${paused}</div>
-          </div></div>
+        <!-- KPI grid (4 stats) -->
+        <div class="hm-kpi-grid">
+          <div class="hm-kpi" data-tone="accent">
+            <div class="hm-kpi-label">${t('engine.cronTotal')}</div>
+            <div class="hm-kpi-value">${total}</div>
+            <div class="hm-kpi-foot">jobs defined</div>
+          </div>
+          <div class="hm-kpi" data-tone="success">
+            <div class="hm-kpi-label">${t('engine.cronRunning')}</div>
+            <div class="hm-kpi-value">${runningCount}</div>
+            <div class="hm-kpi-foot">actively executing</div>
+          </div>
+          <div class="hm-kpi" data-tone="${paused > 0 ? 'warn' : ''}">
+            <div class="hm-kpi-label">${t('engine.cronPaused')}</div>
+            <div class="hm-kpi-value">${paused}</div>
+            <div class="hm-kpi-foot">manually paused</div>
+          </div>
+          <div class="hm-kpi" data-tone="${failed > 0 ? 'error' : ''}">
+            <div class="hm-kpi-label">${t('engine.cronFailed')}</div>
+            <div class="hm-kpi-value">${failed}</div>
+            <div class="hm-kpi-foot">last run failed</div>
+          </div>
         </div>
+
         ${total === 0 ? `
-          <div class="card"><div class="card-body" style="padding:40px;text-align:center">
-            <div style="margin-bottom:8px;color:var(--text-tertiary)">${ICONS.clock.replace('width="14"', 'width="40"').replace('height="14"', 'height="40"')}</div>
-            <div style="font-size:15px;color:var(--text-secondary);margin-bottom:6px">${t('engine.cronNoJobs')}</div>
-            <div style="font-size:12px;color:var(--text-tertiary)">${t('engine.cronNoJobsHint')}</div>
+          <div class="hm-panel"><div class="hm-panel-body" style="text-align:center;padding:48px 28px">
+            <div style="margin-bottom:12px;color:var(--hm-text-muted)">${ICONS.clock.replace('width="14"', 'width="40"').replace('height="14"', 'height="40"')}</div>
+            <div style="font-family:var(--hm-font-serif);font-size:16px;color:var(--hm-text-secondary);margin-bottom:6px">${t('engine.cronNoJobs')}</div>
+            <div class="hm-muted">${t('engine.cronNoJobsHint')}</div>
           </div></div>
         ` : renderJobList()}
       ` : ''}
+
       ${loading ? `
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
-          ${[1,2,3].map(() => '<div class="card"><div class="card-body" style="padding:12px 16px"><div class="skeleton-line" style="width:60%;height:12px;margin-bottom:8px"></div><div class="skeleton-line" style="width:40%;height:20px"></div></div></div>').join('')}
+        <div class="hm-kpi-grid">
+          ${[1,2,3,4].map(() => `<div class="hm-kpi">
+            <div class="hm-skel" style="width:60%;height:11px;margin-bottom:10px"></div>
+            <div class="hm-skel" style="width:40%;height:20px;margin-bottom:8px"></div>
+            <div class="hm-skel" style="width:50%;height:10px"></div>
+          </div>`).join('')}
         </div>
-        ${[1,2].map(() => '<div class="card" style="margin-bottom:12px"><div class="card-body" style="padding:16px"><div class="skeleton-line" style="width:50%;height:14px;margin-bottom:8px"></div><div class="skeleton-line" style="width:70%;height:12px"></div></div></div>').join('')}
+        ${[1,2].map(() => `<div class="hm-panel" style="margin-bottom:12px"><div class="hm-panel-body">
+          <div class="hm-skel" style="width:30%;height:14px;margin-bottom:10px"></div>
+          <div class="hm-skel" style="width:60%;height:12px"></div>
+        </div></div>`).join('')}
       ` : ''}
     `
     bindList()
   }
 
   function renderJobList() {
-    return `<div style="display:flex;flex-direction:column;gap:10px">${jobs.map(j => {
+    return `<div class="hm-cron-list">${jobs.map(j => {
       const expr = extractCronExpr(j.schedule)
       const desc = describeCron(j.schedule)
-      const id = esc(j.id || j.name)
+      const id = esc(j.id || j.job_id || j.name)
+      const state = jobStateOf(j)
+      const stateBadge = {
+        running:   { cls: 'hm-badge--accent',  label: t('engine.cronStateRunning') },
+        paused:    { cls: 'hm-badge--warn',    label: t('engine.cronStatePaused') },
+        disabled:  { cls: 'hm-badge--error',   label: t('engine.cronStateDisabled') },
+        scheduled: { cls: 'hm-badge--success', label: t('engine.cronStateScheduled') },
+      }[state]
+      const lastStatus = j.last_status
+        ? (j.last_status === 'ok'
+            ? `<span class="hm-cron-last-ok">✓ ok</span>`
+            : `<span class="hm-cron-last-err" title="${esc(j.last_error || '')}">✗ ${esc(j.last_status)}</span>`)
+        : ''
+      const repeatTxt = j.repeat && typeof j.repeat === 'object'
+        ? `${j.repeat.completed ?? 0} / ${j.repeat.times ?? '∞'}`
+        : (typeof j.repeat === 'string' ? j.repeat : '')
+      const deliverLabel = j.deliver
+        ? (j.deliver === 'origin' && j.origin
+            ? `${esc(j.deliver)} (${esc(j.origin.platform || '')})`
+            : esc(j.deliver))
+        : '—'
+      const promptPreview = j.prompt_preview || j.prompt || ''
+
       return `
-      <div class="card hm-cron-item" data-id="${id}" style="transition:opacity .2s;${j.paused ? 'opacity:0.65' : ''}">
-        <div class="card-body" style="padding:14px 18px">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
-            <div style="flex:1;min-width:200px">
-              <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-                <span style="font-weight:600;font-size:14px">${esc(j.name)}</span>
-                <span style="font-size:10px;padding:2px 8px;border-radius:10px;font-weight:500;background:${j.paused ? 'var(--bg-tertiary)' : 'rgba(34,197,94,0.1)'};color:${j.paused ? 'var(--text-tertiary)' : 'var(--success,#22c55e)'}">${j.paused ? t('engine.cronPaused') : t('engine.cronActive')}</span>
+        <div class="hm-panel hm-cron-item" data-id="${id}" data-state="${state}">
+          <div class="hm-cron-head">
+            <div class="hm-cron-head-left">
+              <div class="hm-cron-title-row">
+                <span class="hm-cron-name">${esc(j.name)}</span>
+                <span class="hm-badge ${stateBadge.cls}">${stateBadge.label}</span>
               </div>
-              <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-tertiary);margin-bottom:2px">
-                ${ICONS.clock}
-                <span>${esc(desc)}</span>
-                <code style="font-size:11px;padding:1px 6px;background:var(--bg-tertiary);border-radius:4px;color:var(--text-secondary)">${esc(expr)}</code>
-              </div>
-              ${j.prompt ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:4px;max-width:500px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(j.prompt)}</div>` : ''}
+              ${promptPreview ? `<div class="hm-cron-prompt">${esc(promptPreview)}</div>` : ''}
             </div>
-            <div style="display:flex;gap:6px;flex-shrink:0">
-              <button class="btn btn-sm btn-secondary hm-cron-toggle" data-id="${id}" data-paused="${j.paused ? '1' : '0'}" title="${j.paused ? 'Resume' : 'Pause'}" style="padding:5px 8px">${j.paused ? ICONS.play : ICONS.pause}</button>
-              <button class="btn btn-sm btn-secondary hm-cron-run" data-id="${id}" title="${t('engine.cronRunNow')}" style="padding:5px 8px">${ICONS.zap}</button>
-              <button class="btn btn-sm btn-secondary hm-cron-edit" data-id="${id}" title="${t('engine.cronEdit')}" style="padding:5px 8px">${ICONS.edit}</button>
-              <button class="btn btn-sm btn-secondary hm-cron-del" data-id="${id}" title="${t('engine.cronDelete')}" style="padding:5px 8px;color:var(--error)">${ICONS.trash}</button>
+            <div class="hm-cron-actions">
+              <button class="hm-btn hm-btn--icon hm-cron-toggle" data-id="${id}" data-paused="${state === 'paused' ? '1' : '0'}" title="${state === 'paused' ? t('engine.cronResume') : t('engine.cronPauseBtn')}">
+                ${state === 'paused' ? ICONS.play : ICONS.pause}
+              </button>
+              <button class="hm-btn hm-btn--icon hm-cron-run" data-id="${id}" title="${t('engine.cronRunNow')}">${ICONS.zap}</button>
+              <button class="hm-btn hm-btn--icon hm-cron-edit" data-id="${id}" title="${t('engine.cronEdit')}">${ICONS.edit}</button>
+              <button class="hm-btn hm-btn--icon hm-cron-del" data-id="${id}" title="${t('engine.cronDelete')}" style="color:var(--hm-error)">${ICONS.trash}</button>
             </div>
           </div>
-        </div>
-      </div>`
+          <div class="hm-cron-meta">
+            <div class="hm-cron-meta-item">
+              <span class="hm-cron-meta-label">${t('engine.cronScheduleLabel')}</span>
+              <span class="hm-cron-meta-value">
+                <span class="hm-cron-schedule-desc">${esc(desc)}</span>
+                <code class="hm-code hm-cron-schedule-expr">${esc(expr)}</code>
+              </span>
+            </div>
+            <div class="hm-cron-meta-item">
+              <span class="hm-cron-meta-label">${t('engine.cronNextRun')}</span>
+              <span class="hm-cron-meta-value">
+                ${esc(fmtJobTime(j.next_run_at))}
+                ${j.next_run_at ? `<span class="hm-cron-rel">${esc(relativeFuture(j.next_run_at))}</span>` : ''}
+              </span>
+            </div>
+            <div class="hm-cron-meta-item">
+              <span class="hm-cron-meta-label">${t('engine.cronLastRun')}</span>
+              <span class="hm-cron-meta-value">
+                ${esc(fmtJobTime(j.last_run_at))}
+                ${lastStatus}
+              </span>
+            </div>
+            <div class="hm-cron-meta-item">
+              <span class="hm-cron-meta-label">${t('engine.cronDeliverLabel')}</span>
+              <span class="hm-cron-meta-value">${deliverLabel}</span>
+            </div>
+            ${repeatTxt ? `
+              <div class="hm-cron-meta-item">
+                <span class="hm-cron-meta-label">${t('engine.cronRepeatLabel')}</span>
+                <span class="hm-cron-meta-value">${esc(repeatTxt)}</span>
+              </div>
+            ` : ''}
+            ${Array.isArray(j.skills) && j.skills.length ? `
+              <div class="hm-cron-meta-item hm-cron-meta-item--skills">
+                <span class="hm-cron-meta-label">${t('engine.cronSkillsLabel')}</span>
+                <span class="hm-cron-meta-value">${j.skills.map(s => `<span class="hm-cron-skill-tag">${esc(s)}</span>`).join('')}</span>
+              </div>
+            ` : ''}
+          </div>
+          ${j.last_error ? `
+            <div class="hm-cron-err">
+              <span class="hm-cron-err-label">${t('engine.cronLastError')}</span>
+              <code class="hm-cron-err-msg">${esc(j.last_error)}</code>
+            </div>
+          ` : ''}
+        </div>`
     }).join('')}</div>`
   }
 
@@ -247,47 +404,95 @@ export function render() {
 
   // ── 创建/编辑表单 ──
 
+  /** Light cron expression sanity check — 5 space-separated fields. */
+  function validateCron(expr) {
+    if (!expr) return false
+    const parts = expr.trim().split(/\s+/)
+    return parts.length === 5
+  }
+
   function drawForm() {
     const isEdit = !!editingJob._editing
-    const id = editingJob.id || editingJob.name
+    const id = editingJob.id || editingJob.job_id || editingJob.name
     const initSchedule = editingJob.schedule || '0 9 * * *'
+    const initDeliver = editingJob.deliver || 'origin'
+    const initRepeat = editingJob.repeat_times != null
+      ? editingJob.repeat_times
+      : (typeof editingJob.repeat === 'number'
+          ? editingJob.repeat
+          : (typeof editingJob.repeat === 'object' ? editingJob.repeat?.times : ''))
 
     const shortcutsHtml = CRON_SHORTCUTS().map(s => {
       const selected = s.expr === initSchedule
-      return `<button type="button" class="btn btn-sm ${selected ? 'btn-primary' : 'btn-secondary'} hm-cron-shortcut" data-expr="${escAttr(s.expr)}" style="font-size:11px;padding:3px 10px">${s.text}</button>`
+      return `<button type="button" class="hm-pill hm-cron-shortcut ${selected ? 'is-active' : ''}" data-expr="${escAttr(s.expr)}">${s.text}</button>`
     }).join('')
 
     el.innerHTML = `
-      <div class="page-header" style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
-        <button class="btn btn-sm btn-secondary hm-cron-back" style="padding:5px 8px">${ICONS.back}</button>
-        <h1 style="margin:0">${isEdit ? t('engine.cronEdit') + ' — ' + esc(editingJob.name) : t('engine.cronCreate')}</h1>
-      </div>
-      ${errorMsg ? `<div style="color:var(--error);font-size:13px;margin-bottom:12px;padding:8px 12px;background:var(--error-muted, #fee2e2);border-radius:6px">${esc(errorMsg)}</div>` : ''}
-      <div class="card">
-        <div class="card-body" style="padding:24px;display:flex;flex-direction:column;gap:18px">
-
-          <div>
-            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px">${t('engine.cronName')}</label>
-            <input class="input" id="hm-cron-name" value="${escAttr(editingJob.name)}" placeholder="${t('engine.cronName')}" style="width:100%" ${isEdit ? 'disabled' : ''}>
+      <!-- Back hero -->
+      <div class="hm-hero">
+        <div class="hm-hero-title">
+          <div class="hm-hero-eyebrow">
+            <button class="hm-cron-back" style="color:inherit;background:none;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font:inherit;padding:0">
+              ${ICONS.back} ${t('engine.hermesCronTitle')}
+            </button>
           </div>
+          <h1 class="hm-hero-h1">${isEdit ? t('engine.cronEdit') : t('engine.cronCreate')}</h1>
+          <div class="hm-hero-sub">${isEdit ? esc(editingJob.name) : t('engine.cronNoJobsHint')}</div>
+        </div>
+      </div>
 
-          <div>
-            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px">${t('engine.cronSchedule')}</label>
-            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${shortcutsHtml}</div>
-            <input class="input" id="hm-cron-schedule" value="${escAttr(initSchedule)}" placeholder="0 9 * * *" style="width:100%;font-family:var(--font-mono,monospace)">
-            <div id="hm-cron-preview" style="font-size:12px;color:var(--text-tertiary);margin-top:6px;display:flex;align-items:center;gap:6px">
+      ${errorMsg ? `
+        <div class="hm-panel" style="margin-bottom:16px">
+          <div class="hm-panel-body hm-panel-body--tight">
+            <div style="color:var(--hm-error);font-family:var(--hm-font-mono);font-size:12.5px">${esc(errorMsg)}</div>
+          </div>
+        </div>
+      ` : ''}
+
+      <div class="hm-panel">
+        <div class="hm-panel-body" style="display:flex;flex-direction:column;gap:22px">
+
+          <!-- Name -->
+          <label class="hm-field">
+            <span class="hm-field-label">${t('engine.cronName')}</span>
+            <input class="hm-input" id="hm-cron-name" value="${escAttr(editingJob.name)}" placeholder="daily-standup-summary" ${isEdit ? 'disabled' : ''}>
+          </label>
+
+          <!-- Schedule -->
+          <div class="hm-field">
+            <span class="hm-field-label">${t('engine.cronSchedule')}</span>
+            <div class="hm-pills" style="margin-bottom:10px">${shortcutsHtml}</div>
+            <input class="hm-input" id="hm-cron-schedule" value="${escAttr(initSchedule)}" placeholder="0 9 * * *">
+            <div id="hm-cron-preview" class="hm-muted" style="margin-top:6px;display:flex;align-items:center;gap:6px">
               ${ICONS.clock} <span>${describeCron(initSchedule)}</span>
             </div>
           </div>
 
-          <div>
-            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px">${t('engine.cronPrompt')}</label>
-            <textarea class="input" id="hm-cron-prompt" rows="4" style="width:100%;resize:vertical;font-size:13px;line-height:1.5" placeholder="${t('engine.cronPrompt')}">${esc(editingJob.prompt || '')}</textarea>
+          <!-- Prompt -->
+          <label class="hm-field">
+            <span class="hm-field-label">${t('engine.cronPrompt')}</span>
+            <textarea class="hm-input" id="hm-cron-prompt" rows="5" style="resize:vertical;height:auto;min-height:120px;line-height:1.6;padding:12px 14px" placeholder="e.g. Summarize today's standup and post to the team channel">${esc(editingJob.prompt || '')}</textarea>
+          </label>
+
+          <!-- Deliver + Repeat (side-by-side) -->
+          <div class="hm-field-row">
+            <label class="hm-field">
+              <span class="hm-field-label">${t('engine.cronDeliverLabel')}</span>
+              <select class="hm-input" id="hm-cron-deliver">
+                <option value="origin" ${initDeliver === 'origin' ? 'selected' : ''}>${t('engine.cronDeliverOrigin')}</option>
+                <option value="local"  ${initDeliver === 'local'  ? 'selected' : ''}>${t('engine.cronDeliverLocal')}</option>
+              </select>
+            </label>
+            <label class="hm-field">
+              <span class="hm-field-label">${t('engine.cronRepeatLimit')}</span>
+              <input class="hm-input" id="hm-cron-repeat" type="number" min="1" step="1" value="${initRepeat != null && initRepeat !== '' ? String(initRepeat) : ''}" placeholder="∞">
+              <span class="hm-muted" style="margin-top:4px">${t('engine.cronRepeatLimitHint')}</span>
+            </label>
           </div>
 
-          <div style="display:flex;gap:10px;margin-top:4px">
-            <button class="btn btn-primary btn-sm hm-cron-save" ${busy ? 'disabled' : ''}>${busy ? t('engine.cronSaving') : t('engine.cronSave')}</button>
-            <button class="btn btn-secondary btn-sm hm-cron-cancel">${t('engine.cronCancel')}</button>
+          <div class="hm-stack" style="margin-top:8px">
+            <button class="hm-btn hm-btn--cta hm-cron-save" ${busy ? 'disabled' : ''}>${busy ? t('engine.cronSaving') : t('engine.cronSave')}</button>
+            <button class="hm-btn hm-btn--sm hm-cron-cancel">${t('engine.cronCancel')}</button>
           </div>
         </div>
       </div>
@@ -299,42 +504,61 @@ export function render() {
     el.querySelector('.hm-cron-back')?.addEventListener('click', () => { editingJob = null; errorMsg = ''; draw() })
     el.querySelector('.hm-cron-cancel')?.addEventListener('click', () => { editingJob = null; errorMsg = ''; draw() })
 
-    // 快捷预设
+    // Cron shortcut pills
     el.querySelectorAll('.hm-cron-shortcut').forEach(btn => {
       btn.addEventListener('click', () => {
-        el.querySelectorAll('.hm-cron-shortcut').forEach(b => { b.classList.remove('btn-primary'); b.classList.add('btn-secondary') })
-        btn.classList.remove('btn-secondary'); btn.classList.add('btn-primary')
+        el.querySelectorAll('.hm-cron-shortcut').forEach(b => b.classList.remove('is-active'))
+        btn.classList.add('is-active')
         const input = el.querySelector('#hm-cron-schedule')
         input.value = btn.dataset.expr
         updatePreview(btn.dataset.expr)
       })
     })
 
-    // 实时预览
+    // Live preview & sync shortcut highlight
     const schedInput = el.querySelector('#hm-cron-schedule')
     schedInput?.addEventListener('input', () => {
       const val = schedInput.value.trim()
       updatePreview(val)
       el.querySelectorAll('.hm-cron-shortcut').forEach(b => {
-        b.classList.remove('btn-primary'); b.classList.add('btn-secondary')
-        if (b.dataset.expr === val) { b.classList.remove('btn-secondary'); b.classList.add('btn-primary') }
+        b.classList.toggle('is-active', b.dataset.expr === val)
       })
     })
 
-    // 保存
+    // Save
     el.querySelector('.hm-cron-save')?.addEventListener('click', async () => {
-      const name = el.querySelector('#hm-cron-name')?.value?.trim()
+      const name     = el.querySelector('#hm-cron-name')?.value?.trim()
       const schedule = el.querySelector('#hm-cron-schedule')?.value?.trim()
-      const prompt = el.querySelector('#hm-cron-prompt')?.value?.trim()
-      if (!name) { errorMsg = t('engine.cronNameRequired'); draw(); return }
-      if (!schedule) { errorMsg = t('engine.cronScheduleRequired'); draw(); return }
-      if (!prompt) { errorMsg = t('engine.cronPromptRequired'); draw(); return }
+      const prompt   = el.querySelector('#hm-cron-prompt')?.value?.trim()
+      const deliver  = el.querySelector('#hm-cron-deliver')?.value || 'origin'
+      const repeatRaw = el.querySelector('#hm-cron-repeat')?.value?.trim()
+      const repeat = repeatRaw ? parseInt(repeatRaw, 10) : undefined
+
+      if (!name)                  { errorMsg = t('engine.cronNameRequired');     draw(); return }
+      if (!schedule)              { errorMsg = t('engine.cronScheduleRequired'); draw(); return }
+      if (!validateCron(schedule)){ errorMsg = t('engine.cronInvalidCron');      draw(); return }
+      if (!prompt)                { errorMsg = t('engine.cronPromptRequired');   draw(); return }
+      if (repeat !== undefined && (Number.isNaN(repeat) || repeat < 1)) {
+        errorMsg = t('engine.cronRepeatLimit'); draw(); return
+      }
+
       busy = true; errorMsg = ''; draw()
       try {
+        const payload = {
+          name,
+          schedule: { kind: 'cron', expr: schedule },
+          prompt,
+          deliver,
+        }
+        if (repeat !== undefined) payload.repeat = repeat
+
         if (isEdit) {
-          await gw(`/api/jobs/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ schedule: { kind: 'cron', expr: schedule }, prompt }) })
+          // PATCH does not accept `name`; keep it out to match hermes-web-ui contract.
+          const patch = { schedule: payload.schedule, prompt, deliver }
+          if (repeat !== undefined) patch.repeat = repeat
+          await gw(`/api/jobs/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch) })
         } else {
-          await gw('/api/jobs', { method: 'POST', body: JSON.stringify({ name, schedule: { kind: 'cron', expr: schedule }, prompt }) })
+          await gw('/api/jobs', { method: 'POST', body: JSON.stringify(payload) })
         }
         editingJob = null
         await loadJobs()

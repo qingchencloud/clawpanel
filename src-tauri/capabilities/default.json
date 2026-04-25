@@ -4,6 +4,7 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:window:allow-set-theme",
     "shell:allow-open",
     "autostart:allow-enable",
     "autostart:allow-disable",

@@ -30,9 +30,31 @@ async function tauriListen(event, cb) {
   return _listenFn(event, cb)
 }
 
+const HERMES_DASHBOARD_URL = 'http://127.0.0.1:9119/'
+
+/**
+ * Open `url` in the user's system browser. Tauri desktop uses the shell
+ * plugin (which respects `xdg-open` / `start` / `open`); Web mode falls back
+ * to `window.open` with a `noopener` to avoid tab-jacking.
+ */
+async function openExternalUrl(url) {
+  if (!url) return
+  try {
+    if (window.__TAURI_INTERNALS__) {
+      const { open } = await import('@tauri-apps/plugin-shell')
+      await open(url)
+      return
+    }
+  } catch (_) { /* fall through to window.open */ }
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
 export function render() {
   const el = document.createElement('div')
   el.className = 'page'
+  // Scope the new Hermes-dense design system to this subtree only,
+  // so OpenClaw and other engines stay completely unaffected.
+  el.dataset.engine = 'hermes'
 
   let info = null
   let health = null
@@ -101,29 +123,37 @@ export function render() {
   }
 
   function draw() {
-    // 加载骨架屏
+    // 加载骨架屏（data-dense style）
     if (loading) {
       el.innerHTML = `
-        <div class="page-header" style="display:flex;align-items:center;gap:12px">
-          <h1 style="margin:0">${t('engine.hermesDashboardTitle')}</h1>
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:20px">
-          ${[1,2,3,4].map(() => `<div class="card"><div class="card-body" style="padding:16px">
-            <div class="skeleton-line" style="width:60%;height:12px;margin-bottom:10px"></div>
-            <div class="skeleton-line" style="width:80%;height:20px"></div>
-          </div></div>`).join('')}
-        </div>
-        <div class="card" style="margin-bottom:20px"><div class="card-body" style="padding:20px">
-          <div class="skeleton-line" style="width:40%;height:16px;margin-bottom:16px"></div>
-          <div style="display:flex;gap:6px;margin-bottom:14px">${[1,2,3,4].map(() => '<div class="skeleton-line" style="width:60px;height:24px;border-radius:12px"></div>').join('')}</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <div class="skeleton-line" style="height:36px"></div>
-            <div class="skeleton-line" style="height:36px"></div>
+        <div class="hm-hero">
+          <div class="hm-hero-title">
+            <div class="hm-hero-eyebrow">
+              <span class="hm-dot hm-dot--idle"></span>
+              ${t('engine.dashEyebrowLoading')}
+            </div>
+            <div class="hm-skel" style="width:240px;height:28px;margin-bottom:6px"></div>
+            <div class="hm-skel" style="width:180px;height:14px"></div>
           </div>
-        </div></div>
-        <div class="card" style="margin-bottom:20px"><div class="card-body" style="padding:16px">
-          <div class="skeleton-line" style="width:120px;height:32px;border-radius:6px"></div>
-        </div></div>
+        </div>
+        <div class="hm-kpi-grid">
+          ${[1,2,3,4,5].map(() => `
+            <div class="hm-kpi">
+              <div class="hm-skel" style="width:70%;height:10px;margin-bottom:10px"></div>
+              <div class="hm-skel" style="width:50%;height:22px;margin-bottom:8px"></div>
+              <div class="hm-skel" style="width:40%;height:10px"></div>
+            </div>
+          `).join('')}
+        </div>
+        <div class="hm-panel">
+          <div class="hm-panel-header">
+            <div class="hm-skel" style="width:120px;height:12px"></div>
+          </div>
+          <div class="hm-panel-body">
+            <div class="hm-skel" style="width:100%;height:34px;margin-bottom:12px"></div>
+            <div class="hm-skel" style="width:100%;height:34px"></div>
+          </div>
+        </div>
       `
       return
     }
@@ -137,188 +167,255 @@ export function render() {
     // 服务商高亮匹配
     const activePreset = inferProviderByBaseUrl(hermesProviders, formBaseUrl)
 
-    // 模型下拉 HTML
+    // 模型下拉 HTML（data-dense）
     const dropdownHtml = showDropdown && models.length
-      ? `<div id="hm-model-dropdown" style="position:absolute;top:100%;left:0;right:0;max-height:200px;overflow-y:auto;background:var(--bg-primary);border:1px solid var(--border-primary);border-radius:6px;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,.15)">${models.map(m =>
-          `<div class="hm-model-opt" data-model="${esc(m)}" style="padding:5px 10px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--border-primary);${m === formModel ? 'font-weight:600;color:var(--accent)' : ''}">${esc(m)}</div>`
+      ? `<div id="hm-model-dropdown" class="hm-dropdown">${models.map(m =>
+          `<div class="hm-dropdown-item hm-model-opt ${m === formModel ? 'is-selected' : ''}" data-model="${esc(m)}">${esc(m)}</div>`
         ).join('')}</div>`
       : ''
 
     el.innerHTML = `
-      <div class="page-header" style="display:flex;align-items:center;gap:12px">
-        <h1 style="margin:0">${t('engine.hermesDashboardTitle')}</h1>
-        <button class="btn-icon hm-dash-refresh" title="Refresh" style="opacity:0.5;cursor:pointer;background:none;border:none;padding:4px">${ICONS.refresh}</button>
-      </div>
-
-      <!-- 状态卡片行 -->
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:20px">
-        <div class="card" style="border-left:4px solid ${gwRunning ? 'var(--success, #22c55e)' : 'var(--error, #ef4444)'}">
-          <div class="card-body" style="padding:16px">
-            <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px">${t('engine.dashGatewayStatus')}</div>
-            <div style="display:flex;align-items:center;gap:8px">
-              ${gwRunning ? ICONS.running : ICONS.stopped}
-              <span style="font-size:16px;font-weight:600">${gwRunning ? t('engine.dashRunning') : t('engine.dashStopped')}</span>
-            </div>
+      <!-- Hero strip: dynamic colored bar + title + CTA + icon actions -->
+      <div class="hm-hero" data-state="${gwRunning ? 'running' : 'stopped'}">
+        <div class="hm-hero-title">
+          <div class="hm-hero-eyebrow">
+            <span class="hm-dot hm-dot--${gwRunning ? 'run' : 'stop'}"></span>
+            ${gwRunning ? t('engine.dashEyebrowOnline') : t('engine.dashEyebrowOffline')}
           </div>
+          <h1 class="hm-hero-h1">${t('engine.hermesDashboardTitle')}</h1>
+          <div class="hm-hero-sub">127.0.0.1:${port} · ${esc(displayModel || '—')} · v${version}</div>
         </div>
-        <div class="card">
-          <div class="card-body" style="padding:16px">
-            <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px">${t('engine.dashModel')}</div>
-            <div style="font-size:14px;font-weight:600;word-break:break-all">${esc(displayModel)}</div>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-body" style="padding:16px">
-            <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px">${t('engine.dashVersion')}</div>
-            <div style="font-size:14px;font-weight:600">${version}</div>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-body" style="padding:16px">
-            <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px">${t('engine.dashApiEndpoint')}</div>
-            <div style="font-size:13px;font-weight:600;font-family:var(--font-mono, monospace)">http://127.0.0.1:${port}</div>
-          </div>
-        </div>
-        <div class="card hm-dash-open-panel" style="cursor:pointer;border-left:4px solid var(--accent,#6366f1)">
-          <div class="card-body" style="padding:16px">
-            <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:6px;display:flex;align-items:center;gap:6px">
-              ${t('engine.dashOpenPanel')}
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12" style="opacity:.6"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-            </div>
-            <div style="font-size:14px;font-weight:600">${t('engine.dashOpenPanelDesc')}</div>
-          </div>
+        <div class="hm-hero-actions">
+          ${!gwRunning ? `<button class="hm-btn hm-btn--cta hm-dash-start" ${actionBusy ? 'disabled' : ''}>▶ ${actionBusy ? t('engine.gatewayStarting') : t('engine.dashStartGw')}</button>` : ''}
+          ${gwRunning ? `<button class="hm-btn hm-btn--danger hm-dash-stop" ${actionBusy ? 'disabled' : ''}>■ ${actionBusy ? t('engine.dashStopping') : t('engine.dashStopGw')}</button>` : ''}
+          ${gwRunning ? `<button class="hm-btn hm-dash-restart" ${actionBusy ? 'disabled' : ''}>↻ ${actionBusy ? t('engine.dashRestarting') : t('engine.dashRestartGw')}</button>` : ''}
+          <button class="hm-btn hm-btn--icon hm-dash-refresh" title="${t('engine.dashRefresh')}">${ICONS.refresh}</button>
         </div>
       </div>
 
-      <!-- 模型配置区 -->
-      <div class="card" style="margin-bottom:20px">
-        <div class="card-body" style="padding:0">
-          <div class="hm-cfg-toggle" style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;cursor:pointer;user-select:none">
-            <h3 style="margin:0;font-size:15px">${t('engine.dashModelConfig')}</h3>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" style="transition:transform .2s;transform:rotate(${modelConfigCollapsed ? '0' : '180'}deg);opacity:0.5"><polyline points="6 9 12 15 18 9"/></svg>
+      <!-- KPI grid: 5 cards with tone indicators -->
+      <div class="hm-kpi-grid">
+        <div class="hm-kpi" data-tone="${gwRunning ? 'success' : 'error'}">
+          <div class="hm-kpi-label">${t('engine.dashGatewayStatus')}</div>
+          <div class="hm-kpi-value" style="font-size:15px">
+            <span class="hm-dot hm-dot--${gwRunning ? 'run' : 'stop'}"></span>
+            ${gwRunning ? t('engine.dashRunning') : t('engine.dashStopped')}
           </div>
-          <div style="${modelConfigCollapsed ? 'display:none' : 'padding:0 20px 20px'}">
-            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
-              ${hermesProviders.filter(p => p.id !== 'custom').map(p => {
-                const api = p.transport === 'anthropic_messages' ? 'anthropic-messages'
-                  : p.transport === 'google_gemini' ? 'google-generative-ai'
-                  : 'openai-completions'
-                const active = activePreset?.id === p.id
-                return `<button class="btn btn-sm btn-secondary hm-preset-btn" data-key="${p.id}" data-url="${esc(p.baseUrl)}" data-api="${api}" style="font-size:11px;padding:2px 8px;${active ? 'opacity:1;font-weight:600' : 'opacity:0.6'}">${p.name}</button>`
-              }).join('')}
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-              <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text-secondary)">
-                API Base URL
-                <input type="text" id="hm-cfg-baseurl" class="input" value="${esc(formBaseUrl)}" placeholder="https://gpt.qt.cool/v1" style="font-size:13px">
-              </label>
-              <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text-secondary)">
-                API Key
-                <input type="password" id="hm-cfg-apikey" class="input" value="${esc(formApiKey)}" placeholder="sk-..." style="font-size:13px">
-              </label>
-            </div>
-            <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:12px">
-              <label style="flex:1;display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text-secondary)">
-                ${t('engine.configModel')}
-                <div style="position:relative">
-                  <input type="text" id="hm-cfg-model" class="input" value="${esc(formModel)}" placeholder="QC-B01" style="font-size:13px">
-                  ${dropdownHtml}
-                </div>
-              </label>
-              <button class="btn btn-sm btn-secondary hm-fetch-models" style="white-space:nowrap;flex-shrink:0" ${fetchBusy ? 'disabled' : ''}>${fetchBusy ? t('engine.configFetching') : t('engine.configFetchModels')}</button>
-            </div>
-            <div id="hm-cfg-msg" style="font-size:12px;min-height:16px;margin-bottom:8px">${cfgMsg}</div>
-            <div style="display:flex;gap:8px;align-items:center">
-              <button class="btn btn-primary btn-sm hm-save-model" ${modelBusy ? 'disabled' : ''}>${modelBusy ? '...' : t('engine.configSaveBtn')}</button>
-              <a href="#/h/env" style="font-size:11px;color:var(--text-tertiary);text-decoration:none;margin-left:auto" title=".env 文件高级编辑（自定义环境变量）">.env 高级编辑 →</a>
-            </div>
+          <div class="hm-kpi-foot">${t('engine.dashPort')} <span style="color:var(--hm-text-secondary)">:${port}</span></div>
+        </div>
+        <div class="hm-kpi" data-tone="accent">
+          <div class="hm-kpi-label">${t('engine.dashModel')}</div>
+          <div class="hm-kpi-value" style="font-size:13px;word-break:break-all">${esc(displayModel)}</div>
+          <div class="hm-kpi-foot">${t('engine.dashProvider')} <code class="hm-code" style="padding:0 5px;font-size:10px">${esc(hermesConfig?.provider || activePreset?.id || '—')}</code></div>
+        </div>
+        <div class="hm-kpi">
+          <div class="hm-kpi-label">${t('engine.dashVersion')}</div>
+          <div class="hm-kpi-value">v${version}</div>
+          <div class="hm-kpi-foot"><span class="hm-badge hm-badge--accent">uv-tool</span></div>
+        </div>
+        <div class="hm-kpi">
+          <div class="hm-kpi-label">${t('engine.dashApiEndpoint')}</div>
+          <div class="hm-kpi-value" style="font-size:13px">127.0.0.1</div>
+          <div class="hm-kpi-foot"><code class="hm-code" style="padding:0 5px;font-size:10.5px">:${port}/v1</code></div>
+        </div>
+        <div class="hm-kpi hm-kpi--link hm-dash-open-panel" data-tone="accent">
+          <div class="hm-kpi-label">
+            ${t('engine.dashOpenPanel')}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="10" height="10" style="opacity:.7"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
           </div>
+          <div class="hm-kpi-value" style="font-size:13px">${t('engine.dashOpenPanelDesc')}</div>
+          <div class="hm-kpi-foot">${t('engine.dashOpenChat')}</div>
         </div>
       </div>
 
-      <!-- Gateway 控制 -->
-      <div class="card" style="margin-bottom:20px">
-        <div class="card-body" style="padding:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-          ${!gwRunning ? `<button class="btn btn-primary btn-sm hm-dash-start" ${actionBusy ? 'disabled' : ''}>${actionBusy ? t('engine.gatewayStarting') : t('engine.dashStartGw')}</button>` : ''}
-          ${gwRunning ? `<button class="btn btn-sm btn-secondary hm-dash-stop" ${actionBusy ? 'disabled' : ''}>${actionBusy ? t('engine.dashStopping') : t('engine.dashStopGw')}</button>` : ''}
-          ${gwRunning ? `<button class="btn btn-sm btn-secondary hm-dash-restart" ${actionBusy ? 'disabled' : ''}>${actionBusy ? t('engine.dashRestarting') : t('engine.dashRestartGw')}</button>` : ''}
-          <div id="hm-dash-msg" style="font-size:12px;margin-left:8px"></div>
-        </div>
+      <div class="hm-native-dashboard-hint">
+        <span>${t('engine.dashNativePanelDesc')}</span>
+        <button class="hm-native-dashboard-link hm-dash-open-native" data-href="${HERMES_DASHBOARD_URL}">
+          ${t('engine.dashNativePanelOpen')}
+        </button>
       </div>
 
-      <!-- 连接目标 -->
-      <div class="card" style="margin-bottom:20px">
-        <div class="card-body" style="padding:16px">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-            <h3 style="margin:0;font-size:15px">${t('engine.dashConnectTarget')}</h3>
-            <button class="btn btn-sm btn-secondary hm-detect-env" ${envDetecting ? 'disabled' : ''} style="font-size:11px;padding:2px 10px">${envDetecting ? t('engine.dashDetecting') : t('engine.dashDetectEnv')}</button>
+      <!-- Model config panel (collapsible) -->
+      <div class="hm-panel">
+        <div class="hm-panel-header hm-panel-header--toggle hm-cfg-toggle ${modelConfigCollapsed ? '' : 'is-open'}">
+          <div class="hm-panel-title">
+            <svg class="hm-panel-title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24"/></svg>
+            ${t('engine.dashModelConfig')}
+            <span class="hm-panel-title-count">${hermesProviders.filter(p => p.id !== 'custom').length}</span>
           </div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
-            <button class="btn btn-sm hm-connect-mode ${connectMode === 'local' ? 'btn-primary' : 'btn-secondary'}" data-mode="local" style="font-size:11px;padding:2px 10px">
-              🖥️ ${t('engine.dashConnLocal')}
-            </button>
-            ${envData?.wsl2?.available ? `<button class="btn btn-sm hm-connect-mode ${connectMode === 'wsl2' ? 'btn-primary' : 'btn-secondary'}" data-mode="wsl2" style="font-size:11px;padding:2px 10px">
-              🐧 WSL2 ${envData.wsl2.gatewayRunning ? '✅' : envData.wsl2.hermesInstalled ? '⚠️' : ''}
-            </button>` : ''}
-            ${envData?.docker?.available ? `<button class="btn btn-sm hm-connect-mode ${connectMode === 'docker' ? 'btn-primary' : 'btn-secondary'}" data-mode="docker" style="font-size:11px;padding:2px 10px">
-              🐋 Docker ${envData.docker.hermesContainers?.length ? '✅' : ''}
-            </button>` : ''}
-            <button class="btn btn-sm hm-connect-mode ${connectMode === 'custom' ? 'btn-primary' : 'btn-secondary'}" data-mode="custom" style="font-size:11px;padding:2px 10px">
-              🌐 ${t('engine.dashConnCustom')}
-            </button>
+          <div class="hm-panel-actions">
+            <svg class="hm-panel-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
           </div>
+        </div>
+        ${!modelConfigCollapsed ? `
+        <div class="hm-panel-body">
+          <div class="hm-field-label" style="margin-bottom:10px">${t('engine.dashProviderPresets')}</div>
+          <div class="hm-pills" style="margin-bottom:18px">
+            ${hermesProviders.filter(p => p.id !== 'custom').map(p => {
+              const api = p.transport === 'anthropic_messages' ? 'anthropic-messages'
+                : p.transport === 'google_gemini' ? 'google-generative-ai'
+                : 'openai-completions'
+              const active = activePreset?.id === p.id
+              return `<button class="hm-pill hm-preset-btn ${active ? 'is-active' : ''}" data-key="${p.id}" data-url="${esc(p.baseUrl)}" data-api="${api}">${esc(p.name)}</button>`
+            }).join('')}
+          </div>
+          <div class="hm-field-row">
+            <label class="hm-field">
+              <span class="hm-field-label">${t('engine.dashApiBaseUrl')}</span>
+              <input type="text" id="hm-cfg-baseurl" class="hm-input" value="${esc(formBaseUrl)}" placeholder="https://api.deepseek.com/v1">
+            </label>
+            <label class="hm-field">
+              <span class="hm-field-label">${t('engine.dashApiKey')}</span>
+              <input type="password" id="hm-cfg-apikey" class="hm-input" value="${esc(formApiKey)}" placeholder="sk-…">
+            </label>
+          </div>
+          <div style="display:flex;gap:10px;align-items:flex-end;margin-top:12px">
+            <label class="hm-field" style="flex:1">
+              <span class="hm-field-label">${t('engine.configModel')}</span>
+              <div style="position:relative">
+                <input type="text" id="hm-cfg-model" class="hm-input" value="${esc(formModel)}" placeholder="deepseek-chat">
+                ${dropdownHtml}
+              </div>
+            </label>
+            <button class="hm-btn hm-btn--sm hm-fetch-models" ${fetchBusy ? 'disabled' : ''}>${fetchBusy ? t('engine.configFetching') : t('engine.configFetchModels')}</button>
+          </div>
+          <div id="hm-cfg-msg" class="hm-muted" style="min-height:16px;margin:12px 0 6px">${cfgMsg}</div>
+          <div class="hm-stack">
+            <button class="hm-btn hm-btn--primary hm-btn--sm hm-save-model" ${modelBusy ? 'disabled' : ''}>${modelBusy ? '...' : t('engine.configSaveBtn')}</button>
+            <span class="hm-spacer"></span>
+            <a href="#/h/env" class="hm-btn hm-btn--ghost hm-btn--sm" title="${t('engine.dashEnvAdvancedEdit')}">${t('engine.dashEnvAdvancedEdit')}</a>
+          </div>
+        </div>
+        ` : ''}
+      </div>
+
+      <!-- Gateway message line (actions moved to Hero bar) -->
+      <div id="hm-dash-msg" class="hm-muted" style="min-height:14px;margin:-6px 4px 12px;font-size:11px"></div>
+
+      <!-- Connection target panel -->
+      <div class="hm-panel">
+        <div class="hm-panel-header">
+          <div class="hm-panel-title">
+            <svg class="hm-panel-title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 100 20 10 10 0 000-20z"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/></svg>
+            ${t('engine.dashConnectTarget')}
+          </div>
+          <div class="hm-panel-actions">
+            <button class="hm-btn hm-btn--ghost hm-btn--sm hm-detect-env" ${envDetecting ? 'disabled' : ''}>${envDetecting ? t('engine.dashDetecting') : '↻ ' + t('engine.dashDetectEnv')}</button>
+          </div>
+        </div>
+        <div class="hm-panel-body hm-panel-body--tight">
+          <div class="hm-pills" style="margin-bottom:12px">
+            <button class="hm-pill hm-connect-mode ${connectMode === 'local' ? 'is-active' : ''}" data-mode="local">${t('engine.dashConnLocal')} · 127.0.0.1</button>
+            ${envData?.wsl2?.available ? `<button class="hm-pill hm-connect-mode ${connectMode === 'wsl2' ? 'is-active' : ''}" data-mode="wsl2">${t('engine.dashConnWsl2')}${envData.wsl2.gatewayRunning ? ' ✓' : envData.wsl2.hermesInstalled ? ' !' : ''}</button>` : ''}
+            ${envData?.docker?.available ? `<button class="hm-pill hm-connect-mode ${connectMode === 'docker' ? 'is-active' : ''}" data-mode="docker">${t('engine.dashConnDocker')}${envData.docker.hermesContainers?.length ? ' ✓' : ''}</button>` : ''}
+            <button class="hm-pill hm-connect-mode ${connectMode === 'custom' ? 'is-active' : ''}" data-mode="custom">${t('engine.dashConnCustom')}</button>
+          </div>
+
           ${connectMode === 'wsl2' && envData?.wsl2 ? `
-            <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">
-              <div>IP: <code>${esc(envData.wsl2.ip || '-')}</code> · Distros: ${(envData.wsl2.distros || []).join(', ')}</div>
-              ${envData.wsl2.hermesInstalled ? `<div style="color:var(--success)">✓ Hermes ${esc(envData.wsl2.hermesInfo || '')}</div>` : '<div style="color:var(--warning)">Hermes 未安装</div>'}
-              ${envData.wsl2.gatewayRunning ? `<div style="color:var(--success)">✓ Gateway: ${esc(envData.wsl2.gatewayUrl || '')}</div>` : '<div style="color:var(--text-tertiary)">Gateway 未运行</div>'}
+            <div class="hm-term" style="margin-bottom:12px">
+              <span class="hm-muted">$ wsl --status</span><br>
+              IP <span style="color:var(--hm-accent)">${esc(envData.wsl2.ip || '-')}</span> · distros [${(envData.wsl2.distros || []).join(', ')}]<br>
+              ${envData.wsl2.hermesInstalled ? `<span style="color:var(--hm-cta)">✓ hermes ${esc(envData.wsl2.hermesInfo || '')}</span>` : `<span style="color:var(--hm-warn)">! ${t('engine.dashHermesMissing')}</span>`}<br>
+              ${envData.wsl2.gatewayRunning ? `<span style="color:var(--hm-cta)">✓ gateway: ${esc(envData.wsl2.gatewayUrl || '')}</span>` : `<span class="hm-muted">${t('engine.dashGatewayNotRunning')}</span>`}
             </div>
           ` : ''}
           ${connectMode === 'docker' && envData?.docker ? `
-            <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">
-              <div>Docker ${esc(envData.docker.version || '')}</div>
+            <div class="hm-term" style="margin-bottom:12px">
+              <span class="hm-muted">$ docker ps --filter ancestor=hermes</span><br>
+              engine <span style="color:var(--hm-accent)">${esc(envData.docker.version || '')}</span><br>
               ${envData.docker.hermesContainers?.length ? envData.docker.hermesContainers.map(c =>
-                `<div style="margin-top:4px">🔹 <code>${esc(c.name)}</code> (${esc(c.image)}) — ${esc(c.ports)}</div>`
-              ).join('') : '<div style="color:var(--text-tertiary)">未发现 Hermes 容器</div>'}
+                `<span style="color:var(--hm-cta)">▶</span> <code>${esc(c.name)}</code> (${esc(c.image)}) ${esc(c.ports)}`
+              ).join('<br>') : `<span class="hm-muted">${t('engine.dashNoHermesContainers')}</span>`}
             </div>
           ` : ''}
           ${connectMode === 'custom' ? `
-            <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-              <input type="text" id="hm-custom-gw-url" class="input" value="${esc(customGwUrl)}" placeholder="http://192.168.1.100:8642" style="flex:1;font-size:13px">
+            <div style="margin-bottom:12px">
+              <input type="text" id="hm-custom-gw-url" class="hm-input" value="${esc(customGwUrl)}" placeholder="http://192.168.1.100:8642">
             </div>
           ` : ''}
-          <div style="display:flex;gap:8px;align-items:center">
-            <button class="btn btn-sm btn-primary hm-apply-connect" style="font-size:11px;padding:2px 12px">${t('engine.dashConnApply')}</button>
-            <span id="hm-connect-msg" style="font-size:12px">${connectMsg}</span>
+
+          <div class="hm-stack">
+            <button class="hm-btn hm-btn--primary hm-btn--sm hm-apply-connect">${t('engine.dashConnApply')}</button>
+            <span id="hm-connect-msg" class="hm-muted">${connectMsg}</span>
           </div>
         </div>
       </div>
 
-      <!-- 快捷操作 -->
-      <div style="margin-bottom:12px;font-size:14px;font-weight:600">${t('engine.dashQuickActions')}</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px">
-        <button class="card hm-dash-link" data-route="/h/chat" style="cursor:pointer;border:none;text-align:left">
-          <div class="card-body" style="padding:16px;display:flex;align-items:center;gap:10px">
-            ${ICONS.chat}
-            <span style="font-size:14px;font-weight:500">${t('engine.dashOpenChat')}</span>
+      <!-- Quick actions -->
+      <div class="hm-field-label" style="margin:8px 2px 10px">${t('engine.dashQuickActions')}</div>
+      <div class="hm-kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
+        <button class="hm-kpi hm-kpi--link hm-dash-link" data-route="/h/chat" data-tone="accent" style="text-align:left;font-family:inherit;color:inherit;cursor:pointer">
+          <div class="hm-kpi-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+            ${t('engine.dashOpenChat')}
           </div>
+          <div class="hm-kpi-value" style="font-size:13px">${t('engine.dashOpenChat')}</div>
+          <div class="hm-kpi-foot">${t('engine.dashInteractiveSession')}</div>
         </button>
-        <button class="card hm-dash-link" data-route="/h/setup" style="cursor:pointer;border:none;text-align:left">
-          <div class="card-body" style="padding:16px;display:flex;align-items:center;gap:10px">
-            ${ICONS.config}
-            <span style="font-size:14px;font-weight:500">${t('engine.dashOpenSetup')}</span>
+        <button class="hm-kpi hm-kpi--link hm-dash-link" data-route="/h/setup" data-tone="accent" style="text-align:left;font-family:inherit;color:inherit;cursor:pointer">
+          <div class="hm-kpi-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><circle cx="12" cy="12" r="3"/><path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6"/></svg>
+            ${t('engine.dashOpenSetup')}
           </div>
+          <div class="hm-kpi-value" style="font-size:13px">${t('engine.dashOpenSetup')}</div>
+          <div class="hm-kpi-foot">${t('engine.dashInstallerWizard')}</div>
+        </button>
+        <button class="hm-kpi hm-kpi--link hm-dash-link" data-route="/h/logs" data-tone="info" style="text-align:left;font-family:inherit;color:inherit;cursor:pointer">
+          <div class="hm-kpi-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            ${t('engine.servicesOpenLogs')}
+          </div>
+          <div class="hm-kpi-value" style="font-size:13px">gateway.log</div>
+          <div class="hm-kpi-foot">${t('engine.dashLogsFoot')}</div>
+        </button>
+        <button class="hm-kpi hm-kpi--link hm-dash-link" data-route="/h/env" data-tone="warn" style="text-align:left;font-family:inherit;color:inherit;cursor:pointer">
+          <div class="hm-kpi-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            .ENV
+          </div>
+          <div class="hm-kpi-value" style="font-size:13px">${t('engine.dashAdvancedEdit')}</div>
+          <div class="hm-kpi-foot">${t('engine.dashCustomVars')}</div>
         </button>
       </div>
 
-      <!-- 终端命令 -->
-      <div class="card" style="margin-bottom:20px">
-        <div class="card-body" style="padding:20px">
-          <h3 style="margin:0 0 4px;font-size:15px">${t('engine.dashCliTitle')}</h3>
-          <p style="margin:0 0 14px;font-size:12px;color:var(--text-tertiary)">${t('engine.dashCliDesc')}</p>
-          <div class="hm-cli-grid">
-            ${renderCliCommands()}
+      <!-- CLI reference as data table -->
+      <div class="hm-panel">
+        <div class="hm-panel-header">
+          <div class="hm-panel-title">
+            <svg class="hm-panel-title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            ${t('engine.dashCliTitle')}
+            <span class="hm-panel-title-count">${CLI_COMMANDS.length}</span>
           </div>
+          <div class="hm-panel-actions">
+            <span class="hm-muted">${t('engine.dashCliDesc')}</span>
+          </div>
+        </div>
+        <div class="hm-panel-body hm-panel-body--none">
+          <table class="hm-table">
+            <thead>
+              <tr>
+                <th style="width:38%">${t('engine.dashCliCommand')}</th>
+                <th>${t('engine.dashCliDescription')}</th>
+                <th style="width:48px;text-align:center">${t('engine.dashCliCopy')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${CLI_COMMANDS.map((c, i) => `
+                <tr>
+                  <td><code class="hm-code">${esc(c.cmd)}</code></td>
+                  <td>
+                    <div style="color:var(--hm-text-primary);font-family:var(--hm-font-sans);font-size:12px;font-weight:500;margin-bottom:2px">${c.label}</div>
+                    <div class="hm-muted">${c.desc}</div>
+                  </td>
+                  <td style="text-align:center">
+                    <button class="hm-btn hm-btn--icon hm-cli-copy" data-cmd-idx="${i}" title="${t('common.copy')}">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                    </button>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
         </div>
       </div>
     `
@@ -339,7 +436,7 @@ export function render() {
       showGwMsg(t('engine.gatewayStarting'), false)
       try {
         const result = await api.hermesGatewayAction('start')
-        showGwMsg(result || 'Gateway 已启动', false)
+        showGwMsg(result || t('engine.dashGatewayStarted'), false)
       } catch (e) {
         showGwMsg(String(e).replace(/^Error:\s*/, ''), true)
       }
@@ -365,6 +462,17 @@ export function render() {
     })
     // Open panel card
     el.querySelector('.hm-dash-open-panel')?.addEventListener('click', () => { window.location.hash = '#/h/chat' })
+    // Open Hermes native dashboard in system browser
+    el.querySelector('.hm-dash-open-native')?.addEventListener('click', async (e) => {
+      const href = e.currentTarget.dataset.href
+      if (!href) return
+      try {
+        await openExternalUrl(href)
+      } catch (err) {
+        const { toast } = await import('../../../components/toast.js')
+        toast(t('engine.dashNativePanelOpenFail') + ': ' + (err?.message || err), 'error')
+      }
+    })
     // Provider presets — 点击填充 URL
     el.querySelectorAll('.hm-preset-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -452,7 +560,7 @@ export function render() {
   async function doSaveModel() {
     syncFormFromDom()
     if (!formApiKey) { cfgMsg = `<span style="color:var(--warning)">${t('engine.configFetchNeedKey')}</span>`; draw(); return }
-    if (!formModel) { cfgMsg = `<span style="color:var(--warning)">请输入模型名</span>`; draw(); return }
+    if (!formModel) { cfgMsg = `<span style="color:var(--warning)">${t('engine.configModelRequired')}</span>`; draw(); return }
 
     const matched = inferProviderByBaseUrl(hermesProviders, formBaseUrl)
     const provider = matched?.id || 'custom'
@@ -460,7 +568,7 @@ export function render() {
     modelBusy = true; cfgMsg = ''; draw()
     try {
       await api.configureHermes(provider, formApiKey, formModel, formBaseUrl || null)
-      cfgMsg = `<span style="color:var(--success)">✓ 配置已保存</span>`
+      cfgMsg = `<span style="color:var(--success)">✓ ${t('engine.configSaved')}</span>`
       // 刷新后端状态（不覆盖 form）
       try { hermesConfig = await api.hermesReadConfig() } catch (_) {}
     } catch (e) {
@@ -475,7 +583,7 @@ export function render() {
     try {
       envData = await api.hermesDetectEnvironments()
     } catch (e) {
-      connectMsg = `<span style="color:var(--error)">探测失败: ${String(e).replace(/^Error:\s*/, '')}</span>`
+      connectMsg = `<span style="color:var(--error)">${t('engine.envDetectFailed')}: ${String(e).replace(/^Error:\s*/, '')}</span>`
     }
     envDetecting = false; draw()
   }
@@ -487,7 +595,7 @@ export function render() {
     } else if (connectMode === 'wsl2') {
       targetUrl = envData?.wsl2?.gatewayUrl || null
       if (!targetUrl) {
-        connectMsg = '<span style="color:var(--warning)">WSL2 Gateway 未运行，请先在 WSL 中启动</span>'
+        connectMsg = `<span style="color:var(--warning)">${t('engine.connWslGatewayMissing')}</span>`
         draw(); return
       }
     } else if (connectMode === 'docker') {
@@ -495,14 +603,14 @@ export function render() {
       const urlInput = el.querySelector('#hm-custom-gw-url')
       targetUrl = urlInput?.value?.trim() || null
       if (!targetUrl && envData?.docker?.hermesContainers?.length) {
-        connectMsg = '<span style="color:var(--warning)">请切换到"自定义"模式并输入容器的 Gateway URL</span>'
+        connectMsg = `<span style="color:var(--warning)">${t('engine.connDockerCustomHint')}</span>`
         draw(); return
       }
     } else if (connectMode === 'custom') {
       const urlInput = el.querySelector('#hm-custom-gw-url')
       targetUrl = urlInput?.value?.trim() || null
       if (!targetUrl) {
-        connectMsg = '<span style="color:var(--warning)">请输入 Gateway URL</span>'
+        connectMsg = `<span style="color:var(--warning)">${t('engine.connUrlRequired')}</span>`
         draw(); return
       }
     }
@@ -587,7 +695,7 @@ export function render() {
       // 监听 config.yaml 自愈事件（api_server guardian）
       const unlisten3 = await tauriListen('hermes-config-patched', async (evt) => {
         const { toast } = await import('../../../components/toast.js')
-        const msg = evt?.payload?.message || 'config.yaml 已自动修复'
+        const msg = evt?.payload?.message || t('engine.dashConfigPatched')
         toast(msg, 'info', { duration: 6000 })
       })
       unlisteners.push(unlisten3)
