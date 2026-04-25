@@ -884,8 +884,8 @@ pub async fn hermes_dashboard_start() -> Result<Value, String> {
 
     let home = hermes_home();
     let log_path = home.join("dashboard-run.log");
-    let log_file = std::fs::File::create(&log_path)
-        .map_err(|e| format!("创建日志文件失败: {e}"))?;
+    let log_file =
+        std::fs::File::create(&log_path).map_err(|e| format!("创建日志文件失败: {e}"))?;
     let log_err = log_file
         .try_clone()
         .map_err(|e| format!("克隆日志句柄失败: {e}"))?;
