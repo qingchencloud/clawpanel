@@ -116,7 +116,7 @@ function collectAllModels(config) {
       if (id) result.push({ provider: pk, modelId: id, full: `${pk}/${id}` })
     }
   }
-  return resul
+  return result
 }
 
 function getApiTypeLabel(apiType) {
@@ -263,6 +263,7 @@ function bindWaterfallActions(page, state) {
       pushUndo(state)
       modelConfig.fallbacks = modelConfig.fallbacks.filter(f => f !== id)
       renderDefaultBar(page, state)
+      renderProviders(page, state)
       updateUndoBtn(page, state)
       autoSave(state)
     }
@@ -272,18 +273,10 @@ function bindWaterfallActions(page, state) {
   container.querySelectorAll('.btn-set-primary-from-fb').forEach(btn => {
     btn.onclick = () => {
       const full = btn.dataset.id
-      const oldPrimary = getCurrentPrimary(state.config)
-      const fallbacks = state.config.agents.defaults.model.fallbacks || []
-
       pushUndo(state)
-      // 1. 设置新主模型
       setPrimary(state, full)
-      // 2. 将旧主模型放入备选链（原位置或末尾）
-      const newFallbacks = fallbacks.filter(f => f !== full)
-      if (oldPrimary) newFallbacks.push(oldPrimary)
-      state.config.agents.defaults.model.fallbacks = newFallbacks
-
       renderDefaultBar(page, state)
+      renderProviders(page, state)
       updateUndoBtn(page, state)
       autoSave(state)
       toast(t('models.setAsPrimarySuccess', { model: full }), 'success')
@@ -299,6 +292,7 @@ function bindWaterfallActions(page, state) {
       pushUndo(state)
       modelConfig.fallbacks.push(full)
       renderDefaultBar(page, state)
+      renderProviders(page, state)
       updateUndoBtn(page, state)
       autoSave(state)
     }
@@ -618,17 +612,24 @@ async function undo(page, state) {
 // 自动保存（防抖 300ms）+ Gateway 重启队列（3s 防抖 + 单飞行锁）
 // 解决 issue #243 / #244 / #240：快速连续编辑不再触发多次重启
 let _saveTimer = null
+let _pendingSaveState = null // cleanup 时用于执行 pending 的保存
 let _batchTestAbort = null // 批量测试终止控制器
 
 export function cleanup() {
-  clearTimeout(_saveTimer)
-  _saveTimer = null
+  // 有 pending 的自动保存时，立即执行，防止页面切换时丢失变更
+  if (_saveTimer !== null) {
+    clearTimeout(_saveTimer)
+    _saveTimer = null
+    if (_pendingSaveState) doAutoSave(_pendingSaveState)
+  }
+  _pendingSaveState = null
   if (_batchTestAbort) { _batchTestAbort.abort = true; _batchTestAbort = null }
   cancelPendingRestart()
 }
 function autoSave(state) {
   clearTimeout(_saveTimer)
-  _saveTimer = setTimeout(() => doAutoSave(state), 300)
+  _pendingSaveState = state
+  _saveTimer = setTimeout(() => { _saveTimer = null; _pendingSaveState = null; doAutoSave(state) }, 300)
 }
 
 /** 已知的 API 类型错误→正确映射,自动修复用户手动编辑或旧版本配置 */
@@ -976,9 +977,32 @@ async function handleAction(action, btn, card, section, providerKey, provider, p
   }
 }
 
-// 设置主模型(仅修改 state,不写入文件)
+// 设置主模型入口
 function setPrimary(state, full) {
+  const oldPrimary = getCurrentPrimary(state.config)
+  if (oldPrimary === full) return
+
+  // 1. 设置新主模型状态
   ensureDefaultModelConfig(state).primary = full
+
+  // 2. 轮转备选链状态
+  rotateFallbackChain(state, oldPrimary, full)
+}
+
+// 处理主模型变更后，备选链的数据流转
+function rotateFallbackChain(state, oldPrimary, newPrimary) {
+  const modelConfig = ensureDefaultModelConfig(state)
+  const fallbacks = modelConfig.fallbacks || []
+  
+  // 从备选链中移除新上位的主模型
+  const newFallbacks = fallbacks.filter(f => f !== newPrimary)
+  
+  // 将原主模型降级放入备选链
+  if (oldPrimary) {
+    newFallbacks.push(oldPrimary)
+  }
+  
+  modelConfig.fallbacks = newFallbacks
 }
 
 // 应用默认模型:primary + 其余自动成为备选
