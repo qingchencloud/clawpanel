@@ -252,7 +252,13 @@
     "webModeNoLog": "Web 模式：升級過程日誌不可用，請等待完成...",
     "taskDone": "操作完成",
     "upgradeDone": "升級完成",
-    "upgradeScene": "升級 OpenClaw"
+    "upgradeScene": "升級 OpenClaw",
+    "invalidConfigTitle": "偵測到 OpenClaw 配置問題",
+    "invalidConfigPrompt": "操作 \"{action}\" 失敗：\n\n{error}\n\n這通常是配置檔案 schema 已過期。是否執行 doctor 自動修復？",
+    "runDoctorFix": "一鍵修復",
+    "runningDoctorFix": "正在執行 doctor --fix...",
+    "doctorFixSuccess": "配置已修復，請再試一次",
+    "doctorFixFailed": "doctor 修復失敗"
   },
   "settings": {
     "title": "面板設定",
@@ -459,7 +465,8 @@
     "restartOk": "Gateway 重啟成功",
     "restartFailed": "重啟失敗",
     "configSavedGwFailed": "設定已儲存，但 Gateway 重啟失敗",
-    "visitSite": "訪問 {name}官網"
+    "visitSite": "訪問 {name}官網",
+    "configSavedGwNotRunning": "設定已儲存。Gateway 目前未執行，啟動後設定自動生效。"
   },
   "agents": {
     "title": "Agent 管理",
@@ -504,7 +511,8 @@
     "deleteFailed": "刪除失敗",
     "backingUp": "正在備份 Agent「{id}」...",
     "backupDone": "備份完成: {file}",
-    "backupFailed": "備份失敗"
+    "backupFailed": "備份失敗",
+    "labelRuntime": "執行階段:"
   },
   "gateway": {
     "title": "Gateway 設定",
@@ -2099,5 +2107,51 @@
     "confirmTitle": "確認操作",
     "confirmOk": "確認",
     "confirmCancel": "取消"
+  },
+  "kernel": {
+    "floorBlocker": {
+      "title": "核心版本過低",
+      "message": "目前 OpenClaw 核心版本 {current} 低於 ClawPanel 支援的最低版本 {floor}，部分功能可能無法運作。",
+      "targetHint": "建議升級到 {target} 以獲得最佳體驗。",
+      "goUpgrade": "前往升級",
+      "continueReadonly": "繼續使用（唯讀模式）",
+      "readonlyHint": "唯讀模式下，寫入操作會被前端攔截，避免破壞舊核心的設定。"
+    },
+    "badge": {
+      "currentKernel": "目前核心",
+      "featuresEnabled": "已啟用 {enabled}/{total} 個特性",
+      "belowTarget": "低於推薦版",
+      "latest": "已是最新",
+      "unknown": "未知"
+    },
+    "upgrade": {
+      "title": "升級 OpenClaw 核心",
+      "confirmMessage": "即將從 {from} 升級到 {to}。\n升級約需 2 分鐘，期間 Gateway 會自動重啟。繼續？",
+      "starting": "開始升級到 {version}...",
+      "successMessage": "核心升級完成",
+      "successToast": "核心升級成功",
+      "failurePrefix": "核心升級失敗:"
+    },
+    "upgradeHint": {
+      "title": "有新核心可用",
+      "subtitle": "{from} → {to}，點此一鍵升級",
+      "dismissTooltip": "本次工作階段不再提醒"
+    }
+  },
+  "cliConflict": {
+    "title": "偵測到 {count} 處可能衝突的 OpenClaw 安裝",
+    "desc": "系統 PATH 中存在非 ClawPanel 管理的 OpenClaw（如 Cherry Studio 內嵌、舊 npm 全域），可能導致終端指令取得舊版本，引發 schema 不相容、doctor --fix 卡住等問題。",
+    "viewDetails": "查看詳情",
+    "hideDetails": "收起詳情",
+    "quarantineAll": "一鍵隔離",
+    "quarantining": "正在隔離…",
+    "quarantineOne": "隔離",
+    "dismiss": "暫時忽略",
+    "dismissedHint": "已忽略本次偵測。下次啟動會重新掃描。",
+    "quarantineOk": "已隔離 {count} 個衝突項",
+    "quarantinePartial": "另有 {count} 個未隔離",
+    "quarantineFail": "隔離失敗：{error}",
+    "quarantineOneOk": "已隔離",
+    "footnote": "隔離 = 重新命名為 .disabled-by-clawpanel-<時間>.bak（不會刪除）。如需恢復，到原目錄把 .bak 檔案改回原名即可。"
   }
 }

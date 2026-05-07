@@ -252,7 +252,13 @@
     "webModeNoLog": "Web mode: Upgrade logs unavailable, please wait...",
     "taskDone": "Operation complete",
     "upgradeDone": "Upgrade complete",
-    "upgradeScene": "Upgrade OpenClaw"
+    "upgradeScene": "Upgrade OpenClaw",
+    "invalidConfigTitle": "Phát hiện vấn đề cấu hình OpenClaw",
+    "invalidConfigPrompt": "Hành động \"{action}\" thất bại:\n\n{error}\n\nThường do schema cấu hình lỗi thời. Chạy doctor để sửa tự động?",
+    "runDoctorFix": "Chạy doctor --fix",
+    "runningDoctorFix": "Đang chạy doctor --fix...",
+    "doctorFixSuccess": "Đã sửa cấu hình. Vui lòng thử lại",
+    "doctorFixFailed": "doctor sửa thất bại"
   },
   "settings": {
     "title": "Cài đặt panel",
@@ -459,7 +465,8 @@
     "restartOk": "Gateway restarted",
     "restartFailed": "Restart failed",
     "configSavedGwFailed": "Config saved, but Gateway restart failed",
-    "visitSite": "Visit {name} website"
+    "visitSite": "Visit {name} website",
+    "configSavedGwNotRunning": "Đã lưu cấu hình. Gateway hiện không chạy — sẽ tự động áp dụng khi khởi động."
   },
   "agents": {
     "title": "Quản lý Agent",
@@ -504,7 +511,8 @@
     "deleteFailed": "Xóa thất bại",
     "backingUp": "Backing up Agent \"{id}\"...",
     "backupDone": "Backup done: {file}",
-    "backupFailed": "Backup failed"
+    "backupFailed": "Backup failed",
+    "labelRuntime": "Runtime:"
   },
   "gateway": {
     "title": "Gateway",
@@ -2098,5 +2106,51 @@
     "confirmTitle": "Xác nhận",
     "confirmOk": "Đồng ý",
     "confirmCancel": "Hủy"
+  },
+  "kernel": {
+    "floorBlocker": {
+      "title": "Phiên bản kernel quá cũ",
+      "message": "Kernel OpenClaw {current} thấp hơn phiên bản tối thiểu được hỗ trợ {floor}. Một số tính năng có thể không hoạt động.",
+      "targetHint": "Khuyến nghị nâng cấp lên {target} để có trải nghiệm tốt nhất.",
+      "goUpgrade": "Nâng cấp ngay",
+      "continueReadonly": "Tiếp tục (chỉ đọc)",
+      "readonlyHint": "Ở chế độ chỉ đọc, các thao tác ghi sẽ bị chặn ở phía client để tránh làm hỏng cấu hình kernel cũ."
+    },
+    "badge": {
+      "currentKernel": "Kernel",
+      "featuresEnabled": "{enabled}/{total} tính năng đã bật",
+      "belowTarget": "Dưới khuyến nghị",
+      "latest": "Mới nhất",
+      "unknown": "Không xác định"
+    },
+    "upgrade": {
+      "title": "Nâng cấp kernel OpenClaw",
+      "confirmMessage": "Sẽ nâng cấp từ {from} lên {to}.\nMất khoảng 2 phút, Gateway sẽ khởi động lại tự động. Tiếp tục?",
+      "starting": "Đang nâng cấp lên {version}...",
+      "successMessage": "Nâng cấp kernel hoàn tất",
+      "successToast": "Nâng cấp kernel thành công",
+      "failurePrefix": "Nâng cấp kernel thất bại:"
+    },
+    "upgradeHint": {
+      "title": "Có kernel mới",
+      "subtitle": "{from} → {to}, nhấn để nâng cấp",
+      "dismissTooltip": "Không nhắc trong phiên này"
+    }
+  },
+  "cliConflict": {
+    "title": "Detected {count} possibly conflicting OpenClaw installation(s)",
+    "desc": "Your PATH has OpenClaw installations not managed by ClawPanel (e.g. Cherry Studio bundled, legacy npm global). They can cause terminal commands to pick up old versions, triggering schema mismatches and doctor --fix hangs.",
+    "viewDetails": "View details",
+    "hideDetails": "Hide details",
+    "quarantineAll": "Quarantine all",
+    "quarantining": "Quarantining…",
+    "quarantineOne": "Quarantine",
+    "dismiss": "Dismiss",
+    "dismissedHint": "Dismissed for this session. Next launch will scan again.",
+    "quarantineOk": "Quarantined {count} item(s)",
+    "quarantinePartial": "{count} item(s) failed",
+    "quarantineFail": "Quarantine failed: {error}",
+    "quarantineOneOk": "Quarantined",
+    "footnote": "Quarantine = rename to .disabled-by-clawpanel-<timestamp>.bak (not deleted). To restore, rename the .bak back to its original name in the same directory."
   }
 }

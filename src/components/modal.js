@@ -20,17 +20,26 @@ function escapeAttr(str) {
  * @param {string} message 确认消息
  * @returns {Promise<boolean>} 用户选择确认返回 true，取消返回 false
  */
-export function showConfirm(message) {
+export function showConfirm(message, options = {}) {
+  // options:
+  //   title: 标题文本（默认 t('common.confirmAction')）
+  //   confirmText: 确认按钮文字（默认 t('common.confirm')）
+  //   cancelText: 取消按钮文字（默认 t('common.cancel')）
+  //   variant: 'danger' | 'primary'（默认 'danger'，决定确认按钮颜色）
+  const title = options.title || t('common.confirmAction')
+  const confirmText = options.confirmText || t('common.confirm')
+  const cancelText = options.cancelText || t('common.cancel')
+  const variant = options.variant === 'primary' ? 'btn-primary' : 'btn-danger'
   return new Promise((resolve) => {
     const overlay = document.createElement('div')
     overlay.className = 'modal-overlay'
     overlay.innerHTML = `
       <div class="modal" style="max-width:400px">
-        <div class="modal-title">${t('common.confirmAction')}</div>
+        <div class="modal-title">${escapeAttr(title)}</div>
         <div class="modal-body" style="font-size:var(--font-size-sm);color:var(--text-secondary);white-space:pre-wrap;line-height:1.6">${escapeAttr(message)}</div>
         <div class="modal-actions">
-          <button class="btn btn-secondary btn-sm" data-action="cancel">${t('common.cancel')}</button>
-          <button class="btn btn-danger btn-sm" data-action="confirm">${t('common.confirm')}</button>
+          <button class="btn btn-secondary btn-sm" data-action="cancel">${escapeAttr(cancelText)}</button>
+          <button class="btn ${variant} btn-sm" data-action="confirm">${escapeAttr(confirmText)}</button>
         </div>
       </div>
     `

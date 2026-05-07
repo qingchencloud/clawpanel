@@ -29,6 +29,30 @@ const MESSAGE_CACHE_SIZE = 100
 // Gateway 启动前的初始重连延迟（更长，给 Gateway 充足的重启/初始化时间）
 const INITIAL_RECONNECT_DELAY = 10000
 
+/**
+ * 判断 RPC 错误是否为「method 不被当前 Gateway 支持」类型。
+ * 用于跨内核兼容降级：老内核没有的新 RPC 应该被静默吃掉，而不是 toast 给小白用户。
+ *
+ * 上游 Gateway 错误码可能是：METHOD_NOT_FOUND / UNKNOWN_METHOD / UNKNOWN_RPC / NOT_IMPLEMENTED
+ * 错误消息可能包含 "method ... not found" / "unknown method" / "no handler"
+ */
+function isMethodUnsupportedError(err) {
+  if (!err) return false
+  const code = String(err.code || '').toUpperCase()
+  if (
+    code === 'METHOD_NOT_FOUND' ||
+    code === 'UNKNOWN_METHOD' ||
+    code === 'UNKNOWN_RPC' ||
+    code === 'NOT_IMPLEMENTED' ||
+    code === 'UNSUPPORTED'
+  ) return true
+  const msg = String(err.message || '').toLowerCase()
+  if (/method\s+.*\s+not\s+(found|implemented|supported)/.test(msg)) return true
+  if (/unknown\s+(method|rpc|handler)/.test(msg)) return true
+  if (/no\s+handler\s+for/.test(msg)) return true
+  return false
+}
+
 export class WsClient {
   constructor() {
     this._ws = null
@@ -68,6 +92,10 @@ export class WsClient {
     this._messageCache = new Map()
     this._cacheSize = MESSAGE_CACHE_SIZE
     this._seenMessageIds = new Set()
+
+    // 跨内核兼容：当前 Gateway 已确认不支持的 RPC method 名集合
+    // 由 requestCompat 在收到 method-not-found 类错误时填充，连接断开时清空
+    this._unsupportedMethods = new Set()
   }
 
   get connected() { return this._connected }
@@ -390,6 +418,26 @@ export class WsClient {
             }
         }
 
+        // 上游 5.4+：Gateway 启动期间收到的 connect 会返回 retryable UNAVAILABLE，
+        // details.reason='startup-sidecars'，附带 retryAfterMs。
+        // 这种错误对小白用户应该完全无感——按建议时间静默重试，不显示红色错误。
+        const isStartupSidecars =
+          /^UNAVAILABLE$/i.test(errCode || '') &&
+          (
+            details.reason === 'startup-sidecars' ||
+            details.code === 'startup-sidecars' ||
+            detailCode === 'STARTUP_SIDECARS' ||
+            /startup[-_]?sidecars/i.test(errMsg)
+          )
+        if (!handled && isStartupSidecars) {
+          const retryMs = Math.max(500, Math.min(details.retryAfterMs || msg.error?.retryAfterMs || 1500, 10000))
+          console.log(`[ws] Gateway 启动中 (sidecars 加载)，${retryMs}ms 后重试`)
+          // 标 reconnecting 而非 error，UI 上显示的是 spinner 不是红色叉
+          this._setConnected(false, 'reconnecting', 'Gateway 启动中...')
+          setTimeout(() => { if (!this._intentionalClose) this._doConnect() }, retryMs)
+          return
+        }
+
         // 使用 recommendedNextStep 给用户更好的提示
         const hints = {
           'retry_with_device_token': '设备令牌需要更新，请重启面板',
@@ -418,7 +466,13 @@ export class WsClient {
         this._pending.delete(msg.id)
         clearTimeout(cb.timer)
         if (msg.ok) cb.resolve(msg.payload)
-        else cb.reject(new Error(msg.error?.message || msg.error?.code || 'request failed'))
+        else {
+          const err = new Error(msg.error?.message || msg.error?.code || 'request failed')
+          err.code = msg.error?.code || null
+          err.details = msg.error?.details || null
+          err.method = cb.method || null
+          cb.reject(err)
+        }
       }
       return
     }
@@ -528,6 +582,8 @@ export class WsClient {
     this._hello = payload || null
     this._snapshot = payload?.snapshot || null
     this._serverVersion = payload?.serverVersion || null
+    // 新连接 → 清空 method 降级缓存（可能换了 Gateway 版本）
+    this.resetCompatCache()
     const defaults = this._snapshot?.sessionDefaults
     if (defaults?.mainSessionKey) {
       this._sessionKey = defaults.mainSessionKey
@@ -690,9 +746,57 @@ export class WsClient {
       }
       const id = uuid()
       const timer = setTimeout(() => { this._pending.delete(id); reject(new Error('请求超时')) }, REQUEST_TIMEOUT)
-      this._pending.set(id, { resolve, reject, timer })
+      this._pending.set(id, { resolve, reject, timer, method })
       this._ws.send(JSON.stringify({ type: 'req', id, method, params }))
     })
+  }
+
+  /**
+   * 跨内核兼容版 request：
+   * - 老内核不支持的 RPC 会返回 fallback（默认 null），不抛错
+   * - 第二次起跳过实际请求，直接返回 fallback
+   * - 真实失败（网络、参数错误等）仍然 throw
+   *
+   * 用法：
+   *   const status = await wsClient.requestCompat('memory.status.deep', {})
+   *   if (status) renderRich(status); else renderBasic()
+   *
+   * @param {string} method
+   * @param {object} [params]
+   * @param {*} [fallback=null]  老内核不支持时返回此值
+   * @returns {Promise<*>}
+   */
+  async requestCompat(method, params = {}, fallback = null) {
+    if (this._unsupportedMethods.has(method)) {
+      return fallback
+    }
+    try {
+      return await this.request(method, params)
+    } catch (e) {
+      if (isMethodUnsupportedError(e)) {
+        this._unsupportedMethods.add(method)
+        console.warn(`[ws] RPC \`${method}\` 不被当前 Gateway 支持 (code=${e.code}), 已记入降级集合`)
+        return fallback
+      }
+      throw e
+    }
+  }
+
+  /**
+   * 是否已确认某 method 在当前 Gateway 上不可用
+   */
+  isMethodUnsupported(method) {
+    return this._unsupportedMethods.has(method)
+  }
+
+  /**
+   * 清空降级集合（在新连接成功时自动调用）
+   */
+  resetCompatCache() {
+    if (this._unsupportedMethods.size > 0) {
+      console.log('[ws] 清空 method 降级集合', Array.from(this._unsupportedMethods))
+    }
+    this._unsupportedMethods.clear()
   }
 
   chatSend(sessionKey, message, attachments) {

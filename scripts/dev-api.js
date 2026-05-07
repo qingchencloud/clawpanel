@@ -84,6 +84,24 @@ function hermesGatewayUrl() {
   return `http://127.0.0.1:${hermesGatewayPort()}`
 }
 
+function hermesGatewayCustomUrl() {
+  try {
+    const cfg = readPanelConfig()
+    const url = cfg?.hermes?.gatewayUrl
+    if (url && typeof url === 'string' && url.trim()) return url.trim().replace(/\/+$/, '')
+  } catch {}
+  return ''
+}
+
+function isLoopbackGatewayUrl(url) {
+  try {
+    const host = new URL(url).hostname.toLowerCase()
+    return host === 'localhost' || host.endsWith('.localhost') || host === '::1' || host === '127.0.0.1' || host.startsWith('127.')
+  } catch {
+    return false
+  }
+}
+
 function runHermesSilent(program, args) {
   try {
     const result = spawnSync(program, args, {
@@ -315,6 +333,33 @@ function normalizeCliInstallSource(cliSource) {
   if (cliSource === 'standalone' || cliSource === 'npm-zh') return 'chinese'
   if (cliSource === 'npm-official' || cliSource === 'npm-global') return 'official'
   return 'unknown'
+}
+
+function detectStandaloneSourceFromDir(dir) {
+  try {
+    const versionFile = path.join(dir, 'VERSION')
+    if (fs.existsSync(versionFile)) {
+      const pairs = Object.create(null)
+      for (const line of fs.readFileSync(versionFile, 'utf8').split(/\r?\n/)) {
+        const eq = line.indexOf('=')
+        if (eq > 0) pairs[line.slice(0, eq).trim().toLowerCase()] = line.slice(eq + 1).trim().toLowerCase()
+      }
+      const pkg = pairs.package || ''
+      const edition = pairs.edition || ''
+      if (pkg.includes('openclaw-zh') || pkg.includes('@qingchencloud')) return 'chinese'
+      if (pkg === 'openclaw') return 'official'
+      if (['zh', 'zh-cn', 'chinese', 'cn'].includes(edition)) return 'chinese'
+      if (['en', 'official'].includes(edition)) return 'official'
+    }
+  } catch {}
+  if (fs.existsSync(path.join(dir, 'node_modules', '@qingchencloud', 'openclaw-zh', 'package.json'))) return 'chinese'
+  if (fs.existsSync(path.join(dir, 'node_modules', 'openclaw', 'package.json'))) return 'official'
+  return null
+}
+
+function detectStandaloneSourceFromCliPath(cliPath) {
+  const normalized = normalizeCliPath(cliPath)
+  return normalized ? detectStandaloneSourceFromDir(path.dirname(normalized)) : null
 }
 
 function readVersionFromInstallation(cliPath) {
@@ -1141,6 +1186,7 @@ function scanLocalSkillsFallback(agentSkillsDir = null) {
 function detectInstalledSource() {
   const activeCliPath = resolveOpenclawCliPath()
   const activeCliSource = classifyCliSource(activeCliPath)
+  if (activeCliSource === 'standalone') return detectStandaloneSourceFromCliPath(activeCliPath) || 'chinese'
   const activeSource = normalizeCliInstallSource(activeCliSource)
   if (activeSource !== 'unknown') return activeSource
   if (isMac) {
@@ -1158,18 +1204,21 @@ function detectInstalledSource() {
     } catch {}
     // standalone
     const saDir = standaloneInstallDir()
-    if (fs.existsSync(path.join(saDir, 'openclaw')) || fs.existsSync(path.join(saDir, 'VERSION'))) return 'chinese'
-    if (fs.existsSync('/opt/openclaw/openclaw')) return 'chinese'
+    if (fs.existsSync(path.join(saDir, 'openclaw')) || fs.existsSync(path.join(saDir, 'VERSION'))) return detectStandaloneSourceFromDir(saDir) || 'chinese'
+    if (fs.existsSync('/opt/openclaw/openclaw')) return detectStandaloneSourceFromDir('/opt/openclaw') || 'chinese'
     // findOpenclawBin fallback
     const bin = findOpenclawBin()
     if (bin) {
       const lower = bin.replace(/\\/g, '/').toLowerCase()
-      if (lower.includes('openclaw-zh') || lower.includes('@qingchencloud') || lower.includes('/openclaw-bin/') || lower.includes('/opt/openclaw/')) return 'chinese'
+      if (lower.includes('/openclaw-bin/') || lower.includes('/opt/openclaw/')) return detectStandaloneSourceFromCliPath(bin) || 'chinese'
+      if (lower.includes('openclaw-zh') || lower.includes('@qingchencloud')) return 'chinese'
       return 'official'
     }
     return 'official'
   }
   if (isWindows) {
+    const saDir = standaloneInstallDir()
+    if (fs.existsSync(path.join(saDir, 'openclaw.cmd')) || fs.existsSync(path.join(saDir, 'VERSION'))) return detectStandaloneSourceFromDir(saDir) || 'chinese'
     try {
       const npmPrefix = readWindowsNpmGlobalPrefix()
       if (npmPrefix) {
@@ -1191,6 +1240,15 @@ function detectInstalledSource() {
 
 function getLocalOpenclawVersion() {
   let current = readVersionFromInstallation(resolveOpenclawCliPath())
+  if (!current) {
+    try {
+      const saDir = standaloneInstallDir()
+      const bin = isWindows ? path.join(saDir, 'openclaw.cmd') : path.join(saDir, 'openclaw')
+      if (fs.existsSync(bin) || fs.existsSync(path.join(saDir, 'VERSION'))) {
+        current = readVersionFromInstallation(bin)
+      }
+    } catch {}
+  }
   if (isMac) {
     // ARM Homebrew
     try {
@@ -1238,7 +1296,15 @@ function getLocalOpenclawVersion() {
   }
   if (!current) {
     try {
-      const result = spawnOpenclawSync(['--version'], { timeout: 5000, windowsHide: true, encoding: 'utf8', cwd: homedir() })
+      const result = spawnOpenclawSync(['status', '--json'], { timeout: 2000, windowsHide: true, encoding: 'utf8', cwd: homedir() })
+      const output = openclawResultOutput(result)
+      const parsed = JSON.parse(output.slice(output.indexOf('{')))
+      current = parsed?.runtimeVersion || null
+    } catch {}
+  }
+  if (!current) {
+    try {
+      const result = spawnOpenclawSync(['--version'], { timeout: 3000, windowsHide: true, encoding: 'utf8', cwd: homedir() })
       const output = openclawResultOutput(result)
       current = output.trim().split(/\s+/).find(w => /^\d/.test(w)) || null
     } catch {}
@@ -2985,6 +3051,36 @@ async function proxyToInstance(instance, cmd, body) {
   const text = await resp.text()
   try { return JSON.parse(text) }
   catch { return text }
+}
+
+async function proxyStreamToInstance(instance, cmd, body, req, res) {
+  const controller = new AbortController()
+  res.on('close', () => controller.abort())
+  const upstream = await fetch(`${instance.endpoint}/__api/${cmd}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: controller.signal,
+  })
+  res.statusCode = upstream.status
+  const contentType = upstream.headers.get('content-type') || 'application/x-ndjson; charset=utf-8'
+  res.setHeader('Content-Type', contentType)
+  res.setHeader('Cache-Control', 'no-cache, no-transform')
+  if (!upstream.body) {
+    res.end(await upstream.text())
+    return
+  }
+  const reader = upstream.body.getReader()
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value) res.write(Buffer.from(value))
+    }
+  } finally {
+    try { reader.releaseLock() } catch {}
+    if (!res.writableEnded && !res.destroyed) res.end()
+  }
 }
 
 async function instanceHealthCheck(instance) {
@@ -5016,7 +5112,9 @@ const handlers = {
     const cli_path = resolveOpenclawCliPath()
     const cli_source = classifyCliSource(cli_path) || null
     if (source === 'unknown') {
-      const cliInstallSource = normalizeCliInstallSource(cli_source)
+      const cliInstallSource = cli_source === 'standalone'
+        ? (detectStandaloneSourceFromCliPath(cli_path) || 'chinese')
+        : normalizeCliInstallSource(cli_source)
       if (cliInstallSource !== 'unknown') source = cliInstallSource
     }
     const latest = source === 'unknown' ? null : await getLatestVersionFor(source)
@@ -6734,7 +6832,7 @@ const handlers = {
       : 'hermes-agent @ git+https://github.com/NousResearch/hermes-agent.git'
     const installArgs = method === 'uv-pip'
       ? ['pip', 'install', pkg]
-      : ['tool', 'install', '--force', pkg, '--python', '3.11']
+      : ['tool', 'install', '--force', pkg, '--python', '3.11', '--with', 'croniter']
     const result = spawnSync(uv, installArgs, {
       env: { ...process.env, PATH: hermesEnhancedPath(), GIT_TERMINAL_PROMPT: '0' },
       timeout: 600000,
@@ -6845,6 +6943,14 @@ const handlers = {
     throw new Error(`不支持的操作: ${action}`)
   },
 
+  async _hermesEnsureGatewayReady() {
+    const customUrl = hermesGatewayCustomUrl()
+    if (customUrl && !isLoopbackGatewayUrl(customUrl)) return
+    const port = hermesGatewayPort()
+    if (await _tcpProbe('127.0.0.1', port, 300)) return
+    await this.hermes_gateway_action({ action: 'start' })
+  },
+
   async hermes_health_check() {
     const url = `${hermesGatewayUrl()}/health`
     const resp = await globalThis.fetch(url, { signal: AbortSignal.timeout(5000), headers: { 'User-Agent': 'ClawPanel-Web' } })
@@ -6879,6 +6985,7 @@ const handlers = {
 
   async hermes_agent_run({ input, sessionId, conversationHistory, instructions } = {}) {
     // Web 模式下简化实现：POST /v1/runs 然后轮询或直接返回
+    await this._hermesEnsureGatewayReady()
     const gwUrl = hermesGatewayUrl()
     const home = hermesHome()
     let apiKey = ''
@@ -8087,8 +8194,8 @@ const handlers = {
   async update_hermes() {
     const uvPath = path.join(uvBinDir(), isWindows ? 'uv.exe' : 'uv')
     const uv = fs.existsSync(uvPath) ? uvPath : 'uv'
-    const pkg = 'hermes-agent @ git+https://github.com/NousResearch/hermes-agent.git'
-    const result = spawnSync(uv, ['tool', 'install', '--reinstall', pkg, '--python', '3.11'], {
+    const pkg = 'hermes-agent[web] @ git+https://github.com/NousResearch/hermes-agent.git'
+    const result = spawnSync(uv, ['tool', 'install', '--reinstall', pkg, '--python', '3.11', '--with', 'croniter'], {
       env: { ...process.env, PATH: hermesEnhancedPath(), GIT_TERMINAL_PROMPT: '0' },
       timeout: 600000, windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -8272,6 +8379,129 @@ function _initApi() {
   }, 10 * 60 * 1000)
 }
 
+function _readHermesApiServerKey() {
+  try {
+    const envContent = fs.readFileSync(path.join(hermesHome(), '.env'), 'utf8')
+    const m = envContent.match(/^API_SERVER_KEY=(.+)$/m)
+    return m ? m[1].trim() : ''
+  } catch {
+    return ''
+  }
+}
+
+function _writeStreamEvent(res, event) {
+  if (res.writableEnded || res.destroyed) return
+  res.write(JSON.stringify(event) + '\n')
+}
+
+function _endStream(res) {
+  if (!res.writableEnded && !res.destroyed) res.end()
+}
+
+async function _handleHermesAgentRunStream(req, res, args = {}) {
+  const controller = new AbortController()
+  res.on('close', () => controller.abort())
+
+  let runId = ''
+  let finalOutput = ''
+  try {
+    const gwUrl = hermesGatewayUrl()
+    await handlers._hermesEnsureGatewayReady()
+    const apiKey = _readHermesApiServerKey()
+    const headers = { 'Content-Type': 'application/json', 'User-Agent': 'ClawPanel-Web' }
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`
+
+    const payload = { input: args.input || '' }
+    if (args.sessionId) payload.session_id = args.sessionId
+    if (args.conversationHistory) payload.conversation_history = args.conversationHistory
+    if (args.instructions) payload.instructions = args.instructions
+
+    const startedResp = await globalThis.fetch(`${gwUrl}/v1/runs`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    })
+    if (!startedResp.ok) {
+      const text = await startedResp.text()
+      throw new Error(`HTTP ${startedResp.status}: ${text}`)
+    }
+    const started = await startedResp.json()
+    runId = started.run_id || started.id || ''
+    if (!runId) throw new Error('响应中没有 run_id')
+
+    res.statusCode = 200
+    res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8')
+    res.setHeader('Cache-Control', 'no-cache, no-transform')
+    res.setHeader('Connection', 'keep-alive')
+    res.setHeader('X-Accel-Buffering', 'no')
+    if (typeof res.flushHeaders === 'function') res.flushHeaders()
+    _writeStreamEvent(res, { event: 'run.started', run_id: runId, session_id: args.sessionId || null })
+
+    const eventsResp = await globalThis.fetch(`${gwUrl}/v1/runs/${encodeURIComponent(runId)}/events`, {
+      headers: apiKey ? { Authorization: `Bearer ${apiKey}`, 'User-Agent': 'ClawPanel-Web' } : { 'User-Agent': 'ClawPanel-Web' },
+      signal: controller.signal,
+    })
+    if (!eventsResp.ok || !eventsResp.body) {
+      const text = await eventsResp.text().catch(() => '')
+      throw new Error(`SSE HTTP ${eventsResp.status}: ${text}`)
+    }
+
+    const reader = eventsResp.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        let newline
+        while ((newline = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.slice(0, newline).trim()
+          buffer = buffer.slice(newline + 1)
+          if (!line.startsWith('data:')) continue
+          const data = line.slice(5).trim()
+          if (!data || data === '[DONE]') {
+            _writeStreamEvent(res, { event: 'run.completed', run_id: runId, output: finalOutput, session_id: args.sessionId || null })
+            _endStream(res)
+            return
+          }
+          let evt
+          try { evt = JSON.parse(data) } catch { continue }
+          if (!evt.run_id) evt.run_id = runId
+          if (!evt.session_id && args.sessionId) evt.session_id = args.sessionId
+          if (evt.event === 'message.delta' && typeof evt.delta === 'string') finalOutput += evt.delta
+          if (evt.event === 'run.completed' && typeof evt.output === 'string') finalOutput = evt.output
+          _writeStreamEvent(res, evt)
+          if (evt.event === 'run.completed' || evt.event === 'run.failed') {
+            _endStream(res)
+            return
+          }
+        }
+      }
+    } finally {
+      try { reader.releaseLock() } catch {}
+    }
+
+    _writeStreamEvent(res, { event: 'run.completed', run_id: runId, output: finalOutput, session_id: args.sessionId || null })
+    _endStream(res)
+  } catch (e) {
+    if (!res.headersSent) {
+      res.statusCode = 500
+      res.setHeader('Content-Type', 'application/json')
+      res.end(JSON.stringify({ error: e.message || String(e) }))
+      return
+    }
+    _writeStreamEvent(res, {
+      event: 'run.failed',
+      run_id: runId || null,
+      session_id: args.sessionId || null,
+      error: e.name === 'AbortError' ? 'aborted' : (e.message || String(e)),
+    })
+    _endStream(res)
+  }
+}
+
 // API 中间件（dev server 和 preview server 共用）
 async function _apiMiddleware(req, res, next) {
   if (!req.url?.startsWith('/__api/')) return next()
@@ -8440,8 +8670,19 @@ async function _apiMiddleware(req, res, next) {
     return
   }
 
-  // --- 实例代理：非 ALWAYS_LOCAL 命令，活跃实例非本机时代理转发 ---
   const activeInst = getActiveInstance()
+
+  if (cmd === 'hermes_agent_run_stream') {
+    const args = await readBody(req)
+    if (activeInst.type !== 'local' && activeInst.endpoint && !ALWAYS_LOCAL.has(cmd)) {
+      await proxyStreamToInstance(activeInst, cmd, args, req, res)
+    } else {
+      await _handleHermesAgentRunStream(req, res, args)
+    }
+    return
+  }
+
+  // --- 实例代理：非 ALWAYS_LOCAL 命令，活跃实例非本机时代理转发 ---
   if (activeInst.type !== 'local' && activeInst.endpoint && !ALWAYS_LOCAL.has(cmd)) {
     try {
       const args = await readBody(req)

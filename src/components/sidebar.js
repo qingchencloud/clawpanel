@@ -9,7 +9,12 @@ import { toast } from './toast.js'
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0'
 import { t, getLang, setLang, getAvailableLangs } from '../lib/i18n.js'
 import { isFeatureAvailable } from '../lib/feature-gates.js'
+import { getKernelSnapshot } from '../lib/kernel.js'
+import { triggerKernelUpgrade } from '../lib/kernel-upgrade.js'
 import { getActiveEngine, getActiveEngineId, listEngines, switchEngine, onEngineChange } from '../lib/engine-manager.js'
+
+// 当用户点 "暂时不升级" 时，本地会话内不再显示升级提示
+const SS_DISMISSED_KERNEL_UPGRADE = 'clawpanel_kernel_upgrade_dismissed'
 
 function NAV_ITEMS_FULL() { return [
   {
@@ -224,6 +229,9 @@ export function renderSidebar(el) {
     </div>
   `).join('')
 
+  // 内核可升级卡片（仅 openclaw 引擎、已连接、低于推荐版时显示）
+  html += _renderKernelUpgradeHint()
+
   html += `
     <div class="sidebar-footer">
       <div class="nav-item" id="btn-theme-toggle">
@@ -280,6 +288,30 @@ export function renderSidebar(el) {
       const themeBtn = e.target.closest('#btn-theme-toggle')
       if (themeBtn) {
         toggleTheme(() => renderSidebar(el))
+        return
+      }
+      // 内核升级提示卡：dismiss 按钮 → 仅当前会话不再显示
+      const dismissBtn = e.target.closest('#btn-kernel-upgrade-dismiss')
+      if (dismissBtn) {
+        e.preventDefault()
+        e.stopPropagation()
+        try { sessionStorage.setItem(SS_DISMISSED_KERNEL_UPGRADE, '1') } catch {}
+        const card = el.querySelector('#kernel-upgrade-hint')
+        if (card) card.remove()
+        return
+      }
+      // 内核升级提示卡：主体点击 → 触发一键升级流程
+      const hintCard = e.target.closest('#kernel-upgrade-hint')
+      if (hintCard) {
+        triggerKernelUpgrade({
+          onDone: () => {
+            // 升级完成后清除会话内的 dismiss 标记并刷新 sidebar
+            try { sessionStorage.removeItem(SS_DISMISSED_KERNEL_UPGRADE) } catch {}
+            renderSidebar(el)
+          },
+        }).catch(err => {
+          console.error('[sidebar] 内核升级触发失败:', err)
+        })
         return
       }
       // 语言切换器：打开/关闭下拉
@@ -364,6 +396,46 @@ export function renderSidebar(el) {
 }
 
 function _escSidebar(s) { return String(s || '').replace(/</g, '&lt;').replace(/>/g, '&gt;') }
+
+/**
+ * 渲染"内核可升级"卡片。
+ *
+ * 显示条件（同时满足）：
+ * - 当前引擎是 openclaw
+ * - 已成功握手 Gateway（snapshot 有 version）
+ * - 高于硬地板（< floor 由 floor-blocker 接管）
+ * - 低于推荐目标（!isLatest）
+ * - 用户未在本会话中点击过 "暂不升级"
+ *
+ * 不满足任何一条返回空串。
+ */
+function _renderKernelUpgradeHint() {
+  if (getActiveEngineId() !== 'openclaw') return ''
+  if (sessionStorage.getItem(SS_DISMISSED_KERNEL_UPGRADE) === '1') return ''
+
+  const snap = getKernelSnapshot()
+  if (!snap || !snap.version) return ''
+  if (!snap.aboveFloor) return ''   // floor-blocker 处理
+  if (snap.isLatest) return ''       // 已经是推荐目标
+
+  const arrowIcon = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>'
+  const sparkIcon = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L13.5 8.5 20 10l-6.5 1.5L12 18l-1.5-6.5L4 10l6.5-1.5z"/></svg>'
+
+  const fromLabel = snap.versionLabel || snap.version
+  const toLabel = snap.target || ''
+
+  return `
+    <div class="kernel-upgrade-hint" id="kernel-upgrade-hint" role="button" tabindex="0">
+      <div class="kernel-upgrade-hint-icon">${sparkIcon}</div>
+      <div class="kernel-upgrade-hint-body">
+        <div class="kernel-upgrade-hint-title">${_escSidebar(t('kernel.upgradeHint.title'))}</div>
+        <div class="kernel-upgrade-hint-meta">${_escSidebar(t('kernel.upgradeHint.subtitle', { from: fromLabel, to: toLabel }))}</div>
+      </div>
+      <div class="kernel-upgrade-hint-arrow">${arrowIcon}</div>
+      <button class="kernel-upgrade-hint-dismiss" id="btn-kernel-upgrade-dismiss" title="${_escSidebar(t('kernel.upgradeHint.dismissTooltip'))}" aria-label="${_escSidebar(t('kernel.upgradeHint.dismissTooltip'))}">×</button>
+    </div>
+  `
+}
 
 // === 移动端侧边栏 ===
 function _closeMobileSidebar() {

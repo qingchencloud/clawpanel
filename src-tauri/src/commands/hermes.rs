@@ -36,9 +36,8 @@ static GW_GUARDIAN_STOP: AtomicBool = AtomicBool::new(false);
 static GW_APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
 
 /// 获取 Gateway 的完整 URL（当前本地，未来可扩展为远程）
-fn hermes_gateway_url() -> String {
-    // 先检查 panel config 中是否配置了自定义 URL
-    if let Some(url) = super::read_panel_config_value()
+fn hermes_gateway_custom_url() -> Option<String> {
+    super::read_panel_config_value()
         .and_then(|v| {
             v.get("hermes")?
                 .get("gatewayUrl")?
@@ -46,11 +45,124 @@ fn hermes_gateway_url() -> String {
                 .map(String::from)
         })
         .filter(|s| !s.trim().is_empty())
-    {
-        return url.trim_end_matches('/').to_string();
+        .map(|url| url.trim_end_matches('/').to_string())
+}
+
+fn is_loopback_gateway_url(url: &str) -> bool {
+    let rest = url
+        .trim()
+        .strip_prefix("http://")
+        .or_else(|| url.trim().strip_prefix("https://"))
+        .unwrap_or(url.trim());
+    let host = if let Some(stripped) = rest.strip_prefix('[') {
+        stripped.split(']').next().unwrap_or("")
+    } else {
+        rest.split('/')
+            .next()
+            .unwrap_or("")
+            .split(':')
+            .next()
+            .unwrap_or("")
+    };
+    let lower = host.trim().to_ascii_lowercase();
+    if lower == "localhost" || lower.ends_with(".localhost") {
+        return true;
+    }
+    lower
+        .parse::<std::net::IpAddr>()
+        .map(|ip| ip.is_loopback())
+        .unwrap_or(false)
+}
+
+fn hermes_gateway_url() -> String {
+    if let Some(url) = hermes_gateway_custom_url() {
+        return url;
     }
     let port = hermes_gateway_port();
     format!("http://127.0.0.1:{port}")
+}
+
+async fn ensure_managed_gateway_ready(app: &tauri::AppHandle, gw_url: &str) -> Result<(), String> {
+    if let Some(url) = hermes_gateway_custom_url() {
+        if !is_loopback_gateway_url(&url) {
+            return Ok(());
+        }
+    }
+    if gateway_quick_health_check().await {
+        start_guardian(app);
+        emit_gateway_status(true);
+        return Ok(());
+    }
+    hermes_gateway_action(app.clone(), "start".into())
+        .await
+        .map(|_| ())
+        .map_err(|e| {
+            format!(
+                "Gateway 未运行且自动启动失败: {e}\nGateway: {gw_url}\n{}",
+                hermes_gateway_log_tail(20)
+            )
+        })
+}
+
+fn hermes_gateway_http_client(timeout: std::time::Duration) -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .timeout(timeout)
+        .user_agent("ClawPanel")
+        .gzip(true)
+        .brotli(true)
+        .deflate(true)
+        .no_proxy()
+        .build()
+        .map_err(|e| e.to_string())
+}
+
+fn reqwest_error_detail(error: &reqwest::Error) -> String {
+    use std::error::Error as _;
+    let mut detail = error.to_string();
+    let mut source = error.source();
+    while let Some(item) = source {
+        let text = item.to_string();
+        if !text.is_empty() && !detail.contains(&text) {
+            detail.push_str(": ");
+            detail.push_str(&text);
+        }
+        source = item.source();
+    }
+    detail
+}
+
+fn hermes_gateway_log_tail(limit: usize) -> String {
+    let log_path = hermes_home().join("gateway-run.log");
+    let content = std::fs::read_to_string(log_path).unwrap_or_default();
+    content
+        .lines()
+        .rev()
+        .take(limit)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+async fn hermes_run_failure_message(action: &str, gw_url: &str, detail: String) -> String {
+    let health_url = format!("{gw_url}/health");
+    let health = match hermes_gateway_http_client(std::time::Duration::from_secs(3)) {
+        Ok(client) => match client.get(&health_url).send().await {
+            Ok(resp) => format!("HTTP {}", resp.status().as_u16()),
+            Err(error) => format!("不可达 ({})", reqwest_error_detail(&error)),
+        },
+        Err(error) => format!("无法创建客户端 ({error})"),
+    };
+    let log_tail = hermes_gateway_log_tail(12);
+    let log_block = if log_tail.trim().is_empty() {
+        "最近 Gateway 日志为空".to_string()
+    } else {
+        format!("最近 Gateway 日志:\n{log_tail}")
+    };
+    format!(
+        "{action}: {detail}\nGateway: {gw_url}\nHealth: {health}\n建议：在 Hermes 服务页点击“重启 Gateway”后重试；如果刚改过模型/API Key，必须重启 Gateway。\n{log_block}"
+    )
 }
 
 /// 精准杀掉我们 spawn 的 Gateway 进程
@@ -2398,7 +2510,7 @@ pub async fn hermes_gateway_action(
 pub async fn hermes_health_check() -> Result<Value, String> {
     let url = format!("{}/health", hermes_gateway_url());
 
-    let client = super::build_http_client(std::time::Duration::from_secs(5), Some("ClawPanel"))
+    let client = hermes_gateway_http_client(std::time::Duration::from_secs(5))
         .map_err(|e| format!("HTTP 客户端创建失败: {e}"))?;
 
     match client.get(&url).send().await {
@@ -2613,6 +2725,7 @@ pub async fn hermes_set_gateway_url(url: Option<String>) -> Result<String, Strin
 #[tauri::command]
 pub async fn update_hermes(app: tauri::AppHandle) -> Result<String, String> {
     let _ = app.emit("hermes-install-log", "📦 升级 Hermes Agent...");
+    let _ = app.emit("hermes-install-progress", 0u32);
 
     let uv_path = uv_bin_path();
     let uv = if uv_path.exists() {
@@ -2622,9 +2735,23 @@ pub async fn update_hermes(app: tauri::AppHandle) -> Result<String, String> {
     };
 
     // hermes-agent 从 GitHub 安装，upgrade 不可用，改用 reinstall
-    let pkg = format!("hermes-agent @ {}", HERMES_GIT_URL);
+    let pkg = format!("hermes-agent[web] @ {}", HERMES_GIT_URL);
     let mut cmd = tokio::process::Command::new(&uv);
-    cmd.args(["tool", "install", "--reinstall", &pkg, "--python", "3.11"]);
+    cmd.args([
+        "tool",
+        "install",
+        "--reinstall",
+        &pkg,
+        "--python",
+        "3.11",
+        "--with",
+        "croniter",
+    ]);
+    let _ = app.emit("hermes-install-progress", 20u32);
+    let _ = app.emit(
+        "hermes-install-log",
+        format!("> uv tool install --reinstall \"{pkg}\" --python 3.11 --with croniter"),
+    );
     cmd.env("GIT_TERMINAL_PROMPT", "0");
     if let Some(mirror) = pypi_mirror_url() {
         cmd.args(["--index-url", &mirror]);
@@ -2646,6 +2773,7 @@ pub async fn update_hermes(app: tauri::AppHandle) -> Result<String, String> {
 
     if output.status.success() {
         let _ = app.emit("hermes-install-log", "✅ 升级完成");
+        let _ = app.emit("hermes-install-progress", 100u32);
         Ok("升级完成".into())
     } else {
         Err(format!("升级失败: {}", stderr.trim()))
@@ -2657,7 +2785,10 @@ pub async fn update_hermes(app: tauri::AppHandle) -> Result<String, String> {
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub async fn uninstall_hermes(clean_config: bool) -> Result<String, String> {
+pub async fn uninstall_hermes(app: tauri::AppHandle, clean_config: bool) -> Result<String, String> {
+    let _ = app.emit("hermes-install-log", "🗑️ 卸载 Hermes Agent...");
+    let _ = app.emit("hermes-install-progress", 10u32);
+
     let uv_path = uv_bin_path();
     let uv = if uv_path.exists() {
         uv_path.to_string_lossy().to_string()
@@ -2668,20 +2799,32 @@ pub async fn uninstall_hermes(clean_config: bool) -> Result<String, String> {
     // uv tool uninstall
     let mut cmd = tokio::process::Command::new(&uv);
     cmd.args(["tool", "uninstall", "hermes-agent"]);
+    let _ = app.emit("hermes-install-log", "> uv tool uninstall hermes-agent");
     cmd.env("PATH", hermes_enhanced_path());
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
 
     let output = cmd.output().await.map_err(|e| format!("卸载失败: {e}"))?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    for line in stdout.lines().chain(stderr.lines()) {
+        if !line.trim().is_empty() {
+            let _ = app.emit("hermes-install-log", line.trim());
+        }
+    }
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("卸载失败: {}", stderr.trim()));
     }
+    let _ = app.emit("hermes-install-progress", 65u32);
 
     // 清理 venv（如果存在）
     let venv_dir = dirs::home_dir().unwrap_or_default().join(".hermes-venv");
     if venv_dir.exists() {
+        let _ = app.emit(
+            "hermes-install-log",
+            format!("清理虚拟环境: {}", venv_dir.display()),
+        );
         let _ = std::fs::remove_dir_all(&venv_dir);
     }
 
@@ -2689,10 +2832,16 @@ pub async fn uninstall_hermes(clean_config: bool) -> Result<String, String> {
     if clean_config {
         let home = hermes_home();
         if home.exists() {
+            let _ = app.emit(
+                "hermes-install-log",
+                format!("清理配置目录: {}", home.display()),
+            );
             let _ = std::fs::remove_dir_all(&home);
         }
     }
 
+    let _ = app.emit("hermes-install-log", "✅ Hermes Agent 已卸载");
+    let _ = app.emit("hermes-install-progress", 100u32);
     Ok("Hermes Agent 已卸载".into())
 }
 
@@ -2730,8 +2879,8 @@ pub async fn hermes_api_proxy(
     } else {
         std::time::Duration::from_secs(30)
     };
-    let client = super::build_http_client(timeout, Some("ClawPanel"))
-        .map_err(|e| format!("HTTP 客户端创建失败: {e}"))?;
+    let client =
+        hermes_gateway_http_client(timeout).map_err(|e| format!("HTTP 客户端创建失败: {e}"))?;
 
     let mut req = match method.to_uppercase().as_str() {
         "GET" => client.get(&url),
@@ -2822,6 +2971,8 @@ pub async fn hermes_agent_run(
     let gw_url = hermes_gateway_url();
     let runs_url = format!("{gw_url}/v1/runs");
 
+    ensure_managed_gateway_ready(&app, &gw_url).await?;
+
     // 读取 API_SERVER_KEY
     let home = hermes_home();
     let api_key = {
@@ -2850,7 +3001,7 @@ pub async fn hermes_agent_run(
         payload["instructions"] = Value::String(inst.clone());
     }
 
-    let client = super::build_http_client(std::time::Duration::from_secs(10), Some("ClawPanel"))
+    let client = hermes_gateway_http_client(std::time::Duration::from_secs(10))
         .map_err(|e| format!("HTTP 客户端创建失败: {e}"))?;
 
     // 1. POST /v1/runs → 获取 run_id
@@ -2862,10 +3013,17 @@ pub async fn hermes_agent_run(
         req = req.header("Authorization", format!("Bearer {api_key}"));
     }
 
-    let resp = req
-        .send()
-        .await
-        .map_err(|e| format!("启动 run 失败: {e}"))?;
+    let resp = match req.send().await {
+        Ok(resp) => resp,
+        Err(error) => {
+            return Err(hermes_run_failure_message(
+                "启动 run 失败",
+                &gw_url,
+                reqwest_error_detail(&error),
+            )
+            .await);
+        }
+    };
     if !resp.status().is_success() {
         let status = resp.status().as_u16();
         let text = resp.text().await.unwrap_or_default();
@@ -2887,19 +3045,25 @@ pub async fn hermes_agent_run(
 
     // 2. GET /v1/runs/{run_id}/events — SSE 事件流
     let events_url = format!("{gw_url}/v1/runs/{run_id}/events");
-    let sse_client =
-        super::build_http_client(std::time::Duration::from_secs(300), Some("ClawPanel"))
-            .map_err(|e| format!("SSE 客户端创建失败: {e}"))?;
+    let sse_client = hermes_gateway_http_client(std::time::Duration::from_secs(300))
+        .map_err(|e| format!("SSE 客户端创建失败: {e}"))?;
 
     let mut sse_req = sse_client.get(&events_url);
     if !api_key.is_empty() {
         sse_req = sse_req.header("Authorization", format!("Bearer {api_key}"));
     }
 
-    let sse_resp = sse_req
-        .send()
-        .await
-        .map_err(|e| format!("SSE 连接失败: {e}"))?;
+    let sse_resp = match sse_req.send().await {
+        Ok(resp) => resp,
+        Err(error) => {
+            return Err(hermes_run_failure_message(
+                "SSE 连接失败",
+                &gw_url,
+                reqwest_error_detail(&error),
+            )
+            .await);
+        }
+    };
 
     if !sse_resp.status().is_success() {
         let status = sse_resp.status().as_u16();

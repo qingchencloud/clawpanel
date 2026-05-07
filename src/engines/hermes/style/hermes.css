@@ -461,6 +461,13 @@
   box-shadow: none;
 }
 
+/* Allow absolute-positioned children (e.g. model dropdown) to escape the
+   panel boundary. Used on the model-config panel where the long fetched
+   model list otherwise gets clipped at the panel's bottom edge (issue #260). */
+[data-engine="hermes"] .hm-panel.hm-panel--allow-overflow {
+  overflow: visible;
+}
+
 [data-engine="hermes"] .hm-panel-header {
   display: flex;
   align-items: center;

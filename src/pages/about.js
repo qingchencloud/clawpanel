@@ -154,8 +154,7 @@ async function loadHermesData(page) {
           ${!installed ? `<a class="btn btn-primary btn-sm" href="#/h/setup" style="${btnSm}">${t('about.hermesSetup')}</a>` : ''}
           ${installed ? `
             <button class="btn btn-secondary btn-sm" id="btn-hermes-config" style="${btnSm}">${t('about.hermesConfig')}</button>
-            <button class="btn btn-secondary btn-sm" id="btn-hermes-upgrade" style="${btnSm}">${t('about.hermesUpgrade')}</button>
-            <button class="btn btn-danger btn-sm" id="btn-hermes-uninstall" style="${btnSm}">${t('about.hermesUninstall')}</button>
+            <button class="btn btn-primary btn-sm" id="btn-hermes-services" style="${btnSm}">${t('engine.hermesServicesTitle')}</button>
           ` : ''}
         </div>
       </div>
@@ -196,6 +195,10 @@ async function loadHermesData(page) {
         } catch (e) {
           toast(t('common.loadFailed') + ': ' + (e.message || e), 'error')
         }
+      })
+
+      cards.querySelector('#btn-hermes-services')?.addEventListener('click', () => {
+        window.location.hash = '#/h/services'
       })
 
       // --- 升级模态框（带实时日志） ---

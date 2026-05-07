@@ -1891,22 +1891,6 @@ pub fn write_mcp_config(config: Value) -> Result<(), String> {
 /// macOS: 优先从 npm 包的 package.json 读取（含完整后缀），fallback 到 CLI
 /// Windows/Linux: 优先读文件系统，fallback 到 CLI
 async fn get_local_version() -> Option<String> {
-    // Fix #219: 优先从运行中的 openclaw 实例获取版本，避免多实例共存时读取到非活跃安装的版本
-    if let Ok(output) = crate::utils::openclaw_command_async()
-        .args(["status", "--json"])
-        .output()
-        .await
-    {
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            if let Some(ver) = crate::commands::skills::extract_json_pub(&stdout)
-                .and_then(|v| v.get("runtimeVersion")?.as_str().map(String::from))
-            {
-                return Some(ver);
-            }
-        }
-    }
-
     #[cfg(target_os = "macos")]
     {
         if let Some(cli_path) = crate::utils::resolve_openclaw_cli_path() {
@@ -2031,7 +2015,9 @@ async fn get_local_version() -> Option<String> {
         // 2. standalone 目录
         for sa_dir in all_standalone_dirs() {
             if sa_dir.join("openclaw").exists() || sa_dir.join("VERSION").exists() {
-                return Some("unknown".to_string());
+                if let Some(ver) = read_version_from_installation(&sa_dir.join("openclaw")) {
+                    return Some(ver);
+                }
             }
         }
         // 3. symlink -> package.json
@@ -2049,6 +2035,21 @@ async fn get_local_version() -> Option<String> {
                         return Some(ver);
                     }
                 }
+            }
+        }
+    }
+
+    let mut status_cmd = crate::utils::openclaw_command_async();
+    status_cmd.args(["status", "--json"]);
+    if let Ok(Ok(output)) =
+        tokio::time::timeout(std::time::Duration::from_secs(2), status_cmd.output()).await
+    {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if let Some(ver) = crate::commands::skills::extract_json_pub(&stdout)
+                .and_then(|v| v.get("runtimeVersion")?.as_str().map(String::from))
+            {
+                return Some(ver);
             }
         }
     }
@@ -2121,6 +2122,57 @@ fn detect_source_from_cmd_shim(cmd_path: &std::path::Path) -> Option<String> {
     None
 }
 
+fn detect_standalone_source_from_dir(dir: &std::path::Path) -> Option<String> {
+    let version_file = dir.join("VERSION");
+    if let Ok(content) = std::fs::read_to_string(&version_file) {
+        let mut edition = String::new();
+        let mut package = String::new();
+        for line in content.lines() {
+            if let Some(value) = line.strip_prefix("edition=") {
+                edition = value.trim().to_ascii_lowercase();
+            } else if let Some(value) = line.strip_prefix("package=") {
+                package = value.trim().to_ascii_lowercase();
+            }
+        }
+        if package.contains("openclaw-zh") || package.contains("@qingchencloud") {
+            return Some("chinese".into());
+        }
+        if package == "openclaw" {
+            return Some("official".into());
+        }
+        if matches!(edition.as_str(), "zh" | "zh-cn" | "chinese" | "cn") {
+            return Some("chinese".into());
+        }
+        if matches!(edition.as_str(), "en" | "official") {
+            return Some("official".into());
+        }
+    }
+    if dir
+        .join("node_modules")
+        .join("@qingchencloud")
+        .join("openclaw-zh")
+        .join("package.json")
+        .exists()
+    {
+        return Some("chinese".into());
+    }
+    if dir
+        .join("node_modules")
+        .join("openclaw")
+        .join("package.json")
+        .exists()
+    {
+        return Some("official".into());
+    }
+    None
+}
+
+fn detect_standalone_source_from_cli_path(cli_path: &std::path::Path) -> Option<String> {
+    cli_path
+        .parent()
+        .and_then(detect_standalone_source_from_dir)
+}
+
 /// 检测当前安装的是官方版还是汉化版
 /// macOS: 优先检查 symlink 指向的实际路径
 /// Windows: 读取 .cmd shim 内容判断实际关联的包
@@ -2134,7 +2186,11 @@ fn detect_installed_source() -> String {
                 .ok()
                 .unwrap_or_else(|| PathBuf::from(&cli_path));
             let source = crate::utils::classify_cli_source(&resolved.to_string_lossy());
-            if source == "npm-zh" || source == "standalone" {
+            if source == "standalone" {
+                return detect_standalone_source_from_cli_path(&resolved)
+                    .unwrap_or_else(|| "chinese".into());
+            }
+            if source == "npm-zh" {
                 return "chinese".into();
             }
             if source == "npm-official" || source == "npm-global" {
@@ -2152,7 +2208,8 @@ fn detect_installed_source() -> String {
         }
         for sa_dir in all_standalone_dirs() {
             if sa_dir.join("openclaw").exists() || sa_dir.join("VERSION").exists() {
-                return "chinese".into();
+                return detect_standalone_source_from_dir(&sa_dir)
+                    .unwrap_or_else(|| "chinese".into());
             }
         }
         "unknown".into()
@@ -2167,7 +2224,11 @@ fn detect_installed_source() -> String {
         if let Some(cli_path) = crate::utils::resolve_openclaw_cli_path() {
             let source = crate::utils::classify_cli_source(&cli_path);
             // 路径本身能确定的情况（standalone 目录、npm-zh 路径含 openclaw-zh）
-            if source == "npm-zh" || source == "standalone" {
+            if source == "standalone" {
+                return detect_standalone_source_from_cli_path(std::path::Path::new(&cli_path))
+                    .unwrap_or_else(|| "chinese".into());
+            }
+            if source == "npm-zh" {
                 return "chinese".into();
             }
             // npm-official / npm-global / unknown: 路径不含包名，读 .cmd 内容判断
@@ -2183,6 +2244,12 @@ fn detect_installed_source() -> String {
                 return s;
             }
         }
+        for sa_dir in all_standalone_dirs() {
+            if sa_dir.join("openclaw.cmd").exists() || sa_dir.join("VERSION").exists() {
+                return detect_standalone_source_from_dir(&sa_dir)
+                    .unwrap_or_else(|| "chinese".into());
+            }
+        }
         // 确实无法判断
         "unknown".into()
     }
@@ -2195,7 +2262,11 @@ fn detect_installed_source() -> String {
                 .ok()
                 .unwrap_or_else(|| PathBuf::from(&cli_path));
             let source = crate::utils::classify_cli_source(&resolved.to_string_lossy());
-            if source == "npm-zh" || source == "standalone" {
+            if source == "standalone" {
+                return detect_standalone_source_from_cli_path(&resolved)
+                    .unwrap_or_else(|| "chinese".into());
+            }
+            if source == "npm-zh" {
                 return "chinese".into();
             }
             if source == "npm-official" || source == "npm-global" {
@@ -2218,7 +2289,8 @@ fn detect_installed_source() -> String {
         // 3. standalone 目录检测
         for sa_dir in all_standalone_dirs() {
             if sa_dir.join("openclaw").exists() || sa_dir.join("VERSION").exists() {
-                return "chinese".into();
+                return detect_standalone_source_from_dir(&sa_dir)
+                    .unwrap_or_else(|| "chinese".into());
             }
         }
         // 4. npm list 兜底

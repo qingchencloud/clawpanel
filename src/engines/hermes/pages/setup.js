@@ -4,7 +4,7 @@
  * 状态机: detect → install → configure → gateway → complete
  */
 import { t } from '../../../lib/i18n.js'
-import { api, invalidate } from '../../../lib/tauri-api.js'
+import { api, invalidate, isTauriRuntime } from '../../../lib/tauri-api.js'
 import { getActiveEngine } from '../../../lib/engine-manager.js'
 import {
   loadHermesProviders,
@@ -473,8 +473,11 @@ export function render() {
     logs = []
     draw()
 
-    // 监听事件（Tauri 模式下有 hermes-install-log/progress 事件）
+    // 监听事件（Tauri 模式下有 hermes-install-log/progress 事件）。
+    // Web 模式下 `@tauri-apps/api/event` 模块顶层会读取 `window.__TAURI_INTERNALS__.transformCallback`
+    // 直接抛错（issue #260），所以非 Tauri 环境跳过监听安装。
     try {
+      if (!isTauriRuntime()) throw new Error('skip-listen-in-web-mode')
       const { listen } = await import('@tauri-apps/api/event')
       const u1 = await listen('hermes-install-log', (e) => {
         const line = String(e.payload)

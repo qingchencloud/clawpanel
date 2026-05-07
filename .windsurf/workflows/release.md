@@ -17,6 +17,35 @@ description: 发布新版本（打 tag + 推送，触发跨平台构建）
 git status
 ```
 
+## 人工确认门禁
+
+在继续执行版本号更新、提交、tag 或推送前，必须先把本次发布候选版交给维护者手动确认。
+
+必须确认以下项目：
+
+- [ ] Web 模式：`npm run dev` 后核心页面可打开
+- [ ] 桌面模式：`npm run tauri dev` 后核心页面可打开
+- [ ] Hermes：安装/修复、升级、卸载弹窗流程可正常显示日志和进度
+- [ ] Hermes：Gateway 启动/停止/重启正常
+- [ ] Hermes：实时聊天 `/v1/runs` 至少完成一次真实消息回复
+- [ ] OpenClaw：仪表盘、模型、服务页无明显回归
+- [ ] 更新检查：`docs/update/latest.json` 的 `minAppVersion` 设置符合本次是否包含 Rust/Tauri 命令变更
+
+确认方式：
+
+维护者必须明确回复类似：
+
+```text
+确认发布 0.15.0
+```
+
+在收到明确确认前，不要执行：
+
+- `npm run version:set <version>`
+- `git commit`
+- `git tag`
+- `git push`
+
 ## 更新版本号
 
 `version:set` 会自动同步以下文件，不需要手动改：

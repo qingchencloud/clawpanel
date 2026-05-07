@@ -2,7 +2,7 @@
  * Hermes Agent 仪表盘
  */
 import { t } from '../../../lib/i18n.js'
-import { api } from '../../../lib/tauri-api.js'
+import { api, isTauriRuntime } from '../../../lib/tauri-api.js'
 import {
   loadHermesProviders,
   inferProviderByBaseUrl,
@@ -20,9 +20,13 @@ const ICONS = {
 // Provider registry—异步加载，第一次 render 前填充
 let hermesProviders = []
 
-// Lazy Tauri event listen (avoid top-level await for vite build)
+// Lazy Tauri event listen (avoid top-level await for vite build).
+// Web 模式下 `@tauri-apps/api/event` 的模块顶层会触碰 `window.__TAURI_INTERNALS__.transformCallback`
+// 导致 "Cannot read properties of undefined (reading 'transformCallback')"（issue #260），
+// 因此非 Tauri 环境直接 noop。
 let _listenFn = null
 async function tauriListen(event, cb) {
+  if (!isTauriRuntime()) return () => {}
   if (!_listenFn) {
     const mod = await import('@tauri-apps/api/event')
     _listenFn = mod.listen
@@ -237,8 +241,8 @@ export function render() {
         </button>
       </div>
 
-      <!-- Model config panel (collapsible) -->
-      <div class="hm-panel">
+      <!-- Model config panel (collapsible). hm-panel--allow-overflow lets the model dropdown escape the panel overflow:hidden clip (issue #260). -->
+      <div class="hm-panel hm-panel--allow-overflow">
         <div class="hm-panel-header hm-panel-header--toggle hm-cfg-toggle ${modelConfigCollapsed ? '' : 'is-open'}">
           <div class="hm-panel-title">
             <svg class="hm-panel-title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24"/></svg>

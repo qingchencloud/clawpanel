@@ -15,6 +15,7 @@ static GATEWAY_PORT_CACHE: std::sync::LazyLock<std::sync::Mutex<(u16, std::time:
 
 pub mod agent;
 pub mod assistant;
+pub mod cli_conflict;
 pub mod config;
 pub mod device;
 pub mod diagnose;

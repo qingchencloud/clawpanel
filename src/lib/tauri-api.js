@@ -146,6 +146,47 @@ async function webInvoke(cmd, args) {
   return resp.json()
 }
 
+async function webStreamInvoke(cmd, args, onEvent, options = {}) {
+  const resp = await fetch(`/__api/${cmd}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(args || {}),
+    signal: options.signal,
+  })
+  if (resp.status === 401) {
+    if (!isTauriRuntime() && window.__clawpanel_show_login) window.__clawpanel_show_login()
+    throw new Error(t('common.loginRequired'))
+  }
+  if (!resp.ok) {
+    const data = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }))
+    throw new Error(data.error || `HTTP ${resp.status}`)
+  }
+  if (!resp.body) throw new Error('Streaming response is not supported by this browser')
+
+  const reader = resp.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split(/\r?\n/)
+      buffer = lines.pop() || ''
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed) continue
+        const event = JSON.parse(trimmed)
+        if (typeof onEvent === 'function') onEvent(event)
+      }
+    }
+    const tail = buffer.trim()
+    if (tail && typeof onEvent === 'function') onEvent(JSON.parse(tail))
+  } finally {
+    try { reader.releaseLock() } catch {}
+  }
+}
+
 // 后端连接状态
 let _backendOnline = null // null=未检测, true=在线, false=离线
 const _backendListeners = []
@@ -197,6 +238,13 @@ export const api = {
   diagnoseGatewayConnection: () => invoke('diagnose_gateway_connection'),
   guardianStatus: () => invoke('guardian_status'),
   checkCiaoWindowsHideBug: () => invoke('check_ciao_windowshide_bug'),
+
+  // CLI 冲突检测与隔离（PATH 中残留的非 standalone openclaw）
+  scanOpenclawPathConflicts: () => invoke('scan_openclaw_path_conflicts'),
+  quarantineOpenclawPath: (path) => invoke('quarantine_openclaw_path', { path }),
+  quarantineOpenclawPathsBulk: (paths) => invoke('quarantine_openclaw_paths_bulk', { paths }),
+  listQuarantinedOpenclaw: () => invoke('list_quarantined_openclaw'),
+  restoreQuarantinedOpenclaw: (quarantinedPath) => invoke('restore_quarantined_openclaw', { quarantinedPath }),
 
   // 配置（读缓存，写清缓存）
   getVersionInfo: () => cachedInvoke('get_version_info', {}, 30000),
@@ -404,6 +452,7 @@ export const api = {
   hermesHealthCheck: () => invoke('hermes_health_check'),
   hermesApiProxy: (method, path, body, headers) => invoke('hermes_api_proxy', { method, path, body: body || null, headers: headers || null }),
   hermesAgentRun: (input, sessionId, conversationHistory, instructions) => invoke('hermes_agent_run', { input, sessionId: sessionId || null, conversationHistory: conversationHistory || null, instructions: instructions || null }),
+  hermesAgentRunStream: (input, sessionId, conversationHistory, instructions, onEvent, options) => webStreamInvoke('hermes_agent_run_stream', { input, sessionId: sessionId || null, conversationHistory: conversationHistory || null, instructions: instructions || null }, onEvent, options),
   hermesReadConfig: () => invoke('hermes_read_config'),
   hermesFetchModels: (baseUrl, apiKey, apiType, provider) => invoke('hermes_fetch_models', { baseUrl, apiKey, apiType: apiType || null, provider: provider || null }),
   hermesUpdateModel: (model, provider) => invoke('hermes_update_model', { model, provider: provider || null }),

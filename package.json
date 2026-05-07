@@ -1,6 +1,6 @@
 {
   "name": "clawpanel",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "private": true,
   "description": "ClawPanel - OpenClaw 可视化管理面板，基于 Tauri v2 的跨平台桌面应用",
   "type": "module",

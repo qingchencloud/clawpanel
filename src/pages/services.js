@@ -684,6 +684,10 @@ async function handleServiceAction(action, label, page) {
   } catch (e) {
     if (isForeignGatewayError(e)) {
       await openGatewayConflict(page, e)
+    } else if (_looksLikeInvalidConfigError(e)) {
+      // 上游 5.x doctor 增强：配置 schema 错误 → 直接给一键修复入口，
+      // 而不是丢一个 toast 让小白对着 stderr 干瞪眼。
+      await _promptDoctorFix(page, actionLabel, e)
     } else {
       toast(t('services.actionCmdFailed', { action: actionLabel, error: e.message || e }), 'error')
     }
@@ -1025,5 +1029,68 @@ async function handleUninstallGateway(btn, page) {
     toast(t('services.uninstallFailed') + ': ' + e, 'error')
     btn.classList.remove('btn-loading')
     btn.textContent = t('services.uninstall')
+  }
+}
+
+// === 配置错误一键修复（上游 5.x doctor --fix 自动迁移多种 schema 问题） ===
+
+/**
+ * 判断错误是不是来自 OpenClaw 的配置 schema 校验失败。
+ *
+ * 命中关键词（覆盖中英文上游 stderr 模式）：
+ *  - "invalid config" / "schema validation" / "schema error"
+ *  - "unknown field" / "unrecognized key" / "extra fields"
+ *  - "config validation" / "doctor --fix"
+ *  - 中文："配置无效" / "配置校验失败" / "未知字段"
+ */
+function _looksLikeInvalidConfigError(e) {
+  const msg = String(e?.message || e || '').toLowerCase()
+  if (!msg) return false
+  return (
+    /invalid\s+config/.test(msg) ||
+    /schema\s+(validation|error)/.test(msg) ||
+    /config\s+validation/.test(msg) ||
+    /(unknown|unrecognized)\s+(field|key)/.test(msg) ||
+    /extra\s+fields/.test(msg) ||
+    /doctor\s+--?fix/.test(msg) ||
+    msg.includes('配置无效') ||
+    msg.includes('配置校验失败') ||
+    msg.includes('未知字段')
+  )
+}
+
+/**
+ * 弹出"检测到配置问题，要不要跑 doctor --fix"的引导。
+ *
+ * 这个交互替代单纯的红色 toast：
+ *  - 让小白看到一个**可点击的修复路径**而不是无解的报错文本
+ *  - 修复成功后自动重新加载服务列表
+ *  - 修复失败再回退到原有的 toast 错误展示
+ */
+async function _promptDoctorFix(page, actionLabel, originalErr) {
+  const errMsg = String(originalErr?.message || originalErr || '')
+  const yes = await showConfirm(
+    t('services.invalidConfigPrompt', { action: actionLabel, error: errMsg }),
+    {
+      title: t('services.invalidConfigTitle'),
+      confirmText: t('services.runDoctorFix'),
+      cancelText: t('common.cancel'),
+      variant: 'primary',  // 修复是建设性操作，按钮用 primary 蓝色而非 danger 红色
+    }
+  )
+  if (!yes) {
+    toast(t('services.actionCmdFailed', { action: actionLabel, error: errMsg }), 'error')
+    return
+  }
+
+  toast(t('services.runningDoctorFix'), 'info')
+  try {
+    await api.doctorFix()
+    toast(t('services.doctorFixSuccess'), 'success')
+    // doctor 改了配置，缓存可能脏 → 强制刷新
+    invalidate('read_openclaw_config')
+    await loadServices(page)
+  } catch (e2) {
+    toast(t('services.doctorFixFailed') + ': ' + (e2?.message || e2), 'error')
   }
 }

@@ -252,7 +252,13 @@
     "webModeNoLog": "Web mode: Upgrade logs unavailable, please wait...",
     "taskDone": "Operation complete",
     "upgradeDone": "Upgrade complete",
-    "upgradeScene": "Upgrade OpenClaw"
+    "upgradeScene": "Upgrade OpenClaw",
+    "invalidConfigTitle": "OpenClaw 設定の問題を検出",
+    "invalidConfigPrompt": "操作 \"{action}\" が失敗しました：\n\n{error}\n\n通常は設定ファイルのスキーマが古いことが原因です。doctor で自動修復しますか？",
+    "runDoctorFix": "自動修復を実行",
+    "runningDoctorFix": "doctor --fix を実行中...",
+    "doctorFixSuccess": "設定を修復しました。もう一度お試しください",
+    "doctorFixFailed": "doctor の修復に失敗"
   },
   "settings": {
     "title": "パネル設定",
@@ -459,7 +465,8 @@
     "restartOk": "Gateway restarted",
     "restartFailed": "Restart failed",
     "configSavedGwFailed": "Config saved, but Gateway restart failed",
-    "visitSite": "Visit {name} website"
+    "visitSite": "Visit {name} website",
+    "configSavedGwNotRunning": "設定を保存しました。Gateway は現在実行されていません。起動後に自動で適用されます。"
   },
   "agents": {
     "title": "Agent 管理",
@@ -504,7 +511,8 @@
     "deleteFailed": "削除失敗",
     "backingUp": "Agent「{id}」をバックアップ中...",
     "backupDone": "バックアップ完了: {file}",
-    "backupFailed": "バックアップ失敗"
+    "backupFailed": "バックアップ失敗",
+    "labelRuntime": "ランタイム:"
   },
   "gateway": {
     "title": "Gateway",
@@ -2098,5 +2106,51 @@
     "confirmTitle": "操作の確認",
     "confirmOk": "OK",
     "confirmCancel": "キャンセル"
+  },
+  "kernel": {
+    "floorBlocker": {
+      "title": "カーネルバージョンが古すぎます",
+      "message": "OpenClaw カーネル {current} は ClawPanel がサポートする最低バージョン {floor} を下回っています。一部機能が動作しない可能性があります。",
+      "targetHint": "最高の体験のため {target} へのアップグレードを推奨します。",
+      "goUpgrade": "アップグレードへ",
+      "continueReadonly": "続行（読み取り専用）",
+      "readonlyHint": "読み取り専用モードでは、古いカーネル設定を壊さないよう書き込み操作はクライアント側でブロックされます。"
+    },
+    "badge": {
+      "currentKernel": "カーネル",
+      "featuresEnabled": "{enabled}/{total} 機能が有効",
+      "belowTarget": "推奨より低い",
+      "latest": "最新",
+      "unknown": "不明"
+    },
+    "upgrade": {
+      "title": "OpenClaw カーネルをアップグレード",
+      "confirmMessage": "{from} から {to} へアップグレードします。\n約 2 分かかり、その間 Gateway が再起動します。続行しますか？",
+      "starting": "{version} にアップグレード中...",
+      "successMessage": "カーネルのアップグレードが完了しました",
+      "successToast": "カーネルのアップグレードに成功しました",
+      "failurePrefix": "カーネルのアップグレードに失敗:"
+    },
+    "upgradeHint": {
+      "title": "新しいカーネルが利用可能",
+      "subtitle": "{from} → {to}、クリックでアップグレード",
+      "dismissTooltip": "このセッションでは再表示しない"
+    }
+  },
+  "cliConflict": {
+    "title": "Detected {count} possibly conflicting OpenClaw installation(s)",
+    "desc": "Your PATH has OpenClaw installations not managed by ClawPanel (e.g. Cherry Studio bundled, legacy npm global). They can cause terminal commands to pick up old versions, triggering schema mismatches and doctor --fix hangs.",
+    "viewDetails": "View details",
+    "hideDetails": "Hide details",
+    "quarantineAll": "Quarantine all",
+    "quarantining": "Quarantining…",
+    "quarantineOne": "Quarantine",
+    "dismiss": "Dismiss",
+    "dismissedHint": "Dismissed for this session. Next launch will scan again.",
+    "quarantineOk": "Quarantined {count} item(s)",
+    "quarantinePartial": "{count} item(s) failed",
+    "quarantineFail": "Quarantine failed: {error}",
+    "quarantineOneOk": "Quarantined",
+    "footnote": "Quarantine = rename to .disabled-by-clawpanel-<timestamp>.bak (not deleted). To restore, rename the .bak back to its original name in the same directory."
   }
 }

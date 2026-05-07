@@ -21,7 +21,7 @@
  *   - File attachment uploads (kept out of scope for Phase 4).
  *   - Full tmux-like run resume (Tauri events are in-process and reliable).
  */
-import { api } from '../../../lib/tauri-api.js'
+import { api, isTauriRuntime } from '../../../lib/tauri-api.js'
 
 // ---------- constants ----------
 
@@ -208,9 +208,18 @@ function mapSessionSummary(s) {
 }
 
 // ---------- Tauri event bridge ----------
+//
+// Streaming relies on Tauri's `hermes-run-*` events. In Web mode (远程浏览器
+// 访问 ClawPanel）these events don't exist — and importing
+// `@tauri-apps/api/event` itself touches `window.__TAURI_INTERNALS__.transformCallback`
+// which crashes with "Cannot read properties of undefined (reading 'transformCallback')".
+//
+// To stay safe we short-circuit to a no-op unsubscriber when not running inside
+// Tauri. Streaming via SSE is a future Web-mode improvement (issue #260).
 
 let _listenFn = null
 async function tauriListen(event, cb) {
+  if (!isTauriRuntime()) return () => {}
   if (!_listenFn) {
     const mod = await import('@tauri-apps/api/event')
     _listenFn = mod.listen
@@ -633,6 +642,7 @@ function createStore() {
   // ---------- streaming ----------
 
   const unlisteners = []
+  let streamAbortController = null
   async function attachStreamListeners(runSessionId) {
     detachStreamListeners()
     const runSession = () => state.sessions.find(x => x.id === runSessionId) || null
@@ -755,11 +765,136 @@ function createStore() {
     unlisteners.length = 0
   }
 
+  function appendStreamDelta(runSessionId, delta) {
+    if (!delta) return
+    const s = state.sessions.find(x => x.id === runSessionId)
+    if (!s) return
+    let msg = s.messages.find(m => m.id === state.pendingAssistantId)
+    if (!msg) {
+      msg = { id: uid(), role: 'assistant', content: '', timestamp: Date.now(), isStreaming: true }
+      s.messages.push(msg)
+      state.pendingAssistantId = msg.id
+    }
+    msg.content += delta
+    notify()
+  }
+
+  function extractStreamValue(obj, keys) {
+    for (const k of keys) {
+      if (obj[k] != null && obj[k] !== '') return obj[k]
+    }
+    return null
+  }
+
+  function applyStreamToolEvent(evt) {
+    const evtType = evt.event || ''
+    const toolName = evt.tool || evt.tool_name || evt.name || 'tool'
+    const preview = evt.preview || evt.detail || evt.message || ''
+    if (evtType === 'tool.started') {
+      const input = extractStreamValue(evt, ['input', 'args', 'arguments', 'parameters', 'params', 'data'])
+      state.liveTools.push({
+        id: uid(),
+        name: toolName,
+        status: 'running',
+        preview,
+        args: input,
+        result: null,
+        error: null,
+      })
+    } else if (evtType === 'tool.completed') {
+      const t = state.liveTools.find(x => x.name === toolName && x.status === 'running')
+      if (t) {
+        t.status = evt.error ? 'error' : 'done'
+        t.preview = evt.error ? (typeof evt.error === 'string' ? evt.error : 'failed') : preview
+        t.result = extractStreamValue(evt, ['output', 'result', 'content', 'data', 'response'])
+        if (evt.error) t.error = typeof evt.error === 'string' ? evt.error : JSON.stringify(evt.error)
+        if (!t.args) t.args = extractStreamValue(evt, ['input', 'args', 'arguments', 'parameters', 'params'])
+      }
+    } else if (evtType === 'tool.error') {
+      const t = state.liveTools.find(x => x.name === toolName && x.status === 'running')
+      if (t) {
+        t.status = 'error'
+        t.preview = preview || 'failed'
+        t.error = evt.error || preview || 'unknown'
+      }
+    } else if (evtType === 'tool.progress') {
+      const t = state.liveTools.find(x => x.name === toolName && x.status === 'running')
+      if (t && preview) t.preview = preview
+    }
+    notify()
+  }
+
+  function completeStreamRun(runSessionId, output = '') {
+    const s = state.sessions.find(x => x.id === runSessionId)
+    if (!s) { cleanupAfterRun(); return }
+    if (state.liveTools.length) {
+      for (const t of state.liveTools) {
+        s.messages.push({
+          id: uid(),
+          role: 'tool',
+          content: '',
+          timestamp: Date.now(),
+          toolName: t.name,
+          toolPreview: t.preview || undefined,
+          toolArgs: stringifyMaybe(t.args),
+          toolResult: stringifyMaybe(t.result),
+          toolStatus: t.error ? 'error' : 'done',
+        })
+      }
+    }
+    let msg = s.messages.find(m => m.id === state.pendingAssistantId)
+    const finalOutput = typeof output === 'string' ? output : ''
+    if (!msg && finalOutput.trim()) {
+      msg = { id: uid(), role: 'assistant', content: finalOutput, timestamp: Date.now(), isStreaming: true }
+      s.messages.push(msg)
+      state.pendingAssistantId = msg.id
+    }
+    if (msg) {
+      delete msg.isStreaming
+      if (finalOutput.trim() && (!msg.content.trim() || finalOutput.startsWith(msg.content))) msg.content = finalOutput
+      if (!msg.content.trim()) msg.content = '(empty)'
+    }
+    s.updatedAt = Date.now()
+    s.lastActiveAt = Date.now()
+    updateSessionTitleFromFirstUser(s)
+    persistSessionMessages(s.id)
+    persistSessions()
+    cleanupAfterRun()
+  }
+
+  function failStreamRun(runSessionId, err) {
+    const s = state.sessions.find(x => x.id === runSessionId)
+    if (s) {
+      s.messages.push({
+        id: uid(),
+        role: 'system',
+        content: `⚠️ Agent run failed: ${err || 'unknown error'}`,
+        timestamp: Date.now(),
+      })
+      persistSessionMessages(s.id)
+    }
+    cleanupAfterRun()
+  }
+
+  function handleStreamEvent(runSessionId, evt) {
+    const eventType = evt?.event || ''
+    if (eventType === 'message.delta') {
+      appendStreamDelta(runSessionId, evt.delta || '')
+    } else if (eventType === 'tool.started' || eventType === 'tool.completed' || eventType === 'tool.progress' || eventType === 'tool.error') {
+      applyStreamToolEvent(evt)
+    } else if (eventType === 'run.completed') {
+      completeStreamRun(runSessionId, evt.output || '')
+    } else if (eventType === 'run.failed') {
+      failStreamRun(runSessionId, evt.error || 'unknown error')
+    }
+  }
+
   function cleanupAfterRun() {
     state.streaming = false
     state.runningSessionId = null
     state.pendingAssistantId = null
     state.liveTools = []
+    streamAbortController = null
     detachStreamListeners()
     notify()
     // After streaming finishes the server has updated the session's
@@ -786,6 +921,9 @@ function createStore() {
    */
   function stopStreaming() {
     if (!state.streaming) return
+    if (streamAbortController) {
+      try { streamAbortController.abort() } catch {}
+    }
     const s = state.sessions.find(x => x.id === state.runningSessionId) || activeSession()
     if (s) {
       const msg = s.messages.find(m => m.id === state.pendingAssistantId)
@@ -869,9 +1007,22 @@ function createStore() {
         .slice(0, -1)
         .map(m => ({ role: m.role, content: m.content }))
 
-      await attachStreamListeners(s.id)
-      await api.hermesAgentRun(text, s.id, history.length ? history : null, opts.instructions || null)
+      if (isTauriRuntime()) {
+        await attachStreamListeners(s.id)
+        await api.hermesAgentRun(text, s.id, history.length ? history : null, opts.instructions || null)
+      } else {
+        streamAbortController = new AbortController()
+        await api.hermesAgentRunStream(
+          text,
+          s.id,
+          history.length ? history : null,
+          opts.instructions || null,
+          (evt) => handleStreamEvent(s.id, evt),
+          { signal: streamAbortController.signal },
+        )
+      }
     } catch (e) {
+      if (e?.name === 'AbortError') return
       s.messages.push({
         id: uid(),
         role: 'system',

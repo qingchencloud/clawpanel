@@ -184,7 +184,7 @@ pub fn get_update_status() -> Result<Value, String> {
 }
 
 /// 简单的语义化版本比较：current >= required
-fn version_ge(current: &str, required: &str) -> bool {
+pub fn version_ge(current: &str, required: &str) -> bool {
     let parse = |s: &str| -> Vec<u32> {
         s.trim_start_matches('v')
             .split('.')

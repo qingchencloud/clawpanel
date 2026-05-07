@@ -1,8 +1,9 @@
 /**
  * Hermes Agent 服务管理
  */
-import { api, invalidate } from '../../../lib/tauri-api.js'
+import { api, invalidate, isTauriRuntime } from '../../../lib/tauri-api.js'
 import { t } from '../../../lib/i18n.js'
+import { showConfirm, showUpgradeModal } from '../../../components/modal.js'
 
 const ICONS = {
   refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>',
@@ -370,6 +371,7 @@ export function render() {
         <div class="hm-panel-body">
           <div class="hm-services-action-grid">
             <button class="hm-btn hm-btn--primary hm-btn--sm hm-services-upgrade" ${maintenanceBusy || !info?.installed ? 'disabled' : ''}>${ICONS.upload}<span>${esc(t('engine.servicesUpgrade'))}</span></button>
+            <button class="hm-btn hm-btn--sm hm-services-install" ${maintenanceBusy ? 'disabled' : ''}>${ICONS.package}<span>${esc(info?.installed ? t('engine.servicesRepairInstall') : t('engine.servicesInstall'))}</span></button>
             <button class="hm-btn hm-btn--sm hm-services-uninstall" ${maintenanceBusy || !info?.installed ? 'disabled' : ''}>${ICONS.trash}<span>${esc(t('engine.servicesUninstall'))}</span></button>
             <button class="hm-btn hm-btn--danger hm-btn--sm hm-services-uninstall-clean" ${maintenanceBusy || !info?.installed ? 'disabled' : ''}>${ICONS.trash}<span>${esc(t('engine.servicesUninstallClean'))}</span></button>
           </div>
@@ -506,20 +508,96 @@ export function render() {
   async function runMaintenance(kind) {
     if (maintenanceBusy) return
 
-    const confirmText = kind === 'upgrade'
-      ? t('engine.servicesConfirmUpgrade')
-      : kind === 'uninstall-clean'
-        ? t('engine.servicesConfirmUninstallClean')
-        : t('engine.servicesConfirmUninstall')
-    if (!confirm(confirmText)) return
+    const confirmText = kind === 'install'
+      ? (info?.installed ? t('engine.servicesConfirmRepairInstall') : t('engine.servicesConfirmInstall'))
+      : kind === 'upgrade'
+        ? t('engine.servicesConfirmUpgrade')
+        : kind === 'uninstall-clean'
+          ? t('engine.servicesConfirmUninstallClean')
+          : t('engine.servicesConfirmUninstall')
+    const confirmed = await showConfirm(confirmText, {
+      title: t('engine.servicesMaintenance'),
+      confirmText: kind.includes('uninstall') ? t('engine.servicesUninstall') : t('common.confirm'),
+      variant: kind.includes('uninstall') ? 'danger' : 'primary',
+    })
+    if (!confirmed) return
 
     maintenanceBusy = true
-    setPageMessage(kind === 'upgrade' ? t('engine.servicesUpgrade') : t('engine.servicesUninstall'), 'muted')
+    setPageMessage(
+      kind === 'install'
+        ? t('engine.servicesInstall')
+        : kind === 'upgrade'
+          ? t('engine.servicesUpgrade')
+          : t('engine.servicesUninstall'),
+      'muted'
+    )
     draw()
+
+    const modalTitle = kind === 'install'
+      ? (info?.installed ? t('engine.servicesRepairInstall') : t('engine.servicesInstall'))
+      : kind === 'upgrade'
+        ? t('engine.servicesUpgrade')
+        : kind === 'uninstall-clean'
+          ? t('engine.servicesUninstallClean')
+          : t('engine.servicesUninstall')
+    const modal = showUpgradeModal(`${modalTitle} Hermes Agent`)
+    modal.setProgressLabels({
+      preparing: t('common.preparing'),
+      downloading: kind === 'install' ? t('engine.installingBtn') : kind === 'upgrade' ? t('about.upgrading') : t('about.uninstalling'),
+      installing: kind === 'install' ? t('engine.installingBtn') : kind === 'upgrade' ? t('about.upgrading') : t('about.uninstalling'),
+      done: kind === 'install' ? t('engine.installSuccess') : kind === 'upgrade' ? t('engine.servicesUpgradeDone') : t('engine.servicesUninstallDone'),
+    })
+    modal.setProgress(5)
+    modal.appendLog(`${modalTitle} Hermes Agent`)
+
+    let unlisten = null
     try {
-      const result = kind === 'upgrade'
-        ? await api.updateHermes()
-        : await api.uninstallHermes(kind === 'uninstall-clean')
+      if (isTauriRuntime()) {
+        const { listen } = await import('@tauri-apps/api/event')
+        const u1 = await listen('hermes-install-log', (event) => modal.appendLog(String(event.payload)))
+        const u2 = await listen('hermes-install-progress', (event) => modal.setProgress(Number(event.payload) || 0))
+        unlisten = () => { u1(); u2() }
+      }
+    } catch (_) {}
+
+    const shouldStopGateway = !!info?.gatewayRunning && (kind === 'install' || kind === 'upgrade' || kind.includes('uninstall'))
+    let shouldRestartGateway = !!info?.gatewayRunning && (kind === 'install' || kind === 'upgrade')
+
+    try {
+      if (shouldStopGateway) {
+        modal.appendLog(t('engine.servicesMaintenanceStopGateway'))
+        modal.setProgress(12)
+        try {
+          await api.hermesGatewayAction('stop')
+          await new Promise(resolve => setTimeout(resolve, 900))
+          modal.appendLog(t('engine.servicesMaintenanceGatewayStopped'))
+        } catch (error) {
+          modal.appendLog(t('engine.servicesMaintenanceGatewayStopWarn', { error: stripError(error) }))
+        }
+      }
+
+      modal.setProgress(25)
+      const result = kind === 'install'
+        ? await api.installHermes('uv-tool', ['web'])
+        : kind === 'upgrade'
+          ? await api.updateHermes()
+          : await api.uninstallHermes(kind === 'uninstall-clean')
+      modal.appendLog(`✅ ${result || modalTitle}`)
+      modal.setProgress(85)
+
+      if (shouldRestartGateway) {
+        modal.appendLog(t('engine.servicesMaintenanceRestartGateway'))
+        try {
+          await api.hermesGatewayAction('start')
+          modal.appendLog(t('engine.servicesMaintenanceGatewayRestarted'))
+        } catch (error) {
+          shouldRestartGateway = false
+          modal.appendLog(t('engine.servicesMaintenanceGatewayRestartWarn', { error: stripError(error) }))
+        }
+      }
+
+      modal.setProgress(100)
+      modal.setDone(kind === 'install' ? t('engine.installSuccess') : kind === 'upgrade' ? t('engine.servicesUpgradeDone') : t('engine.servicesUninstallDone'))
       setPageMessage(result, 'success')
       invalidate('check_hermes')
       await refresh(false)
@@ -527,7 +605,13 @@ export function render() {
         window.location.hash = '#/h/setup'
       }
     } catch (error) {
-      setPageMessage(stripError(error), 'error')
+      const message = stripError(error)
+      modal.appendLog(`❌ ${message}`)
+      modal.setError(message)
+      setPageMessage(message, 'error')
+    } finally {
+      if (unlisten) unlisten()
+      modal.onClose(() => refresh(false))
     }
     maintenanceBusy = false
     draw()
@@ -552,6 +636,7 @@ export function render() {
     el.querySelector('#hm-services-custom-url')?.addEventListener('input', (event) => {
       customUrl = event.target.value
     })
+    el.querySelector('.hm-services-install')?.addEventListener('click', () => runMaintenance('install'))
     el.querySelector('.hm-services-upgrade')?.addEventListener('click', () => runMaintenance('upgrade'))
     el.querySelector('.hm-services-uninstall')?.addEventListener('click', () => runMaintenance('uninstall'))
     el.querySelector('.hm-services-uninstall-clean')?.addEventListener('click', () => runMaintenance('uninstall-clean'))

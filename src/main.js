@@ -18,6 +18,8 @@ import { tryShowEngagement } from './components/engagement.js'
 import { toast } from './components/toast.js'
 import { initI18n, t } from './lib/i18n.js'
 import { initFeatureGates } from './lib/feature-gates.js'
+import { onKernelChange } from './lib/kernel.js'
+import { showFloorBlocker, hideFloorBlocker } from './components/floor-blocker.js'
 import { registerEngine, initEngineManager, getActiveEngine, getActiveEngineId, onEngineChange } from './lib/engine-manager.js'
 import openclawEngine from './engines/openclaw/index.js'
 import hermesEngine from './engines/hermes/index.js'
@@ -324,6 +326,33 @@ async function boot() {
 
   // 初始化引擎管理器：读取 clawpanel.json 的 engineMode，注册对应路由
   await initEngineManager()
+
+  // 订阅内核版本变化：低于硬地板时弹出全屏拦截，恢复后自动隐藏；
+  // 同时刷新 sidebar 以反映 "内核可升级" 提示卡片状态。
+  // 触发时机：Gateway 握手成功 / 重连后版本变化 / 引擎切换
+  let _readonlyModeActive = false
+  onKernelChange((snap) => {
+    if (!snap?.version) {
+      // 还未拿到版本，保持当前状态不变
+      return
+    }
+    if (!snap.aboveFloor && !_readonlyModeActive) {
+      console.warn(`[kernel] 检测到内核版本 ${snap.version} 低于 ${snap.engine} 硬地板 ${snap.floor}`)
+      showFloorBlocker({
+        currentVersion: snap.version,
+        floor: snap.floor,
+        target: snap.target,
+        onIgnore: () => { _readonlyModeActive = true },
+      })
+    } else if (snap.aboveFloor) {
+      hideFloorBlocker()
+      _readonlyModeActive = false
+    }
+    // sidebar 卡片显隐依赖 snapshot，状态变化时刷新一次
+    if (sidebar) {
+      try { renderSidebar(sidebar) } catch (e) { console.warn('[main] kernel-change renderSidebar 失败', e) }
+    }
+  })
 
   renderSidebar(sidebar)
   initRouter(content)

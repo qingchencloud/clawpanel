@@ -257,7 +257,13 @@
     "webModeNoLog": "Web mode: Upgrade logs unavailable, please wait...",
     "taskDone": "Operation complete",
     "upgradeDone": "Upgrade complete",
-    "upgradeScene": "Upgrade OpenClaw"
+    "upgradeScene": "Upgrade OpenClaw",
+    "invalidConfigTitle": "OpenClaw config issue detected",
+    "invalidConfigPrompt": "Action \"{action}\" failed:\n\n{error}\n\nThis usually means the config schema is outdated. Run doctor to fix automatically?",
+    "runDoctorFix": "Run doctor --fix",
+    "runningDoctorFix": "Running doctor --fix...",
+    "doctorFixSuccess": "Config fixed. Please retry",
+    "doctorFixFailed": "doctor fix failed"
   },
   "settings": {
     "title": "Settings",
@@ -465,7 +471,8 @@
     "restartFailed": "Restart failed",
     "configSavedGwFailed": "Config saved, but Gateway restart failed",
     "visitSite": "Visit {name} website",
-    "configure": "Configure"
+    "configure": "Configure",
+    "configSavedGwNotRunning": "Config saved. Gateway is not running — settings will take effect once it starts."
   },
   "agents": {
     "title": "Agents",
@@ -512,7 +519,8 @@
     "backingUp": "Backing up Agent \"{id}\"...",
     "backupDone": "Backup done: {file}",
     "backupFailed": "Backup failed",
-    "detailHint": "Click a card or the Details button to open the new Agent detail page."
+    "detailHint": "Click a card or the Details button to open the new Agent detail page.",
+    "labelRuntime": "Runtime:"
   },
   "agentDetail": {
     "back": "← Back to Agents",
@@ -2200,5 +2208,51 @@
     "confirmTitle": "Confirm",
     "confirmOk": "OK",
     "confirmCancel": "Cancel"
+  },
+  "kernel": {
+    "floorBlocker": {
+      "title": "Kernel version too old",
+      "message": "OpenClaw kernel {current} is below the minimum supported version {floor}. Some features may not work.",
+      "targetHint": "Upgrading to {target} is recommended for the best experience.",
+      "goUpgrade": "Upgrade now",
+      "continueReadonly": "Continue (read-only)",
+      "readonlyHint": "In read-only mode, write operations are blocked client-side to avoid corrupting older kernel configs."
+    },
+    "badge": {
+      "currentKernel": "Kernel",
+      "featuresEnabled": "{enabled}/{total} features enabled",
+      "belowTarget": "Below recommended",
+      "latest": "Latest",
+      "unknown": "Unknown"
+    },
+    "upgrade": {
+      "title": "Upgrade OpenClaw kernel",
+      "confirmMessage": "Upgrading from {from} to {to}.\nThis takes about 2 minutes; Gateway will restart automatically. Continue?",
+      "starting": "Upgrading to {version}...",
+      "successMessage": "Kernel upgrade complete",
+      "successToast": "Kernel upgraded successfully",
+      "failurePrefix": "Kernel upgrade failed:"
+    },
+    "upgradeHint": {
+      "title": "New kernel available",
+      "subtitle": "{from} → {to}, click to upgrade",
+      "dismissTooltip": "Don't remind me this session"
+    }
+  },
+  "cliConflict": {
+    "title": "Detected {count} possibly conflicting OpenClaw installation(s)",
+    "desc": "Your PATH has OpenClaw installations not managed by ClawPanel (e.g. Cherry Studio bundled, legacy npm global). They can cause terminal commands to pick up old versions, triggering schema mismatches and doctor --fix hangs.",
+    "viewDetails": "View details",
+    "hideDetails": "Hide details",
+    "quarantineAll": "Quarantine all",
+    "quarantining": "Quarantining…",
+    "quarantineOne": "Quarantine",
+    "dismiss": "Dismiss",
+    "dismissedHint": "Dismissed for this session. Next launch will scan again.",
+    "quarantineOk": "Quarantined {count} item(s)",
+    "quarantinePartial": "{count} item(s) failed",
+    "quarantineFail": "Quarantine failed: {error}",
+    "quarantineOneOk": "Quarantined",
+    "footnote": "Quarantine = rename to .disabled-by-clawpanel-<timestamp>.bak (not deleted). To restore, rename the .bak back to its original name in the same directory."
   }
 }

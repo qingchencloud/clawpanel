@@ -252,7 +252,13 @@
     "webModeNoLog": "Web mode: Upgrade logs unavailable, please wait...",
     "taskDone": "Operation complete",
     "upgradeDone": "Upgrade complete",
-    "upgradeScene": "Upgrade OpenClaw"
+    "upgradeScene": "Upgrade OpenClaw",
+    "invalidConfigTitle": "OpenClaw-Konfigurationsproblem erkannt",
+    "invalidConfigPrompt": "Aktion „{action}\" fehlgeschlagen:\n\n{error}\n\nNormalerweise ist das Konfigurationsschema veraltet. doctor zur automatischen Reparatur ausführen?",
+    "runDoctorFix": "doctor --fix ausführen",
+    "runningDoctorFix": "doctor --fix wird ausgeführt...",
+    "doctorFixSuccess": "Konfiguration repariert. Bitte erneut versuchen",
+    "doctorFixFailed": "doctor-Reparatur fehlgeschlagen"
   },
   "settings": {
     "title": "Panel-Einstellungen",
@@ -459,7 +465,8 @@
     "restartOk": "Gateway restarted",
     "restartFailed": "Restart failed",
     "configSavedGwFailed": "Config saved, but Gateway restart failed",
-    "visitSite": "Visit {name} website"
+    "visitSite": "Visit {name} website",
+    "configSavedGwNotRunning": "Konfiguration gespeichert. Gateway läuft nicht — Einstellungen werden beim Start übernommen."
   },
   "agents": {
     "title": "Agenten-Verwaltung",
@@ -504,7 +511,8 @@
     "deleteFailed": "Löschen fehlgeschlagen",
     "backingUp": "Backing up Agent \"{id}\"...",
     "backupDone": "Backup done: {file}",
-    "backupFailed": "Backup failed"
+    "backupFailed": "Backup failed",
+    "labelRuntime": "Runtime:"
   },
   "gateway": {
     "title": "Gateway",
@@ -2098,5 +2106,51 @@
     "confirmTitle": "Bestätigen",
     "confirmOk": "OK",
     "confirmCancel": "Abbrechen"
+  },
+  "kernel": {
+    "floorBlocker": {
+      "title": "Kernel-Version zu alt",
+      "message": "OpenClaw-Kernel {current} liegt unter der minimal unterstützten Version {floor}. Einige Funktionen funktionieren möglicherweise nicht.",
+      "targetHint": "Ein Upgrade auf {target} wird für die beste Erfahrung empfohlen.",
+      "goUpgrade": "Jetzt upgraden",
+      "continueReadonly": "Fortfahren (schreibgeschützt)",
+      "readonlyHint": "Im schreibgeschützten Modus werden Schreibvorgänge clientseitig blockiert, um alte Kernel-Konfigurationen nicht zu beschädigen."
+    },
+    "badge": {
+      "currentKernel": "Kernel",
+      "featuresEnabled": "{enabled}/{total} Funktionen aktiviert",
+      "belowTarget": "Unter der empfohlenen",
+      "latest": "Aktuell",
+      "unknown": "Unbekannt"
+    },
+    "upgrade": {
+      "title": "OpenClaw-Kernel aktualisieren",
+      "confirmMessage": "Aktualisierung von {from} auf {to}.\nDauert ca. 2 Minuten, Gateway wird automatisch neu gestartet. Fortfahren?",
+      "starting": "Aktualisierung auf {version}...",
+      "successMessage": "Kernel-Update abgeschlossen",
+      "successToast": "Kernel erfolgreich aktualisiert",
+      "failurePrefix": "Kernel-Update fehlgeschlagen:"
+    },
+    "upgradeHint": {
+      "title": "Neuer Kernel verfügbar",
+      "subtitle": "{from} → {to}, hier klicken zum Aktualisieren",
+      "dismissTooltip": "In dieser Sitzung nicht erneut anzeigen"
+    }
+  },
+  "cliConflict": {
+    "title": "Detected {count} possibly conflicting OpenClaw installation(s)",
+    "desc": "Your PATH has OpenClaw installations not managed by ClawPanel (e.g. Cherry Studio bundled, legacy npm global). They can cause terminal commands to pick up old versions, triggering schema mismatches and doctor --fix hangs.",
+    "viewDetails": "View details",
+    "hideDetails": "Hide details",
+    "quarantineAll": "Quarantine all",
+    "quarantining": "Quarantining…",
+    "quarantineOne": "Quarantine",
+    "dismiss": "Dismiss",
+    "dismissedHint": "Dismissed for this session. Next launch will scan again.",
+    "quarantineOk": "Quarantined {count} item(s)",
+    "quarantinePartial": "{count} item(s) failed",
+    "quarantineFail": "Quarantine failed: {error}",
+    "quarantineOneOk": "Quarantined",
+    "footnote": "Quarantine = rename to .disabled-by-clawpanel-<timestamp>.bak (not deleted). To restore, rename the .bak back to its original name in the same directory."
   }
 }

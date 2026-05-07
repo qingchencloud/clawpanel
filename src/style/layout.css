@@ -208,6 +208,103 @@
   border-top: 1px solid var(--border-secondary);
 }
 
+/* === 内核可升级提示卡（侧边栏 footer 之上） === */
+.kernel-upgrade-hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px var(--space-sm);
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(99,102,241,0.10), rgba(139,92,246,0.10));
+  border: 1px solid rgba(99,102,241,0.25);
+  cursor: pointer;
+  position: relative;
+  transition: background 0.2s, transform 0.15s, border-color 0.2s, box-shadow 0.2s;
+}
+.kernel-upgrade-hint:hover {
+  background: linear-gradient(135deg, rgba(99,102,241,0.18), rgba(139,92,246,0.18));
+  border-color: rgba(99,102,241,0.45);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(99,102,241,0.18);
+}
+.kernel-upgrade-hint:focus-visible {
+  outline: 2px solid var(--primary, #6366f1);
+  outline-offset: 2px;
+}
+.kernel-upgrade-hint-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: rgba(99,102,241,0.18);
+  color: var(--primary, #6366f1);
+}
+.kernel-upgrade-hint-body {
+  flex: 1;
+  min-width: 0;
+}
+.kernel-upgrade-hint-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kernel-upgrade-hint-meta {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kernel-upgrade-hint-arrow {
+  color: var(--text-tertiary);
+  transform: rotate(-90deg);
+  flex-shrink: 0;
+}
+.kernel-upgrade-hint-dismiss {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+}
+.kernel-upgrade-hint:hover .kernel-upgrade-hint-dismiss {
+  opacity: 0.8;
+}
+.kernel-upgrade-hint-dismiss:hover {
+  opacity: 1 !important;
+  background: rgba(0,0,0,0.06);
+  color: var(--text-secondary);
+}
+/* 折叠态：仅显示图标 */
+#sidebar.sidebar-collapsed .kernel-upgrade-hint {
+  margin: 8px 6px;
+  padding: 8px;
+  justify-content: center;
+}
+#sidebar.sidebar-collapsed .kernel-upgrade-hint-body,
+#sidebar.sidebar-collapsed .kernel-upgrade-hint-arrow,
+#sidebar.sidebar-collapsed .kernel-upgrade-hint-dismiss {
+  display: none;
+}
+
 .sidebar-meta {
   display: flex;
   justify-content: space-between;

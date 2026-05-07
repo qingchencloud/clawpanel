@@ -7,6 +7,38 @@
 
 ## [未发布]
 
+## [0.15.0] - 2026-05-08
+
+### 新功能 (Features)
+
+- **内核版本兼容层** — 新增 `kernel.js` / `feature-catalog.js` / `api-compat.js`，统一管理 OpenClaw/Hermes 内核版本、特性门控、最低版本地板和新旧 RPC 返回结构兼容
+- **内核升级提示** — 侧边栏新增可升级提示卡，低版本内核可直接触发一键升级流程；低于硬地板版本时显示阻断式引导，避免旧内核继续进入不兼容页面
+- **CLI 冲突检测与隔离** — 新增 PATH 中外部 OpenClaw CLI 扫描、隔离、恢复能力，支持识别 Cherry Studio / Cursor / npm 全局安装等残留来源，降低错绑旧 CLI 的风险
+- **Hermes 实时聊天桥接增强** — Web 模式补齐 Hermes Gateway `/v1/runs` 流式转发、API Key 注入、取消与错误事件处理，使浏览器模式与桌面模式聊天链路保持一致
+
+### 改进 (Improvements)
+
+- **OpenClaw 2026.5.6 适配** — 推荐版本更新到官方 `2026.5.6` 与汉化版 `2026.5.6-zh.1`，特性目录覆盖 sessions 分页、模型探测、memory deep status、doctor 修复、渠道进度等 5.x 能力
+- **多版本内核兼容 UX** — Dashboard、服务页、Agents、Models、侧边栏和 WebSocket 连接流程统一接入内核快照，老内核自动降级，新内核显示更丰富状态
+- **Gateway 重启体验** — 模型保存后先探测 Gateway 是否运行，运行中才防抖排队重启；未运行时只提示配置已保存，避免无意义 doctor/restart 卡顿
+- **Hermes 安装依赖补齐** — `uv tool install` 统一追加 `croniter`，并默认安装 `hermes-agent[web]`，减少定时任务和 Web 面板运行时缺依赖
+- **MiniMax 预设补全** — MiniMax 服务商预设恢复 OpenAI-compatible 入口，并补齐 M2.7/M2.5 及 highspeed 模型快捷项
+- **热更新兼容底座** — 本次版本包含新增 Tauri 命令，热更新清单最低兼容版本提升到 `0.15.0`，避免旧桌面端加载不兼容前端
+
+### 修复 (Fixes)
+
+- **Hermes Gateway 本机自动拉起** — 自定义 Gateway URL 为 `127.0.0.1`、`localhost`、`::1` 等 loopback 地址时不再误判为远程 Gateway，桌面端和 Web 模式都会自动启动本机 Gateway
+- **Hermes `/v1/runs` 连接失败诊断** — 启动 run 前自动确保本机 Gateway ready，请求失败时附带健康检查和日志尾部，便于定位 10061/连接拒绝等问题
+- **Standalone 版本显示未知** — About 页和仪表盘优先读取 standalone 安装目录的 `VERSION` / `package.json`，正确识别官方版或汉化版，不再把一键安装包显示为未知版本或误判来源
+- **仪表盘版本缓存自愈** — 检测到空版本、unknown 来源或不完整版本信息时自动清理 `get_version_info` 缓存并重新拉取，避免旧缓存长期显示未知
+- **版本检测不再被运行态拖垮** — `openclaw status --json` 后移为 fallback 并增加短超时，避免 Gateway 未运行时拖慢 About 页和仪表盘
+- **服务配置错误引导** — 启停服务遇到配置 schema 错误时弹出 `doctor --fix` 一键修复入口，而不是只显示技术错误 toast
+
+### 测试与验证 (Testing)
+
+- **本地 CI 链路补齐** — 新增/修复 kernel、Docker tasking、Gateway guardian policy、模型预设测试；本地通过 45 个 JS 测试和 16 个 Rust 单元测试
+- **发布前检查增强** — Release 工作流文档增加人工确认门禁，要求版本号、提交、tag、push 前完成 Web/桌面/Hermes/OpenClaw 回归确认
+
 ## [0.14.0] - 2026-04-25
 
 ### 新功能 (Features)

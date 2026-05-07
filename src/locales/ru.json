@@ -252,7 +252,13 @@
     "webModeNoLog": "Web mode: Upgrade logs unavailable, please wait...",
     "taskDone": "Operation complete",
     "upgradeDone": "Upgrade complete",
-    "upgradeScene": "Upgrade OpenClaw"
+    "upgradeScene": "Upgrade OpenClaw",
+    "invalidConfigTitle": "Обнаружена проблема конфигурации OpenClaw",
+    "invalidConfigPrompt": "Действие \"{action}\" не удалось:\n\n{error}\n\nОбычно это означает, что схема конфигурации устарела. Запустить doctor для автоисправления?",
+    "runDoctorFix": "Запустить doctor --fix",
+    "runningDoctorFix": "Выполняется doctor --fix...",
+    "doctorFixSuccess": "Конфигурация исправлена. Повторите попытку",
+    "doctorFixFailed": "doctor не смог исправить"
   },
   "settings": {
     "title": "Настройки панели",
@@ -459,7 +465,8 @@
     "restartOk": "Gateway restarted",
     "restartFailed": "Restart failed",
     "configSavedGwFailed": "Config saved, but Gateway restart failed",
-    "visitSite": "Visit {name} website"
+    "visitSite": "Visit {name} website",
+    "configSavedGwNotRunning": "Конфигурация сохранена. Gateway не запущен — настройки применятся при запуске."
   },
   "agents": {
     "title": "Управление агентами",
@@ -504,7 +511,8 @@
     "deleteFailed": "Ошибка удаления",
     "backingUp": "Backing up Agent \"{id}\"...",
     "backupDone": "Backup done: {file}",
-    "backupFailed": "Backup failed"
+    "backupFailed": "Backup failed",
+    "labelRuntime": "Среда:"
   },
   "gateway": {
     "title": "Gateway",
@@ -2098,5 +2106,51 @@
     "confirmTitle": "Подтвердите",
     "confirmOk": "ОК",
     "confirmCancel": "Отмена"
+  },
+  "kernel": {
+    "floorBlocker": {
+      "title": "Версия ядра слишком старая",
+      "message": "Версия ядра OpenClaw {current} ниже минимально поддерживаемой {floor}. Некоторые функции могут не работать.",
+      "targetHint": "Рекомендуется обновиться до {target} для лучшего опыта.",
+      "goUpgrade": "Обновить",
+      "continueReadonly": "Продолжить (только чтение)",
+      "readonlyHint": "В режиме только чтения операции записи блокируются на стороне клиента, чтобы не повредить конфиги старых ядер."
+    },
+    "badge": {
+      "currentKernel": "Ядро",
+      "featuresEnabled": "{enabled}/{total} функций включено",
+      "belowTarget": "Ниже рекомендуемого",
+      "latest": "Последняя",
+      "unknown": "Неизвестно"
+    },
+    "upgrade": {
+      "title": "Обновить ядро OpenClaw",
+      "confirmMessage": "Обновление с {from} до {to}.\nЗаймёт около 2 минут; Gateway перезапустится автоматически. Продолжить?",
+      "starting": "Обновление до {version}...",
+      "successMessage": "Обновление ядра завершено",
+      "successToast": "Ядро успешно обновлено",
+      "failurePrefix": "Ошибка обновления ядра:"
+    },
+    "upgradeHint": {
+      "title": "Доступно новое ядро",
+      "subtitle": "{from} → {to}, нажмите для обновления",
+      "dismissTooltip": "Не напоминать в этой сессии"
+    }
+  },
+  "cliConflict": {
+    "title": "Detected {count} possibly conflicting OpenClaw installation(s)",
+    "desc": "Your PATH has OpenClaw installations not managed by ClawPanel (e.g. Cherry Studio bundled, legacy npm global). They can cause terminal commands to pick up old versions, triggering schema mismatches and doctor --fix hangs.",
+    "viewDetails": "View details",
+    "hideDetails": "Hide details",
+    "quarantineAll": "Quarantine all",
+    "quarantining": "Quarantining…",
+    "quarantineOne": "Quarantine",
+    "dismiss": "Dismiss",
+    "dismissedHint": "Dismissed for this session. Next launch will scan again.",
+    "quarantineOk": "Quarantined {count} item(s)",
+    "quarantinePartial": "{count} item(s) failed",
+    "quarantineFail": "Quarantine failed: {error}",
+    "quarantineOneOk": "Quarantined",
+    "footnote": "Quarantine = rename to .disabled-by-clawpanel-<timestamp>.bak (not deleted). To restore, rename the .bak back to its original name in the same directory."
   }
 }

@@ -79,9 +79,9 @@
     "addRemote": "添加远程实例",
     "namePlaceholder": "远程服务器",
     "endpointPlaceholder": "http://192.168.1.100:1420",
-    "nameLabel": "\u540d\u79f0",
-    "endpointLabel": "\u9762\u677f\u5730\u5740",
-    "gwPortLabel": "Gateway \u7aef\u53e3\uff08\u53ef\u9009\uff09",
+    "nameLabel": "名称",
+    "endpointLabel": "面板地址",
+    "gwPortLabel": "Gateway 端口（可选）",
     "nameRequired": "请填写名称和面板地址",
     "endpointExists": "该端点已存在",
     "adding": "添加中...",
@@ -339,7 +339,13 @@
     "webModeNoLog": "Web 模式：升级过程日志不可用，请等待完成...",
     "taskDone": "操作完成",
     "upgradeDone": "升级完成",
-    "upgradeScene": "升级 OpenClaw"
+    "upgradeScene": "升级 OpenClaw",
+    "invalidConfigTitle": "检测到 OpenClaw 配置问题",
+    "invalidConfigPrompt": "操作 \"{action}\" 失败：\n\n{error}\n\n这通常是配置文件 schema 已过期。是否运行 doctor 自动修复？",
+    "runDoctorFix": "一键修复",
+    "runningDoctorFix": "正在运行 doctor --fix...",
+    "doctorFixSuccess": "配置已修复，请再次尝试",
+    "doctorFixFailed": "doctor 修复失败"
   },
   "settings": {
     "title": "面板设置",
@@ -547,7 +553,8 @@
     "restartOk": "Gateway 重启成功",
     "restartFailed": "重启失败",
     "configSavedGwFailed": "配置已保存，但 Gateway 重启失败",
-    "visitSite": "访问 {name}官网"
+    "visitSite": "访问 {name}官网",
+    "configSavedGwNotRunning": "配置已保存。Gateway 当前未运行，启动后配置自动生效。"
   },
   "agents": {
     "title": "Agent 管理",
@@ -594,7 +601,8 @@
     "backingUp": "正在备份 Agent「{id}」...",
     "backupDone": "备份完成: {file}",
     "backupFailed": "备份失败",
-    "detailHint": "点击卡片空白区域或“详情”按钮，进入新的 Agent 详情页。"
+    "detailHint": "点击卡片空白区域或“详情”按钮，进入新的 Agent 详情页。",
+    "labelRuntime": "运行时:"
   },
   "agentDetail": {
     "back": "← 返回 Agent 列表",
@@ -894,7 +902,6 @@
     "loadFailed": "加载平台列表失败",
     "agentBindHint": "每个 Agent 可绑定多条路由（例如不同账号或匹配条件）；绑定之间互不影响。请先在「渠道列表」中完成渠道接入。",
     "createAgentFirst": "请先在「Agent 管理」中创建 Agent",
-
     "qqbotLabel": "QQ 机器人",
     "qqbotDesc": "通过 QQ 开放平台接入，支持私聊和群聊",
     "qqbotGuide1": "前往 <a href=\"https://q.qq.com\" target=\"_blank\" rel=\"noopener\">QQ 开放平台</a> 创建机器人",
@@ -906,7 +913,6 @@
     "qqbotGuideFooter": "<div style=\"margin-top:8px;font-size:var(--font-size-xs);color:var(--text-tertiary)\">遇到问题？参考 <a href=\"https://q.qq.com/qqbot/openclaw/faq.html\" target=\"_blank\" rel=\"noopener\">OpenClaw × QQ 常见问题</a></div>",
     "qqbotAppIdPh": "QQ 开放平台 AppID",
     "qqbotSecretPh": "QQ 开放平台 ClientSecret",
-
     "dingtalkLabel": "钉钉",
     "dingtalkDesc": "通过钉钉企业内部应用接入，支持单聊和群聊",
     "dingtalkGuide1": "前往 <a href=\"https://open-dev.dingtalk.com\" target=\"_blank\" rel=\"noopener\">钉钉开放平台</a>，创建「企业内部应用」",
@@ -919,7 +925,6 @@
     "dingtalkGuideFooter": "<div style=\"margin-top:8px;font-size:var(--font-size-xs);color:var(--text-tertiary)\">注意：Stream 模式需要钉钉服务端主动推送，确保网络可达</div>",
     "dingtalkClientIdPh": "AppKey / Client ID",
     "dingtalkClientSecretPh": "AppSecret / Client Secret",
-
     "feishuLabel": "飞书",
     "feishuDesc": "通过飞书企业自建应用接入，支持单聊和群聊",
     "feishuGuide1": "前往 <a href=\"https://open.feishu.cn/app\" target=\"_blank\" rel=\"noopener\">飞书开放平台</a> 创建企业自建应用",
@@ -934,21 +939,18 @@
     "feishuDomainLabel": "平台域名",
     "feishuDomainFeishu": "飞书 (feishu.cn)",
     "feishuDomainLark": "Lark (larksuite.com)",
-
     "telegramDesc": "接入 Telegram Bot，支持私聊和群组",
     "telegramGuide1": "在 Telegram 中搜索 <a href=\"https://t.me/BotFather\" target=\"_blank\" rel=\"noopener\">@BotFather</a> 并发送 <code>/newbot</code>",
     "telegramGuide2": "按提示设置机器人名称和用户名",
     "telegramGuide3": "复制 BotFather 返回的 <strong>Bot Token</strong>",
     "telegramGuide4": "填入下方凭证并保存",
     "telegramGuideFooter": "<div style=\"margin-top:8px;font-size:var(--font-size-xs);color:var(--text-tertiary)\">需要公网可达的服务器或使用 polling 模式</div>",
-
     "discordDesc": "接入 Discord Bot，支持服务器频道和私信",
     "discordGuide1": "前往 <a href=\"https://discord.com/developers/applications\" target=\"_blank\" rel=\"noopener\">Discord Developer Portal</a> 创建 Application",
     "discordGuide2": "在 Bot 页面点击「Reset Token」获取 <strong>Bot Token</strong>",
     "discordGuide3": "开启 <strong>MESSAGE CONTENT INTENT</strong>",
     "discordGuide4": "使用 OAuth2 URL Generator 邀请 Bot 加入服务器",
     "discordGuideFooter": "<div style=\"margin-top:8px;font-size:var(--font-size-xs);color:var(--text-tertiary)\">确保开启 Message Content Intent 以接收消息内容</div>",
-
     "slackDesc": "接入 Slack App，支持频道和私信",
     "slackGuide1": "前往 <a href=\"https://api.slack.com/apps\" target=\"_blank\" rel=\"noopener\">Slack API</a> 创建 App（推荐 From a manifest）",
     "slackGuide2": "在 OAuth & Permissions 中添加 Bot Token Scopes：<code>chat:write</code>、<code>app_mentions:read</code> 等",
@@ -974,7 +976,6 @@
     "groupAllowlist": "白名单",
     "allowFromPh": "可选，逗号分隔用户/频道 ID",
     "allowFromHint": "限制允许的用户或频道 ID，留空不限制",
-
     "weixinLabel": "微信",
     "weixinDesc": "通过 openclaw-weixin 插件接入个人微信",
     "weixinGuide1": "本功能基于 <strong>openclaw-weixin</strong> 插件",
@@ -988,7 +989,6 @@
     "weixinLogin": "扫码登录",
     "weixinLoginHint": "启动微信登录流程，扫码后自动接管消息",
     "weixinScanQr": "用手机微信扫描此二维码",
-
     "msteamsDesc": "接入 Microsoft Teams Bot",
     "msteamsGuide1": "在 <a href=\"https://portal.azure.com\" target=\"_blank\" rel=\"noopener\">Azure Portal</a> 注册 Bot Channel Registration",
     "msteamsGuide2": "获取 <strong>App ID</strong> 和 <strong>App Password</strong>",
@@ -997,7 +997,6 @@
     "msteamsGuideFooter": "<div style=\"margin-top:8px;font-size:var(--font-size-xs);color:var(--text-tertiary)\">需要 Azure AD 应用注册和 Teams 管理员权限</div>",
     "msteamsTenantIdPh": "可选，单租户时填写",
     "msteamsAllowFromPh": "可选，逗号分隔",
-
     "signalDesc": "接入 Signal Messenger",
     "signalGuide1": "安装 <a href=\"https://github.com/AsamK/signal-cli\" target=\"_blank\" rel=\"noopener\">signal-cli</a> 并注册/链接账号",
     "signalGuide2": "确保 signal-cli 可正常收发消息",
@@ -1008,7 +1007,6 @@
     "signalCliPathLabel": "signal-cli 路径",
     "signalCliPathPh": "可选，默认从 PATH 查找",
     "signalAllowFromPh": "可选，逗号分隔",
-
     "matrixDesc": "接入 Matrix 协议（Element 等客户端）",
     "matrixGuide1": "在 Matrix 服务器上注册 Bot 账号",
     "matrixGuide2": "获取 <strong>Access Token</strong>（或使用用户名密码）",
@@ -1023,7 +1021,6 @@
     "groupAllTeams": "所有团队",
     "groupMentionBot": "仅 @机器人时",
     "optionalEg": "可选，如",
-
     "editAccountLabel": "编辑 {id}",
     "bound": "已绑定",
     "notBoundAgent": "未绑定 Agent",
@@ -1035,7 +1032,6 @@
     "addNewAccount": "添加新账号",
     "addNewAccountSub": "创建一个新的机器人账号配置",
     "actions": "操作",
-
     "bindAgentTitle": "绑定 Agent",
     "targetAgent": "目标 Agent",
     "targetAgentHint": "选择接收消息的 Agent",
@@ -1056,7 +1052,6 @@
     "saving": "保存中...",
     "bindingSaved": "绑定已保存",
     "saveFailed": "保存失败",
-
     "accountLabel": "账号",
     "defaultAccount": "默认账号",
     "accountShort": "账号",
@@ -1078,7 +1073,6 @@
     "subAccount": "子账号",
     "noMultiAccount": "该渠道不支持多账号",
     "noMultiAccountHint": "请先在渠道列表中添加多个账号",
-
     "confirmRemoveAccount": "确定移除该账号及其所有配置？",
     "removed": "已移除",
     "removeFailed": "移除失败",
@@ -1088,7 +1082,6 @@
     "confirmRemovePlatform": "确定移除该平台及其所有配置？",
     "supportsActions": "支持操作",
     "connectedClickEdit": "已接入，点击编辑",
-
     "qqDiagAllPassed": "全部检查通过 ✓",
     "qqDiagHasFailed": "存在未通过的检查项",
     "qqRepairHint": "可尝试一键修复：重新安装插件并重启 Gateway",
@@ -1099,7 +1092,6 @@
     "processing": "处理中...",
     "repairDone": "修复完成",
     "repairFailed": "修复失败",
-
     "unknownChannelType": "无法识别渠道类型",
     "diagnosing": "诊断中...",
     "testing": "测试中...",
@@ -1108,7 +1100,6 @@
     "verifyFailed": "校验失败",
     "testFailed": "渠道测试失败",
     "diagFailed": "诊断失败",
-
     "connectingGateway": "连接 Gateway...",
     "gatewayNotConnected": "Gateway 未连接",
     "generatingQr": "正在生成二维码...",
@@ -1124,7 +1115,6 @@
     "whatsappNotAvailableHint": "WhatsApp 插件未加载",
     "scanLoginFailed": "扫码登录失败",
     "unknownPlatform": "未知平台",
-
     "setupSteps": "接入步骤",
     "clickToExpand": "点击展开",
     "docsOnlyTitle": "当前面板暂未完成该渠道的可用配置向导",
@@ -1135,7 +1125,6 @@
     "operations": "操作",
     "setup": "接入",
     "close": "关闭",
-
     "pluginStatusFailed": "无法获取插件状态",
     "pluginInstalled": "已安装",
     "version": "版本",
@@ -1157,13 +1146,11 @@
     "reDetecting": "重新检测…",
     "actionDone": "渠道动作执行完成",
     "actionFailed": "渠道动作执行失败",
-
     "accountIdentifier": "账号标识",
     "accountIdPlaceholder": "留空为默认账号；修改会创建新账号",
     "accountIdHint": "每个账号对应一个独立机器人。不同账号可绑定不同 Agent。",
     "bindAgent": "绑定 Agent",
     "bindAgentHint": "该账号收到的消息路由到哪个 Agent（可在「Agent 对接」页添加更多绑定）。",
-
     "show": "显示",
     "hide": "隐藏",
     "pairingApproval": "配对审批",
@@ -1182,7 +1169,6 @@
     "verifyCredentials": "校验凭证",
     "save": "保存",
     "connectAndSave": "接入并保存",
-
     "reading": "读取中...",
     "pendingRequests": "待审批请求",
     "noPendingRequests": "暂无待审批请求",
@@ -1192,13 +1178,11 @@
     "pairingApproved": "配对已批准",
     "operationComplete": "操作完成",
     "approveFailed": "批准失败",
-
     "pleaseFill": "请填写「{field}」",
     "verifying": "校验中...",
     "credentialsValid": "凭证有效",
     "qqVerifyNote": "此项只验证 AppID/Secret 能否向腾讯换 token。<strong>不能</strong>代表 QQ 里机器人已在线；若提示「灵魂不在线」，请使用下方 <strong>完整联通诊断</strong> 并对照 <a href=\"https://q.qq.com/qqbot/openclaw/faq.html\" target=\"_blank\" rel=\"noopener\">QQ OpenClaw 常见问题</a>。",
     "verifyRequestFailed": "校验请求失败",
-
     "installingPlugin": "安装插件中...",
     "installPlugin": "安装插件",
     "pluginInstallFailed": "插件安装失败",
@@ -2307,5 +2291,51 @@
     "confirmTitle": "确认操作",
     "confirmOk": "确认",
     "confirmCancel": "取消"
+  },
+  "kernel": {
+    "floorBlocker": {
+      "title": "内核版本过低",
+      "message": "当前 OpenClaw 内核版本 {current} 低于 ClawPanel 支持的最低版本 {floor}，部分功能可能无法工作。",
+      "targetHint": "推荐升级到 {target} 以获得最佳体验。",
+      "goUpgrade": "前往升级",
+      "continueReadonly": "继续使用（只读模式）",
+      "readonlyHint": "只读模式下，写入操作会被前端校验拦截，避免破坏老内核的配置。"
+    },
+    "badge": {
+      "currentKernel": "当前内核",
+      "featuresEnabled": "已启用 {enabled}/{total} 个特性",
+      "belowTarget": "低于推荐版",
+      "latest": "已是最新",
+      "unknown": "未知"
+    },
+    "upgrade": {
+      "title": "升级 OpenClaw 内核",
+      "confirmMessage": "即将从 {from} 升级到 {to}。\n升级约需 2 分钟，期间 Gateway 会自动重启。继续？",
+      "starting": "开始升级到 {version}...",
+      "successMessage": "内核升级完成",
+      "successToast": "内核升级成功",
+      "failurePrefix": "内核升级失败:"
+    },
+    "upgradeHint": {
+      "title": "有新内核可用",
+      "subtitle": "{from} → {to}，点此一键升级",
+      "dismissTooltip": "本次会话不再提醒"
+    }
+  },
+  "cliConflict": {
+    "title": "检测到 {count} 处可能冲突的 OpenClaw 安装",
+    "desc": "系统 PATH 中存在非 ClawPanel 管理的 OpenClaw（如 Cherry Studio 内嵌、旧 npm 全局），可能导致终端命令拿到老版本，引发 schema 不兼容、doctor --fix 卡死等问题。",
+    "viewDetails": "查看详情",
+    "hideDetails": "收起详情",
+    "quarantineAll": "一键隔离",
+    "quarantining": "正在隔离…",
+    "quarantineOne": "隔离",
+    "dismiss": "暂时忽略",
+    "dismissedHint": "已忽略本次检测。下次启动会重新扫描。",
+    "quarantineOk": "已隔离 {count} 个冲突项",
+    "quarantinePartial": "另有 {count} 个未隔离",
+    "quarantineFail": "隔离失败：{error}",
+    "quarantineOneOk": "已隔离",
+    "footnote": "隔离 = 重命名为 .disabled-by-clawpanel-<时间>.bak（不会删除）。如需恢复，到原目录把 .bak 文件改回原名即可。"
   }
 }

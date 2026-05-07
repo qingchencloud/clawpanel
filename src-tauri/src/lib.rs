@@ -4,14 +4,20 @@ mod tray;
 mod utils;
 
 use commands::{
-    agent, assistant, config, device, diagnose, extensions, hermes, hermes_providers, logs, memory,
-    messaging, pairing, service, skills, update,
+    agent, assistant, cli_conflict, config, device, diagnose, extensions, hermes, hermes_providers,
+    logs, memory, messaging, pairing, service, skills, update,
 };
 
 pub fn run() {
     let hot_update_dir = commands::openclaw_dir()
         .join("clawpanel")
         .join("web-update");
+
+    // issue #261: 装新版 app 时，如果旧的热更新目录里装的是更旧版本的前端
+    // （或根本没 .version 标记），protocol handler 会优先读它，导致
+    // 用户装了 v0.14.0 看到的还是 v0.9.8 的界面。
+    // 启动时先比对版本，落后于当前 app 就直接清掉，让 protocol handler 回退到内嵌 bundle。
+    cleanup_stale_hot_update(&hot_update_dir);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -131,6 +137,12 @@ pub fn run() {
             // 诊断
             diagnose::diagnose_gateway_connection,
             diagnose::check_ciao_windowshide_bug,
+            // CLI 冲突检测与隔离（PATH 中残留的非 standalone openclaw）
+            cli_conflict::scan_openclaw_path_conflicts,
+            cli_conflict::quarantine_openclaw_path,
+            cli_conflict::quarantine_openclaw_paths_bulk,
+            cli_conflict::list_quarantined_openclaw,
+            cli_conflict::restore_quarantined_openclaw,
             // 日志
             logs::read_log_tail,
             logs::search_log,
@@ -292,4 +304,40 @@ pub fn run() {
                 }
             }
         });
+}
+
+/// 启动时清理落后版本的热更新目录（issue #261）。
+///
+/// 规则：
+/// - 目录不存在：noop
+/// - 目录存在，`.version` 文件不存在：视为"版本未知"，保守清理
+///   （老版 ClawPanel 没写 .version，不清理就会永远卡在旧前端）
+/// - 目录存在，`.version >= app 版本`：保留（正常热更新场景）
+/// - 目录存在，`.version < app 版本`：清理（用户装了新 app，旧热更新残留）
+fn cleanup_stale_hot_update(dir: &std::path::Path) {
+    if !dir.exists() {
+        return;
+    }
+    let app_version = env!("CARGO_PKG_VERSION");
+    let web_version = std::fs::read_to_string(dir.join(".version"))
+        .ok()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+
+    // 有标记且 >= app 版本：保留
+    if !web_version.is_empty() && update::version_ge(&web_version, app_version) {
+        return;
+    }
+
+    // 落后或无标记：清理，让 protocol handler 回退到 asset_resolver
+    eprintln!(
+        "[clawpanel] clearing stale web-update dir (app={}, web={})",
+        app_version,
+        if web_version.is_empty() {
+            "<missing>"
+        } else {
+            web_version.as_str()
+        }
+    );
+    let _ = std::fs::remove_dir_all(dir);
 }

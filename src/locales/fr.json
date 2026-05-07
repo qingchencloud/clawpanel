@@ -252,7 +252,13 @@
     "webModeNoLog": "Web mode: Upgrade logs unavailable, please wait...",
     "taskDone": "Operation complete",
     "upgradeDone": "Upgrade complete",
-    "upgradeScene": "Upgrade OpenClaw"
+    "upgradeScene": "Upgrade OpenClaw",
+    "invalidConfigTitle": "Problème de configuration OpenClaw détecté",
+    "invalidConfigPrompt": "L'action « {action} » a échoué :\n\n{error}\n\nIl s'agit généralement d'un schéma de configuration obsolète. Lancer doctor pour corriger automatiquement ?",
+    "runDoctorFix": "Lancer doctor --fix",
+    "runningDoctorFix": "Exécution de doctor --fix...",
+    "doctorFixSuccess": "Configuration corrigée. Réessayez",
+    "doctorFixFailed": "Échec de la correction par doctor"
   },
   "settings": {
     "title": "Paramètres du panneau",
@@ -459,7 +465,8 @@
     "restartOk": "Gateway restarted",
     "restartFailed": "Restart failed",
     "configSavedGwFailed": "Config saved, but Gateway restart failed",
-    "visitSite": "Visit {name} website"
+    "visitSite": "Visit {name} website",
+    "configSavedGwNotRunning": "Configuration enregistrée. Le Gateway n'est pas en cours d'exécution — les paramètres prendront effet au démarrage."
   },
   "agents": {
     "title": "Gestion des Agents",
@@ -504,7 +511,8 @@
     "deleteFailed": "Échec de la suppression",
     "backingUp": "Backing up Agent \"{id}\"...",
     "backupDone": "Backup done: {file}",
-    "backupFailed": "Backup failed"
+    "backupFailed": "Backup failed",
+    "labelRuntime": "Runtime :"
   },
   "gateway": {
     "title": "Gateway",
@@ -2098,5 +2106,51 @@
     "confirmTitle": "Confirmer",
     "confirmOk": "OK",
     "confirmCancel": "Annuler"
+  },
+  "kernel": {
+    "floorBlocker": {
+      "title": "Version du noyau trop ancienne",
+      "message": "Le noyau OpenClaw {current} est inférieur à la version minimale prise en charge {floor}. Certaines fonctionnalités peuvent ne pas fonctionner.",
+      "targetHint": "Il est recommandé de passer à {target} pour la meilleure expérience.",
+      "goUpgrade": "Mettre à niveau",
+      "continueReadonly": "Continuer (lecture seule)",
+      "readonlyHint": "En mode lecture seule, les opérations d'écriture sont bloquées côté client pour éviter de corrompre les configurations d'anciens noyaux."
+    },
+    "badge": {
+      "currentKernel": "Noyau",
+      "featuresEnabled": "{enabled}/{total} fonctionnalités activées",
+      "belowTarget": "Sous la version recommandée",
+      "latest": "À jour",
+      "unknown": "Inconnu"
+    },
+    "upgrade": {
+      "title": "Mettre à jour le noyau OpenClaw",
+      "confirmMessage": "Mise à jour de {from} vers {to}.\nCela prend environ 2 minutes ; Gateway redémarrera automatiquement. Continuer ?",
+      "starting": "Mise à jour vers {version}...",
+      "successMessage": "Mise à jour du noyau terminée",
+      "successToast": "Noyau mis à jour avec succès",
+      "failurePrefix": "Échec de la mise à jour du noyau :"
+    },
+    "upgradeHint": {
+      "title": "Nouveau noyau disponible",
+      "subtitle": "{from} → {to}, cliquez pour mettre à jour",
+      "dismissTooltip": "Ne plus avertir pendant cette session"
+    }
+  },
+  "cliConflict": {
+    "title": "Detected {count} possibly conflicting OpenClaw installation(s)",
+    "desc": "Your PATH has OpenClaw installations not managed by ClawPanel (e.g. Cherry Studio bundled, legacy npm global). They can cause terminal commands to pick up old versions, triggering schema mismatches and doctor --fix hangs.",
+    "viewDetails": "View details",
+    "hideDetails": "Hide details",
+    "quarantineAll": "Quarantine all",
+    "quarantining": "Quarantining…",
+    "quarantineOne": "Quarantine",
+    "dismiss": "Dismiss",
+    "dismissedHint": "Dismissed for this session. Next launch will scan again.",
+    "quarantineOk": "Quarantined {count} item(s)",
+    "quarantinePartial": "{count} item(s) failed",
+    "quarantineFail": "Quarantine failed: {error}",
+    "quarantineOneOk": "Quarantined",
+    "footnote": "Quarantine = rename to .disabled-by-clawpanel-<timestamp>.bak (not deleted). To restore, rename the .bak back to its original name in the same directory."
   }
 }

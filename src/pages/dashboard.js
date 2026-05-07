@@ -1,17 +1,19 @@
 /**
  * 仪表盘页面
  */
-import { api } from '../lib/tauri-api.js'
+import { api, invalidate } from '../lib/tauri-api.js'
 import { toast } from '../components/toast.js'
 import { getActiveInstance, onGatewayChange } from '../lib/app-state.js'
 import { isForeignGatewayError, isForeignGatewayService, maybeShowForeignGatewayBindingPrompt, showGatewayConflictGuidance, showInstallationCleanup } from '../lib/gateway-ownership.js'
 import { navigate } from '../router.js'
 import { t } from '../lib/i18n.js'
 import { wsClient } from '../lib/ws-client.js'
+import { attachCliConflictBanner } from '../components/cli-conflict-banner.js'
 
 let _unsubGw = null
 let _loadInFlight = false
 let _lastGwChangeLoad = 0
+let _detachCliConflict = null
 
 export async function render() {
   const page = document.createElement('div')
@@ -22,6 +24,7 @@ export async function render() {
       <h1 class="page-title">${t('dashboard.title')}</h1>
       <p class="page-desc">${t('dashboard.desc')}</p>
     </div>
+    <div id="cli-conflict-mount"></div>
     <div class="stat-cards" id="stat-cards">
       <div class="stat-card loading-placeholder"></div>
       <div class="stat-card loading-placeholder"></div>
@@ -44,6 +47,13 @@ export async function render() {
 
   // 绑定事件（只绑一次）
   bindActions(page)
+
+  // 挂载 CLI 冲突检测横幅（异步扫描 PATH，发现非 standalone 的 openclaw 时显示）
+  const cliConflictMount = page.querySelector('#cli-conflict-mount')
+  if (cliConflictMount) {
+    if (_detachCliConflict) { try { _detachCliConflict() } catch (_) {} }
+    _detachCliConflict = attachCliConflictBanner(cliConflictMount)
+  }
 
   // 异步加载数据
   loadDashboardData(page).catch(e => {
@@ -69,6 +79,7 @@ export async function render() {
 
 export function cleanup() {
   if (_unsubGw) { _unsubGw(); _unsubGw = null }
+  if (_detachCliConflict) { try { _detachCliConflict() } catch (_) {} _detachCliConflict = null }
 }
 
 function openclawInstallationIdentity(installation) {
@@ -111,6 +122,10 @@ function syncDashboardInstanceScope() {
   _dashboardInstanceId = instanceId
 }
 
+function versionInfoIncomplete(version) {
+  return !version || !version.current || !version.source || version.source === 'unknown'
+}
+
 async function loadDashboardData(page, fullRefresh = false) {
   // 并发保护：如果上一次加载仍在进行，跳过本次（fullRefresh 除外）
   if (_loadInFlight && !fullRefresh) return
@@ -126,12 +141,16 @@ async function _loadDashboardDataInner(page, fullRefresh) {
     promise,
     new Promise((_, reject) => setTimeout(() => reject(new Error(`超时(${ms/1000}s)`)), ms))
   ])
+  const shouldFetchVersion = !_dashboardInitialized || fullRefresh || !_dashboardVersionCache || versionInfoIncomplete(_dashboardVersionCache)
+  if (shouldFetchVersion && (fullRefresh || versionInfoIncomplete(_dashboardVersionCache))) {
+    invalidate('get_version_info')
+  }
   // 每个请求独立超时：避免单个慢请求拖垮整体渲染
   const coreP = Promise.allSettled([
     withTimeout(api.getServicesStatus(), 12000),
     withTimeout(api.readOpenclawConfig(), 5000),
     // 版本信息：首次加载或手动刷新时才查询（避免 ARM 设备上频繁查 npm registry）
-    (!_dashboardInitialized || fullRefresh || !_dashboardVersionCache) ? withTimeout(api.getVersionInfo(), 8000) : Promise.resolve(_dashboardVersionCache),
+    shouldFetchVersion ? withTimeout(api.getVersionInfo(), 8000) : Promise.resolve(_dashboardVersionCache),
     withTimeout(api.readPanelConfig(), 5000),
   ])
   const secondaryP = Promise.allSettled([

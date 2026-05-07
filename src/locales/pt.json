@@ -252,7 +252,13 @@
     "webModeNoLog": "Web mode: Upgrade logs unavailable, please wait...",
     "taskDone": "Operation complete",
     "upgradeDone": "Upgrade complete",
-    "upgradeScene": "Upgrade OpenClaw"
+    "upgradeScene": "Upgrade OpenClaw",
+    "invalidConfigTitle": "Problema de configuração do OpenClaw detectado",
+    "invalidConfigPrompt": "A ação \"{action}\" falhou:\n\n{error}\n\nGeralmente é o esquema de configuração desatualizado. Executar doctor para corrigir automaticamente?",
+    "runDoctorFix": "Executar doctor --fix",
+    "runningDoctorFix": "Executando doctor --fix...",
+    "doctorFixSuccess": "Configuração corrigida. Tente novamente",
+    "doctorFixFailed": "doctor falhou ao corrigir"
   },
   "settings": {
     "title": "Configurações do painel",
@@ -459,7 +465,8 @@
     "restartOk": "Gateway restarted",
     "restartFailed": "Restart failed",
     "configSavedGwFailed": "Config saved, but Gateway restart failed",
-    "visitSite": "Visit {name} website"
+    "visitSite": "Visit {name} website",
+    "configSavedGwNotRunning": "Configuração salva. O Gateway não está em execução — será aplicada ao iniciá-lo."
   },
   "agents": {
     "title": "Gestão de Agentes",
@@ -504,7 +511,8 @@
     "deleteFailed": "Falha ao excluir",
     "backingUp": "Backing up Agent \"{id}\"...",
     "backupDone": "Backup done: {file}",
-    "backupFailed": "Backup failed"
+    "backupFailed": "Backup failed",
+    "labelRuntime": "Runtime:"
   },
   "gateway": {
     "title": "Gateway",
@@ -2098,5 +2106,51 @@
     "confirmTitle": "Confirmar",
     "confirmOk": "OK",
     "confirmCancel": "Cancelar"
+  },
+  "kernel": {
+    "floorBlocker": {
+      "title": "Versão do kernel muito antiga",
+      "message": "O kernel OpenClaw {current} está abaixo da versão mínima suportada {floor}. Alguns recursos podem não funcionar.",
+      "targetHint": "Recomenda-se atualizar para {target} para a melhor experiência.",
+      "goUpgrade": "Atualizar agora",
+      "continueReadonly": "Continuar (somente leitura)",
+      "readonlyHint": "No modo somente leitura, operações de escrita são bloqueadas no cliente para evitar corromper configurações de kernels antigos."
+    },
+    "badge": {
+      "currentKernel": "Kernel",
+      "featuresEnabled": "{enabled}/{total} recursos habilitados",
+      "belowTarget": "Abaixo do recomendado",
+      "latest": "Mais recente",
+      "unknown": "Desconhecido"
+    },
+    "upgrade": {
+      "title": "Atualizar kernel do OpenClaw",
+      "confirmMessage": "Atualizando de {from} para {to}.\nLeva cerca de 2 minutos; Gateway será reiniciado automaticamente. Continuar?",
+      "starting": "Atualizando para {version}...",
+      "successMessage": "Atualização do kernel concluída",
+      "successToast": "Kernel atualizado com sucesso",
+      "failurePrefix": "Falha na atualização do kernel:"
+    },
+    "upgradeHint": {
+      "title": "Novo kernel disponível",
+      "subtitle": "{from} → {to}, clique para atualizar",
+      "dismissTooltip": "Não avisar nesta sessão"
+    }
+  },
+  "cliConflict": {
+    "title": "Detected {count} possibly conflicting OpenClaw installation(s)",
+    "desc": "Your PATH has OpenClaw installations not managed by ClawPanel (e.g. Cherry Studio bundled, legacy npm global). They can cause terminal commands to pick up old versions, triggering schema mismatches and doctor --fix hangs.",
+    "viewDetails": "View details",
+    "hideDetails": "Hide details",
+    "quarantineAll": "Quarantine all",
+    "quarantining": "Quarantining…",
+    "quarantineOne": "Quarantine",
+    "dismiss": "Dismiss",
+    "dismissedHint": "Dismissed for this session. Next launch will scan again.",
+    "quarantineOk": "Quarantined {count} item(s)",
+    "quarantinePartial": "{count} item(s) failed",
+    "quarantineFail": "Quarantine failed: {error}",
+    "quarantineOneOk": "Quarantined",
+    "footnote": "Quarantine = rename to .disabled-by-clawpanel-<timestamp>.bak (not deleted). To restore, rename the .bak back to its original name in the same directory."
   }
 }

@@ -715,9 +715,20 @@ async function doAutoSave(state) {
     normalizeProviderUrls(state.config)
     await api.writeOpenclawConfig(state.config)
 
-    // 配置已写入。使用 3s 防抖 + 单飞行锁排队重启，避免快速连续编辑触发多次重启。
-    showRestartPendingToast()
-    scheduleGatewayRestart({ reason: 'models-page' })
+    // ⚠ 只有 Gateway 已经在运行时才触发 restart 让配置生效。
+    // 如果 Gateway 没启动（首次安装 / 用户手动停了），盲目调 restart_gateway 会：
+    //   1) HTTP 重载失败（端口没人）→ fallback 到 restart_service 强制启动
+    //   2) Gateway 启动失败 → 触发后端 Guardian 自动跑 doctor --fix → 卡 30s
+    //   3) 用户看到的全是错误 toast，但**配置实际已经写入文件了**
+    // 改成：先 probe，运行才 schedule restart；没运行就静默告诉用户"已保存"。
+    const gwRunning = await api.probeGatewayPort().catch(() => false)
+    if (gwRunning) {
+      // 配置已写入。使用 3s 防抖 + 单飞行锁排队重启，避免快速连续编辑触发多次重启。
+      showRestartPendingToast()
+      scheduleGatewayRestart({ reason: 'models-page' })
+    } else {
+      toast(t('models.configSavedGwNotRunning'), 'info', { duration: 4000 })
+    }
   } catch (e) {
     toast(t('models.autoSaveFailed') + ': ' + e, 'error')
   }

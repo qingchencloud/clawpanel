@@ -252,7 +252,13 @@
     "webModeNoLog": "Web mode: Upgrade logs unavailable, please wait...",
     "taskDone": "Operation complete",
     "upgradeDone": "Upgrade complete",
-    "upgradeScene": "Upgrade OpenClaw"
+    "upgradeScene": "Upgrade OpenClaw",
+    "invalidConfigTitle": "Problema de configuración de OpenClaw detectado",
+    "invalidConfigPrompt": "La acción \"{action}\" falló:\n\n{error}\n\nNormalmente el esquema de configuración está desactualizado. ¿Ejecutar doctor para arreglarlo automáticamente?",
+    "runDoctorFix": "Ejecutar doctor --fix",
+    "runningDoctorFix": "Ejecutando doctor --fix...",
+    "doctorFixSuccess": "Configuración arreglada. Inténtalo de nuevo",
+    "doctorFixFailed": "doctor falló al arreglar"
   },
   "settings": {
     "title": "Configuración del panel",
@@ -459,7 +465,8 @@
     "restartOk": "Gateway restarted",
     "restartFailed": "Restart failed",
     "configSavedGwFailed": "Config saved, but Gateway restart failed",
-    "visitSite": "Visit {name} website"
+    "visitSite": "Visit {name} website",
+    "configSavedGwNotRunning": "Configuración guardada. Gateway no está en ejecución — se aplicará al iniciarlo."
   },
   "agents": {
     "title": "Gestión de Agentes",
@@ -504,7 +511,8 @@
     "deleteFailed": "Error al eliminar",
     "backingUp": "Backing up Agent \"{id}\"...",
     "backupDone": "Backup done: {file}",
-    "backupFailed": "Backup failed"
+    "backupFailed": "Backup failed",
+    "labelRuntime": "Runtime:"
   },
   "gateway": {
     "title": "Gateway",
@@ -2098,5 +2106,51 @@
     "confirmTitle": "Confirmar",
     "confirmOk": "Aceptar",
     "confirmCancel": "Cancelar"
+  },
+  "kernel": {
+    "floorBlocker": {
+      "title": "Versión del kernel demasiado antigua",
+      "message": "El kernel de OpenClaw {current} está por debajo de la versión mínima soportada {floor}. Algunas funciones podrían no funcionar.",
+      "targetHint": "Se recomienda actualizar a {target} para una mejor experiencia.",
+      "goUpgrade": "Actualizar ahora",
+      "continueReadonly": "Continuar (solo lectura)",
+      "readonlyHint": "En modo solo lectura, las operaciones de escritura se bloquean en el cliente para evitar dañar configuraciones de kernels antiguos."
+    },
+    "badge": {
+      "currentKernel": "Kernel",
+      "featuresEnabled": "{enabled}/{total} funciones habilitadas",
+      "belowTarget": "Bajo la recomendada",
+      "latest": "Más reciente",
+      "unknown": "Desconocido"
+    },
+    "upgrade": {
+      "title": "Actualizar kernel de OpenClaw",
+      "confirmMessage": "Se actualizará de {from} a {to}.\nTarda unos 2 minutos; Gateway se reiniciará automáticamente. ¿Continuar?",
+      "starting": "Actualizando a {version}...",
+      "successMessage": "Actualización del kernel completada",
+      "successToast": "Kernel actualizado correctamente",
+      "failurePrefix": "Falló la actualización del kernel:"
+    },
+    "upgradeHint": {
+      "title": "Nuevo kernel disponible",
+      "subtitle": "{from} → {to}, haz clic para actualizar",
+      "dismissTooltip": "No avisar en esta sesión"
+    }
+  },
+  "cliConflict": {
+    "title": "Detected {count} possibly conflicting OpenClaw installation(s)",
+    "desc": "Your PATH has OpenClaw installations not managed by ClawPanel (e.g. Cherry Studio bundled, legacy npm global). They can cause terminal commands to pick up old versions, triggering schema mismatches and doctor --fix hangs.",
+    "viewDetails": "View details",
+    "hideDetails": "Hide details",
+    "quarantineAll": "Quarantine all",
+    "quarantining": "Quarantining…",
+    "quarantineOne": "Quarantine",
+    "dismiss": "Dismiss",
+    "dismissedHint": "Dismissed for this session. Next launch will scan again.",
+    "quarantineOk": "Quarantined {count} item(s)",
+    "quarantinePartial": "{count} item(s) failed",
+    "quarantineFail": "Quarantine failed: {error}",
+    "quarantineOneOk": "Quarantined",
+    "footnote": "Quarantine = rename to .disabled-by-clawpanel-<timestamp>.bak (not deleted). To restore, rename the .bak back to its original name in the same directory."
   }
 }

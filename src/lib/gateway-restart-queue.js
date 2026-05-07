@@ -131,6 +131,32 @@ export function onRestartState(fn) {
   }
 }
 
+/**
+ * 等待 Gateway 端口真正监听上。
+ * 修复了之前 restart_service 返回 Ok 后立即 emit('succeeded') 的误报：
+ * Rust 端 restart_service 只代表"启动命令执行了"，不代表 Gateway 真正监听端口。
+ * 比如 Gateway 进程因配置错误启动后立即崩溃，前端却显示"配置已生效"，导致小白误判。
+ *
+ * 这里在 restart 命令返回后，**实际探测端口** 最多 PROBE_TIMEOUT_MS，可连通才认为成功。
+ *
+ * @returns {Promise<boolean>} 端口是否在限定时间内变得可连通
+ */
+const PROBE_TIMEOUT_MS = 12000  // 12s 给 Gateway 充分启动时间（一般 1-3s 就能起来）
+const PROBE_INTERVAL_MS = 500
+async function _waitGatewayPortReady() {
+  const deadline = Date.now() + PROBE_TIMEOUT_MS
+  while (Date.now() < deadline) {
+    try {
+      const ok = await api.probeGatewayPort()
+      if (ok) return true
+    } catch (_) {
+      // probe 自身异常也算未就绪，继续重试
+    }
+    await new Promise(r => setTimeout(r, PROBE_INTERVAL_MS))
+  }
+  return false
+}
+
 async function runRestart() {
   _pendingTimer = null
   _inflight = true
@@ -138,7 +164,18 @@ async function runRestart() {
 
   try {
     const result = await api.restartGateway()
-    emit('succeeded', { result })
+    // ⚠ 关键修复：restart_service 返回 Ok 不代表 Gateway 真正在监听端口。
+    // 必须 probe 端口确认它真起来了，才能 emit('succeeded')。
+    // 否则用户会在"已重启"的假象下继续操作，但实际 WS 连不上。
+    const portReady = await _waitGatewayPortReady()
+    if (portReady) {
+      emit('succeeded', { result })
+    } else {
+      emit('failed', {
+        error: 'Gateway 重启命令已执行，但端口在 12 秒内仍未监听。请前往「服务管理」查看日志。',
+        portTimeout: true,
+      })
+    }
   } catch (err) {
     emit('failed', { error: err?.message ? err.message : String(err) })
   } finally {

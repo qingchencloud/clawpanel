@@ -44,6 +44,21 @@
   color: var(--success);
 }
 
+.badge-info {
+  background: rgba(59, 130, 246, 0.12);
+  color: rgb(37, 99, 235);
+}
+
+.badge-purple {
+  background: rgba(139, 92, 246, 0.14);
+  color: rgb(124, 58, 237);
+}
+
+.badge-neutral {
+  background: var(--bg-tertiary, rgba(0, 0, 0, 0.06));
+  color: var(--text-secondary);
+}
+
 .agent-card-actions {
   display: flex;
   gap: 6px;

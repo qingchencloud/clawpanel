@@ -7,6 +7,8 @@ import { toast } from '../components/toast.js'
 import { showModal, showConfirm } from '../components/modal.js'
 import { CHANNEL_LABELS } from '../lib/channel-labels.js'
 import { t } from '../lib/i18n.js'
+import { listAgentsCompat } from '../lib/api-compat.js'
+import { hasFeature } from '../lib/kernel.js'
 
 export async function render() {
   const page = document.createElement('div')
@@ -56,7 +58,7 @@ async function loadAgents(page, state) {
   renderSkeleton(container)
   try {
     const [agents, config] = await Promise.all([
-      api.listAgents(),
+      listAgentsCompat(),
       api.readOpenclawConfig().catch(() => null),
     ])
     state.agents = agents
@@ -88,6 +90,26 @@ function renderBindingBadges(agentId, bindings) {
     const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
     return `<span style="font-size:var(--font-size-xs);color:var(--accent);background:var(--accent-muted);padding:1px 6px;border-radius:10px;white-space:nowrap">${escaped}</span>`
   }).join(' ')
+}
+
+/**
+ * 渲染 Agent Runtime 徽章。
+ *
+ * 上游 2026.5.2+ 会在 agents.list 返回 agentRuntime 元数据：
+ *   - { id: 'pi' }     → 默认 Pi runtime（最常用，蓝色徽章）
+ *   - { id: 'codex' }  → OpenAI Codex CLI runtime（紫色徽章）
+ *   - { id: '其他' }   → 显示原始 id（灰色徽章）
+ *
+ * 老内核不会调用本函数（被 hasFeature('agents.runtime') 门控）。
+ */
+function _renderRuntimeBadge(runtime) {
+  const id = (runtime && typeof runtime === 'object' ? runtime.id : runtime) || 'pi'
+  const map = {
+    pi: { label: 'Pi', cls: 'badge-info' },
+    codex: { label: 'Codex CLI', cls: 'badge-purple' },
+  }
+  const meta = map[id] || { label: id, cls: 'badge-neutral' }
+  return `<span class="badge ${meta.cls}" title="agentRuntime.id = ${id}">${meta.label}</span>`
 }
 
 function renderAgents(page, state) {
@@ -127,6 +149,11 @@ function renderAgents(page, state) {
             <span class="agent-info-label">${t('agents.labelWorkspace')}</span>
             <span class="agent-info-value" style="font-family:var(--font-mono);font-size:var(--font-size-xs)">${a.workspace || t('agents.notSet')}</span>
           </div>
+          ${hasFeature('agents.runtime') ? `
+          <div class="agent-info-row">
+            <span class="agent-info-label">${t('agents.labelRuntime')}</span>
+            <span class="agent-info-value">${_renderRuntimeBadge(a.agentRuntime)}</span>
+          </div>` : ''}
           <div class="agent-info-row">
             <span class="agent-info-label">${t('agents.labelBindings')}</span>
             <span class="agent-info-value">${renderBindingBadges(a.id, state.bindings)}</span>
