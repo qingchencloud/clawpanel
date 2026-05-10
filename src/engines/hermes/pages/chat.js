@@ -1,7 +1,7 @@
 /**
  * Hermes Chat — editorial luxury re-write (Phase 4).
  *
- * Layout matches the official `hermes-web-ui`'s ChatPanel:
+ * Layout:
  *   ┌────────────────┬──────────────────────────────────────────────┐
  *   │ SessionList    │ Header: title · source · new-chat button     │
  *   │ (groups +      ├──────────────────────────────────────────────┤
@@ -637,8 +637,7 @@ export function render() {
     // up above when the user types `/`.
     //
     // Token usage strip — only when there's an active session with real
-    // usage. Mirrors hermes-web-ui's input-top-bar (sans context-length
-    // bar, which requires a server-side endpoint we don't have).
+    // usage.
     const totalIn = active?.inputTokens || 0
     const totalOut = active?.outputTokens || 0
     const totalCache = (active?.cacheReadTokens || 0) + (active?.cacheWriteTokens || 0)

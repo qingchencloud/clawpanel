@@ -1,13 +1,9 @@
 //! Hermes Agent 安装与管理命令
 //!
-//! 通过 uv (Astral) 实现零依赖安装：
+//! 通过 uv 实现零依赖安装：
 //!   1. 下载 uv 单文件二进制
 //!   2. uv tool install hermes-agent --python 3.11
 //!   3. 写入 ~/.hermes/config.yaml + .env
-//!
-//! 参考：
-//!   - uv docs: https://docs.astral.sh/uv/
-//!   - Hermes 官方安装: https://hermes-agent.nousresearch.com/docs/getting-started/installation/
 
 use serde_json::Value;
 use std::path::PathBuf;
@@ -652,7 +648,7 @@ pub fn check_python() -> Result<Value, String> {
     };
     result.insert("hasUv".into(), Value::Bool(has_uv));
 
-    // 检测 git（从 GitHub 安装 hermes-agent 需要 git）
+    // 检测 git
     let has_git = run_at_path("git", &["--version"], &enhanced).is_ok();
     result.insert("hasGit".into(), Value::Bool(has_git));
 
@@ -914,22 +910,59 @@ fn hermes_dashboard_port() -> u16 {
     9119 // Hermes Dashboard 默认端口
 }
 
+fn hermes_dashboard_cli_status(port: u16) -> Option<(bool, String)> {
+    let output = run_silent("hermes", &["dashboard", "--status"])
+        .or_else(|_| run_silent("hermes", &["dashboard", "status"]))
+        .ok()?;
+    let lower = output.to_ascii_lowercase();
+    if lower.contains("not running")
+        || lower.contains("stopped")
+        || lower.contains("inactive")
+        || lower.contains("no dashboard")
+    {
+        return Some((false, output));
+    }
+    if lower.contains("running")
+        || lower.contains("listening")
+        || lower.contains("http://")
+        || lower.contains("https://")
+        || lower.contains(&port.to_string())
+    {
+        return Some((true, output));
+    }
+    None
+}
+
+fn hermes_dashboard_tcp_running(port: u16, timeout_ms: u64) -> bool {
+    let addr = format!("127.0.0.1:{port}");
+    let Ok(socket_addr) = addr.parse::<std::net::SocketAddr>() else {
+        return false;
+    };
+    std::net::TcpStream::connect_timeout(&socket_addr, std::time::Duration::from_millis(timeout_ms))
+        .is_ok()
+}
+
+fn hermes_dashboard_cli_stop() -> bool {
+    run_silent("hermes", &["dashboard", "--stop"])
+        .or_else(|_| run_silent("hermes", &["dashboard", "stop"]))
+        .is_ok()
+}
+
 /// 探测 Hermes Dashboard 是否在运行（TCP 连接 127.0.0.1 上的 dashboard 端口）
 /// 返回 { running: bool, port: u16 }，前端据此决定是否打开浏览器或提示用户启动
 #[tauri::command]
 pub async fn hermes_dashboard_probe() -> Result<Value, String> {
     let port = hermes_dashboard_port();
-    let addr = format!("127.0.0.1:{port}");
-    let socket_addr: std::net::SocketAddr = addr
-        .parse()
-        .map_err(|e| format!("address parse error: {e}"))?;
+    let cli_status = hermes_dashboard_cli_status(port);
+    let cli_running = cli_status.as_ref().map(|(running, _)| *running);
+    let cli_output = cli_status.as_ref().map(|(_, output)| output.clone());
     let running = tokio::task::spawn_blocking(move || {
-        std::net::TcpStream::connect_timeout(&socket_addr, std::time::Duration::from_millis(800))
-            .is_ok()
+        let tcp_running = hermes_dashboard_tcp_running(port, 800);
+        tcp_running || cli_running.unwrap_or(false)
     })
     .await
     .unwrap_or(false);
-    Ok(serde_json::json!({ "running": running, "port": port }))
+    Ok(serde_json::json!({ "running": running, "port": port, "status": cli_output }))
 }
 
 /// 我们 spawn 的 Dashboard 进程 PID（0 = 没有）
@@ -975,14 +1008,11 @@ fn kill_dashboard_pid() -> bool {
 #[tauri::command]
 pub async fn hermes_dashboard_start() -> Result<Value, String> {
     let port = hermes_dashboard_port();
-    let addr_str = format!("127.0.0.1:{port}");
-    let socket_addr: std::net::SocketAddr = addr_str
-        .parse()
-        .map_err(|e| format!("address parse error: {e}"))?;
-
     // 1. 已运行？
-    if std::net::TcpStream::connect_timeout(&socket_addr, std::time::Duration::from_millis(500))
-        .is_ok()
+    if hermes_dashboard_tcp_running(port, 500)
+        || hermes_dashboard_cli_status(port)
+            .map(|(running, _)| running)
+            .unwrap_or(false)
     {
         return Ok(serde_json::json!({
             "started": true,
@@ -1057,17 +1087,6 @@ pub async fn hermes_dashboard_start() -> Result<Value, String> {
                     || (lower.contains("import error") && lower.contains("fastapi"))
                 {
                     "deps_missing"
-                } else if lower.contains("no module named 'fcntl'")
-                    || lower.contains("no module named 'termios'")
-                    || lower.contains("no module named 'pty'")
-                    || lower.contains("no module named 'tty'")
-                    || lower.contains("no module named 'pwd'")
-                    || lower.contains("no module named 'grp'")
-                {
-                    // Hermes 在 pty_bridge.py / memory_tool.py 等处无条件 import POSIX-only
-                    // 标准库（fcntl/termios/pty/tty/pwd/grp），Windows 上根本不存在
-                    // 上游 issue：https://github.com/NousResearch/hermes-agent/issues/5246
-                    "posix_only_module"
                 } else if lower.contains("address already in use")
                     || lower.contains("address in use")
                     || (lower.contains("port") && lower.contains("already in use"))
@@ -1086,12 +1105,7 @@ pub async fn hermes_dashboard_start() -> Result<Value, String> {
             }
             Ok(None) => {
                 // 还活着，探端口
-                if std::net::TcpStream::connect_timeout(
-                    &socket_addr,
-                    std::time::Duration::from_millis(300),
-                )
-                .is_ok()
-                {
+                if hermes_dashboard_tcp_running(port, 300) {
                     // PID 仍记录在 DASH_PID，供后续 stop 使用
                     return Ok(serde_json::json!({
                         "started": true,
@@ -1148,7 +1162,21 @@ pub async fn hermes_dashboard_start() -> Result<Value, String> {
 /// 停止我们 spawn 的 Dashboard 进程
 #[tauri::command]
 pub async fn hermes_dashboard_stop() -> Result<bool, String> {
-    Ok(kill_dashboard_pid())
+    let port = hermes_dashboard_port();
+    let cli_stopped = tokio::task::spawn_blocking(hermes_dashboard_cli_stop)
+        .await
+        .unwrap_or(false);
+    let pid_stopped = kill_dashboard_pid();
+    if cli_stopped || pid_stopped {
+        for _ in 0..20 {
+            if !hermes_dashboard_tcp_running(port, 200) {
+                return Ok(true);
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+        return Ok(true);
+    }
+    Ok(false)
 }
 
 // ---------------------------------------------------------------------------
@@ -1348,10 +1376,24 @@ fn extract_uv_tar_gz(data: &[u8], dest: &std::path::Path) -> Result<(), String> 
     Err("tar.gz 中未找到 uv".into())
 }
 
-/// Hermes Agent 的 GitHub 仓库地址（不在 PyPI 上发布，只能从 GitHub 安装）
 const HERMES_GIT_URL: &str = "git+https://github.com/NousResearch/hermes-agent.git";
 
-/// 通过 uv tool install 安装 Hermes Agent（从 GitHub）
+fn sanitize_hermes_install_output(text: &str) -> String {
+    let mut out = text.replace(HERMES_GIT_URL, "hermes-agent");
+    out = out.replace(
+        "https://github.com/NousResearch/hermes-agent.git",
+        "hermes-agent",
+    );
+    out = out.replace(
+        "https://github.com/NousResearch/hermes-agent",
+        "hermes-agent",
+    );
+    out = out.replace("github.com/NousResearch/hermes-agent.git", "hermes-agent");
+    out = out.replace("github.com/NousResearch/hermes-agent", "hermes-agent");
+    out.replace("NousResearch/hermes-agent", "hermes-agent")
+}
+
+/// 通过 uv tool install 安装 Hermes Agent
 async fn install_via_uv_tool(
     app: &tauri::AppHandle,
     uv_path: &str,
@@ -1359,12 +1401,11 @@ async fn install_via_uv_tool(
 ) -> Result<(), String> {
     let _ = app.emit(
         "hermes-install-log",
-        "📦 通过 uv tool install 从 GitHub 安装 Hermes Agent...",
+        "📦 通过 uv tool install 安装 Hermes Agent...",
     );
     let _ = app.emit("hermes-install-progress", 25u32);
 
-    // 构造包名（PEP 508 格式: "pkg[extras] @ git+url"）
-    // hermes-agent 未发布到 PyPI，必须从 GitHub 安装
+    // 构造安装规格
     let pkg = if extras.is_empty() {
         format!("hermes-agent @ {}", HERMES_GIT_URL)
     } else {
@@ -1396,7 +1437,7 @@ async fn install_via_uv_tool(
 
     let _ = app.emit(
         "hermes-install-log",
-        format!("> uv tool install \"{}\" --python 3.11", pkg),
+        "uv tool install hermes-agent --python 3.11",
     );
 
     let child = cmd.spawn().map_err(|e| format!("启动安装进程失败: {e}"))?;
@@ -1411,7 +1452,10 @@ async fn install_via_uv_tool(
     // 逐行输出日志
     for line in stdout.lines().chain(stderr.lines()) {
         if !line.trim().is_empty() {
-            let _ = app.emit("hermes-install-log", line.trim());
+            let _ = app.emit(
+                "hermes-install-log",
+                sanitize_hermes_install_output(line.trim()),
+            );
         }
     }
 
@@ -1428,7 +1472,7 @@ async fn install_via_uv_tool(
         Err(format!(
             "安装失败 (exit {}): {}",
             output.status.code().unwrap_or(-1),
-            stderr.trim()
+            sanitize_hermes_install_output(stderr.trim())
         ))
     }
 }
@@ -1470,13 +1514,13 @@ async fn install_via_uv_pip(
     let _ = app.emit("hermes-install-log", "✓ Python 虚拟环境创建完成");
     let _ = app.emit("hermes-install-progress", 40u32);
 
-    // pip install（从 GitHub）
+    // pip install
     let pkg = if extras.is_empty() {
         format!("hermes-agent @ {}", HERMES_GIT_URL)
     } else {
         format!("hermes-agent[{}] @ {}", extras.join(","), HERMES_GIT_URL)
     };
-    let _ = app.emit("hermes-install-log", format!("> uv pip install \"{pkg}\""));
+    let _ = app.emit("hermes-install-log", "> uv pip install hermes-agent");
 
     let mut pip_cmd = tokio::process::Command::new(uv_path);
     pip_cmd.args(["pip", "install", &pkg]);
@@ -1498,12 +1542,18 @@ async fn install_via_uv_pip(
     let stderr = String::from_utf8_lossy(&pip_out.stderr);
     for line in stdout.lines().chain(stderr.lines()) {
         if !line.trim().is_empty() {
-            let _ = app.emit("hermes-install-log", line.trim());
+            let _ = app.emit(
+                "hermes-install-log",
+                sanitize_hermes_install_output(line.trim()),
+            );
         }
     }
 
     if !pip_out.status.success() {
-        return Err(format!("pip install 失败: {}", stderr.trim()));
+        return Err(format!(
+            "pip install 失败: {}",
+            sanitize_hermes_install_output(stderr.trim())
+        ));
     }
 
     let _ = app.emit("hermes-install-log", "✓ pip install 完成");
@@ -1575,8 +1625,8 @@ pub async fn configure_hermes(
     }
 
     // ---- Provider-aware key routing ----
-    // ClawPanel 使用 HERMES_PROVIDER_REGISTRY (22 providers) 决定 .env key 名和
-    // config.yaml 的 model.provider 字段。详见 hermes_providers.rs 的文档。
+    // ClawPanel 根据内置 provider registry 决定 .env key 名和
+    // config.yaml 的 model.provider 字段。
     use super::hermes_providers;
 
     let pcfg = hermes_providers::get_provider(&provider);
@@ -1599,8 +1649,8 @@ pub async fn configure_hermes(
         Some(url) if !url.trim().is_empty() => format!("  base_url: {}\n", url.trim()),
         _ => String::new(),
     };
-    // Provider 字段：Hermes v0.14+ 的 model_switch 依赖该字段决定 env_var。
-    // `custom` 不写 provider 行，让 Hermes 从 base_url 自动推断。
+    // Provider 字段用于稳定选择凭证来源。
+    // `custom` 不写 provider 行，让 Hermes Agent 从 base_url 自动推断。
     let provider_line = if provider == "custom" || provider.is_empty() {
         String::new()
     } else {
@@ -2734,7 +2784,6 @@ pub async fn update_hermes(app: tauri::AppHandle) -> Result<String, String> {
         "uv".into()
     };
 
-    // hermes-agent 从 GitHub 安装，upgrade 不可用，改用 reinstall
     let pkg = format!("hermes-agent[web] @ {}", HERMES_GIT_URL);
     let mut cmd = tokio::process::Command::new(&uv);
     cmd.args([
@@ -2750,7 +2799,7 @@ pub async fn update_hermes(app: tauri::AppHandle) -> Result<String, String> {
     let _ = app.emit("hermes-install-progress", 20u32);
     let _ = app.emit(
         "hermes-install-log",
-        format!("> uv tool install --reinstall \"{pkg}\" --python 3.11 --with croniter"),
+        "uv tool install --reinstall hermes-agent --python 3.11 --with croniter",
     );
     cmd.env("GIT_TERMINAL_PROMPT", "0");
     if let Some(mirror) = pypi_mirror_url() {
@@ -2767,7 +2816,10 @@ pub async fn update_hermes(app: tauri::AppHandle) -> Result<String, String> {
     let stderr = String::from_utf8_lossy(&output.stderr);
     for line in stdout.lines().chain(stderr.lines()) {
         if !line.trim().is_empty() {
-            let _ = app.emit("hermes-install-log", line.trim());
+            let _ = app.emit(
+                "hermes-install-log",
+                sanitize_hermes_install_output(line.trim()),
+            );
         }
     }
 
@@ -2776,7 +2828,10 @@ pub async fn update_hermes(app: tauri::AppHandle) -> Result<String, String> {
         let _ = app.emit("hermes-install-progress", 100u32);
         Ok("升级完成".into())
     } else {
-        Err(format!("升级失败: {}", stderr.trim()))
+        Err(format!(
+            "升级失败: {}",
+            sanitize_hermes_install_output(stderr.trim())
+        ))
     }
 }
 
@@ -2957,8 +3012,346 @@ pub async fn hermes_api_proxy(
 }
 
 // ---------------------------------------------------------------------------
-// hermes_agent_run — 通过 /v1/runs + SSE 事件流驱动 Agent（工具调用可见）
+// hermes_agent_run — streaming compatibility layer for Hermes Agent
 // ---------------------------------------------------------------------------
+
+fn hermes_response_text(value: &Value) -> String {
+    let response = value.get("response").unwrap_or(value);
+    if let Some(text) = response.get("output_text").and_then(|v| v.as_str()) {
+        return text.to_string();
+    }
+    if let Some(text) = response.get("text").and_then(|v| v.as_str()) {
+        return text.to_string();
+    }
+    let mut out = String::new();
+    if let Some(items) = response.get("output").and_then(|v| v.as_array()) {
+        for item in items {
+            if let Some(parts) = item.get("content").and_then(|v| v.as_array()) {
+                for part in parts {
+                    let kind = part.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                    if matches!(kind, "output_text" | "text") {
+                        if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
+                            out.push_str(text);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+fn hermes_response_delta(evt: &Value) -> String {
+    evt.get("delta")
+        .and_then(|v| v.as_str())
+        .or_else(|| evt.get("text").and_then(|v| v.as_str()))
+        .or_else(|| evt.get("content").and_then(|v| v.as_str()))
+        .or_else(|| {
+            evt.get("delta")
+                .and_then(|v| v.get("text"))
+                .and_then(|v| v.as_str())
+        })
+        .or_else(|| {
+            evt.get("delta")
+                .and_then(|v| v.get("value"))
+                .and_then(|v| v.as_str())
+        })
+        .unwrap_or("")
+        .to_string()
+}
+
+fn normalize_hermes_stream_event(
+    evt: &Value,
+    run_id: &str,
+    session_id: Option<&str>,
+) -> Option<Value> {
+    let event_type = evt
+        .get("event")
+        .and_then(|v| v.as_str())
+        .or_else(|| evt.get("type").and_then(|v| v.as_str()))
+        .unwrap_or("");
+    if event_type.is_empty() {
+        return None;
+    }
+    let sid = session_id
+        .map(|s| Value::String(s.to_string()))
+        .unwrap_or(Value::Null);
+    match event_type {
+        "message.delta" | "run.completed" | "run.failed" | "tool.started" | "tool.completed"
+        | "tool.progress" | "tool.error" => {
+            let mut out = evt.clone();
+            if out.get("run_id").is_none() {
+                out["run_id"] = Value::String(run_id.to_string());
+            }
+            if out.get("session_id").is_none() {
+                out["session_id"] = sid;
+            }
+            Some(out)
+        }
+        "response.output_text.delta" | "response.text.delta" => {
+            let delta = hermes_response_delta(evt);
+            if delta.is_empty() {
+                None
+            } else {
+                Some(serde_json::json!({
+                    "event": "message.delta",
+                    "run_id": run_id,
+                    "session_id": sid,
+                    "delta": delta,
+                }))
+            }
+        }
+        "response.output_item.added" => {
+            let item = evt
+                .get("item")
+                .or_else(|| evt.get("output_item"))
+                .unwrap_or(&Value::Null);
+            let kind = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            if !matches!(kind, "function_call" | "tool_call") {
+                return None;
+            }
+            let tool = item
+                .get("name")
+                .and_then(|v| v.as_str())
+                .or_else(|| {
+                    item.get("function")
+                        .and_then(|v| v.get("name"))
+                        .and_then(|v| v.as_str())
+                })
+                .unwrap_or("tool");
+            Some(serde_json::json!({
+                "event": "tool.started",
+                "run_id": run_id,
+                "session_id": sid,
+                "tool": tool,
+                "input": item.get("arguments").or_else(|| item.get("input")).cloned().unwrap_or(Value::Null),
+            }))
+        }
+        "response.function_call_arguments.delta" => Some(serde_json::json!({
+            "event": "tool.progress",
+            "run_id": run_id,
+            "session_id": sid,
+            "tool": evt.get("name").and_then(|v| v.as_str()).unwrap_or("tool"),
+            "preview": hermes_response_delta(evt),
+        })),
+        "response.output_item.done" | "response.function_call_arguments.done" => {
+            let item = evt
+                .get("item")
+                .or_else(|| evt.get("output_item"))
+                .unwrap_or(&Value::Null);
+            let kind = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            if event_type == "response.output_item.done"
+                && !matches!(kind, "function_call" | "tool_call")
+            {
+                return None;
+            }
+            Some(serde_json::json!({
+                "event": "tool.completed",
+                "run_id": run_id,
+                "session_id": sid,
+                "tool": item.get("name").and_then(|v| v.as_str()).or_else(|| evt.get("name").and_then(|v| v.as_str())).unwrap_or("tool"),
+                "input": item.get("arguments").or_else(|| evt.get("arguments")).cloned().unwrap_or(Value::Null),
+            }))
+        }
+        "response.completed" => Some(serde_json::json!({
+            "event": "run.completed",
+            "run_id": run_id,
+            "session_id": sid,
+            "output": hermes_response_text(evt),
+        })),
+        "response.failed" | "response.error" => Some(serde_json::json!({
+            "event": "run.failed",
+            "run_id": run_id,
+            "session_id": sid,
+            "error": evt.get("error").and_then(|v| v.get("message")).and_then(|v| v.as_str())
+                .or_else(|| evt.get("error").and_then(|v| v.as_str()))
+                .or_else(|| evt.get("message").and_then(|v| v.as_str()))
+                .unwrap_or("unknown error"),
+        })),
+        _ => {
+            let mut out = evt.clone();
+            out["event"] = Value::String(event_type.to_string());
+            if out.get("run_id").is_none() {
+                out["run_id"] = Value::String(run_id.to_string());
+            }
+            if out.get("session_id").is_none() {
+                out["session_id"] = sid;
+            }
+            Some(out)
+        }
+    }
+}
+
+fn emit_hermes_stream_event(
+    app: &tauri::AppHandle,
+    evt: Value,
+    run_id: &str,
+    final_output: &mut String,
+) -> Result<bool, String> {
+    let event_type = evt["event"].as_str().unwrap_or("");
+    match event_type {
+        "message.delta" => {
+            if let Some(delta) = evt["delta"].as_str() {
+                final_output.push_str(delta);
+                let _ = app.emit(
+                    "hermes-run-delta",
+                    serde_json::json!({
+                        "run_id": run_id,
+                        "delta": delta,
+                    }),
+                );
+            }
+        }
+        "tool.started" | "tool.completed" | "tool.progress" | "tool.error" => {
+            let _ = app.emit("hermes-run-tool", evt.clone());
+        }
+        "reasoning.available" => {
+            let _ = app.emit("hermes-run-reasoning", evt.clone());
+        }
+        "run.completed" => {
+            if let Some(output) = evt["output"].as_str() {
+                if !output.is_empty() {
+                    *final_output = output.to_string();
+                }
+            }
+            let _ = app.emit(
+                "hermes-run-done",
+                serde_json::json!({
+                    "run_id": run_id,
+                    "output": final_output.as_str(),
+                }),
+            );
+            return Ok(true);
+        }
+        "run.failed" => {
+            let err = evt["error"].as_str().unwrap_or("unknown error");
+            let _ = app.emit(
+                "hermes-run-error",
+                serde_json::json!({
+                    "run_id": run_id,
+                    "error": err,
+                }),
+            );
+            return Err(format!("Agent run failed: {err}"));
+        }
+        _ => {
+            let _ = app.emit("hermes-run-event", evt.clone());
+        }
+    }
+    Ok(false)
+}
+
+async fn try_hermes_responses_run(
+    app: &tauri::AppHandle,
+    gw_url: &str,
+    api_key: &str,
+    payload: &Value,
+    session_id: Option<&str>,
+) -> Result<Option<String>, String> {
+    let client = hermes_gateway_http_client(std::time::Duration::from_secs(300))
+        .map_err(|e| format!("HTTP 客户端创建失败: {e}"))?;
+    let mut response_payload = payload.clone();
+    response_payload["stream"] = Value::Bool(true);
+    let mut req = client
+        .post(format!("{gw_url}/v1/responses"))
+        .header("Content-Type", "application/json")
+        .body(response_payload.to_string());
+    if !api_key.is_empty() {
+        req = req.header("Authorization", format!("Bearer {api_key}"));
+    }
+    let resp = match req.send().await {
+        Ok(resp) => resp,
+        Err(_) => return Ok(None),
+    };
+    let status = resp.status();
+    if !status.is_success() {
+        if status.as_u16() == 401 || status.as_u16() == 403 {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(format!("HTTP {}: {text}", status.as_u16()));
+        }
+        return Ok(None);
+    }
+    let run_id = resp
+        .headers()
+        .get("x-request-id")
+        .or_else(|| resp.headers().get("x-response-id"))
+        .and_then(|v| v.to_str().ok())
+        .map(String::from)
+        .unwrap_or_else(|| {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or_default();
+            format!("response-{now}")
+        });
+    let _ = app.emit(
+        "hermes-run-started",
+        serde_json::json!({ "run_id": &run_id }),
+    );
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if content_type.contains("application/json") {
+        let body: Value = resp.json().await.unwrap_or(Value::Null);
+        let output = hermes_response_text(&body);
+        let _ = app.emit(
+            "hermes-run-done",
+            serde_json::json!({
+                "run_id": &run_id,
+                "output": output,
+            }),
+        );
+        return Ok(Some(run_id));
+    }
+
+    use futures_util::StreamExt;
+    let mut stream = resp.bytes_stream();
+    let mut buffer = String::new();
+    let mut final_output = String::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("SSE 读取失败: {e}"))?;
+        buffer.push_str(&String::from_utf8_lossy(&chunk));
+        while let Some(newline_pos) = buffer.find('\n') {
+            let line = buffer[..newline_pos].trim().to_string();
+            buffer = buffer[newline_pos + 1..].to_string();
+            let data = if let Some(rest) = line.strip_prefix("data:") {
+                rest.trim()
+            } else if line.starts_with('{') {
+                line.as_str()
+            } else {
+                continue;
+            };
+            if data.is_empty() || data == "[DONE]" {
+                let _ = app.emit(
+                    "hermes-run-done",
+                    serde_json::json!({
+                        "run_id": &run_id,
+                        "output": &final_output,
+                    }),
+                );
+                return Ok(Some(run_id));
+            }
+            if let Ok(evt) = serde_json::from_str::<Value>(data) {
+                if let Some(normalized) = normalize_hermes_stream_event(&evt, &run_id, session_id) {
+                    if emit_hermes_stream_event(app, normalized, &run_id, &mut final_output)? {
+                        return Ok(Some(run_id));
+                    }
+                }
+            }
+        }
+    }
+    let _ = app.emit(
+        "hermes-run-done",
+        serde_json::json!({
+            "run_id": &run_id,
+            "output": &final_output,
+        }),
+    );
+    Ok(Some(run_id))
+}
 
 #[tauri::command]
 pub async fn hermes_agent_run(
@@ -2999,6 +3392,12 @@ pub async fn hermes_agent_run(
     }
     if let Some(inst) = &instructions {
         payload["instructions"] = Value::String(inst.clone());
+    }
+
+    if let Some(response_run_id) =
+        try_hermes_responses_run(&app, &gw_url, &api_key, &payload, session_id.as_deref()).await?
+    {
+        return Ok(response_run_id);
     }
 
     let client = hermes_gateway_http_client(std::time::Duration::from_secs(10))
@@ -3071,7 +3470,6 @@ pub async fn hermes_agent_run(
         return Err(format!("SSE HTTP {status}: {text}"));
     }
 
-    // 流式读取 SSE 事件并转发到前端
     use futures_util::StreamExt;
     let mut stream = sse_resp.bytes_stream();
     let mut buffer = String::new();
@@ -3086,11 +3484,14 @@ pub async fn hermes_agent_run(
             buffer = buffer[newline_pos + 1..].to_string();
 
             let trimmed = line.trim();
-            if !trimmed.starts_with("data: ") {
+            let data = if let Some(rest) = trimmed.strip_prefix("data:") {
+                rest.trim()
+            } else if trimmed.starts_with('{') {
+                trimmed
+            } else {
                 continue;
-            }
-            let data = trimmed[6..].trim();
-            if data == "[DONE]" {
+            };
+            if data.is_empty() || data == "[DONE]" {
                 let _ = app.emit(
                     "hermes-run-done",
                     serde_json::json!({
@@ -3102,53 +3503,11 @@ pub async fn hermes_agent_run(
             }
 
             if let Ok(evt) = serde_json::from_str::<Value>(data) {
-                let event_type = evt["event"].as_str().unwrap_or("");
-                match event_type {
-                    "message.delta" => {
-                        if let Some(delta) = evt["delta"].as_str() {
-                            final_output.push_str(delta);
-                            let _ = app.emit(
-                                "hermes-run-delta",
-                                serde_json::json!({
-                                    "run_id": &run_id,
-                                    "delta": delta,
-                                }),
-                            );
-                        }
-                    }
-                    "tool.started" | "tool.completed" | "tool.progress" | "tool.error" => {
-                        let _ = app.emit("hermes-run-tool", evt.clone());
-                    }
-                    "reasoning.available" => {
-                        let _ = app.emit("hermes-run-reasoning", evt.clone());
-                    }
-                    "run.completed" => {
-                        if let Some(output) = evt["output"].as_str() {
-                            final_output = output.to_string();
-                        }
-                        let _ = app.emit(
-                            "hermes-run-done",
-                            serde_json::json!({
-                                "run_id": &run_id,
-                                "output": &final_output,
-                            }),
-                        );
+                if let Some(normalized) =
+                    normalize_hermes_stream_event(&evt, &run_id, session_id.as_deref())
+                {
+                    if emit_hermes_stream_event(&app, normalized, &run_id, &mut final_output)? {
                         return Ok(run_id);
-                    }
-                    "run.failed" => {
-                        let err = evt["error"].as_str().unwrap_or("unknown error");
-                        let _ = app.emit(
-                            "hermes-run-error",
-                            serde_json::json!({
-                                "run_id": &run_id,
-                                "error": err,
-                            }),
-                        );
-                        return Err(format!("Agent run failed: {err}"));
-                    }
-                    _ => {
-                        // 其他事件类型也转发
-                        let _ = app.emit("hermes-run-event", evt.clone());
                     }
                 }
             }
@@ -3819,9 +4178,7 @@ fn parse_log_line(line: &str) -> ParsedLogLine {
 }
 
 /// Extract the first `# Heading` or the first long prose line from Markdown,
-/// used as a skill's canonical name/description. Mirrors hermes-web-ui's
-/// `extractDescription()` behaviour — first non-empty/non-heading line,
-/// truncated to 200 chars.
+/// used as a skill's canonical name/description.
 fn md_first_heading(content: &str) -> Option<String> {
     content
         .lines()
@@ -3847,7 +4204,7 @@ fn md_first_description(content: &str) -> String {
 /// Read `config.yaml` and return the list of `skills.disabled` entries.
 /// Gracefully handles missing file / missing section → empty list.
 ///
-/// The disable mechanism matches upstream `hermes-web-ui`:
+/// The disable mechanism uses the `skills.disabled` list:
 ///
 /// ```yaml
 /// skills:
@@ -3900,9 +4257,7 @@ fn read_disabled_skills() -> Vec<String> {
     disabled
 }
 
-/// Shape returned to the frontend — kept compatible with the previous
-/// version (file/name/description/path) while adding `enabled` and the
-/// optional `isDir`/`category` fields that `hermes-web-ui` also uses.
+/// Shape returned to the frontend.
 #[tauri::command]
 pub async fn hermes_skills_list() -> Result<Value, String> {
     let skills_dir = hermes_home().join("skills");
@@ -3948,7 +4303,7 @@ pub async fn hermes_skills_list() -> Result<Value, String> {
                         Err(_) => continue,
                     };
 
-                    // v0.14.1 structured skill: <category>/<skill>/SKILL.md
+                    // Structured skill: <category>/<skill>/SKILL.md
                     if ftype.is_dir() {
                         let skill_md = fpath.join("SKILL.md");
                         if !skill_md.exists() {
@@ -4055,8 +4410,7 @@ pub async fn hermes_skill_detail(file_path: String) -> Result<String, String> {
 // ============================================================================
 
 /// Toggle a skill's enabled state by mutating `config.yaml`'s
-/// `skills.disabled` list. Matches the behaviour of hermes-web-ui's
-/// `PUT /api/hermes/skills/toggle`.
+/// `skills.disabled` list.
 ///
 /// * `enabled = true`  → remove `name` from disabled list
 /// * `enabled = false` → add `name` to disabled list
@@ -4332,8 +4686,7 @@ pub async fn hermes_memory_write(
 /// + last-modified UNIX timestamp (seconds) for each. A missing file yields an
 /// empty string and `None` mtime — the caller shows "not yet written" state.
 ///
-/// Shape matches `hermes-web-ui`'s `GET /api/hermes/memory` response so the
-/// frontend can mirror the official UI's three-column layout.
+/// Shape is optimized for the frontend memory layout.
 #[tauri::command]
 pub async fn hermes_memory_read_all() -> Result<Value, String> {
     let mem_dir = hermes_home().join("memories");
@@ -4416,15 +4769,12 @@ pub async fn hermes_logs_download(name: String) -> Result<Value, String> {
 }
 
 // ============================================================================
-// api_server guardian (Step 5 / G7)
+// api_server guardian
 //
 // ClawPanel's Hermes integration requires `platforms.api_server.enabled: true`
 // in ~/.hermes/config.yaml so that `hermes gateway run` exposes the
 // /v1/runs endpoint we depend on. The setting is written once by
-// `configure_hermes`, but several real-world scenarios can remove it:
-//   * User upgrades Hermes and the new default config.yaml is merged
-//     without the api_server platform entry.
-//   * User manually edits config.yaml (via Hermes CLI or text editor).
+// `configure_hermes`, but config changes can remove it.
 //   * Migration scripts accidentally drop the section.
 //
 // Rather than silently failing at Gateway start time with an opaque
@@ -4595,7 +4945,7 @@ fn ensure_api_server_enabled(app: &tauri::AppHandle) -> Result<(), String> {
 }
 
 // ============================================================================
-// .env editor commands (Step 4 / G6)
+// .env editor commands
 //
 // Users may need to set custom environment variables for Hermes (e.g.
 // `TAVILY_API_KEY` for the tavily skill, `HTTP_PROXY`, etc.). These keys

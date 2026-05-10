@@ -1,12 +1,8 @@
 /**
  * Hermes provider registry (frontend mirror).
  *
- * The authoritative data lives in Rust at
- *   `src-tauri/src/commands/hermes_providers.rs::ALL_PROVIDERS`
- * and is exposed via the Tauri command `hermes_list_providers`.
- *
  * This module:
- *   1. Loads the 22 providers once per session (cached)
+ *   1. Loads providers once per session (cached)
  *   2. Groups them by auth type and region for UI rendering
  *   3. Provides small lookup helpers (by id, by model, etc.)
  *
@@ -21,6 +17,8 @@ export const AUTH_API_KEY = 'api_key'
 export const AUTH_OAUTH_DEVICE = 'oauth_device_code'
 export const AUTH_OAUTH_EXTERNAL = 'oauth_external'
 export const AUTH_EXTERNAL_PROCESS = 'external_process'
+export const AUTH_AWS_SDK = 'aws_sdk'
+export const AUTH_OAUTH_MINIMAX = 'oauth_minimax'
 
 // Transport constants
 export const TRANSPORT_OPENAI_CHAT = 'openai_chat'
@@ -30,7 +28,15 @@ export const TRANSPORT_CODEX = 'codex_responses'
 
 // China-region provider ids (for UI sub-grouping). Everything else is
 // considered "International" by default.
-const CN_PROVIDER_IDS = new Set(['zai', 'kimi-coding', 'alibaba', 'minimax-cn', 'xiaomi'])
+const CN_PROVIDER_IDS = new Set([
+  'zai',
+  'kimi-coding',
+  'kimi-coding-cn',
+  'alibaba',
+  'alibaba-coding-plan',
+  'minimax-cn',
+  'xiaomi',
+])
 
 // Aggregator ids (also tagged via `isAggregator` on the data).
 const AGGREGATOR_IDS = new Set([
@@ -41,6 +47,7 @@ const AGGREGATOR_IDS = new Set([
   'kilocode',
   'huggingface',
   'nous',
+  'azure-foundry',
 ])
 
 let _cached = null
@@ -112,11 +119,11 @@ export function groupProviders(list) {
       groups.custom.push(p)
       continue
     }
-    if (p.authType === AUTH_EXTERNAL_PROCESS) {
+    if (p.authType === AUTH_EXTERNAL_PROCESS || p.authType === AUTH_AWS_SDK) {
       groups.externalProc.push(p)
       continue
     }
-    if (p.authType === AUTH_OAUTH_DEVICE || p.authType === AUTH_OAUTH_EXTERNAL) {
+    if (p.authType === AUTH_OAUTH_DEVICE || p.authType === AUTH_OAUTH_EXTERNAL || p.authType === AUTH_OAUTH_MINIMAX) {
       groups.oauth.push(p)
       continue
     }

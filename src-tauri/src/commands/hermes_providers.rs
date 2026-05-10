@@ -1,20 +1,6 @@
-//! Hermes Provider Registry — authoritative catalog of 22 providers supported
+//! Hermes Provider Registry — ClawPanel's built-in provider catalog
 //! by Hermes Agent, with their auth schemes, env vars, base URLs, and known
 //! model catalogs.
-//!
-//! Source of truth: upstream `hermes-agent` repository
-//!   - Auth / env vars: `hermes_cli/auth.py::PROVIDER_REGISTRY`
-//!   - Model catalogs:  `hermes_cli/models.py::_PROVIDER_MODELS`
-//!
-//! Synced from upstream at:
-//!   - hermes_cli/auth.py  (v0.14.x series)
-//!   - hermes_cli/models.py (v0.14.x series)
-//!
-//! When syncing a new Hermes release, verify:
-//!   1. Each provider's `api_key_env_vars` matches upstream tuple ordering
-//!   2. `models` list reflects the latest _PROVIDER_MODELS entries
-//!   3. `base_url` mirrors the default inference URL (users can override via
-//!      `base_url_env_var`)
 //!
 //! This module is intentionally self-contained: it must NOT depend on any
 //! runtime state. The static data is queried by commands in `hermes.rs`
@@ -26,8 +12,6 @@ use serde::Serialize;
 // Data model
 // =============================================================================
 
-/// Auth scheme matching upstream `auth.py::ProviderConfig.auth_type`.
-///
 /// - `api_key`: traditional env-var based key (`<PROVIDER>_API_KEY`, etc.)
 /// - `oauth_device_code`: interactive device-code OAuth flow (Nous)
 /// - `oauth_external`: OAuth handled by external process (Codex, Qwen)
@@ -36,6 +20,8 @@ pub const AUTH_API_KEY: &str = "api_key";
 pub const AUTH_OAUTH_DEVICE: &str = "oauth_device_code";
 pub const AUTH_OAUTH_EXTERNAL: &str = "oauth_external";
 pub const AUTH_EXTERNAL_PROCESS: &str = "external_process";
+pub const AUTH_AWS_SDK: &str = "aws_sdk";
+pub const AUTH_OAUTH_MINIMAX: &str = "oauth_minimax";
 
 /// Transport negotiated with the provider.
 pub const TRANSPORT_OPENAI_CHAT: &str = "openai_chat";
@@ -56,7 +42,7 @@ pub const PROBE_NONE: &str = "none";
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HermesProvider {
-    /// Stable identifier (matches upstream PROVIDER_REGISTRY keys).
+    /// Stable provider identifier.
     pub id: &'static str,
     /// Human-readable display name.
     pub name: &'static str,
@@ -72,7 +58,7 @@ pub struct HermesProvider {
     pub transport: &'static str,
     /// See PROBE_* constants above.
     pub models_probe: &'static str,
-    /// Known static model list (subset of upstream _PROVIDER_MODELS).
+    /// Known static model list.
     pub models: &'static [&'static str],
     /// True for aggregators/routers (OpenRouter, AI Gateway, etc.) — users
     /// must explicitly specify a model since there is no sensible default.
@@ -82,7 +68,7 @@ pub struct HermesProvider {
 }
 
 // =============================================================================
-// Static registry — 22 providers
+// Static registry
 // =============================================================================
 
 const P_ANTHROPIC: HermesProvider = HermesProvider {
@@ -192,6 +178,26 @@ const P_KIMI_CODING: HermesProvider = HermesProvider {
     cli_auth_hint: "",
 };
 
+const P_KIMI_CODING_CN: HermesProvider = HermesProvider {
+    id: "kimi-coding-cn",
+    name: "Kimi / Moonshot (China)",
+    auth_type: AUTH_API_KEY,
+    base_url: "https://api.moonshot.cn/v1",
+    base_url_env_var: "",
+    api_key_env_vars: &["KIMI_CN_API_KEY"],
+    transport: TRANSPORT_OPENAI_CHAT,
+    models_probe: PROBE_OPENAI,
+    models: &[
+        "kimi-for-coding",
+        "kimi-k2.6",
+        "kimi-k2.5",
+        "kimi-k2-thinking",
+        "kimi-k2-turbo-preview",
+    ],
+    is_aggregator: false,
+    cli_auth_hint: "",
+};
+
 const P_XAI: HermesProvider = HermesProvider {
     id: "xai",
     name: "xAI",
@@ -252,6 +258,29 @@ const P_MINIMAX_CN: HermesProvider = HermesProvider {
     cli_auth_hint: "",
 };
 
+const P_MINIMAX_OAUTH: HermesProvider = HermesProvider {
+    id: "minimax-oauth",
+    name: "MiniMax (OAuth)",
+    auth_type: AUTH_OAUTH_MINIMAX,
+    base_url: "https://api.minimax.io/anthropic",
+    base_url_env_var: "",
+    api_key_env_vars: &[],
+    transport: TRANSPORT_ANTHROPIC,
+    models_probe: PROBE_NONE,
+    models: &[
+        "MiniMax-M2.7",
+        "MiniMax-M2.7-highspeed",
+        "MiniMax-M2.5",
+        "MiniMax-M2.5-highspeed",
+        "MiniMax-M2.1",
+        "MiniMax-M2.1-highspeed",
+        "MiniMax-M2",
+        "MiniMax-M2-highspeed",
+    ],
+    is_aggregator: false,
+    cli_auth_hint: "hermes auth login minimax-oauth",
+};
+
 const P_ALIBABA: HermesProvider = HermesProvider {
     id: "alibaba",
     name: "Alibaba Cloud (DashScope)",
@@ -269,6 +298,25 @@ const P_ALIBABA: HermesProvider = HermesProvider {
         "glm-4.7",
         "kimi-k2.5",
         "MiniMax-M2.5",
+    ],
+    is_aggregator: false,
+    cli_auth_hint: "",
+};
+
+const P_ALIBABA_CODING_PLAN: HermesProvider = HermesProvider {
+    id: "alibaba-coding-plan",
+    name: "Alibaba Cloud (Coding Plan)",
+    auth_type: AUTH_API_KEY,
+    base_url: "https://coding-intl.dashscope.aliyuncs.com/v1",
+    base_url_env_var: "ALIBABA_CODING_PLAN_BASE_URL",
+    api_key_env_vars: &["ALIBABA_CODING_PLAN_API_KEY", "DASHSCOPE_API_KEY"],
+    transport: TRANSPORT_OPENAI_CHAT,
+    models_probe: PROBE_OPENAI,
+    models: &[
+        "qwen3-coder-plus",
+        "qwen3-coder-next",
+        "qwen3.5-plus",
+        "qwen3.5-coder",
     ],
     is_aggregator: false,
     cli_auth_hint: "",
@@ -307,6 +355,104 @@ const P_XIAOMI: HermesProvider = HermesProvider {
     transport: TRANSPORT_OPENAI_CHAT,
     models_probe: PROBE_OPENAI,
     models: &["mimo-v2-pro", "mimo-v2-omni", "mimo-v2-flash"],
+    is_aggregator: false,
+    cli_auth_hint: "",
+};
+
+const P_ARCEE: HermesProvider = HermesProvider {
+    id: "arcee",
+    name: "Arcee AI",
+    auth_type: AUTH_API_KEY,
+    base_url: "https://api.arcee.ai/api/v1",
+    base_url_env_var: "ARCEE_BASE_URL",
+    api_key_env_vars: &["ARCEEAI_API_KEY"],
+    transport: TRANSPORT_OPENAI_CHAT,
+    models_probe: PROBE_OPENAI,
+    models: &[],
+    is_aggregator: false,
+    cli_auth_hint: "",
+};
+
+const P_AZURE_FOUNDRY: HermesProvider = HermesProvider {
+    id: "azure-foundry",
+    name: "Azure Foundry",
+    auth_type: AUTH_API_KEY,
+    base_url: "",
+    base_url_env_var: "AZURE_FOUNDRY_BASE_URL",
+    api_key_env_vars: &["AZURE_FOUNDRY_API_KEY"],
+    transport: TRANSPORT_OPENAI_CHAT,
+    models_probe: PROBE_OPENAI,
+    models: &[],
+    is_aggregator: true,
+    cli_auth_hint: "",
+};
+
+const P_BEDROCK: HermesProvider = HermesProvider {
+    id: "bedrock",
+    name: "AWS Bedrock",
+    auth_type: AUTH_AWS_SDK,
+    base_url: "https://bedrock-runtime.us-east-1.amazonaws.com",
+    base_url_env_var: "BEDROCK_BASE_URL",
+    api_key_env_vars: &[],
+    transport: TRANSPORT_ANTHROPIC,
+    models_probe: PROBE_NONE,
+    models: &[],
+    is_aggregator: false,
+    cli_auth_hint: "",
+};
+
+const P_GMI: HermesProvider = HermesProvider {
+    id: "gmi",
+    name: "GMI Cloud",
+    auth_type: AUTH_API_KEY,
+    base_url: "https://api.gmi-serving.com/v1",
+    base_url_env_var: "GMI_BASE_URL",
+    api_key_env_vars: &["GMI_API_KEY"],
+    transport: TRANSPORT_OPENAI_CHAT,
+    models_probe: PROBE_OPENAI,
+    models: &[],
+    is_aggregator: false,
+    cli_auth_hint: "",
+};
+
+const P_LMSTUDIO: HermesProvider = HermesProvider {
+    id: "lmstudio",
+    name: "LM Studio",
+    auth_type: AUTH_API_KEY,
+    base_url: "http://127.0.0.1:1234/v1",
+    base_url_env_var: "LM_BASE_URL",
+    api_key_env_vars: &["LM_API_KEY"],
+    transport: TRANSPORT_OPENAI_CHAT,
+    models_probe: PROBE_OPENAI,
+    models: &[],
+    is_aggregator: false,
+    cli_auth_hint: "",
+};
+
+const P_NVIDIA: HermesProvider = HermesProvider {
+    id: "nvidia",
+    name: "NVIDIA NIM",
+    auth_type: AUTH_API_KEY,
+    base_url: "https://integrate.api.nvidia.com/v1",
+    base_url_env_var: "NVIDIA_BASE_URL",
+    api_key_env_vars: &["NVIDIA_API_KEY"],
+    transport: TRANSPORT_OPENAI_CHAT,
+    models_probe: PROBE_OPENAI,
+    models: &[],
+    is_aggregator: false,
+    cli_auth_hint: "",
+};
+
+const P_OLLAMA_CLOUD: HermesProvider = HermesProvider {
+    id: "ollama-cloud",
+    name: "Ollama Cloud",
+    auth_type: AUTH_API_KEY,
+    base_url: "https://ollama.com/v1",
+    base_url_env_var: "OLLAMA_BASE_URL",
+    api_key_env_vars: &["OLLAMA_API_KEY"],
+    transport: TRANSPORT_OPENAI_CHAT,
+    models_probe: PROBE_OPENAI,
+    models: &[],
     is_aggregator: false,
     cli_auth_hint: "",
 };
@@ -506,6 +652,20 @@ const P_QWEN_OAUTH: HermesProvider = HermesProvider {
     cli_auth_hint: "hermes auth login qwen-oauth",
 };
 
+const P_GOOGLE_GEMINI_CLI: HermesProvider = HermesProvider {
+    id: "google-gemini-cli",
+    name: "Google Gemini (OAuth)",
+    auth_type: AUTH_OAUTH_EXTERNAL,
+    base_url: "https://generativelanguage.googleapis.com/v1beta/openai",
+    base_url_env_var: "",
+    api_key_env_vars: &[],
+    transport: TRANSPORT_OPENAI_CHAT,
+    models_probe: PROBE_NONE,
+    models: &["gemini-2.5-pro", "gemini-2.5-flash"],
+    is_aggregator: false,
+    cli_auth_hint: "hermes auth login google-gemini-cli",
+};
+
 const P_COPILOT_ACP: HermesProvider = HermesProvider {
     id: "copilot-acp",
     name: "GitHub Copilot ACP",
@@ -550,13 +710,23 @@ pub const ALL_PROVIDERS: &[HermesProvider] = &[
     P_XAI,
     P_MINIMAX,
     P_HUGGINGFACE,
+    P_ARCEE,
+    P_AZURE_FOUNDRY,
+    P_GMI,
+    P_LMSTUDIO,
+    P_NVIDIA,
+    P_OLLAMA_CLOUD,
     P_COPILOT,
     // API-key providers — China
     P_ZAI,
     P_KIMI_CODING,
+    P_KIMI_CODING_CN,
     P_ALIBABA,
+    P_ALIBABA_CODING_PLAN,
     P_MINIMAX_CN,
     P_XIAOMI,
+    // SDK-backed providers
+    P_BEDROCK,
     // Aggregators / routers
     P_OPENROUTER,
     P_AI_GATEWAY,
@@ -567,6 +737,8 @@ pub const ALL_PROVIDERS: &[HermesProvider] = &[
     P_NOUS,
     P_OPENAI_CODEX,
     P_QWEN_OAUTH,
+    P_GOOGLE_GEMINI_CLI,
+    P_MINIMAX_OAUTH,
     P_COPILOT_ACP,
     // Custom (frontend placeholder)
     P_CUSTOM,
@@ -680,9 +852,12 @@ mod tests {
 
     #[test]
     fn registry_has_expected_providers() {
-        assert_eq!(ALL_PROVIDERS.len(), 22);
+        assert_eq!(ALL_PROVIDERS.len(), 33);
         assert!(get_provider("anthropic").is_some());
         assert!(get_provider("gemini").is_some());
+        assert!(get_provider("alibaba-coding-plan").is_some());
+        assert!(get_provider("bedrock").is_some());
+        assert!(get_provider("lmstudio").is_some());
         assert!(get_provider("nous").is_some());
         assert!(get_provider("custom").is_some());
         assert!(get_provider("nonexistent").is_none());
@@ -693,6 +868,7 @@ mod tests {
         assert_eq!(primary_api_key_env("anthropic"), Some("ANTHROPIC_API_KEY"));
         assert_eq!(primary_api_key_env("gemini"), Some("GOOGLE_API_KEY"));
         assert_eq!(primary_api_key_env("zai"), Some("GLM_API_KEY"));
+        assert_eq!(primary_api_key_env("bedrock"), None);
         assert_eq!(primary_api_key_env("nous"), None);
     }
 
@@ -704,6 +880,8 @@ mod tests {
         assert!(keys.contains(&"GOOGLE_API_KEY"));
         assert!(keys.contains(&"GEMINI_API_KEY"));
         assert!(keys.contains(&"GEMINI_BASE_URL"));
+        assert!(keys.contains(&"ALIBABA_CODING_PLAN_API_KEY"));
+        assert!(keys.contains(&"LM_API_KEY"));
         assert!(keys.contains(&"GATEWAY_ALLOW_ALL_USERS"));
         assert!(keys.contains(&"API_SERVER_KEY"));
         // No duplicates
@@ -737,11 +915,7 @@ mod tests {
     #[test]
     fn find_provider_by_model_is_unambiguous() {
         assert_eq!(find_provider_by_model("deepseek-chat"), Some("deepseek"));
-        assert_eq!(
-            find_provider_by_model("kimi-for-coding"),
-            Some("kimi-coding")
-        );
-        // Unknown model
+        assert_eq!(find_provider_by_model("kimi-for-coding"), None);
         assert_eq!(find_provider_by_model("nonexistent"), None);
     }
 }

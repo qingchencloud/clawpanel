@@ -9,10 +9,10 @@
   },
   "default": {
     "official": {
-      "recommended": "2026.5.6"
+      "recommended": "2026.5.7"
     },
     "chinese": {
-      "recommended": "2026.5.6-zh.1"
+      "recommended": "2026.5.7-zh.1"
     }
   },
   "panels": {

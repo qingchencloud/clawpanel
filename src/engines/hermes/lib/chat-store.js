@@ -1,8 +1,7 @@
 /**
  * Hermes Chat Store — reactive state for sessions, messages and streaming.
  *
- * Mirrors the shape of `hermes-web-ui`'s Pinia `chat` store in a dependency-
- * free, vanilla JS pub/sub style. A single instance is exported (`chatStore`);
+ * Dependency-free vanilla JS pub/sub store. A single instance is exported (`chatStore`);
  * the page subscribes via `chatStore.subscribe(listener)` and receives a
  * notification on every mutation.
  *
@@ -104,7 +103,7 @@ function parseEpochMs(value) {
 
 /**
  * Convert Hermes CLI-exported messages (mixed roles + tool_calls) into the
- * flat display list we render. Matches `hermes-web-ui`'s `mapHermesMessages`.
+ * flat display list we render.
  */
 function mapHermesMessages(msgs) {
   if (!Array.isArray(msgs)) return []
@@ -215,7 +214,7 @@ function mapSessionSummary(s) {
 // which crashes with "Cannot read properties of undefined (reading 'transformCallback')".
 //
 // To stay safe we short-circuit to a no-op unsubscriber when not running inside
-// Tauri. Streaming via SSE is a future Web-mode improvement (issue #260).
+// Tauri.
 
 let _listenFn = null
 async function tauriListen(event, cb) {

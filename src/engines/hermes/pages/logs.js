@@ -1,11 +1,11 @@
 /**
  * Hermes Agent — Log viewer
  *
- * Data contract mirrors `hermes-web-ui`'s `/api/hermes/logs` endpoints:
+ * Data contract:
  *   { files: [{ name, size, modified }] }
  *   { entries: [{ timestamp, level, logger, message, raw }, ...] }
  *
- * Extras beyond the official UI:
+ * Extras:
  *   - Download entire log file to user's disk
  *   - Clear the currently rendered entries (local only)
  *   - Auto-refresh (polling tail) toggle — 2s tick

@@ -121,7 +121,6 @@ export function render() {
   /**
    * Derive a semantic job state label.
    * Priority: running > paused > disabled > scheduled
-   * Mirrors the logic used by hermes-web-ui's JobCard.vue.
    */
   function jobStateOf(j) {
     if (j.state === 'running') return 'running'
@@ -553,7 +552,7 @@ export function render() {
         if (repeat !== undefined) payload.repeat = repeat
 
         if (isEdit) {
-          // PATCH does not accept `name`; keep it out to match hermes-web-ui contract.
+          // PATCH does not accept `name`.
           const patch = { schedule: payload.schedule, prompt, deliver }
           if (repeat !== undefined) patch.repeat = repeat
           await gw(`/api/jobs/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch) })

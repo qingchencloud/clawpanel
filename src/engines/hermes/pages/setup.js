@@ -25,8 +25,7 @@ const ICONS = {
 
 // 核心安装不带 extras，后续可在管理页面按需安装
 
-// Provider 数据 — 异步从 Rust hermes_providers.rs 加载（首次 render 前）
-// Web 模式下 dev-api.js 返回空数组，UI 会降级到手填模式
+// Provider 数据 — 首次 render 前异步加载
 let hermesProviders = []
 let hermesGroups = { apiKeyIntl: [], apiKeyCn: [], aggregators: [], oauth: [], externalProc: [], custom: [] }
 
@@ -60,12 +59,6 @@ export function render() {
         ${phase === 'configure' ? renderConfigure() : ''}
         ${phase === 'gateway' ? renderGateway() : ''}
         ${phase === 'complete' ? renderComplete() : ''}
-        <div style="margin-top:16px;text-align:right">
-          <a href="https://hermes-agent.nousresearch.com/docs/getting-started/installation/" target="_blank" rel="noopener"
-             style="font-size:13px;color:var(--accent);text-decoration:none">
-            ${t('engine.hermesSetupDocLink')} →
-          </a>
-        </div>
       </div>`
     bind()
   }
@@ -473,9 +466,7 @@ export function render() {
     logs = []
     draw()
 
-    // 监听事件（Tauri 模式下有 hermes-install-log/progress 事件）。
-    // Web 模式下 `@tauri-apps/api/event` 模块顶层会读取 `window.__TAURI_INTERNALS__.transformCallback`
-    // 直接抛错（issue #260），所以非 Tauri 环境跳过监听安装。
+    // 监听安装事件；Web 模式跳过桌面事件监听。
     try {
       if (!isTauriRuntime()) throw new Error('skip-listen-in-web-mode')
       const { listen } = await import('@tauri-apps/api/event')

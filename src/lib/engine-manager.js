@@ -8,6 +8,8 @@ import { registerRoute, setDefaultRoute } from '../router.js'
 const _engines = {}
 let _activeEngine = null
 let _listeners = []
+let _needsInitialEngineChoice = false
+let _engineSetupDeferred = false
 
 /** 注册引擎 */
 export function registerEngine(engine) {
@@ -34,6 +36,14 @@ export function getActiveEngineId() {
   return _activeEngine?.id || 'openclaw'
 }
 
+export function needsInitialEngineChoice() {
+  return _needsInitialEngineChoice
+}
+
+export function isEngineSetupDeferred() {
+  return _engineSetupDeferred
+}
+
 /** 按 ID 获取引擎 */
 export function getEngine(id) {
   return _engines[id] || null
@@ -51,13 +61,69 @@ export function onEngineChange(fn) {
  */
 export async function initEngineManager() {
   let mode = 'openclaw'
+  _engineSetupDeferred = false
+  let hasChoice = false
   try {
     const cfg = await api.readPanelConfig()
-    if (cfg?.engineMode && _engines[cfg.engineMode]) {
+    hasChoice = !!cfg?.engineSetupChoice
+    if (cfg?.engineMode === 'deferred') {
+      _engineSetupDeferred = true
+    } else if (cfg?.engineMode === 'both') {
+      mode = 'openclaw'
+    } else if (cfg?.engineMode && _engines[cfg.engineMode]) {
       mode = cfg.engineMode
     }
   } catch {}
+  // “是否需要走首次选择”仅取决于用户有没有真正点过 /engine-select 或引擎切换器；
+  // 单纯有 engineMode 但没有 engineSetupChoice（旧版本/历史数据）依然视为未选择，
+  // 这样 OpenClaw 没装好的情况下能走到选择页，而不是被默认拉到 /setup。
+  _needsInitialEngineChoice = !hasChoice
   await activateEngine(mode, false)
+}
+
+export async function applyEngineSelection({ activeEngineId = 'openclaw', enabledEngineIds = [], deferred = false, choice = '', engineMode = '' } = {}) {
+  const mode = deferred ? 'openclaw' : activeEngineId
+  if (!_engines[mode]) {
+    throw new Error(`unknown engine: ${mode}`)
+  }
+  const enabled = Array.isArray(enabledEngineIds)
+    ? enabledEngineIds.filter((id, idx, arr) => _engines[id] && arr.indexOf(id) === idx)
+    : []
+  const cfg = await api.readPanelConfig().catch(() => ({}))
+  cfg.engineMode = deferred ? 'deferred' : (engineMode || mode)
+  cfg.enabledEngines = deferred ? [] : (enabled.length ? enabled : [mode])
+  if (choice) cfg.engineSetupChoice = choice
+  await api.writePanelConfig(cfg)
+  _needsInitialEngineChoice = false
+  _engineSetupDeferred = !!deferred
+  await activateEngine(mode, false)
+  if (_activeEngine?.boot) {
+    try {
+      await Promise.race([
+        _activeEngine.boot(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('engine boot timeout')), 10000))
+      ])
+    } catch (e) {
+      console.warn('[engine-manager] boot 失败或超时:', e)
+    }
+  }
+}
+
+export async function adoptActiveEngineSelection({ enabledEngineIds = [], choice = '' } = {}) {
+  const engine = _activeEngine
+  if (!engine) return
+  const enabled = Array.isArray(enabledEngineIds)
+    ? enabledEngineIds.filter((id, idx, arr) => _engines[id] && arr.indexOf(id) === idx)
+    : []
+  const cfg = await api.readPanelConfig().catch(() => ({}))
+  if (!cfg.engineMode) {
+    cfg.engineMode = engine.id
+    cfg.enabledEngines = enabled.length ? enabled : [engine.id]
+    if (choice) cfg.engineSetupChoice = choice
+    await api.writePanelConfig(cfg)
+  }
+  _needsInitialEngineChoice = false
+  _engineSetupDeferred = false
 }
 
 /**
@@ -111,10 +177,20 @@ export async function activateEngine(id, persist = true) {
   if (persist) {
     try {
       const cfg = await api.readPanelConfig()
+      let dirty = false
       if (cfg.engineMode !== id) {
         cfg.engineMode = id
-        await api.writePanelConfig(cfg)
+        dirty = true
       }
+      // 通过侧栏切换器走到这里时，也补一个 engineSetupChoice，避免下次启动
+      // 又被判定为“未选择”。已有值（例如 'both'/'later'）则保留不覆盖。
+      if (!cfg.engineSetupChoice) {
+        cfg.engineSetupChoice = id
+        dirty = true
+      }
+      if (dirty) await api.writePanelConfig(cfg)
+      _needsInitialEngineChoice = false
+      _engineSetupDeferred = false
     } catch (e) {
       console.warn('[engine-manager] 保存 engineMode 失败:', e)
     }

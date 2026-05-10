@@ -38,9 +38,6 @@ export function render() {
   let error = ''
 
   const docs = [
-    ['engine.extensionsDocGettingStarted', 'https://hermes-agent.nousresearch.com/docs/getting-started/installation/'],
-    ['engine.extensionsDocCron', 'https://hermes-agent.nousresearch.com/docs/guides/automate-with-cron/'],
-    ['engine.extensionsDocSkills', 'https://hermes-agent.nousresearch.com/docs/guides/skills/'],
     ['engine.extensionsDocDashboard', 'http://127.0.0.1:9119/'],
   ]
 

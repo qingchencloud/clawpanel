@@ -20,7 +20,7 @@ import { initI18n, t } from './lib/i18n.js'
 import { initFeatureGates } from './lib/feature-gates.js'
 import { onKernelChange } from './lib/kernel.js'
 import { showFloorBlocker, hideFloorBlocker } from './components/floor-blocker.js'
-import { registerEngine, initEngineManager, getActiveEngine, getActiveEngineId, onEngineChange } from './lib/engine-manager.js'
+import { registerEngine, initEngineManager, getActiveEngine, getActiveEngineId, needsInitialEngineChoice, isEngineSetupDeferred, adoptActiveEngineSelection, onEngineChange } from './lib/engine-manager.js'
 import openclawEngine from './engines/openclaw/index.js'
 import hermesEngine from './engines/hermes/index.js'
 import xintianEngine from './engines/xintian/index.js'
@@ -323,9 +323,17 @@ async function boot() {
   registerEngine(openclawEngine)
   registerEngine(hermesEngine)
   registerEngine(xintianEngine)
+  registerRoute('/engine-select', () => import('./pages/engine-select.js'))
 
   // 初始化引擎管理器：读取 clawpanel.json 的 engineMode，注册对应路由
   await initEngineManager()
+
+  // 用户尚未做过明确的引擎选择（无 engineSetupChoice）→ 立即把默认路由
+  // 指向 /engine-select，避免初始化期间先闪到 /dashboard 或 /setup 再被
+  // 后续逻辑弹回选择页。引擎就绪后会在下方自动 adopt 并跳到 dashboard。
+  if (needsInitialEngineChoice() || isEngineSetupDeferred()) {
+    setDefaultRoute('/engine-select')
+  }
 
   // 订阅内核版本变化：低于硬地板时弹出全屏拦截，恢复后自动隐藏；
   // 同时刷新 sidebar 以反映 "内核可升级" 提示卡片状态。
@@ -461,7 +469,21 @@ async function boot() {
     // 监听引擎状态变化（如 setup 完成后 ready 变为 true），自动刷新侧边栏
     bindEngineListeners(engine)
 
-    if (!engine.isReady()) {
+    if (needsInitialEngineChoice() && engine.isReady()) {
+      await adoptActiveEngineSelection({ choice: 'auto-detected' })
+      renderSidebar(sidebar)
+    }
+
+    if (needsInitialEngineChoice() && !engine.isReady()) {
+      setDefaultRoute('/engine-select')
+      navigate('/engine-select')
+    } else if (isEngineSetupDeferred() && !engine.isReady()) {
+      setDefaultRoute('/engine-select')
+      const currentHash = window.location.hash.slice(1) || ''
+      if (!currentHash || currentHash === engine.getSetupRoute()) {
+        navigate('/engine-select')
+      }
+    } else if (!engine.isReady()) {
       setDefaultRoute(engine.getSetupRoute())
       navigate(engine.getSetupRoute())
     } else {

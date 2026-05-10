@@ -21,6 +21,46 @@ const DOCKER_TASK_TIMEOUT_MS = 10 * 60 * 1000
 const HERMES_HOME = path.join(homedir(), '.hermes')
 const HERMES_DEFAULT_PORT = 8642
 
+function hermesProvider(id, name, authType, baseUrl, baseUrlEnvVar, apiKeyEnvVars, transport, modelsProbe, models, isAggregator = false, cliAuthHint = '') {
+  return { id, name, authType, baseUrl, baseUrlEnvVar, apiKeyEnvVars, transport, modelsProbe, models, isAggregator, cliAuthHint }
+}
+
+const HERMES_PROVIDER_REGISTRY = [
+  hermesProvider('anthropic', 'Anthropic', 'api_key', 'https://api.anthropic.com', '', ['ANTHROPIC_API_KEY', 'ANTHROPIC_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'], 'anthropic_messages', 'anthropic', ['claude-opus-4-7', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-opus-4-5-20251101', 'claude-sonnet-4-5-20250929', 'claude-opus-4-20250514', 'claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001']),
+  hermesProvider('gemini', 'Google AI Studio', 'api_key', 'https://generativelanguage.googleapis.com/v1beta/openai', 'GEMINI_BASE_URL', ['GOOGLE_API_KEY', 'GEMINI_API_KEY'], 'openai_chat', 'openai', ['gemini-3.1-pro-preview', 'gemini-3-flash-preview', 'gemini-3.1-flash-lite-preview', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemma-4-31b-it', 'gemma-4-26b-it']),
+  hermesProvider('deepseek', 'DeepSeek', 'api_key', 'https://api.deepseek.com', 'DEEPSEEK_BASE_URL', ['DEEPSEEK_API_KEY'], 'openai_chat', 'openai', ['deepseek-chat', 'deepseek-reasoner']),
+  hermesProvider('xai', 'xAI', 'api_key', 'https://api.x.ai/v1', 'XAI_BASE_URL', ['XAI_API_KEY'], 'openai_chat', 'openai', ['grok-4.20-reasoning', 'grok-4-1-fast-reasoning']),
+  hermesProvider('minimax', 'MiniMax (International)', 'api_key', 'https://api.minimax.io/anthropic/v1', 'MINIMAX_BASE_URL', ['MINIMAX_API_KEY'], 'anthropic_messages', 'anthropic', ['MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed', 'MiniMax-M2.1', 'MiniMax-M2.1-highspeed', 'MiniMax-M2', 'MiniMax-M2-highspeed']),
+  hermesProvider('huggingface', 'Hugging Face', 'api_key', 'https://router.huggingface.co/v1', 'HF_BASE_URL', ['HF_TOKEN'], 'openai_chat', 'openai', ['Qwen/Qwen3.5-397B-A17B', 'Qwen/Qwen3.5-35B-A3B', 'deepseek-ai/DeepSeek-V3.2', 'moonshotai/Kimi-K2.5', 'MiniMaxAI/MiniMax-M2.5', 'zai-org/GLM-5', 'XiaomiMiMo/MiMo-V2-Flash', 'moonshotai/Kimi-K2-Thinking'], true),
+  hermesProvider('arcee', 'Arcee AI', 'api_key', 'https://api.arcee.ai/api/v1', 'ARCEE_BASE_URL', ['ARCEEAI_API_KEY'], 'openai_chat', 'openai', []),
+  hermesProvider('azure-foundry', 'Azure Foundry', 'api_key', '', 'AZURE_FOUNDRY_BASE_URL', ['AZURE_FOUNDRY_API_KEY'], 'openai_chat', 'openai', [], true),
+  hermesProvider('gmi', 'GMI Cloud', 'api_key', 'https://api.gmi-serving.com/v1', 'GMI_BASE_URL', ['GMI_API_KEY'], 'openai_chat', 'openai', []),
+  hermesProvider('lmstudio', 'LM Studio', 'api_key', 'http://127.0.0.1:1234/v1', 'LM_BASE_URL', ['LM_API_KEY'], 'openai_chat', 'openai', []),
+  hermesProvider('nvidia', 'NVIDIA NIM', 'api_key', 'https://integrate.api.nvidia.com/v1', 'NVIDIA_BASE_URL', ['NVIDIA_API_KEY'], 'openai_chat', 'openai', []),
+  hermesProvider('ollama-cloud', 'Ollama Cloud', 'api_key', 'https://ollama.com/v1', 'OLLAMA_BASE_URL', ['OLLAMA_API_KEY'], 'openai_chat', 'openai', []),
+  hermesProvider('copilot', 'GitHub Copilot (PAT)', 'api_key', 'https://api.githubcopilot.com', '', ['COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN'], 'openai_chat', 'none', ['gpt-4o', 'gpt-4.1', 'claude-3.5-sonnet', 'claude-3.7-sonnet', 'claude-sonnet-4-5', 'o1', 'o1-mini', 'gemini-2.5-pro']),
+  hermesProvider('zai', 'Z.AI / GLM', 'api_key', 'https://api.z.ai/api/paas/v4', 'GLM_BASE_URL', ['GLM_API_KEY', 'ZAI_API_KEY', 'Z_AI_API_KEY'], 'openai_chat', 'openai', ['glm-5.1', 'glm-5', 'glm-5v-turbo', 'glm-5-turbo', 'glm-4.7', 'glm-4.5', 'glm-4.5-flash']),
+  hermesProvider('kimi-coding', 'Kimi / Moonshot', 'api_key', 'https://api.moonshot.ai/v1', 'KIMI_BASE_URL', ['KIMI_API_KEY'], 'openai_chat', 'openai', ['kimi-for-coding', 'kimi-k2.6', 'kimi-k2.5', 'kimi-k2-thinking', 'kimi-k2-turbo-preview', 'kimi-k2-0905-preview']),
+  hermesProvider('kimi-coding-cn', 'Kimi / Moonshot (China)', 'api_key', 'https://api.moonshot.cn/v1', '', ['KIMI_CN_API_KEY'], 'openai_chat', 'openai', ['kimi-for-coding', 'kimi-k2.6', 'kimi-k2.5', 'kimi-k2-thinking', 'kimi-k2-turbo-preview']),
+  hermesProvider('alibaba', 'Alibaba Cloud (DashScope)', 'api_key', 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1', 'DASHSCOPE_BASE_URL', ['DASHSCOPE_API_KEY'], 'openai_chat', 'openai', ['qwen3.5-plus', 'qwen3-coder-plus', 'qwen3-coder-next', 'glm-5', 'glm-4.7', 'kimi-k2.5', 'MiniMax-M2.5']),
+  hermesProvider('alibaba-coding-plan', 'Alibaba Cloud (Coding Plan)', 'api_key', 'https://coding-intl.dashscope.aliyuncs.com/v1', 'ALIBABA_CODING_PLAN_BASE_URL', ['ALIBABA_CODING_PLAN_API_KEY', 'DASHSCOPE_API_KEY'], 'openai_chat', 'openai', ['qwen3-coder-plus', 'qwen3-coder-next', 'qwen3.5-plus', 'qwen3.5-coder']),
+  hermesProvider('minimax-cn', 'MiniMax (China)', 'api_key', 'https://api.minimaxi.com/v1', 'MINIMAX_CN_BASE_URL', ['MINIMAX_CN_API_KEY'], 'anthropic_messages', 'anthropic', ['MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed', 'MiniMax-M2.1', 'MiniMax-M2.1-highspeed', 'MiniMax-M2', 'MiniMax-M2-highspeed']),
+  hermesProvider('xiaomi', 'Xiaomi MiMo', 'api_key', 'https://api.xiaomimimo.com/v1', 'XIAOMI_BASE_URL', ['XIAOMI_API_KEY'], 'openai_chat', 'openai', ['mimo-v2-pro', 'mimo-v2-omni', 'mimo-v2-flash']),
+  hermesProvider('bedrock', 'AWS Bedrock', 'aws_sdk', 'https://bedrock-runtime.us-east-1.amazonaws.com', 'BEDROCK_BASE_URL', [], 'anthropic_messages', 'none', []),
+  hermesProvider('openrouter', 'OpenRouter', 'api_key', 'https://openrouter.ai/api/v1', 'OPENAI_BASE_URL', ['OPENROUTER_API_KEY'], 'openai_chat', 'openai', [], true),
+  hermesProvider('ai-gateway', 'Vercel AI Gateway', 'api_key', 'https://ai-gateway.vercel.sh/v1', 'AI_GATEWAY_BASE_URL', ['AI_GATEWAY_API_KEY'], 'openai_chat', 'openai', ['anthropic/claude-opus-4.6', 'anthropic/claude-sonnet-4.6', 'anthropic/claude-sonnet-4.5', 'anthropic/claude-haiku-4.5', 'openai/gpt-5', 'openai/gpt-4.1', 'openai/gpt-4.1-mini', 'google/gemini-3-pro-preview', 'google/gemini-3-flash', 'google/gemini-2.5-pro', 'google/gemini-2.5-flash', 'deepseek/deepseek-v3.2'], true),
+  hermesProvider('opencode-zen', 'OpenCode Zen', 'api_key', 'https://opencode.ai/zen/v1', 'OPENCODE_ZEN_BASE_URL', ['OPENCODE_ZEN_API_KEY'], 'openai_chat', 'openai', ['gpt-5.4-pro', 'gpt-5.4', 'gpt-5.3-codex', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5', 'gemini-3.1-pro', 'gemini-3-pro', 'minimax-m2.7', 'glm-5', 'kimi-k2.5', 'qwen3-coder'], true),
+  hermesProvider('opencode-go', 'OpenCode Go', 'api_key', 'https://opencode.ai/zen/go/v1', 'OPENCODE_GO_BASE_URL', ['OPENCODE_GO_API_KEY'], 'openai_chat', 'openai', ['glm-5.1', 'glm-5', 'kimi-k2.5', 'mimo-v2-pro', 'mimo-v2-omni', 'minimax-m2.7', 'minimax-m2.5'], true),
+  hermesProvider('kilocode', 'Kilo Code', 'api_key', 'https://api.kilo.ai/api/gateway', 'KILOCODE_BASE_URL', ['KILOCODE_API_KEY'], 'openai_chat', 'openai', ['anthropic/claude-opus-4.6', 'anthropic/claude-sonnet-4.6', 'openai/gpt-5.4', 'google/gemini-3-pro-preview', 'google/gemini-3-flash-preview'], true),
+  hermesProvider('nous', 'Nous Portal', 'oauth_device_code', 'https://inference-api.nousresearch.com/v1', '', [], 'openai_chat', 'none', ['moonshotai/kimi-k2.6', 'anthropic/claude-opus-4.7', 'anthropic/claude-sonnet-4.6', 'openai/gpt-5.4', 'google/gemini-3-pro-preview', 'qwen/qwen3.5-plus-02-15', 'minimax/minimax-m2.7', 'z-ai/glm-5.1', 'x-ai/grok-4.20-beta'], true, 'hermes auth login nous'),
+  hermesProvider('openai-codex', 'OpenAI Codex', 'oauth_external', 'https://chatgpt.com/backend-api/codex', '', [], 'codex_responses', 'none', ['gpt-5.5', 'gpt-5.4-mini', 'gpt-5.4', 'gpt-5.3-codex', 'gpt-5.2-codex', 'gpt-5.1-codex-max', 'gpt-5.1-codex-mini'], false, 'hermes auth login openai-codex'),
+  hermesProvider('qwen-oauth', 'Qwen OAuth', 'oauth_external', 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1', '', [], 'openai_chat', 'none', ['qwen3.5-plus', 'qwen3-coder-plus', 'qwen3-coder-next'], false, 'hermes auth login qwen-oauth'),
+  hermesProvider('google-gemini-cli', 'Google Gemini (OAuth)', 'oauth_external', 'https://generativelanguage.googleapis.com/v1beta/openai', '', [], 'openai_chat', 'none', ['gemini-2.5-pro', 'gemini-2.5-flash'], false, 'hermes auth login google-gemini-cli'),
+  hermesProvider('minimax-oauth', 'MiniMax (OAuth)', 'oauth_minimax', 'https://api.minimax.io/anthropic', '', [], 'anthropic_messages', 'none', ['MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed', 'MiniMax-M2.1', 'MiniMax-M2.1-highspeed', 'MiniMax-M2', 'MiniMax-M2-highspeed'], false, 'hermes auth login minimax-oauth'),
+  hermesProvider('copilot-acp', 'GitHub Copilot ACP', 'external_process', 'http://127.0.0.1:0', 'COPILOT_ACP_BASE_URL', [], 'openai_chat', 'none', ['gpt-4o', 'gpt-4.1', 'claude-3.5-sonnet', 'claude-3.7-sonnet'], false, 'hermes auth login copilot-acp'),
+  hermesProvider('custom', 'Custom OpenAI-Compatible', 'api_key', '', 'OPENAI_BASE_URL', ['CUSTOM_API_KEY', 'OPENAI_API_KEY'], 'openai_chat', 'openai', [], true),
+]
+
 function hermesHome() {
   return process.env.HERMES_HOME || HERMES_HOME
 }
@@ -116,6 +156,16 @@ function runHermesSilent(program, args) {
   } catch (e) {
     return { ok: false, stderr: String(e) }
   }
+}
+
+function sanitizeHermesInstallOutput(text = '') {
+  return String(text || '')
+    .replaceAll('git+https://github.com/NousResearch/hermes-agent.git', 'hermes-agent')
+    .replaceAll('https://github.com/NousResearch/hermes-agent.git', 'hermes-agent')
+    .replaceAll('https://github.com/NousResearch/hermes-agent', 'hermes-agent')
+    .replaceAll('github.com/NousResearch/hermes-agent.git', 'hermes-agent')
+    .replaceAll('github.com/NousResearch/hermes-agent', 'hermes-agent')
+    .replaceAll('NousResearch/hermes-agent', 'hermes-agent')
 }
 
 let _hermesGwProcess = null
@@ -5098,7 +5148,7 @@ const handlers = {
           source: 'file-read'
         }
       } catch (e) {
-        return { error: e.message || String(e) }
+        return { ok: false, error: e.message || String(e) }
       }
     })
   },
@@ -6825,7 +6875,7 @@ const handlers = {
     const uvPath = path.join(uvBinDir(), isWindows ? 'uv.exe' : 'uv')
     let uv = fs.existsSync(uvPath) ? uvPath : null
     if (!uv && runHermesSilent('uv', ['--version']).ok) uv = 'uv'
-    if (!uv) throw new Error('uv 未安装。请先安装 uv (https://docs.astral.sh/uv/) 或使用 Tauri 桌面版自动下载')
+    if (!uv) throw new Error('uv 未安装。请先安装 uv 或使用 Tauri 桌面版自动下载')
     // 2. 安装
     const pkg = extras.length
       ? `hermes-agent[${extras.join(',')}] @ git+https://github.com/NousResearch/hermes-agent.git`
@@ -6840,7 +6890,7 @@ const handlers = {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     })
-    if (result.status !== 0) throw new Error(`安装失败: ${(result.stderr || '').trim()}`)
+    if (result.status !== 0) throw new Error(`安装失败: ${sanitizeHermesInstallOutput((result.stderr || '').trim())}`)
     // 3. 验证
     const ver = runHermesSilent('hermes', ['version'])
     if (ver.ok) return ver.stdout
@@ -6853,26 +6903,28 @@ const handlers = {
     for (const d of ['cron','sessions','logs','memories','skills','pairing','hooks','image_cache','audio_cache']) {
       fs.mkdirSync(path.join(home, d), { recursive: true })
     }
-    const envProvider = provider === 'anthropic' || provider === 'minimax' ? 'anthropic' : provider === 'openrouter' ? 'openrouter' : 'openai'
-    const modelStr = model || (envProvider === 'anthropic' ? 'claude-sonnet-4-20250514' : envProvider === 'openrouter' ? 'anthropic/claude-sonnet-4-20250514' : 'gpt-4o')
-    const baseUrlLine = baseUrl && baseUrl.trim() ? `  base_url: ${baseUrl.trim()}\n` : ''
-    // config.yaml
+    const providerId = (provider || '').trim()
+    const pcfg = HERMES_PROVIDER_REGISTRY.find(p => p.id === providerId)
+    const modelStr = (model || pcfg?.models?.[0] || '').trim()
+    if (!modelStr) throw new Error(`Provider '${providerId || 'custom'}' has no default model; please pass an explicit model name`)
+    const baseUrlValue = baseUrl && baseUrl.trim() ? baseUrl.trim() : ''
+    const baseUrlLine = baseUrlValue ? `  base_url: ${baseUrlValue}\n` : ''
+    const providerLine = providerId && providerId !== 'custom' ? `  provider: ${providerId}\n` : ''
     const configPath = path.join(home, 'config.yaml')
     let configContent
     if (fs.existsSync(configPath)) {
       const existing = fs.readFileSync(configPath, 'utf8')
-      configContent = _mergeHermesConfigYaml(existing, modelStr, baseUrlLine)
+      configContent = _mergeHermesConfigYaml(existing, modelStr, baseUrlLine, providerLine)
     } else {
-      configContent = `# Hermes Agent configuration (managed by ClawPanel)\nmodel:\n  default: ${modelStr}\n${baseUrlLine}platform_toolsets:\n  api_server:\n    - hermes-api-server\nterminal:\n  backend: local\nplatforms:\n  api_server:\n    enabled: true\n`
+      configContent = `# Hermes Agent configuration (managed by ClawPanel)\nmodel:\n  default: ${modelStr}\n${providerLine}${baseUrlLine}platform_toolsets:\n  api_server:\n    - hermes-api-server\nterminal:\n  backend: local\nplatforms:\n  api_server:\n    enabled: true\n`
     }
     fs.writeFileSync(configPath, configContent)
-    // .env
-    const envKey = envProvider === 'anthropic' ? 'ANTHROPIC_API_KEY' : envProvider === 'openrouter' ? 'OPENROUTER_API_KEY' : 'OPENAI_API_KEY'
-    const managedKeys = ['OPENAI_API_KEY','ANTHROPIC_API_KEY','OPENROUTER_API_KEY','OPENAI_BASE_URL','ANTHROPIC_BASE_URL','GATEWAY_ALLOW_ALL_USERS','API_SERVER_KEY']
-    const newPairs = [[envKey, apiKey], ['GATEWAY_ALLOW_ALL_USERS', 'true'], ['API_SERVER_KEY', 'clawpanel-local']]
-    if (baseUrl && baseUrl.trim()) {
-      newPairs.push([envProvider === 'anthropic' ? 'ANTHROPIC_BASE_URL' : 'OPENAI_BASE_URL', baseUrl.trim()])
-    }
+    const envKey = pcfg?.apiKeyEnvVars?.[0] || ''
+    const urlEnv = pcfg?.baseUrlEnvVar || ''
+    const managedKeys = handlers._hermesManagedEnvKeys()
+    const newPairs = [['GATEWAY_ALLOW_ALL_USERS', 'true'], ['API_SERVER_KEY', 'clawpanel-local']]
+    if (envKey && apiKey && apiKey.trim()) newPairs.push([envKey, apiKey.trim()])
+    if (urlEnv && baseUrlValue) newPairs.push([urlEnv, baseUrlValue])
     const envPath = path.join(home, '.env')
     let envContent
     if (fs.existsSync(envPath)) {
@@ -7047,13 +7099,12 @@ const handlers = {
     return { model: displayModel, model_raw: modelName, base_url: baseUrl, provider, api_key: apiKey, config_exists: fs.existsSync(configPath) }
   },
 
-  // Web-mode stub: the authoritative 22-provider registry lives in Rust.
-  // Web mode is primarily used for remote admin on headless Linux where
-  // Hermes configuration is a minor flow; returning an empty array makes
-  // the frontend fall back to a "Please use the desktop app to configure
-  // Hermes providers" message in setup.js.
   hermes_list_providers() {
-    return []
+    return HERMES_PROVIDER_REGISTRY.map(p => ({
+      ...p,
+      apiKeyEnvVars: [...p.apiKeyEnvVars],
+      models: [...p.models],
+    }))
   },
 
   // -----------------------------------------------------------------------
@@ -7148,54 +7199,18 @@ const handlers = {
     console.warn(`[hermes guardian] patched config.yaml (api_server.enabled). Backup: ${backupPath}`)
   },
 
-  // =========================================================================
-  // .env editor (Step 4) — Web-mode implementations mirroring Rust behavior.
-  // The managed-key list is duplicated here since Rust's hermes_providers is
-  // not accessible from Node. Keep in sync with
-  //   src-tauri/src/commands/hermes_providers.rs::all_managed_env_keys
-  // whenever new providers are added to the registry.
-  // =========================================================================
   _hermesManagedEnvKeys() {
-    return [
-      // Anthropic
-      'ANTHROPIC_API_KEY', 'ANTHROPIC_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN',
-      // Gemini
-      'GOOGLE_API_KEY', 'GEMINI_API_KEY', 'GEMINI_BASE_URL',
-      // DeepSeek
-      'DEEPSEEK_API_KEY', 'DEEPSEEK_BASE_URL',
-      // Z.AI / GLM
-      'GLM_API_KEY', 'ZAI_API_KEY', 'Z_AI_API_KEY', 'GLM_BASE_URL',
-      // Kimi
-      'KIMI_API_KEY', 'KIMI_BASE_URL',
-      // xAI
-      'XAI_API_KEY', 'XAI_BASE_URL',
-      // MiniMax intl + CN
-      'MINIMAX_API_KEY', 'MINIMAX_BASE_URL',
-      'MINIMAX_CN_API_KEY', 'MINIMAX_CN_BASE_URL',
-      // Alibaba DashScope
-      'DASHSCOPE_API_KEY', 'DASHSCOPE_BASE_URL',
-      // Hugging Face
-      'HF_TOKEN', 'HF_BASE_URL',
-      // Xiaomi
-      'XIAOMI_API_KEY', 'XIAOMI_BASE_URL',
-      // AI Gateway
-      'AI_GATEWAY_API_KEY', 'AI_GATEWAY_BASE_URL',
-      // OpenCode Zen + Go
-      'OPENCODE_ZEN_API_KEY', 'OPENCODE_ZEN_BASE_URL',
-      'OPENCODE_GO_API_KEY', 'OPENCODE_GO_BASE_URL',
-      // Kilocode
-      'KILOCODE_API_KEY', 'KILOCODE_BASE_URL',
-      // Copilot (PAT)
-      'COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN',
-      // OpenRouter
-      'OPENROUTER_API_KEY', 'OPENAI_BASE_URL',
-      // Copilot ACP
-      'COPILOT_ACP_BASE_URL',
-      // Custom placeholder
-      'CUSTOM_API_KEY', 'OPENAI_API_KEY',
-      // ClawPanel-specific
-      'GATEWAY_ALLOW_ALL_USERS', 'API_SERVER_KEY',
-    ]
+    const out = []
+    const add = key => {
+      if (key && !out.includes(key)) out.push(key)
+    }
+    for (const provider of HERMES_PROVIDER_REGISTRY) {
+      for (const key of provider.apiKeyEnvVars || []) add(key)
+      add(provider.baseUrlEnvVar)
+    }
+    add('GATEWAY_ALLOW_ALL_USERS')
+    add('API_SERVER_KEY')
+    return out
   },
 
   hermes_env_read_unmanaged() {
@@ -7383,8 +7398,9 @@ const handlers = {
 
   async hermes_dashboard_probe() {
     const port = handlers._hermesDashboardPort()
-    const running = await _tcpProbe('127.0.0.1', port, 800)
-    return { running, port }
+    const cli = handlers._hermesDashboardCliStatus(port)
+    const running = cli?.running || await _tcpProbe('127.0.0.1', port, 800)
+    return { running, port, status: cli?.output || null }
   },
 
   // 共用：解析 dashboard.port（缩进感知，避免误匹配 gateway 块的 port）
@@ -7410,10 +7426,35 @@ const handlers = {
     return port
   },
 
+  _hermesDashboardCliStatus(port) {
+    const attempts = [
+      runHermesSilent('hermes', ['dashboard', '--status']),
+      runHermesSilent('hermes', ['dashboard', 'status']),
+    ]
+    for (const result of attempts) {
+      if (!result.ok) continue
+      const output = result.stdout || ''
+      const lower = output.toLowerCase()
+      if (lower.includes('not running') || lower.includes('stopped') || lower.includes('inactive') || lower.includes('no dashboard')) {
+        return { running: false, output }
+      }
+      if (lower.includes('running') || lower.includes('listening') || lower.includes('http://') || lower.includes('https://') || lower.includes(String(port))) {
+        return { running: true, output }
+      }
+    }
+    return null
+  },
+
+  _hermesDashboardCliStop() {
+    return runHermesSilent('hermes', ['dashboard', '--stop']).ok
+      || runHermesSilent('hermes', ['dashboard', 'stop']).ok
+  },
+
   async hermes_dashboard_start() {
     const port = handlers._hermesDashboardPort()
     // 1. 已运行？
-    if (await _tcpProbe('127.0.0.1', port, 500)) {
+    const cli = handlers._hermesDashboardCliStatus(port)
+    if (cli?.running || await _tcpProbe('127.0.0.1', port, 500)) {
       return { started: true, already_running: true, port }
     }
     // 2. 清残留 PID
@@ -7469,15 +7510,6 @@ const handlers = {
           || lower.includes("no module named 'fastapi'")
           || (lower.includes('import error') && lower.includes('fastapi'))) {
           kind = 'deps_missing'
-        } else if (lower.includes("no module named 'fcntl'")
-          || lower.includes("no module named 'termios'")
-          || lower.includes("no module named 'pty'")
-          || lower.includes("no module named 'tty'")
-          || lower.includes("no module named 'pwd'")
-          || lower.includes("no module named 'grp'")) {
-          // Hermes 上游 bug: pty_bridge.py / memory_tool.py 在 Windows 上 import POSIX-only 模块
-          // https://github.com/NousResearch/hermes-agent/issues/5246
-          kind = 'posix_only_module'
         } else if (lower.includes('address already in use')
           || lower.includes('address in use')
           || (lower.includes('port') && lower.includes('already in use'))) {
@@ -7497,7 +7529,18 @@ const handlers = {
   },
 
   async hermes_dashboard_stop() {
-    if (!handlers._dashPid) return false
+    const port = handlers._hermesDashboardPort()
+    const cliStopped = handlers._hermesDashboardCliStop()
+    if (!handlers._dashPid) {
+      if (cliStopped) {
+        for (let i = 0; i < 20; i++) {
+          if (!await _tcpProbe('127.0.0.1', port, 200)) return true
+          await new Promise(r => setTimeout(r, 250))
+        }
+        return true
+      }
+      return false
+    }
     try {
       if (isWindows) {
         spawnSync('taskkill', ['/F', '/PID', String(handlers._dashPid)], { windowsHide: true })
@@ -7505,10 +7548,14 @@ const handlers = {
         process.kill(handlers._dashPid, 'SIGKILL')
       }
       handlers._dashPid = 0
+      for (let i = 0; i < 20; i++) {
+        if (!await _tcpProbe('127.0.0.1', port, 200)) return true
+        await new Promise(r => setTimeout(r, 250))
+      }
       return true
     } catch {
       handlers._dashPid = 0
-      return false
+      return cliStopped
     }
   },
 
@@ -8199,7 +8246,7 @@ const handlers = {
       env: { ...process.env, PATH: hermesEnhancedPath(), GIT_TERMINAL_PROMPT: '0' },
       timeout: 600000, windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
     })
-    if (result.status !== 0) throw new Error(`升级失败: ${(result.stderr || '').trim()}`)
+    if (result.status !== 0) throw new Error(`升级失败: ${sanitizeHermesInstallOutput((result.stderr || '').trim())}`)
     return '升级完成'
   },
 
@@ -8286,7 +8333,7 @@ const handlers = {
 }
 
 // Hermes 配置合并辅助函数
-function _mergeHermesConfigYaml(existing, modelStr, baseUrlLine) {
+function _mergeHermesConfigYaml(existing, modelStr, baseUrlLine, providerLine = '') {
   const lines = existing.split('\n')
   const result = []
   let inModel = false, written = false, i = 0
@@ -8296,6 +8343,7 @@ function _mergeHermesConfigYaml(existing, modelStr, baseUrlLine) {
       inModel = true; written = true
       result.push('model:')
       result.push(`  default: ${modelStr}`)
+      if (providerLine) result.push(providerLine.trimEnd())
       if (baseUrlLine) result.push(baseUrlLine.trimEnd())
       i++
       while (i < lines.length) {
@@ -8313,6 +8361,7 @@ function _mergeHermesConfigYaml(existing, modelStr, baseUrlLine) {
   if (!written) {
     result.push('model:')
     result.push(`  default: ${modelStr}`)
+    if (providerLine) result.push(providerLine.trimEnd())
     if (baseUrlLine) result.push(baseUrlLine.trimEnd())
   }
   let final = result.join('\n')
@@ -8398,6 +8447,159 @@ function _endStream(res) {
   if (!res.writableEnded && !res.destroyed) res.end()
 }
 
+function _startHermesNdjsonStream(res) {
+  if (res.headersSent) return
+  res.statusCode = 200
+  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8')
+  res.setHeader('Cache-Control', 'no-cache, no-transform')
+  res.setHeader('Connection', 'keep-alive')
+  res.setHeader('X-Accel-Buffering', 'no')
+  if (typeof res.flushHeaders === 'function') res.flushHeaders()
+}
+
+function _hermesStreamHeaders(apiKey, json = false) {
+  const headers = { 'User-Agent': 'ClawPanel-Web' }
+  if (json) headers['Content-Type'] = 'application/json'
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`
+  return headers
+}
+
+function _hermesTextFromResponse(value) {
+  const response = value?.response || value
+  if (typeof response?.output_text === 'string') return response.output_text
+  if (typeof response?.text === 'string') return response.text
+  let out = ''
+  const outputs = Array.isArray(response?.output) ? response.output : []
+  for (const item of outputs) {
+    const parts = Array.isArray(item?.content) ? item.content : []
+    for (const part of parts) {
+      if ((part?.type === 'output_text' || part?.type === 'text') && typeof part.text === 'string') {
+        out += part.text
+      }
+    }
+  }
+  return out
+}
+
+function _hermesDeltaFromResponseEvent(evt) {
+  if (typeof evt?.delta === 'string') return evt.delta
+  if (typeof evt?.text === 'string') return evt.text
+  if (typeof evt?.content === 'string') return evt.content
+  if (typeof evt?.delta?.text === 'string') return evt.delta.text
+  if (typeof evt?.delta?.value === 'string') return evt.delta.value
+  return ''
+}
+
+function _normalizeHermesStreamEvent(evt, runId, sessionId) {
+  const eventType = evt?.event || evt?.type || ''
+  if (!eventType) return null
+  if (eventType === 'message.delta') return { ...evt, run_id: evt.run_id || runId, session_id: evt.session_id || sessionId || null }
+  if (eventType === 'run.completed' || eventType === 'run.failed') return { ...evt, run_id: evt.run_id || runId, session_id: evt.session_id || sessionId || null }
+  if (eventType === 'tool.started' || eventType === 'tool.completed' || eventType === 'tool.progress' || eventType === 'tool.error') {
+    return { ...evt, run_id: evt.run_id || runId, session_id: evt.session_id || sessionId || null }
+  }
+  if (eventType === 'response.output_text.delta' || eventType === 'response.text.delta') {
+    const delta = _hermesDeltaFromResponseEvent(evt)
+    return delta ? { event: 'message.delta', run_id: runId, session_id: sessionId || null, delta } : null
+  }
+  if (eventType === 'response.output_item.added') {
+    const item = evt.item || evt.output_item || {}
+    if (item.type === 'function_call' || item.type === 'tool_call') {
+      return { event: 'tool.started', run_id: runId, session_id: sessionId || null, tool: item.name || item.function?.name || 'tool', input: item.arguments || item.input || null }
+    }
+  }
+  if (eventType === 'response.function_call_arguments.delta') {
+    return { event: 'tool.progress', run_id: runId, session_id: sessionId || null, tool: evt.name || evt.item?.name || 'tool', preview: _hermesDeltaFromResponseEvent(evt) }
+  }
+  if (eventType === 'response.output_item.done' || eventType === 'response.function_call_arguments.done') {
+    const item = evt.item || evt.output_item || {}
+    if (item.type === 'function_call' || item.type === 'tool_call' || eventType === 'response.function_call_arguments.done') {
+      return { event: 'tool.completed', run_id: runId, session_id: sessionId || null, tool: item.name || evt.name || 'tool', input: item.arguments || evt.arguments || null }
+    }
+  }
+  if (eventType === 'response.completed') {
+    return { event: 'run.completed', run_id: runId, session_id: sessionId || null, output: _hermesTextFromResponse(evt) }
+  }
+  if (eventType === 'response.failed' || eventType === 'response.error') {
+    const error = evt.error?.message || evt.error || evt.message || 'unknown error'
+    return { event: 'run.failed', run_id: runId, session_id: sessionId || null, error }
+  }
+  return { ...evt, event: eventType, run_id: evt.run_id || runId, session_id: evt.session_id || sessionId || null }
+}
+
+async function _streamHermesEventBody(streamResp, res, args, runId) {
+  const sessionId = args.sessionId || null
+  const reader = streamResp.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let finalOutput = ''
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      let newline
+      while ((newline = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, newline).trim()
+        buffer = buffer.slice(newline + 1)
+        let data = ''
+        if (line.startsWith('data:')) data = line.slice(5).trim()
+        else if (line.startsWith('{')) data = line
+        else continue
+        if (!data || data === '[DONE]') {
+          _writeStreamEvent(res, { event: 'run.completed', run_id: runId, output: finalOutput, session_id: sessionId })
+          _endStream(res)
+          return true
+        }
+        let evt
+        try { evt = JSON.parse(data) } catch { continue }
+        const normalized = _normalizeHermesStreamEvent(evt, runId, sessionId)
+        if (!normalized) continue
+        if (normalized.event === 'message.delta' && typeof normalized.delta === 'string') finalOutput += normalized.delta
+        if (normalized.event === 'run.completed' && typeof normalized.output === 'string') finalOutput = normalized.output || finalOutput
+        _writeStreamEvent(res, normalized)
+        if (normalized.event === 'run.completed' || normalized.event === 'run.failed') {
+          _endStream(res)
+          return true
+        }
+      }
+    }
+  } finally {
+    try { reader.releaseLock() } catch {}
+  }
+  _writeStreamEvent(res, { event: 'run.completed', run_id: runId, output: finalOutput, session_id: sessionId })
+  _endStream(res)
+  return true
+}
+
+async function _tryHermesResponsesStream(gwUrl, apiKey, payload, args, controller, res) {
+  const responsePayload = { ...payload, stream: true }
+  const resp = await globalThis.fetch(`${gwUrl}/v1/responses`, {
+    method: 'POST',
+    headers: _hermesStreamHeaders(apiKey, true),
+    body: JSON.stringify(responsePayload),
+    signal: controller.signal,
+  })
+  if (!resp.ok) {
+    if (resp.status === 401 || resp.status === 403) {
+      const text = await resp.text().catch(() => '')
+      throw new Error(`HTTP ${resp.status}: ${text}`)
+    }
+    try { await resp.body?.cancel() } catch {}
+    return false
+  }
+  const runId = resp.headers.get('x-request-id') || resp.headers.get('x-response-id') || `response-${Date.now()}`
+  _startHermesNdjsonStream(res)
+  _writeStreamEvent(res, { event: 'run.started', run_id: runId, session_id: args.sessionId || null })
+  const contentType = (resp.headers.get('content-type') || '').toLowerCase()
+  if (resp.body && !contentType.includes('application/json')) return await _streamHermesEventBody(resp, res, args, runId)
+  const body = await resp.json().catch(() => ({}))
+  const output = _hermesTextFromResponse(body)
+  _writeStreamEvent(res, { event: 'run.completed', run_id: body.id || runId, output, session_id: args.sessionId || null })
+  _endStream(res)
+  return true
+}
+
 async function _handleHermesAgentRunStream(req, res, args = {}) {
   const controller = new AbortController()
   res.on('close', () => controller.abort())
@@ -8408,13 +8610,15 @@ async function _handleHermesAgentRunStream(req, res, args = {}) {
     const gwUrl = hermesGatewayUrl()
     await handlers._hermesEnsureGatewayReady()
     const apiKey = _readHermesApiServerKey()
-    const headers = { 'Content-Type': 'application/json', 'User-Agent': 'ClawPanel-Web' }
-    if (apiKey) headers.Authorization = `Bearer ${apiKey}`
+    const headers = _hermesStreamHeaders(apiKey, true)
 
     const payload = { input: args.input || '' }
     if (args.sessionId) payload.session_id = args.sessionId
     if (args.conversationHistory) payload.conversation_history = args.conversationHistory
     if (args.instructions) payload.instructions = args.instructions
+
+    const handledByResponses = await _tryHermesResponsesStream(gwUrl, apiKey, payload, args, controller, res)
+    if (handledByResponses) return
 
     const startedResp = await globalThis.fetch(`${gwUrl}/v1/runs`, {
       method: 'POST',
@@ -8430,16 +8634,11 @@ async function _handleHermesAgentRunStream(req, res, args = {}) {
     runId = started.run_id || started.id || ''
     if (!runId) throw new Error('响应中没有 run_id')
 
-    res.statusCode = 200
-    res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8')
-    res.setHeader('Cache-Control', 'no-cache, no-transform')
-    res.setHeader('Connection', 'keep-alive')
-    res.setHeader('X-Accel-Buffering', 'no')
-    if (typeof res.flushHeaders === 'function') res.flushHeaders()
+    _startHermesNdjsonStream(res)
     _writeStreamEvent(res, { event: 'run.started', run_id: runId, session_id: args.sessionId || null })
 
     const eventsResp = await globalThis.fetch(`${gwUrl}/v1/runs/${encodeURIComponent(runId)}/events`, {
-      headers: apiKey ? { Authorization: `Bearer ${apiKey}`, 'User-Agent': 'ClawPanel-Web' } : { 'User-Agent': 'ClawPanel-Web' },
+      headers: _hermesStreamHeaders(apiKey),
       signal: controller.signal,
     })
     if (!eventsResp.ok || !eventsResp.body) {

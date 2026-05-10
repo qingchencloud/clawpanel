@@ -1,12 +1,11 @@
 /**
  * Hermes Agent — Memory editor (three-section: MEMORY / USER / SOUL)
  *
- * Mirrors the data contract used by the official `hermes-web-ui`:
+ * Data contract:
  *   GET  /api/hermes/memory            → { memory, user, soul, mtimes }
  *   POST /api/hermes/memory            → { section, content }
  *
- * ClawPanel calls the equivalent Rust/Web-stub commands (`hermes_memory_read_all`
- * + `hermes_memory_write`) so the page works on Tauri and Web modes.
+ * ClawPanel calls Rust/Web commands so the page works on Tauri and Web modes.
  *
  * All three files live in `~/.hermes/memories/` and are plain Markdown.
  */

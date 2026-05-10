@@ -11,7 +11,7 @@ import { t, getLang, setLang, getAvailableLangs } from '../lib/i18n.js'
 import { isFeatureAvailable } from '../lib/feature-gates.js'
 import { getKernelSnapshot } from '../lib/kernel.js'
 import { triggerKernelUpgrade } from '../lib/kernel-upgrade.js'
-import { getActiveEngine, getActiveEngineId, listEngines, switchEngine, onEngineChange } from '../lib/engine-manager.js'
+import { getActiveEngine, getActiveEngineId, listEngines, needsInitialEngineChoice, isEngineSetupDeferred, switchEngine, onEngineChange } from '../lib/engine-manager.js'
 
 // 当用户点 "暂时不升级" 时，本地会话内不再显示升级提示
 const SS_DISMISSED_KERNEL_UPGRADE = 'clawpanel_kernel_upgrade_dismissed'
@@ -78,6 +78,23 @@ function NAV_ITEMS_SETUP() { return [
     items: [
       { route: '/settings', label: t('sidebar.settings'), icon: 'settings' },
       { route: '/chat-debug', label: t('sidebar.chatDebug'), icon: 'debug' },
+      { route: '/about', label: t('sidebar.about'), icon: 'about' },
+    ]
+  }
+] }
+
+function NAV_ITEMS_ENGINE_SELECT() { return [
+  {
+    section: '',
+    items: [
+      { route: '/engine-select', label: t('engine.choiceNav'), icon: 'setup' },
+      { route: '/assistant', label: t('sidebar.assistant'), icon: 'assistant' },
+    ]
+  },
+  {
+    section: '',
+    items: [
+      { route: '/settings', label: t('sidebar.settings'), icon: 'settings' },
       { route: '/about', label: t('sidebar.about'), icon: 'about' },
     ]
   }
@@ -190,7 +207,9 @@ export function renderSidebar(el) {
 
   // 从当前引擎获取菜单（回退到原有逻辑）
   const engine = getActiveEngine()
-  const navItems = engine ? engine.getNavItems() : (isOpenclawReady() ? NAV_ITEMS_FULL() : NAV_ITEMS_SETUP())
+  const navItems = needsInitialEngineChoice() || isEngineSetupDeferred()
+    ? NAV_ITEMS_ENGINE_SELECT()
+    : (engine ? engine.getNavItems() : (isOpenclawReady() ? NAV_ITEMS_FULL() : NAV_ITEMS_SETUP()))
 
   for (const section of navItems) {
     html += `<div class="nav-section">

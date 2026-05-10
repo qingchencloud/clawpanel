@@ -7,6 +7,31 @@
 
 ## [未发布]
 
+## [0.15.1] - 2026-05-10
+
+### 新功能 (Features)
+
+- **首次引擎选择页** — 新增启动选择流程，支持选择 OpenClaw、Hermes Agent、双引擎或稍后配置，避免首次启动直接进入不匹配的安装向导
+- **Hermes Agent Provider 预设增强** — 扩展 Provider 注册表与配置合并能力，前端、Web 后端和 Tauri 后端保持一致
+
+### 改进 (Improvements)
+
+- **Hermes Agent 流式对话兼容层** — 优先使用新的流式响应通道，失败时自动回退，并保持现有前端事件格式不变
+- **Hermes Dashboard 生命周期管理** — 状态检测和停止操作优先使用 Hermes Agent 原生能力，失败后再回退到 ClawPanel 记录的进程信息，降低误报和误杀风险
+- **Hermes Agent 安装体验** — 安装、升级和依赖补齐流程增加日志清理，避免用户界面暴露底层安装细节
+- **多引擎初始化体验** — 引擎选择状态会持久化，切换引擎时清理旧请求缓存，减少跨引擎页面状态串扰
+- **推荐内核版本策略** — 推荐版本更新到 `2026.5.7` 与 `2026.5.7-zh.1`
+
+### 修复 (Fixes)
+
+- **Hermes Dashboard 依赖提示** — 缺少 Web 依赖时改为引导使用内置安装按钮，减少手动命令操作
+- **Hermes Agent 页面信息边界** — 清理 Dashboard、Setup、Chat、Skills、Memory、Logs、Cron、Extensions 等页面中的非必要实现细节展示
+- **助手内置技能提示** — Hermes Agent 安装与升级建议改为使用 ClawPanel 内置向导，避免暴露底层安装命令
+
+### 测试与验证 (Testing)
+
+- **发布前检查** — 已通过 JS 语法检查、Rust 格式检查、Rust 编译检查和前端生产构建
+
 ## [0.15.0] - 2026-05-08
 
 ### 新功能 (Features)

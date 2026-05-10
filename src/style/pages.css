@@ -2656,3 +2656,190 @@
    编辑改版后 memory.js 用 .hm-mem-overview + .hm-mem-panel 自然堆叠（见
    engines/hermes/style/hermes.css）。原来 .hm-memory-* 那一坨规则已无任何
    JS / CSS 引用，已在此处删除。 */
+
+.engine-select-page {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 48px 32px;
+}
+
+.engine-select-hero {
+  max-width: 720px;
+  margin-bottom: 28px;
+}
+
+.engine-select-kicker {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  margin-bottom: 14px;
+  border: 1px solid var(--border-primary);
+  border-radius: 999px;
+  color: var(--accent);
+  background: var(--bg-glass);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.engine-select-hero h1 {
+  margin: 0 0 12px;
+  color: var(--text-primary);
+  font-size: clamp(28px, 4vw, 44px);
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+
+.engine-select-hero p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.engine-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.engine-choice-card {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  width: 100%;
+  min-height: 172px;
+  padding: 22px;
+  border: 1px solid var(--border-primary);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at top right, rgba(99, 102, 241, 0.12), transparent 34%),
+    var(--bg-card);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: transform .18s ease, border-color .18s ease, background .18s ease, box-shadow .18s ease;
+}
+
+.engine-choice-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent);
+  background:
+    radial-gradient(circle at top right, rgba(99, 102, 241, 0.18), transparent 38%),
+    var(--bg-card-hover);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.12);
+}
+
+.engine-choice-card:disabled {
+  cursor: wait;
+  opacity: .72;
+}
+
+.engine-choice-card.loading .engine-choice-arrow {
+  animation: engine-choice-pulse .8s ease-in-out infinite alternate;
+}
+
+.engine-choice-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 auto;
+  border-radius: 16px;
+  color: var(--accent);
+  background: var(--bg-glass);
+  border: 1px solid var(--border-primary);
+}
+
+.engine-choice-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.engine-choice-content {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.engine-choice-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.engine-choice-title {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.engine-choice-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: var(--accent-muted, rgba(99, 102, 241, 0.12));
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.engine-choice-desc {
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.engine-choice-meta {
+  margin-top: auto;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.engine-choice-arrow {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.engine-choice-note {
+  margin-top: 18px;
+  padding: 16px 18px;
+  border: 1px solid var(--border-primary);
+  border-radius: 16px;
+  background: var(--bg-glass);
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.engine-choice-note-title {
+  margin-bottom: 4px;
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+@keyframes engine-choice-pulse {
+  from { transform: translateX(0); opacity: .5; }
+  to { transform: translateX(4px); opacity: 1; }
+}
+
+@media (max-width: 760px) {
+  .engine-select-page {
+    padding: 28px 18px;
+  }
+
+  .engine-choice-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .engine-choice-card {
+    min-height: auto;
+    padding: 18px;
+  }
+}

@@ -461,9 +461,7 @@
   box-shadow: none;
 }
 
-/* Allow absolute-positioned children (e.g. model dropdown) to escape the
-   panel boundary. Used on the model-config panel where the long fetched
-   model list otherwise gets clipped at the panel's bottom edge (issue #260). */
+/* Allow absolute-positioned children to escape the panel boundary. */
 [data-engine="hermes"] .hm-panel.hm-panel--allow-overflow {
   overflow: visible;
 }
@@ -3417,10 +3415,6 @@ body[data-active-engine="hermes"][data-theme="dark"] {
 /* ==========================================================================
  * 19 · Chat page (editorial luxury re-write)
  * ==========================================================================
- *
- * Mirrors the official Hermes web UI's ChatPanel but styled with the warm
- * off-white / serif-display / gold-accent system shared across dashboard,
- * memory, skills, logs and cron.
  */
 
 /* ---- Page shell ---- */

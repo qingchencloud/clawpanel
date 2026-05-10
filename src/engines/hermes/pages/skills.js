@@ -1,7 +1,7 @@
 /**
  * Hermes Agent — Skills browser (editorial luxury re-write)
  *
- * Mirrors the official `hermes-web-ui` Skills view:
+ * Skill management endpoints:
  *   GET    /api/hermes/skills                       → { categories: [...] }
  *   PUT    /api/hermes/skills/toggle                → enable/disable
  *   GET    /api/hermes/skills/:cat/:skill/files     → attached files
@@ -15,9 +15,9 @@
  *   │                                │   an attached file
  *   └────────────────────────────────┴──────────────────────────┘
  *
- * Extras beyond the official UI:
+ * Extras:
  *   - Collapsible categories (persist in memory only)
- *   - File browser with breadcrumb + back button (Vue parity)
+ *   - File browser with breadcrumb + back button
  *   - Inline toggle switches use stable loading state per skill
  */
 import { t } from '../../../lib/i18n.js'
