@@ -702,7 +702,7 @@ async function saveConfigOnly(state) {
     const primary = getCurrentPrimary(state.config)
     if (primary) applyDefaultModel(state)
     normalizeProviderUrls(state.config)
-    await api.writeOpenclawConfig(state.config)
+    await api.writeOpenclawConfig(state.config, { noReload: true })
   } catch (e) {
     toast(t('models.saveFailed') + ': ' + e, 'error')
   }
@@ -713,7 +713,7 @@ async function doAutoSave(state) {
     const primary = getCurrentPrimary(state.config)
     if (primary) applyDefaultModel(state)
     normalizeProviderUrls(state.config)
-    await api.writeOpenclawConfig(state.config)
+    await api.writeOpenclawConfig(state.config, { noReload: true })
 
     // 配置已写入。使用 3s 防抖 + 单飞行锁排队重启，避免快速连续编辑触发多次重启。
     showRestartPendingToast()
@@ -1604,7 +1604,7 @@ async function handleBatchTest(section, state, providerKey) {
   }
 
   const aborted = ctrl.abort
-  autoSave(state)
+  saveConfigOnly(state)
   if (aborted) {
     toast(t('models.batchTestAborted', { ok, fail, skip: ids.length - ok - fail }), 'warning')
   } else {
