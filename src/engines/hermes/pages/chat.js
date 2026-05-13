@@ -14,7 +14,7 @@
  * State lives in `chat-store.js`; this module only does DOM + events.
  */
 import { t } from '../../../lib/i18n.js'
-import { api } from '../../../lib/tauri-api.js'
+import { api, invalidate } from '../../../lib/tauri-api.js'
 import { toast } from '../../../components/toast.js'
 import { showConfirm } from '../../../components/modal.js'
 import { getChatStore, getSourceLabel } from '../lib/chat-store.js'
@@ -277,6 +277,8 @@ export function render() {
   let showSlash = false
   let slashFilter = ''
   let gwOnline = false
+  // null = 仍在加载首次 check，先不显示 banner 防首屏闪烁
+  let hermesInstalled = null
   let currentModel = ''
   const mobileQuery = window.matchMedia('(max-width: 720px)')
 
@@ -305,11 +307,19 @@ export function render() {
   // --- initial session load + model meta ---
   store.loadSessions().then(() => draw())
   store.loadProfiles().then(() => draw()).catch(() => {})
+  // 强制刷新安装/Gateway 状态缓存，避免用户刚在仪表盘启动 Gateway 后
+  // 进聊天页看到 30s 过期的「未启动」误判。
+  invalidate('check_hermes')
   api.checkHermes().then(info => {
+    hermesInstalled = !!info?.installed
     gwOnline = !!info?.gatewayRunning
     currentModel = info?.model || ''
     draw()
-  }).catch(() => {})
+  }).catch(() => {
+    hermesInstalled = false
+    gwOnline = false
+    draw()
+  })
 
   // ----------------------------------------------------------- subscription
 
@@ -676,8 +686,8 @@ export function render() {
                    ${ICONS.stop}
                  </button>`
               : `<button class="hm-chat-send-btn" id="hm-chat-send"
-                         ${!active || !inputValue.trim() ? 'disabled' : ''}
-                         title="${escHtml(t('engine.chatSend'))}">
+                         ${(!active || !inputValue.trim() || hermesInstalled === false || !gwOnline) ? 'disabled' : ''}
+                         title="${escHtml(hermesInstalled === false ? t('engine.chatHealthInstallMissing') : !gwOnline ? t('engine.chatHealthGatewayDown') : t('engine.chatSend'))}">
                    ${ICONS.send}
                  </button>`}
           </div>
@@ -732,6 +742,31 @@ export function render() {
     `
   }
 
+  // 健康状态 banner：未装/未启动 → 在输入区上方显示一条警告 + 「去仪表盘」按钮。
+  // 首次 fetch 完成前返回空字符串，避免首屏闪烁。
+  function renderHealthBanner() {
+    if (hermesInstalled === null) return ''
+    if (hermesInstalled === false) {
+      return `
+        <div class="hm-chat-health-banner is-error">
+          <span class="hm-chat-health-icon" aria-hidden="true">⚠</span>
+          <span class="hm-chat-health-msg">${escHtml(t('engine.chatHealthInstallMissing'))}</span>
+          <a class="hm-chat-health-action" href="#/h/dashboard">${escHtml(t('engine.chatHealthGoDashboard'))}</a>
+        </div>
+      `
+    }
+    if (!gwOnline) {
+      return `
+        <div class="hm-chat-health-banner is-warn">
+          <span class="hm-chat-health-icon" aria-hidden="true">⚠</span>
+          <span class="hm-chat-health-msg">${escHtml(t('engine.chatHealthGatewayDown'))}</span>
+          <a class="hm-chat-health-action" href="#/h/dashboard">${escHtml(t('engine.chatHealthGoDashboard'))}</a>
+        </div>
+      `
+    }
+    return ''
+  }
+
   // ----------------------------------------------------------- draw
 
   function draw() {
@@ -750,6 +785,7 @@ export function render() {
         ${renderSidebar()}
         <section class="hm-chat-main">
           ${renderHeader()}
+          ${renderHealthBanner()}
           <div class="hm-chat-messages" id="hm-chat-messages">
             ${renderMessages()}
           </div>

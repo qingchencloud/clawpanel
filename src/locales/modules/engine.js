@@ -293,6 +293,18 @@ export default {
   // Short labels for the header pill — full sentence lives in the tooltip
   chatGatewayOfflineShort: _('离线', 'Offline', '離線'),
   chatGatewayOnlineShort: _('在线', 'Online', '線上'),
+  // 健康检查 banner（聊天页顶部）
+  chatHealthInstallMissing: _(
+    '未检测到 Hermes Agent 安装。请在仪表盘完成安装后再开始对话。',
+    'Hermes Agent is not installed. Please complete installation on the dashboard before chatting.',
+    '未偵測到 Hermes Agent 安裝。請在儀表板完成安裝後再開始對話。'
+  ),
+  chatHealthGatewayDown: _(
+    'Hermes Gateway 未启动，无法发送消息。请在仪表盘启动 Gateway。',
+    'Hermes Gateway is not running, messages cannot be sent. Please start the Gateway on the dashboard.',
+    'Hermes Gateway 未啟動，無法發送訊息。請在儀表板啟動 Gateway。'
+  ),
+  chatHealthGoDashboard: _('去仪表盘', 'Open Dashboard', '去儀表板'),
   chatWelcome: _('你好！我是 Hermes Agent，有什么可以帮你的？', 'Hello! I\'m Hermes Agent, how can I help?', '你好！我是 Hermes Agent，有什麼可以幫你的？'),
   chatEmptyHint: _('开始一段对话吧', 'Start a conversation', '開始一段對話吧'),
   chatEmptyTitle: _('和 Hermes Agent 对话', 'Talk to Hermes Agent', '和 Hermes Agent 對話'),
