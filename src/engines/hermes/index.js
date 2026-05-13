@@ -119,6 +119,7 @@ export default {
       { path: '/assistant', loader: () => import('../../pages/assistant.js') },
       { path: '/settings', loader: () => import('../../pages/settings.js') },
       { path: '/about', loader: () => import('../../pages/about.js') },
+      { path: '/glossary', loader: () => import('../../pages/glossary.js') },
     ]
   },
 

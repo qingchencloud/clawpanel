@@ -4,6 +4,7 @@
  */
 import { api } from '../lib/tauri-api.js'
 import { toast } from '../components/toast.js'
+import { humanizeError } from '../lib/humanize-error.js'
 import { showModal, showConfirm } from '../components/modal.js'
 import { icon, statusIcon } from '../lib/icons.js'
 import { API_TYPES, PROVIDER_PRESETS, QTCOOL, MODEL_PRESETS, fetchQtcoolModels } from '../lib/model-presets.js'
@@ -704,7 +705,7 @@ async function saveConfigOnly(state) {
     normalizeProviderUrls(state.config)
     await api.writeOpenclawConfig(state.config, { noReload: true })
   } catch (e) {
-    toast(t('models.saveFailed') + ': ' + e, 'error')
+    toast(humanizeError(e, t('models.saveFailed')), 'error')
   }
 }
 
@@ -730,7 +731,7 @@ async function doAutoSave(state) {
       toast(t('models.configSavedGwNotRunning'), 'info', { duration: 4000 })
     }
   } catch (e) {
-    toast(t('models.autoSaveFailed') + ': ' + e, 'error')
+    toast(humanizeError(e, t('models.autoSaveFailed')), 'error')
   }
 }
 
@@ -1257,6 +1258,7 @@ function addProvider(page, state) {
   `
 
   document.body.appendChild(overlay)
+  attachTermTooltips(overlay)
 
   // 预设按钮点击自动填充
   overlay.querySelectorAll('.preset-btn').forEach(btn => {
@@ -1315,11 +1317,13 @@ function addProvider(page, state) {
 // 编辑服务商
 function editProvider(page, state, providerKey) {
   const p = state.config.models.providers[providerKey]
+  // showModal 不返回 overlay，需要异步扫 document.body 给 ⓘ 按钮绑定 click（attachTermTooltips 内部已去重）
+  setTimeout(() => attachTermTooltips(document.body), 0)
   showModal({
     title: t('models.editProviderTitle', { name: providerKey }),
     fields: [
       { name: 'baseUrl', label: t('models.baseUrl'), value: p.baseUrl || '', hint: t('models.baseUrlHint') },
-      { name: 'apiKey', label: t('models.apiKey'), value: p.apiKey || '', hint: t('models.apiKeyEditHint') },
+      { name: 'apiKey', label: t('models.apiKey') + termHelpHtml('apikey'), value: p.apiKey || '', hint: t('models.apiKeyEditHint') },
       {
         name: 'api', label: t('models.apiType'), type: 'select', value: p.api || 'openai-completions',
         options: API_TYPES,
@@ -1519,7 +1523,16 @@ async function handleBatchDelete(section, page, state, providerKey) {
   const checked = [...section.querySelectorAll('.model-checkbox:checked')]
   if (!checked.length) { toast(t('models.batchSelectHint'), 'warning'); return }
   const ids = checked.map(cb => cb.dataset.modelId)
-  const yes = await showConfirm(t('models.confirmBatchDelete', { count: ids.length, ids: ids.join(', ') }))
+  const yes = await showConfirm({
+    title: t('models.batchDeleteTitle', { count: ids.length }),
+    message: t('models.confirmBatchDelete', { count: ids.length, ids: ids.join(', ') }),
+    impact: [
+      t('models.batchDeleteImpact'),
+      t('models.batchDeleteImpactConfig'),
+    ],
+    confirmText: t('models.batchDeleteBtn'),
+    cancelText: t('models.batchDeleteCancel'),
+  })
   if (!yes) return
   pushUndo(state)
   const provider = state.config.models.providers[providerKey]

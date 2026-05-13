@@ -4,6 +4,7 @@
  */
 import { api, invalidate } from '../lib/tauri-api.js'
 import { toast } from '../components/toast.js'
+import { humanizeError } from '../lib/humanize-error.js'
 import { showConfirm } from '../components/modal.js'
 import { CHANNEL_LABELS } from '../lib/channel-labels.js'
 import { t } from '../lib/i18n.js'
@@ -276,7 +277,7 @@ async function saveOverview(container, state) {
 
     toast(t('agentDetail.saveSuccess'), 'success')
   } catch (e) {
-    toast(t('agentDetail.saveFailed') + ': ' + e, 'error')
+    toast(humanizeError(e, t('agentDetail.saveFailed')), 'error')
   } finally {
     btn.disabled = false
     btn.textContent = t('agentDetail.saveOverview')
@@ -350,7 +351,7 @@ async function saveTools(container, state) {
     state.detail = await api.getAgentDetail(state.agentId)
     toast(t('agentDetail.toolsSaved'), 'success')
   } catch (e) {
-    toast(t('agentDetail.saveFailed') + ': ' + e, 'error')
+    toast(humanizeError(e, t('agentDetail.saveFailed')), 'error')
   } finally {
     btn.disabled = false
     btn.textContent = t('agentDetail.saveTools')
@@ -413,7 +414,7 @@ async function saveSkills(container, state) {
     state.detail = await api.getAgentDetail(state.agentId)
     toast(t('agentDetail.skillsSaved'), 'success')
   } catch (e) {
-    toast(t('agentDetail.saveFailed') + ': ' + e, 'error')
+    toast(humanizeError(e, t('agentDetail.saveFailed')), 'error')
   } finally {
     btn.disabled = false
     btn.textContent = t('agentDetail.saveSkills')
@@ -512,7 +513,7 @@ async function openFileEditor(container, state, name, isNew = false) {
       const res = await api.readAgentFile(state.agentId, name)
       content = res.content || ''
     } catch (e) {
-      toast(t('agentDetail.loadFailed') + ': ' + e, 'error')
+      toast(humanizeError(e, t('agentDetail.loadFailed')), 'error')
       return
     }
   }
@@ -558,7 +559,7 @@ async function openFileEditor(container, state, name, isNew = false) {
       // 刷新文件列表
       renderFiles(container, state)
     } catch (e) {
-      toast(t('agentDetail.fileSaveFailed') + ': ' + e, 'error')
+      toast(humanizeError(e, t('agentDetail.fileSaveFailed')), 'error')
     }
   }
 
@@ -627,7 +628,16 @@ function renderBindingsList(container, state, bindings) {
     const channel = btn.dataset.channel
     const account = btn.dataset.account || null
     const binding = bindings[Number(btn.dataset.index)]
-    const yes = await showConfirm(t('agentDetail.removeBindingConfirm', { channel: CHANNEL_LABELS[channel] || channel }))
+    const yes = await showConfirm({
+      title: t('agentDetail.removeBindingTitle'),
+      message: t('agentDetail.removeBindingConfirm', { channel: CHANNEL_LABELS[channel] || channel }),
+      impact: [
+        t('agentDetail.removeBindingImpactAgent'),
+        t('agentDetail.removeBindingImpactChannel'),
+      ],
+      confirmText: t('agentDetail.removeBindingBtn'),
+      cancelText: t('agentDetail.removeBindingCancel'),
+    })
     if (!yes) return
     try {
       await api.deleteAgentBinding(state.agentId, channel, account, binding?.match || null)
@@ -636,7 +646,7 @@ function renderBindingsList(container, state, bindings) {
       state.detail = await api.getAgentDetail(state.agentId)
       renderBindingsList(container, state, state.detail.bindings || [])
     } catch (e) {
-      toast(t('agentDetail.bindingFailed') + ': ' + e, 'error')
+      toast(humanizeError(e, t('agentDetail.bindingFailed')), 'error')
     }
   })
 }

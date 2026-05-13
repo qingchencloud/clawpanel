@@ -4,6 +4,7 @@
  */
 import { api } from '../lib/tauri-api.js'
 import { toast } from '../components/toast.js'
+import { humanizeError } from '../lib/humanize-error.js'
 import { icon } from '../lib/icons.js'
 import { t } from '../lib/i18n.js'
 import { wsClient } from '../lib/ws-client.js'
@@ -80,7 +81,7 @@ async function saveConfig() {
     toast(t('communication.configSaved'), 'info')
     try { await api.reloadGateway(); toast(t('communication.gwReloaded'), 'success') } catch {}
   } catch (e) {
-    toast(t('communication.saveFailed') + ': ' + e, 'error')
+    toast(humanizeError(e, t('communication.saveFailed')), 'error')
   } finally {
     if (btn) { btn.disabled = !_dirty; btn.innerHTML = `${icon('save', 14)} ${t('communication.save')}` }
   }

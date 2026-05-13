@@ -3,6 +3,7 @@
  */
 import { api } from '../lib/tauri-api.js'
 import { toast } from '../components/toast.js'
+import { humanizeError } from '../lib/humanize-error.js'
 import { tryShowEngagement } from '../components/engagement.js'
 import { t } from '../lib/i18n.js'
 
@@ -71,7 +72,7 @@ async function loadConfig(page, state) {
     renderConfig(page, state)
   } catch (e) {
     el.innerHTML = '<div style="color:var(--error);padding:20px">' + t('gateway.loadFailed') + ': ' + e + '</div>'
-    toast(t('gateway.loadFailed') + ': ' + e, 'error')
+    toast(humanizeError(e, t('gateway.loadFailed')), 'error')
   }
 }
 
@@ -337,9 +338,9 @@ async function saveConfig(page, state) {
       toast(t('gateway.reloaded'), 'success')
       setTimeout(tryShowEngagement, 3000)
     } catch (e) {
-      toast(t('gateway.savedButReloadFailed') + ': ' + e, 'warning')
+      toast(humanizeError(e, t('gateway.savedButReloadFailed')), 'warning')
     }
   } catch (e) {
-    toast(t('gateway.saveFailed') + ': ' + e, 'error')
+    toast(humanizeError(e, t('gateway.saveFailed')), 'error')
   }
 }

@@ -654,12 +654,30 @@ function bindEvents(page) {
   page.querySelector('#btn-dreaming-toggle')?.addEventListener('click', () => toggleDreaming())
   page.querySelector('#btn-dreaming-backfill')?.addEventListener('click', () => runAction('doctor.memory.backfillDreamDiary', t('dreaming.backfillDone')))
   page.querySelector('#btn-dreaming-reset-diary')?.addEventListener('click', async () => {
-    const yes = await showConfirm(t('dreaming.confirmResetDiary'))
+    const yes = await showConfirm({
+      title: t('dreaming.resetDiaryTitle'),
+      message: t('dreaming.confirmResetDiary'),
+      impact: [
+        t('dreaming.resetDiaryImpactContent'),
+        t('dreaming.resetDiaryImpactReplay'),
+      ],
+      confirmText: t('dreaming.resetDiaryBtn'),
+      cancelText: t('dreaming.resetDiaryCancel'),
+    })
     if (!yes) return
     runAction('doctor.memory.resetDreamDiary', t('dreaming.resetDiaryDone'))
   })
   page.querySelector('#btn-dreaming-clear-grounded')?.addEventListener('click', async () => {
-    const yes = await showConfirm(t('dreaming.confirmClearGrounded'))
+    const yes = await showConfirm({
+      title: t('dreaming.clearGroundedTitle'),
+      message: t('dreaming.confirmClearGrounded'),
+      impact: [
+        t('dreaming.clearGroundedImpact'),
+        t('dreaming.clearGroundedImpactNext'),
+      ],
+      confirmText: t('dreaming.clearGroundedBtn'),
+      cancelText: t('dreaming.clearGroundedCancel'),
+    })
     if (!yes) return
     runAction('doctor.memory.resetGroundedShortTerm', t('dreaming.clearGroundedDone'))
   })

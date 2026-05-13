@@ -209,6 +209,73 @@
   background: var(--bg-secondary);
 }
 
+/* 结构化错误 toast: 主行 + hint + 可折叠技术详情 */
+.toast-structured {
+  max-width: 420px;
+}
+
+.toast-structured .toast-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.toast-structured .toast-main {
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.toast-structured .toast-hint {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  line-height: 1.4;
+  font-weight: 400;
+}
+
+.toast-structured .toast-raw {
+  margin-top: 6px;
+}
+
+.toast-structured .toast-raw summary {
+  cursor: pointer;
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  user-select: none;
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toast-structured .toast-raw summary::-webkit-details-marker {
+  display: none;
+}
+
+.toast-structured .toast-raw summary::before {
+  content: '▸';
+  display: inline-block;
+  font-size: 9px;
+  transition: transform 150ms ease;
+}
+
+.toast-structured .toast-raw[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.toast-structured .toast-raw pre {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  background: var(--bg-tertiary, rgba(0, 0, 0, 0.05));
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
 @keyframes slideIn {
   from { opacity: 0; transform: translateX(20px); }
   to { opacity: 1; transform: translateX(0); }
@@ -320,11 +387,318 @@ mark {
   margin-bottom: var(--space-lg);
 }
 
+/* 致命操作确认弹窗 — 影响列表 */
+.modal-impact-list {
+  margin: var(--space-md) 0 0;
+  padding: 12px 14px 12px 28px;
+  background: rgba(var(--error-rgb, 239, 68, 68), 0.06);
+  border-left: 3px solid var(--error);
+  border-radius: var(--radius-sm);
+  list-style-type: disc;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+}
+
+.modal-impact-list li {
+  line-height: 1.6;
+}
+
+.modal-impact-list li + li {
+  margin-top: 4px;
+}
+
 .modal-actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-sm);
   margin-top: var(--space-xl);
+}
+
+/* 空状态通用组件 — 大图标 + 标题 + 副本 + CTA 按钮 */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--text-secondary);
+}
+
+.empty-state .empty-icon {
+  font-size: 56px;
+  line-height: 1;
+  margin-bottom: var(--space-md);
+  opacity: 0.85;
+  user-select: none;
+}
+
+.empty-state .empty-title {
+  font-size: var(--font-size-md);
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.empty-state .empty-desc {
+  font-size: var(--font-size-sm);
+  color: var(--text-tertiary);
+  line-height: 1.6;
+  max-width: 360px;
+  margin-bottom: var(--space-lg);
+}
+
+.empty-state .empty-cta {
+  margin-top: var(--space-sm);
+}
+
+/* 紧凑版（适合 sidebar 内嵌空状态） */
+.empty-state.empty-compact {
+  padding: 20px 12px;
+}
+
+.empty-state.empty-compact .empty-icon {
+  font-size: 36px;
+  margin-bottom: var(--space-sm);
+}
+
+.empty-state.empty-compact .empty-desc {
+  margin-bottom: var(--space-md);
+}
+
+/* ── 新手引导卡片 ── */
+.onboarding-card {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(168, 85, 247, 0.05));
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+  margin-bottom: var(--space-lg);
+}
+
+[data-theme="dark"] .onboarding-card {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(168, 85, 247, 0.08));
+  border-color: rgba(99, 102, 241, 0.3);
+}
+
+.onboarding-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.onboarding-title {
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.onboarding-desc {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.onboarding-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.onboarding-step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: 12px 14px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  transition: border-color 200ms ease, opacity 200ms ease;
+}
+
+.onboarding-step.done {
+  opacity: 0.6;
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.onboarding-step-badge {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  flex-shrink: 0;
+}
+
+.onboarding-step-badge.todo {
+  background: rgba(99, 102, 241, 0.15);
+  color: rgb(99, 102, 241);
+}
+
+.onboarding-step-badge.done {
+  background: rgba(34, 197, 94, 0.15);
+  color: rgb(34, 197, 94);
+  width: auto;
+  height: auto;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+}
+
+.onboarding-step-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.onboarding-step-title {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.onboarding-step-desc {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  line-height: 1.5;
+}
+
+.onboarding-step.done .onboarding-step-title {
+  text-decoration: line-through;
+  color: var(--text-tertiary);
+}
+
+.onboarding-step-action {
+  flex-shrink: 0;
+}
+
+.onboarding-done-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.onboarding-done-text {
+  font-size: var(--font-size-md);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+/* ── 术语表 ── */
+.glossary-page .glossary-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+}
+
+.glossary-page #glossary-search {
+  max-width: 520px;
+}
+
+.glossary-tabs {
+  display: flex;
+  gap: var(--space-xs);
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border-primary);
+  padding-bottom: 0;
+}
+
+.glossary-tabs .tab {
+  padding: 8px 16px;
+  font-size: var(--font-size-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  border-bottom: 2px solid transparent;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+
+.glossary-tabs .tab:hover {
+  color: var(--text-primary);
+}
+
+.glossary-tabs .tab.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+  font-weight: 500;
+}
+
+.glossary-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: var(--space-md);
+}
+
+.glossary-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  transition: border-color 200ms ease, transform 200ms ease;
+}
+
+.glossary-card:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+  transform: translateY(-1px);
+}
+
+.glossary-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.glossary-term {
+  font-weight: 600;
+  font-size: var(--font-size-md);
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.glossary-desc {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+/* ── 术语 ⓘ 按钮（嵌入页面中的 inline 帮助） ── */
+.term-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin-left: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 13px;
+  line-height: 1;
+  cursor: help;
+  border-radius: 50%;
+  transition: color 150ms ease, background 150ms ease;
+  vertical-align: middle;
+}
+
+.term-help:hover {
+  color: var(--primary, rgb(99, 102, 241));
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.term-help:focus-visible {
+  outline: 2px solid rgba(99, 102, 241, 0.5);
+  outline-offset: 1px;
 }
 
 @keyframes fadeInModal {

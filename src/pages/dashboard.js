@@ -3,6 +3,7 @@
  */
 import { api, invalidate } from '../lib/tauri-api.js'
 import { toast } from '../components/toast.js'
+import { humanizeError } from '../lib/humanize-error.js'
 import { getActiveInstance, onGatewayChange } from '../lib/app-state.js'
 import { isForeignGatewayError, isForeignGatewayService, maybeShowForeignGatewayBindingPrompt, showGatewayConflictGuidance, showInstallationCleanup } from '../lib/gateway-ownership.js'
 import { navigate } from '../router.js'
@@ -25,6 +26,7 @@ export async function render() {
       <p class="page-desc">${t('dashboard.desc')}</p>
     </div>
     <div id="cli-conflict-mount"></div>
+    <div id="onboarding-mount"></div>
     <div class="stat-cards" id="stat-cards">
       <div class="stat-card loading-placeholder"></div>
       <div class="stat-card loading-placeholder"></div>
@@ -38,6 +40,7 @@ export async function render() {
       <button class="btn btn-secondary" id="btn-restart-gw">${t('dashboard.restartGw')}</button>
       <button class="btn btn-secondary" id="btn-check-update">${t('dashboard.checkUpdate')}</button>
       <button class="btn btn-secondary" id="btn-create-backup">${t('dashboard.createBackup')}</button>
+      <button class="btn btn-ghost" id="btn-open-glossary">📖 ${t('glossary.title')}</button>
     </div>
     <div class="config-section">
       <div class="config-section-title">${t('dashboard.recentLogs')}</div>
@@ -230,6 +233,7 @@ async function _loadDashboardDataInner(page, fullRefresh) {
 
   renderStatCards(page, services, version, agents, config, panelConfig)
   renderOverview(page, services, mcpConfig, backups, config, agents, statusSummary, channels)
+  renderOnboarding(page, { gw, config, agents, channels })
 
   // 第三波：日志（最低优先级）
   const logs = await logsP
@@ -583,6 +587,7 @@ function bindActions(page) {
   const btnRestart = page.querySelector('#btn-restart-gw')
   const btnUpdate = page.querySelector('#btn-check-update')
   const btnCreateBackup = page.querySelector('#btn-create-backup')
+  page.querySelector('#btn-open-glossary')?.addEventListener('click', () => navigate('/glossary'))
 
   // Control UI 卡片点击 → 打开 OpenClaw 原生面板（用事件委托，因为卡片是动态渲染的）
   page.addEventListener('click', async (e) => {
@@ -687,7 +692,7 @@ function bindActions(page) {
       await api.restartService('ai.openclaw.gateway')
     } catch (e) {
       if (isForeignGatewayError(e)) await openGatewayConflict(page, e)
-      else toast(t('dashboard.restartFail') + ': ' + e, 'error')
+      else toast(humanizeError(e, t('dashboard.restartFail')), 'error')
       btnRestart.disabled = false
       btnRestart.classList.remove('btn-loading')
       btnRestart.textContent = t('dashboard.restartGw')
@@ -735,7 +740,7 @@ function bindActions(page) {
         toast(t('dashboard.upToDate'), 'success')
       }
     } catch (e) {
-      toast(t('dashboard.checkUpdateFail') + ': ' + e, 'error')
+      toast(humanizeError(e, t('dashboard.checkUpdateFail')), 'error')
     } finally {
       btnUpdate.disabled = false
       btnUpdate.textContent = t('dashboard.checkUpdate')
@@ -750,11 +755,125 @@ function bindActions(page) {
       toast(t('dashboard.backupDone', { name: res.name }), 'success')
       setTimeout(() => loadDashboardData(page), 500)
     } catch (e) {
-      toast(t('dashboard.backupFail') + ': ' + e, 'error')
+      toast(humanizeError(e, t('dashboard.backupFail')), 'error')
     } finally {
       btnCreateBackup.disabled = false
       btnCreateBackup.textContent = t('dashboard.createBackup')
     }
+  })
+}
+
+// ── 新手引导卡片 ──
+// 4 步任务：启动 Gateway / 加模型 / 创建 Agent / 第一次聊天。
+// 全部完成或用户主动关闭后，localStorage 标记隐藏，dashboard 不再渲染。
+
+const ONBOARDING_HIDDEN_KEY = 'clawpanel_onboarding_hidden'
+
+function isOnboardingHidden() {
+  try { return localStorage.getItem(ONBOARDING_HIDDEN_KEY) === '1' } catch { return false }
+}
+
+function hideOnboarding() {
+  try { localStorage.setItem(ONBOARDING_HIDDEN_KEY, '1') } catch {}
+}
+
+function getOnboardingSteps({ gw, config, agents, channels }) {
+  // 步骤 1：Gateway 启动
+  const gwRunning = !!gw?.running
+  // 步骤 2：至少配了一个 provider 且非空
+  const providers = config?.models?.providers || {}
+  const hasModel = Object.keys(providers).length > 0
+  // 步骤 3：自定义 Agent（默认 main 不算）
+  const agentList = Array.isArray(agents) ? agents : []
+  const hasCustomAgent = agentList.some(a => a && a.id && a.id !== 'main')
+  // 步骤 4：渠道接入（不是必须，但作为「已开始用」的标志）
+  // 实际上更好的判定是「点过聊天页 / 发过一条消息」，但目前没记录，先用 channels 数量作为可选完成判据
+  // 改为：把第 4 步定义为「尝试聊天」—— 不强校验，CTA 触发跳转即可（用户点了就当完成）
+  const hasChatTried = (() => {
+    try { return localStorage.getItem('clawpanel_onboarding_chat_clicked') === '1' } catch { return false }
+  })()
+  return [
+    { id: 'gateway', titleKey: 'onboardingStep1Title', descKey: 'onboardingStep1Desc', ctaKey: 'onboardingStep1Cta', route: '/services', done: gwRunning },
+    { id: 'model', titleKey: 'onboardingStep2Title', descKey: 'onboardingStep2Desc', ctaKey: 'onboardingStep2Cta', route: '/models', done: hasModel },
+    { id: 'agent', titleKey: 'onboardingStep3Title', descKey: 'onboardingStep3Desc', ctaKey: 'onboardingStep3Cta', route: '/agents', done: hasCustomAgent },
+    { id: 'chat', titleKey: 'onboardingStep4Title', descKey: 'onboardingStep4Desc', ctaKey: 'onboardingStep4Cta', route: '/chat', done: hasChatTried, markOnClick: 'clawpanel_onboarding_chat_clicked' },
+  ]
+}
+
+function renderOnboarding(page, ctx) {
+  const mount = page.querySelector('#onboarding-mount')
+  if (!mount) return
+  if (isOnboardingHidden()) { mount.innerHTML = ''; return }
+
+  const steps = getOnboardingSteps(ctx)
+  const allDone = steps.every(s => s.done)
+  // 全部完成时显示一条庆祝条 + 关闭按钮
+  if (allDone) {
+    mount.innerHTML = `
+      <div class="onboarding-card onboarding-done-card">
+        <div class="onboarding-done-text">${escapeHtml(t('dashboard.onboardingAllDone'))}</div>
+        <button class="btn btn-sm btn-secondary" data-onboarding-action="close">${escapeHtml(t('dashboard.onboardingClose'))}</button>
+      </div>
+    `
+    mount.querySelector('[data-onboarding-action="close"]')?.addEventListener('click', () => {
+      hideOnboarding()
+      mount.innerHTML = ''
+    })
+    return
+  }
+
+  // 渲染 4 步进度卡片
+  const stepsHtml = steps.map((s, idx) => {
+    const num = idx + 1
+    const cls = s.done ? 'onboarding-step done' : 'onboarding-step'
+    const badge = s.done
+      ? `<span class="onboarding-step-badge done">✓ ${escapeHtml(t('dashboard.onboardingDone'))}</span>`
+      : `<span class="onboarding-step-badge todo">${num}</span>`
+    const cta = s.done
+      ? ''
+      : `<button class="btn btn-sm btn-primary" data-onboarding-step="${s.id}">${escapeHtml(t(`dashboard.${s.ctaKey}`))} →</button>`
+    return `
+      <div class="${cls}">
+        ${badge}
+        <div class="onboarding-step-body">
+          <div class="onboarding-step-title">${escapeHtml(t(`dashboard.${s.titleKey}`))}</div>
+          <div class="onboarding-step-desc">${escapeHtml(t(`dashboard.${s.descKey}`))}</div>
+        </div>
+        <div class="onboarding-step-action">${cta}</div>
+      </div>
+    `
+  }).join('')
+
+  mount.innerHTML = `
+    <div class="onboarding-card">
+      <div class="onboarding-header">
+        <div>
+          <div class="onboarding-title">${escapeHtml(t('dashboard.onboardingTitle'))}</div>
+          <div class="onboarding-desc">${escapeHtml(t('dashboard.onboardingDesc'))}</div>
+        </div>
+        <button class="btn btn-xs btn-ghost" data-onboarding-action="close" title="${escapeHtml(t('dashboard.onboardingClose'))}">×</button>
+      </div>
+      <div class="onboarding-steps">
+        ${stepsHtml}
+      </div>
+    </div>
+  `
+
+  mount.querySelector('[data-onboarding-action="close"]')?.addEventListener('click', () => {
+    hideOnboarding()
+    mount.innerHTML = ''
+  })
+
+  steps.forEach(s => {
+    if (s.done) return
+    const btn = mount.querySelector(`[data-onboarding-step="${s.id}"]`)
+    if (!btn) return
+    btn.addEventListener('click', () => {
+      if (s.markOnClick) {
+        try { localStorage.setItem(s.markOnClick, '1') } catch {}
+      }
+      navigate(s.route)
+    })
   })
 }
 

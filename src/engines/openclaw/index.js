@@ -120,6 +120,7 @@ export default {
       { path: '/route-map', loader: () => import('../../pages/route-map.js') },
       { path: '/plugin-hub', loader: () => import('../../pages/plugin-hub.js') },
       { path: '/diagnose', loader: () => import('../../pages/chat-debug.js') },
+      { path: '/glossary', loader: () => import('../../pages/glossary.js') },
     ]
   },
 

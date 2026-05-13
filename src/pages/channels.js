@@ -4,10 +4,12 @@
  */
 import { api, invalidate, safeTauriListen } from '../lib/tauri-api.js'
 import { toast } from '../components/toast.js'
+import { humanizeError } from '../lib/humanize-error.js'
 import { showContentModal, showConfirm } from '../components/modal.js'
 import { icon } from '../lib/icons.js'
 import { CHANNEL_LABELS } from '../lib/channel-labels.js'
 import { t } from '../lib/i18n.js'
+import { termHelpHtml, attachTermTooltips } from '../lib/term-tooltip.js'
 import { wsClient } from '../lib/ws-client.js'
 
 // ── 渠道注册表：面板内置向导，覆盖 OpenClaw 官方渠道 + 国内扩展渠道 ──
@@ -325,7 +327,7 @@ async function loadPlatforms(page, state) {
     const list = await api.listConfiguredPlatforms()
     state.configured = Array.isArray(list) ? list : []
   } catch (e) {
-    toast(t('channels.loadFailed') + ': ' + e, 'error')
+    toast(humanizeError(e, t('channels.loadFailed')), 'error')
     state.configured = []
   }
   try {
@@ -670,7 +672,7 @@ function renderConfigured(page, state) {
         modal.close?.() || modal.remove?.()
         await loadPlatforms(page, state)
       } catch (e) {
-        toast(t('channels.saveFailed') + ': ' + e, 'error')
+        toast(humanizeError(e, t('channels.saveFailed')), 'error')
       } finally {
         modal.querySelector('#btn-quick-bind-save').disabled = false
         modal.querySelector('#btn-quick-bind-save').textContent = t('channels.saveBinding')
@@ -706,7 +708,7 @@ function renderConfigured(page, state) {
           await api.removeMessagingPlatform(pid, accountId || null)
           toast(t('channels.removed'), 'info')
           await loadPlatforms(page, state)
-        } catch (e) { toast(t('channels.removeFailed') + ': ' + e, 'error') }
+        } catch (e) { toast(humanizeError(e, t('channels.removeFailed')), 'error') }
       })
     })
 
@@ -717,16 +719,31 @@ function renderConfigured(page, state) {
         await api.toggleMessagingPlatform(pid, !cur.enabled)
         toast(`${platformLabel(pid)} ${cur.enabled ? t('channels.disabled') : t('channels.enabled')}`, 'success')
         await loadPlatforms(page, state)
-      } catch (e) { toast(t('channels.operationFailed') + ': ' + e, 'error') }
+      } catch (e) { toast(humanizeError(e, t('channels.operationFailed')), 'error') }
     })
     card.querySelector('[data-action="remove"]')?.addEventListener('click', async () => {
-      const yes = await showConfirm(t('channels.confirmRemovePlatform', { name: platformLabel(pid) }))
+      const channelKey = getChannelBindingKey(pid)
+      const linkedBindings = (state.bindings || []).filter(b => b.match?.channel === channelKey).length
+      const impact = [
+        t('channels.removePlatformImpactConfig'),
+        t('channels.removePlatformImpactStop'),
+      ]
+      if (linkedBindings > 0) {
+        impact.unshift(t('channels.removePlatformImpactBindings', { n: linkedBindings }))
+      }
+      const yes = await showConfirm({
+        title: t('channels.removePlatformTitle', { name: platformLabel(pid) }),
+        message: t('channels.confirmRemovePlatform', { name: platformLabel(pid) }),
+        impact,
+        confirmText: t('channels.removePlatformBtn'),
+        cancelText: t('channels.removePlatformCancel'),
+      })
       if (!yes) return
       try {
         await api.removeMessagingPlatform(pid)
         toast(t('channels.removed'), 'info')
         await loadPlatforms(page, state)
-      } catch (e) { toast(t('channels.removeFailed') + ': ' + e, 'error') }
+      } catch (e) { toast(humanizeError(e, t('channels.removeFailed')), 'error') }
     })
   })
 }
@@ -841,7 +858,7 @@ function renderAgentBindings(page, state) {
             </div>
           </div>`
       }).join('')
-      : `<div class="form-hint" style="padding:8px 0">${t('channels.noBindings')}</div>`
+      : `<div class="empty-state empty-compact" style="padding:14px 8px"><div class="empty-icon" style="font-size:28px">💬</div><div class="empty-desc">${t('channels.noBindings')}</div></div>`
 
     const addDisabled = !canBind.length ? 'disabled' : ''
     return `
@@ -891,14 +908,23 @@ function renderAgentBindings(page, state) {
       const match = binding.match || {}
       const ch = match.channel
       const acct = match.accountId || null
-      const yes = await showConfirm(t('channels.confirmRemoveBinding', { agent: aid, summary: formatBindingMatchSummary(binding) }))
+      const yes = await showConfirm({
+        title: t('channels.removeBindingTitle'),
+        message: t('channels.confirmRemoveBinding', { agent: aid, summary: formatBindingMatchSummary(binding) }),
+        impact: [
+          t('channels.removeBindingImpactAgent'),
+          t('channels.removeBindingImpactConfig'),
+        ],
+        confirmText: t('channels.removeBindingBtn'),
+        cancelText: t('channels.removeBindingCancel'),
+      })
       if (!yes) return
       try {
         await api.deleteAgentBinding(aid, ch, acct, match)
         toast(t('channels.bindingRemoved'), 'success')
         await loadPlatforms(page, state)
       } catch (e) {
-        toast(t('channels.removeFailed') + ': ' + e, 'error')
+        toast(humanizeError(e, t('channels.removeFailed')), 'error')
       }
     })
   })
@@ -1078,7 +1104,7 @@ async function openAddAgentBindingModal(agentId, page, state) {
       }
       await loadPlatforms(page, state)
     } catch (e) {
-      toast(t('channels.saveFailed') + ': ' + e, 'error')
+      toast(humanizeError(e, t('channels.saveFailed')), 'error')
     } finally {
       btnSave.disabled = false
       btnSave.textContent = t('channels.saveBinding')
@@ -1183,7 +1209,7 @@ function bindManualCommandCopy(root, commandSpecs) {
           btn.textContent = prev
         }, 1200)
       } catch (e) {
-        toast(t('channels.copyCommandFailed') + ': ' + e, 'error')
+        toast(humanizeError(e, t('channels.copyCommandFailed')), 'error')
       }
     })
   })
@@ -1245,7 +1271,7 @@ function showQqDiagnoseModal(result, options = {}) {
       diagModal.remove()
       showQqDiagnoseModal(fresh, { accountId })
     } catch (e) {
-      toast(t('channels.repairFailed') + ': ' + e, 'error')
+      toast(humanizeError(e, t('channels.repairFailed')), 'error')
     } finally {
       repairBtn.disabled = false
       repairBtn.innerHTML = prev
@@ -1289,7 +1315,7 @@ async function runChannelTestForBinding(binding, btnEl) {
       toast(t('channels.testFailed') + ': ' + errs, 'error')
     }
   } catch (e) {
-    toast((channel === 'qqbot' ? t('channels.diagFailed') : t('channels.testFailed')) + ': ' + e, 'error')
+    toast(humanizeError(e, channel === 'qqbot' ? t('channels.diagFailed') : t('channels.testFailed')), 'error')
   } finally {
     if (btnEl) {
       btnEl.disabled = false
@@ -1667,7 +1693,7 @@ async function openConfigDialog(pid, page, state, accountId) {
           }
         } catch (e) {
           _flushQr()
-          toast(t('channels.executionFailed') + ': ' + e, 'error')
+          toast(humanizeError(e, t('channels.executionFailed')), 'error')
           if (logBox) {
             const div = document.createElement('div')
             div.style.color = 'var(--error)'
@@ -1739,12 +1765,21 @@ async function openConfigDialog(pid, page, state, accountId) {
     return Object.entries(field.requiredWhen).every(([k, expected]) => (form[k] || '') === expected)
   }
 
+  // 字段 label 智能匹配术语 → 自动追加 ⓘ 按钮
+  const labelWithHelp = (label) => {
+    const l = String(label || '').toLowerCase()
+    if (l.includes('bot token')) return label + termHelpHtml('bottoken')
+    if (l.includes('webhook')) return label + termHelpHtml('webhook')
+    if (l.includes('signing secret') || l.includes('client secret') || l.includes('app secret') || l.includes('api key')) return label + termHelpHtml('apikey')
+    return label
+  }
+
   const fieldsHtml = reg.fields.map((f, i) => {
     const val = existing[f.key] || ''
     if (f.type === 'select' && f.options) {
       return `
         <div class="form-group">
-          <label class="form-label">${f.label}${f.required ? ' *' : ''}</label>
+          <label class="form-label">${labelWithHelp(f.label)}${f.required ? ' *' : ''}</label>
           <select class="form-input" name="${f.key}" data-name="${f.key}">
             ${f.options.map(o => `<option value="${o.value}" ${val === o.value ? 'selected' : ''}>${o.label}</option>`).join('')}
           </select>
@@ -1754,7 +1789,7 @@ async function openConfigDialog(pid, page, state, accountId) {
     }
     return `
       <div class="form-group">
-        <label class="form-label">${f.label}${f.required ? ' *' : ''}</label>
+        <label class="form-label">${labelWithHelp(f.label)}${f.required ? ' *' : ''}</label>
         <div style="display:flex;gap:8px">
           <input class="form-input" name="${f.key}" type="${f.secret ? 'password' : 'text'}"
                  value="${escapeAttr(val)}" placeholder="${f.placeholder || ''}"
@@ -1834,6 +1869,7 @@ async function openConfigDialog(pid, page, state, accountId) {
     width: 520,
   })
   bindManualCommandCopy(modal, manualCommandSpecs)
+  attachTermTooltips(modal)
 
   // 外部链接用系统浏览器打开
   modal.addEventListener('click', (e) => {
@@ -1856,7 +1892,7 @@ async function openConfigDialog(pid, page, state, accountId) {
         const result = await api.diagnoseChannel('qqbot', accountId || null)
         showQqDiagnoseModal(result, { accountId: accountId || null })
       } catch (e) {
-        toast(t('channels.diagFailed') + ': ' + e, 'error')
+        toast(humanizeError(e, t('channels.diagFailed')), 'error')
       } finally {
         diagBtn.disabled = false
         diagBtn.innerHTML = prev
@@ -1971,7 +2007,7 @@ async function openConfigDialog(pid, page, state, accountId) {
           logBox.textContent += (logBox.textContent ? '\n' : '') + String(output)
         }
       } catch (e) {
-        toast(t('channels.actionFailed') + ': ' + e, 'error')
+        toast(humanizeError(e, t('channels.actionFailed')), 'error')
       } finally {
         cleanup()
         btn.disabled = false
@@ -2138,7 +2174,7 @@ async function openConfigDialog(pid, page, state, accountId) {
               await api.installChannelPlugin(pluginPackage, pluginId, pluginVersion)
             }
           } catch (e) {
-            toast(t('channels.pluginInstallFailed') + ': ' + e, 'error')
+            toast(humanizeError(e, t('channels.pluginInstallFailed')), 'error')
             btnSave.disabled = false
             btnVerify.disabled = false
             btnSave.textContent = isEdit ? t('channels.save') : t('channels.connectAndSave')
@@ -2170,7 +2206,7 @@ async function openConfigDialog(pid, page, state, accountId) {
       modal.close?.() || modal.remove?.()
       await loadPlatforms(page, state)
     } catch (e) {
-      toast(t('channels.saveFailed') + ': ' + e, 'error')
+      toast(humanizeError(e, t('channels.saveFailed')), 'error')
     } finally {
       btnSave.disabled = false
       btnVerify.disabled = false

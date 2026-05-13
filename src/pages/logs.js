@@ -3,6 +3,7 @@
  */
 import { api } from '../lib/tauri-api.js'
 import { toast } from '../components/toast.js'
+import { humanizeError } from '../lib/humanize-error.js'
 import { t } from '../lib/i18n.js'
 
 const LOG_TABS = [
@@ -93,7 +94,7 @@ async function loadLog(page, logName) {
     }
   } catch (e) {
     el.innerHTML = '<div style="color:var(--error);padding:12px">' + t('logs.loadFailed') + ': ' + e + '</div>'
-    toast(t('logs.loadFailed') + ': ' + e, 'error')
+    toast(humanizeError(e, t('logs.loadFailed')), 'error')
   } finally {
     if (refreshBtn) { refreshBtn.classList.remove('btn-loading'); refreshBtn.disabled = false }
   }
@@ -110,7 +111,7 @@ async function searchLog(page, logName, query) {
     el.innerHTML = results.map(l => `<div class="log-line">${highlightMatch(escapeHtml(l), query)}</div>`).join('')
   } catch (e) {
     el.innerHTML = '<div style="color:var(--error);padding:12px">' + t('logs.searchFailed') + ': ' + e + '</div>'
-    toast(t('logs.searchFailed') + ': ' + e, 'error')
+    toast(humanizeError(e, t('logs.searchFailed')), 'error')
   }
 }
 

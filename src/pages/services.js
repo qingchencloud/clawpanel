@@ -4,6 +4,7 @@
  */
 import { api } from '../lib/tauri-api.js'
 import { toast } from '../components/toast.js'
+import { humanizeError } from '../lib/humanize-error.js'
 import { showConfirm, showModal, showUpgradeModal } from '../components/modal.js'
 import { isMacPlatform, isInDocker, setUpgrading, setUserStopped, resetAutoRestart } from '../lib/app-state.js'
 import { isForeignGatewayError, isForeignGatewayService, maybeShowForeignGatewayBindingPrompt, showGatewayConflictGuidance } from '../lib/gateway-ownership.js'
@@ -762,7 +763,13 @@ async function handleRestoreBackup(name, page) {
 }
 
 async function handleDeleteBackup(name, page) {
-  const yes = await showConfirm(t('services.deleteConfirm', { name }))
+  const yes = await showConfirm({
+    title: t('services.deleteBackupTitle', { name }),
+    message: t('services.deleteConfirm', { name }),
+    impact: [t('services.deleteBackupImpact')],
+    confirmText: t('services.deleteBackupBtn'),
+    cancelText: t('services.deleteBackupCancel'),
+  })
   if (!yes) return
   await api.deleteBackup(name)
   toast(t('services.backupDeleted'), 'success')
@@ -885,14 +892,14 @@ async function handleSaveConfig(page, restart) {
         await api.restartGateway()
         toast(t('services.gwRestarted'), 'success')
       } catch (e) {
-        toast(t('services.configSavedGwFailed') + ': ' + e, 'warning')
+        toast(humanizeError(e, t('services.configSavedGwFailed')), 'warning')
       }
       await loadServices(page)
     }
 
     await loadBackups(page)
   } catch (e) {
-    toast(t('common.saveFailed') + ': ' + e, 'error')
+    toast(humanizeError(e, t('common.saveFailed')), 'error')
     status.innerHTML = `<span style="color:var(--error)">${t('common.saveFailed')}: ${e}</span>`
   }
 }
@@ -994,7 +1001,7 @@ async function handleClaimGateway(btn, page) {
     await refreshGatewayStatus()
     await loadServices(page)
   } catch (e) {
-    toast(t('services.claimFailed') + ': ' + e, 'error')
+    toast(humanizeError(e, t('services.claimFailed')), 'error')
     btn.classList.remove('btn-loading')
     btn.textContent = t('services.claimGateway')
   }
@@ -1010,14 +1017,24 @@ async function handleInstallGateway(btn, page) {
     toast(t('services.gwInstalled'), 'success')
     await loadServices(page)
   } catch (e) {
-    toast(t('services.installFailed') + ': ' + e, 'error')
+    toast(humanizeError(e, t('services.installFailed')), 'error')
     btn.classList.remove('btn-loading')
     btn.textContent = t('services.install')
   }
 }
 
 async function handleUninstallGateway(btn, page) {
-  const yes = await showConfirm(t('services.uninstallConfirm'))
+  const yes = await showConfirm({
+    title: t('services.uninstallTitle'),
+    message: t('services.uninstallConfirm'),
+    impact: [
+      t('services.uninstallImpactStop'),
+      t('services.uninstallImpactAutostart'),
+      t('services.uninstallImpactConfig'),
+    ],
+    confirmText: t('services.uninstallBtn'),
+    cancelText: t('services.uninstallCancelBtn'),
+  })
   if (!yes) return
   btn.classList.add('btn-loading')
   btn.textContent = t('services.uninstalling')
@@ -1026,7 +1043,7 @@ async function handleUninstallGateway(btn, page) {
     toast(t('services.gwUninstalled'), 'success')
     await loadServices(page)
   } catch (e) {
-    toast(t('services.uninstallFailed') + ': ' + e, 'error')
+    toast(humanizeError(e, t('services.uninstallFailed')), 'error')
     btn.classList.remove('btn-loading')
     btn.textContent = t('services.uninstall')
   }

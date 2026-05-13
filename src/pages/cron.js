@@ -4,6 +4,7 @@
  * 注意：openclaw.json 不支持 cron.jobs 字段，定时任务只能通过 Gateway 在线管理
  */
 import { toast } from '../components/toast.js'
+import { humanizeError } from '../lib/humanize-error.js'
 import { showContentModal, showConfirm } from '../components/modal.js'
 import { icon } from '../lib/icons.js'
 import { onGatewayChange } from '../lib/app-state.js'
@@ -138,7 +139,7 @@ async function fetchJobs(page, state) {
       lastError: j.state?.lastError || null,
     }))
   } catch (e) {
-    toast(t('cron.fetchFailed') + ': ' + e, 'error')
+    toast(humanizeError(e, t('cron.fetchFailed')), 'error')
     state.jobs = []
   }
 
@@ -191,12 +192,16 @@ function renderList(page, state) {
 
   if (!state.jobs.length) {
     el.innerHTML = `
-      <div style="text-align:center;padding:40px 0;color:var(--text-tertiary)">
-        <div style="margin-bottom:12px;color:var(--text-tertiary)">${icon('clock', 48)}</div>
-        <div style="font-size:var(--font-size-md);margin-bottom:6px">${t('cron.noTasks')}</div>
-        <div style="font-size:var(--font-size-sm)">${t('cron.noTasksHint')}</div>
+      <div class="empty-state">
+        <div class="empty-icon">⏰</div>
+        <div class="empty-title">${t('cron.noTasks')}</div>
+        <div class="empty-desc">${t('cron.noTasksHint')}</div>
+        <div class="empty-cta"><button class="btn btn-primary" data-empty-cta="new-task">${t('cron.newTask')}</button></div>
       </div>
     `
+    el.querySelector('[data-empty-cta="new-task"]')?.addEventListener('click', () => {
+      page.querySelector('#btn-new-task')?.click()
+    })
     return
   }
 
@@ -273,7 +278,16 @@ function renderList(page, state) {
 
     card.querySelector('[data-action="delete"]').onclick = async function() {
       const btn = this
-      const yes = await showConfirm(t('cron.confirmDelete', { name: job.name }))
+      const yes = await showConfirm({
+        title: t('cron.deleteTitle', { name: job.name }),
+        message: t('cron.confirmDelete', { name: job.name }),
+        impact: [
+          t('cron.deleteImpactStop'),
+          t('cron.deleteImpactHistory'),
+        ],
+        confirmText: t('cron.deleteBtn'),
+        cancelText: t('cron.deleteCancel'),
+      })
       if (!yes) return
       if (btn) btn.disabled = true
       try {
@@ -450,7 +464,7 @@ async function openTaskDialog(job, page, state) {
       modal.close?.() || modal.remove?.()
       await fetchJobs(page, state)
     } catch (e) {
-      toast(t('cron.saveFailed') + ': ' + e, 'error')
+      toast(humanizeError(e, t('cron.saveFailed')), 'error')
       saveBtn.disabled = false
       saveBtn.textContent = isEdit ? t('cron.saveEdit') : t('cron.saveCreate')
     }

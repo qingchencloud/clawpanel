@@ -1427,7 +1427,16 @@ async function deleteSession(key) {
   const mainKey = wsClient.snapshot?.sessionDefaults?.mainSessionKey || 'agent:main:main'
   if (key === mainKey) { toast(t('chat.cannotDeleteMain'), 'warning'); return }
   const label = parseSessionLabel(key)
-  const yes = await showConfirm(t('chat.confirmDeleteSession', { label }))
+  const yes = await showConfirm({
+    title: t('chat.deleteSessionTitle', { label }),
+    message: t('chat.confirmDeleteSession', { label }),
+    impact: [
+      t('chat.deleteSessionImpactHistory'),
+      t('chat.deleteSessionImpactCannotUndo'),
+    ],
+    confirmText: t('chat.deleteSessionBtn'),
+    cancelText: t('chat.deleteSessionCancel'),
+  })
   if (!yes) return
   try {
     await wsClient.sessionsDelete(key)
@@ -1532,7 +1541,16 @@ async function showCompactionHistory(key) {
 async function resetCurrentSession() {
   if (!_sessionKey) return
   const label = getDisplayLabel(_sessionKey)
-  const yes = await showConfirm(t('chat.confirmResetSession', { label }))
+  const yes = await showConfirm({
+    title: t('chat.resetSessionTitle', { label }),
+    message: t('chat.confirmResetSession', { label }),
+    impact: [
+      t('chat.resetSessionImpactHistory'),
+      t('chat.resetSessionImpactContext'),
+    ],
+    confirmText: t('chat.resetSessionBtn'),
+    cancelText: t('chat.resetSessionCancel'),
+  })
   if (!yes) return
   try {
     await wsClient.sessionsReset(_sessionKey)

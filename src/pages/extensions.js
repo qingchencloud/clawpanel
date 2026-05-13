@@ -4,6 +4,7 @@
  */
 import { api } from '../lib/tauri-api.js'
 import { toast } from '../components/toast.js'
+import { humanizeError } from '../lib/humanize-error.js'
 import { statusIcon } from '../lib/icons.js'
 import { t } from '../lib/i18n.js'
 
@@ -236,7 +237,7 @@ async function handleCftunnelAction(page, action) {
     toast(t('ext.tunnelActionDone', { action: label }), 'success')
     await loadCftunnel(page)
   } catch (e) {
-    toast(t('ext.tunnelActionFail', { action: label }) + ': ' + e, 'error')
+    toast(humanizeError(e, t('ext.tunnelActionFail', { action: label })), 'error')
     if (btn) { btn.classList.remove('btn-loading'); btn.disabled = false; btn.textContent = label }
   }
 }
@@ -317,7 +318,7 @@ async function handleInstallCftunnel(page) {
     progressFill.classList.add('error')
     progressText.innerHTML = `${statusIcon('err', 14)} ${t('ext.installFailed')}`
     logBox.textContent += '\n' + t('ext.error') + ': ' + e
-    toast(t('ext.installFailed') + ': ' + e, 'error')
+    toast(humanizeError(e, t('ext.installFailed')), 'error')
     if (window.__openAIDrawerWithError) {
       window.__openAIDrawerWithError({
         title: t('ext.installFailedTitle', { name: 'cftunnel' }),
@@ -382,7 +383,7 @@ async function handleInstallClawapp(page) {
     progressFill.classList.add('error')
     progressText.innerHTML = `${statusIcon('err', 14)} ${t('ext.installFailed')}`
     logBox.textContent += '\n' + t('ext.error') + ': ' + e
-    toast(t('ext.installFailed') + ': ' + e, 'error')
+    toast(humanizeError(e, t('ext.installFailed')), 'error')
     if (window.__openAIDrawerWithError) {
       window.__openAIDrawerWithError({
         title: t('ext.installFailedTitle', { name: 'ClawApp' }),

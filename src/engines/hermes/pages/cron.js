@@ -392,8 +392,18 @@ export function render() {
     el.querySelectorAll('.hm-cron-del').forEach(btn => {
       btn.addEventListener('click', async () => {
         const job = jobs.find(j => (j.id || j.name) === btn.dataset.id)
-        const msg = t('engine.cronConfirmDelete').replace('{name}', job?.name || btn.dataset.id)
-        if (!confirm(msg)) return
+        const name = job?.name || btn.dataset.id
+        const ok = await showConfirm({
+          title: t('engine.cronDeleteTitle', { name }),
+          message: t('engine.cronConfirmDelete', { name }),
+          impact: [
+            t('engine.cronDeleteImpactStop'),
+            t('engine.cronDeleteImpactHistory'),
+          ],
+          confirmText: t('engine.cronDeleteBtn'),
+          cancelText: t('engine.cronDeleteCancel'),
+        })
+        if (!ok) return
         btn.disabled = true
         try { await gw(`/api/jobs/${encodeURIComponent(btn.dataset.id)}`, { method: 'DELETE' }) } catch (_) {}
         await loadJobs(); draw()

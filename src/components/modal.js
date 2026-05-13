@@ -17,26 +17,51 @@ function escapeAttr(str) {
 /**
  * 自定义确认弹窗，替代原生 confirm()
  * Tauri WebView 不支持原生 confirm/alert，必须用自定义弹窗
- * @param {string} message 确认消息
- * @returns {Promise<boolean>} 用户选择确认返回 true，取消返回 false
+ *
+ * 入参 message 支持两种：
+ *   1) string                                  —— 旧用法（向后兼容）
+ *   2) { message, impact?, ...options }        —— 结构化致命操作确认：
+ *        - message:     主问题（"删除 Agent 'main'？"）
+ *        - impact:      影响列表 string[]，渲染成 ul（让小白看清楚删了会丢什么）
+ *        - title/confirmText/cancelText/variant: 同 options 同名字段
+ *
+ * @param {string|object} message 确认消息或结构化对象
+ * @param {object} [options]      旧版 options 字段（仍兼容）
+ * @returns {Promise<boolean>}    用户选择确认返回 true，取消返回 false
  */
 export function showConfirm(message, options = {}) {
-  // options:
-  //   title: 标题文本（默认 t('common.confirmAction')）
-  //   confirmText: 确认按钮文字（默认 t('common.confirm')）
-  //   cancelText: 取消按钮文字（默认 t('common.cancel')）
-  //   variant: 'danger' | 'primary'（默认 'danger'，决定确认按钮颜色）
+  // 结构化入参：把对象字段合并到 options，message 取其 .message 字段
+  let actualMessage = message
+  let impactList = null
+  if (message && typeof message === 'object') {
+    actualMessage = message.message ?? ''
+    impactList = Array.isArray(message.impact) ? message.impact.filter(Boolean) : null
+    // 对象字段优先于 options 同名字段
+    options = {
+      title: message.title ?? options.title,
+      confirmText: message.confirmText ?? options.confirmText,
+      cancelText: message.cancelText ?? options.cancelText,
+      variant: message.variant ?? options.variant,
+    }
+  }
+
   const title = options.title || t('common.confirmAction')
   const confirmText = options.confirmText || t('common.confirm')
   const cancelText = options.cancelText || t('common.cancel')
   const variant = options.variant === 'primary' ? 'btn-primary' : 'btn-danger'
+
+  const impactHtml = impactList && impactList.length
+    ? `<ul class="modal-impact-list">${impactList.map(i => `<li>${escapeAttr(i)}</li>`).join('')}</ul>`
+    : ''
+
   return new Promise((resolve) => {
     const overlay = document.createElement('div')
     overlay.className = 'modal-overlay'
     overlay.innerHTML = `
-      <div class="modal" style="max-width:400px">
+      <div class="modal" style="max-width:420px">
         <div class="modal-title">${escapeAttr(title)}</div>
-        <div class="modal-body" style="font-size:var(--font-size-sm);color:var(--text-secondary);white-space:pre-wrap;line-height:1.6">${escapeAttr(message)}</div>
+        <div class="modal-body" style="font-size:var(--font-size-sm);color:var(--text-secondary);white-space:pre-wrap;line-height:1.6">${escapeAttr(actualMessage)}</div>
+        ${impactHtml}
         <div class="modal-actions">
           <button class="btn btn-secondary btn-sm" data-action="cancel">${escapeAttr(cancelText)}</button>
           <button class="btn ${variant} btn-sm" data-action="confirm">${escapeAttr(confirmText)}</button>
@@ -59,8 +84,8 @@ export function showConfirm(message, options = {}) {
       if (e.key === 'Enter') { e.preventDefault(); close(true) }
       else if (e.key === 'Escape') close(false)
     })
-    // 聚焦确认按钮以接收键盘事件
-    overlay.querySelector('[data-action="confirm"]').focus()
+    // 聚焦取消按钮（致命操作默认不要默认聚焦确认）
+    overlay.querySelector('[data-action="cancel"]').focus()
   })
 }
 

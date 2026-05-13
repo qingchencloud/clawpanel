@@ -4,6 +4,8 @@
  */
 import { api } from '../lib/tauri-api.js'
 import { toast } from '../components/toast.js'
+import { humanizeError } from '../lib/humanize-error.js'
+import { showConfirm } from '../components/modal.js'
 import { t } from '../lib/i18n.js'
 import { wsClient } from '../lib/ws-client.js'
 
@@ -165,9 +167,11 @@ function renderSkills(el, data) {
 
     ${!skills.length ? `
     <div class="clawhub-panel">
-      <div class="clawhub-empty" style="text-align:center;padding:var(--space-xl)">
-        <div style="margin-bottom:var(--space-sm)">${t('skills.noSkills')}</div>
-        <div class="form-hint">${t('skills.noSkillsHint')}</div>
+      <div class="empty-state">
+        <div class="empty-icon">🛠️</div>
+        <div class="empty-title">${t('skills.noSkills')}</div>
+        <div class="empty-desc">${t('skills.noSkillsHint')}</div>
+        <div class="empty-cta"><button class="btn btn-primary" data-empty-cta="go-store">${t('skills.tabStore')}</button></div>
       </div>
     </div>` : ''}
 
@@ -186,6 +190,11 @@ function renderSkills(el, data) {
       })
     })
   }
+  // 空状态 CTA：切到「技能商店」主 Tab
+  el.querySelector('[data-empty-cta="go-store"]')?.addEventListener('click', () => {
+    const page = el.closest('.page')
+    page?.querySelector('#skills-main-tabs .tab[data-main-tab="store"]')?.click()
+  })
 }
 
 function renderSkillCard(skill, status) {
@@ -297,7 +306,7 @@ async function handleInstallDep(page, btn) {
     toast(t('skills.depInstalled', { name: skillName }), 'success')
     await loadSkills(page)
   } catch (e) {
-    toast(`${t('skills.installFailed')}: ${e?.message || e}`, 'error')
+    toast(humanizeError(e, t('skills.installFailed')), 'error')
     btn.disabled = false
     btn.textContent = spec.label || t('skills.retry')
   }
@@ -407,7 +416,7 @@ async function handleStoreInstall(page, btn) {
     _installedNames.add(slug)
     loadSkills(page).catch(() => {})
   } catch (e) {
-    toast(`${t('skills.installFailed')}: ${e?.message || e}`, 'error')
+    toast(humanizeError(e, t('skills.installFailed')), 'error')
     btn.disabled = false
     btn.textContent = t('skills.install')
   }
@@ -416,7 +425,8 @@ async function handleStoreInstall(page, btn) {
 async function handleSkillUninstall(page, btn) {
   const name = btn.dataset.name
   if (!name) return
-  if (!confirm(t('skills.confirmUninstall', { name }))) return
+  const ok = await showConfirm(t('skills.confirmUninstall', { name }))
+  if (!ok) return
   btn.disabled = true
   btn.textContent = t('skills.uninstalling')
   try {
@@ -424,7 +434,7 @@ async function handleSkillUninstall(page, btn) {
     toast(t('skills.uninstalled', { name }), 'success')
     await loadSkills(page)
   } catch (e) {
-    toast(`${t('skills.uninstallFailed')}: ${e?.message || e}`, 'error')
+    toast(humanizeError(e, t('skills.uninstallFailed')), 'error')
     btn.disabled = false
     btn.textContent = t('skills.uninstall')
   }

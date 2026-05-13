@@ -3,6 +3,7 @@
  */
 import { api } from '../lib/tauri-api.js'
 import { toast } from '../components/toast.js'
+import { humanizeError } from '../lib/humanize-error.js'
 import { showModal } from '../components/modal.js'
 import { t } from '../lib/i18n.js'
 
@@ -117,7 +118,7 @@ export async function render() {
           toast(t('memory.created', { name: filename }), 'success')
           loadFiles(page, state)
         } catch (e) {
-          toast(t('memory.createFailed') + ': ' + e, 'error')
+          toast(humanizeError(e, t('memory.createFailed')), 'error')
         }
       },
     })
@@ -128,7 +129,16 @@ export async function render() {
     if (!state.currentPath) return
     const name = state.currentPath.split('/').pop()
     const { showConfirm } = await import('../components/modal.js')
-    const yes = await showConfirm(t('memory.confirmDelete', { name }))
+    const yes = await showConfirm({
+      title: t('memory.deleteConfirmTitle', { name }),
+      message: t('memory.confirmDelete', { name }),
+      impact: [
+        t('memory.deleteImpactPermanent'),
+        t('memory.deleteImpactAgent'),
+      ],
+      confirmText: t('memory.deleteConfirmBtn'),
+      cancelText: t('memory.deleteCancelBtn'),
+    })
     if (!yes) return
     try {
       await api.deleteMemoryFile(state.currentPath, state.agentId)
@@ -137,7 +147,7 @@ export async function render() {
       resetEditor(page)
       loadFiles(page, state)
     } catch (e) {
-      toast(t('memory.deleteFailed') + ': ' + e, 'error')
+      toast(humanizeError(e, t('memory.deleteFailed')), 'error')
     }
   }
 
@@ -157,13 +167,22 @@ async function loadFiles(page, state) {
   try {
     const files = await api.listMemoryFiles(state.category, state.agentId)
     if (!files || !files.length) {
-      tree.innerHTML = `<div style="color:var(--text-tertiary);padding:12px">${t('memory.noFiles')}</div>`
+      tree.innerHTML = `
+        <div class="empty-state empty-compact">
+          <div class="empty-icon">🧠</div>
+          <div class="empty-desc">${t('memory.noFiles')}</div>
+          <div class="empty-cta"><button class="btn btn-primary btn-sm" data-empty-cta="new-file">${t('memory.newFile')}</button></div>
+        </div>
+      `
+      tree.querySelector('[data-empty-cta="new-file"]')?.addEventListener('click', () => {
+        page.querySelector('#btn-new-file')?.click()
+      })
       return
     }
     renderFileTree(page, state, files)
   } catch (e) {
     tree.innerHTML = `<div style="color:var(--error);padding:12px">${t('memory.loadFailed')}: ${e}</div>`
-    toast(t('memory.loadListFailed') + ': ' + e, 'error')
+    toast(humanizeError(e, t('memory.loadListFailed')), 'error')
   }
 }
 
@@ -213,7 +232,7 @@ async function loadFileContent(page, state) {
     btnDl.disabled = false
   } catch (e) {
     editor.value = t('memory.readFailed') + ': ' + e
-    toast(t('memory.readFileFailed') + ': ' + e, 'error')
+    toast(humanizeError(e, t('memory.readFileFailed')), 'error')
   }
 }
 
@@ -239,7 +258,7 @@ async function saveFile(page, state) {
     await api.writeMemoryFile(state.currentPath, content, state.category, state.agentId)
     toast(t('memory.fileSaved'), 'success')
   } catch (e) {
-    toast(t('memory.saveFailed') + ': ' + e, 'error')
+    toast(humanizeError(e, t('memory.saveFailed')), 'error')
   }
 }
 
@@ -301,7 +320,7 @@ async function downloadCurrentFile(page, state) {
     triggerDownload(filename, content)
     toast(t('memory.downloaded', { name: filename }), 'success')
   } catch (e) {
-    toast(t('memory.downloadFailed') + ': ' + e, 'error')
+    toast(humanizeError(e, t('memory.downloadFailed')), 'error')
   }
 }
 
@@ -320,6 +339,6 @@ async function exportZip(state) {
       toast(t('memory.exported', { label, path: zipPath }), 'success')
     }
   } catch (e) {
-    toast(t('memory.exportFailed') + ': ' + e, 'error')
+    toast(humanizeError(e, t('memory.exportFailed')), 'error')
   }
 }

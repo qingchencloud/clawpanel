@@ -37,13 +37,14 @@ import extensions from './modules/extensions.js'
 import engine from './modules/engine.js'
 import ciaoBug from './modules/ciaoBug.js'
 import cliConflict from './modules/cliConflict.js'
+import glossary from './modules/glossary.js'
 
 const MODULES = {
   common, sidebar, instance, dashboard, services, settings,
   models, agents, agentDetail, gateway, security, communication, channels,
   memory, dreaming, cron, usage, skills, chat, chatDebug, setup, about,
   ext, logs, assistant, toast, modal, engagement, diagnose, routeMap, extensions,
-  engine, ciaoBug, cliConflict,
+  engine, ciaoBug, cliConflict, glossary,
 }
 
 /** 构建所有语言字典 { 'zh-CN': { common: {...}, sidebar: {...}, ... }, ... } */

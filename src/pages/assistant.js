@@ -5,6 +5,7 @@
  */
 import { renderMarkdown } from '../lib/markdown.js'
 import { toast } from '../components/toast.js'
+import { humanizeError } from '../lib/humanize-error.js'
 import { showConfirm } from '../components/modal.js'
 import { api } from '../lib/tauri-api.js'
 import { OPENCLAW_KB } from '../lib/openclaw-kb.js'
@@ -3822,10 +3823,10 @@ function showSettings() {
           toast(t('assistant.qtcoolMainSwitched', { model: selectedModel }), 'success')
           qtcoolStatus.innerHTML = `<span style="color:#34d399">${statusIcon('ok', 14)} ${t('assistant.qtcoolAllDone', { model: selectedModel })}</span>`
         } catch (e) {
-          toast(t('assistant.qtcoolGatewayFail') + ': ' + e.message, 'warning')
+          toast(humanizeError(e, t('assistant.qtcoolGatewayFail')), 'warning')
         }
       } catch (e) {
-        toast(t('assistant.qtcoolWriteFail') + ': ' + e, 'error')
+        toast(humanizeError(e, t('assistant.qtcoolWriteFail')), 'error')
       }
     }
   }
@@ -3864,7 +3865,7 @@ function showSettings() {
       toast(t('assistant.qtcoolSyncToDone', { model }), 'success')
       try { await api.restartGateway() } catch {}
     } catch (e) {
-      toast(t('assistant.qtcoolSyncFail') + ': ' + e, 'error')
+      toast(humanizeError(e, t('assistant.qtcoolSyncFail')), 'error')
     }
   })
 
@@ -3896,7 +3897,7 @@ function showSettings() {
       if (modelId) overlay.querySelector('#ast-model').value = modelId
       toast(t('assistant.qtcoolSyncFromDone'), 'success')
     } catch (e) {
-      toast(t('assistant.qtcoolReadFail') + ': ' + e, 'error')
+      toast(humanizeError(e, t('assistant.qtcoolReadFail')), 'error')
     }
   })
 
