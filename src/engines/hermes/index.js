@@ -109,6 +109,8 @@ export default {
       // Hermes 专属页面（/h/ 前缀）
       { path: '/h/setup', loader: () => import('./pages/setup.js') },
       { path: '/h/dashboard', loader: () => import('./pages/dashboard.js') },
+      { path: '/h/chat', loader: () => import('./pages/chat.js') },
+      { path: '/h/group-chat', loader: () => import('./pages/group-chat.js') },
       { path: '/h/oauth', loader: () => import('./pages/oauth.js') },
       { path: '/h/files', loader: () => import('./pages/files.js') },
       { path: '/h/sessions', loader: () => import('./pages/sessions.js') },

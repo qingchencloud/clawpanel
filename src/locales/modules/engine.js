@@ -600,6 +600,20 @@ export default {
   hermesFilesUnreadable: _('文件无法读取', 'File unreadable', '檔案無法讀取'),
   hermesFilesUnsavedConfirm: _('当前文件有未保存的修改，确认丢弃？', 'Current file has unsaved changes. Discard?', '目前檔案有未儲存的修改，確認丟棄？'),
   hermesFilesDiscardChanges: _('丢弃', 'Discard', '丟棄'),
+  // Batch 3 §N: 群聊（多 Agent 并行响应）
+  hermesGroupChatTitle: _('群聊', 'Group Chat', '群聊'),
+  hermesGroupChatDesc: _('选多个 Profile，一句话同时问多个 Agent，对比不同模型/角色的回答', 'Pick multiple profiles, ask one question to many agents at once, compare answers', '選多個 Profile，一句話同時問多個 Agent，比較不同模型/角色的回答'),
+  hermesGroupChatProfiles: _('参与的 Profile', 'Participating profiles', '參與的 Profile'),
+  hermesGroupChatProfilesHint: _('勾选要一起回复的 Profile（每个 Profile 是一个 Agent 配置）', 'Tick profiles that should reply together', '勾選要一起回覆的 Profile'),
+  hermesGroupChatSelected: _('已选 {n} 个', '{n} selected', '已選 {n} 個'),
+  hermesGroupChatEmpty: _('选好 Profile 后输入消息发送', 'Pick profiles and send a message to start', '選好 Profile 後輸入訊息發送'),
+  hermesGroupChatPlaceholder: _('输入消息（Enter 发送，Shift+Enter 换行）…', 'Type a message (Enter to send, Shift+Enter for newline)…', '輸入訊息（Enter 發送，Shift+Enter 換行）…'),
+  hermesGroupChatSend: _('发送', 'Send', '發送'),
+  hermesGroupChatSending: _('发送中…', 'Sending…', '發送中…'),
+  hermesGroupChatClear: _('清空', 'Clear', '清空'),
+  hermesGroupChatRunFailed: _('运行失败', 'Run failed', '執行失敗'),
+  hermesGroupChatNoOutput: _('（无输出）', '(no output)', '（無輸出）'),
+  hermesGroupChatWebUnsupported: _('Web 模式不支持群聊（依赖 hermesAgentRun，需桌面端事件桥）。请用桌面客户端。', 'Group chat is not supported in Web mode (requires desktop event bridge). Use the desktop app.', 'Web 模式不支援群聊（依賴 hermesAgentRun，需桌面端事件橋）。請用桌面客戶端。'),
   // Web 模式（远程浏览器）下流式聊天暂不可用
   chatWebModeStreamingUnsupported: _(
     'Web 模式暂不支持 Hermes 实时流式聊天（依赖桌面端事件桥）。请打开桌面客户端使用此功能。',
