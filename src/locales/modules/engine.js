@@ -515,6 +515,10 @@ export default {
   hermesKanbanMoveStatusTitle: _('修改任务状态', 'Change task status', '修改任務狀態'),
   hermesKanbanBoardSwitched: _('已切换到看板 "{name}"', 'Switched to board "{name}"', '已切換到看板 "{name}"'),
   hermesKanbanBoardSwitchFailed: _('切换看板失败', 'Switch board failed', '切換看板失敗'),
+  // Hermes UX 小白化：services 重启/停止确认
+  servicesConfirmRestart: _('确认重启 Gateway？', 'Restart Gateway?', '確認重啟 Gateway？'),
+  servicesConfirmStop: _('确认停止 Gateway？', 'Stop Gateway?', '確認停止 Gateway？'),
+  servicesImpactInflight: _('正在进行的 Agent 会话会被中断', 'In-flight agent runs will be aborted', '正在進行的 Agent 會話會被中斷'),
   // Web 模式（远程浏览器）下流式聊天暂不可用
   chatWebModeStreamingUnsupported: _(
     'Web 模式暂不支持 Hermes 实时流式聊天（依赖桌面端事件桥）。请打开桌面客户端使用此功能。',

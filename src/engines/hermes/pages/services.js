@@ -422,6 +422,18 @@ export function render() {
 
   async function runGatewayAction(action) {
     if (actionBusy) return
+    // Hermes UX 小白化：restart/stop 是高影响动作，提前提示（不阻塞 start）
+    if (action === 'restart' || action === 'stop') {
+      const ok = await showConfirm({
+        message: action === 'restart'
+          ? t('engine.servicesConfirmRestart')
+          : t('engine.servicesConfirmStop'),
+        impact: [t('engine.servicesImpactInflight')],
+        confirmText: action === 'restart' ? t('engine.dashRestartGw') : t('engine.dashStopGw'),
+        variant: 'danger',
+      })
+      if (!ok) return
+    }
     actionBusy = true
     setPageMessage(
       action === 'start'
