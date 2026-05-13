@@ -67,6 +67,7 @@ export default {
         { route: '/gateway', label: t('sidebar.gateway'), icon: 'gateway' },
         { route: '/channels', label: t('sidebar.channels'), icon: 'channels' },
         { route: '/communication', label: t('sidebar.communication'), icon: 'settings' },
+        { route: '/notifications', label: t('sidebar.notifications'), icon: 'channels' },
         { route: '/security', label: t('sidebar.security'), icon: 'security' },
       ]
     }, {
@@ -117,6 +118,7 @@ export default {
       { path: '/cron', loader: () => import('../../pages/cron.js') },
       { path: '/usage', loader: () => import('../../pages/usage.js') },
       { path: '/communication', loader: () => import('../../pages/communication.js') },
+      { path: '/notifications', loader: () => import('../../pages/notifications.js') },
       { path: '/settings', loader: () => import('../../pages/settings.js') },
       { path: '/route-map', loader: () => import('../../pages/route-map.js') },
       { path: '/plugin-hub', loader: () => import('../../pages/plugin-hub.js') },

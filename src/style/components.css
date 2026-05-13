@@ -558,6 +558,28 @@ mark {
   color: var(--text-tertiary);
 }
 
+/* P1-0: 推送通知状态行 */
+.push-status-row {
+  display: flex;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+}
+
+.push-status-item {
+  flex: 1 1 200px;
+  min-width: 200px;
+}
+
+.push-status-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  margin-bottom: 6px;
+}
+
+.push-status-value {
+  font-size: var(--font-size-sm);
+}
+
 /* ── 新手引导卡片 ── */
 .onboarding-card {
   background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(168, 85, 247, 0.05));
