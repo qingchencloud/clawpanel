@@ -67,11 +67,11 @@ export function render() {
   // --- 阶段指示器 ---
   function renderPhaseIndicator() {
     const phases = [
-      { id: 'detect', label: '检测' },
-      { id: 'install', label: '安装' },
-      { id: 'configure', label: '配置' },
-      { id: 'gateway', label: '启动' },
-      { id: 'complete', label: '完成' },
+      { id: 'detect', label: t('engine.hermesPhaseDetect') },
+      { id: 'install', label: t('engine.hermesPhaseInstall') },
+      { id: 'configure', label: t('engine.hermesPhaseConfigure') },
+      { id: 'gateway', label: t('engine.hermesPhaseGateway') },
+      { id: 'complete', label: t('engine.hermesPhaseComplete') },
     ]
     const idx = phases.findIndex(p => p.id === phase)
     return `<div class="hermes-phases">${phases.map((p, i) => {
@@ -420,7 +420,7 @@ export function render() {
       }
       draw()
     } catch (e) {
-      logs.push(`检测错误: ${e}`)
+      logs.push(`[detect error] ${e?.message || e}`)
       phase = 'install'
       draw()
     }
@@ -686,7 +686,7 @@ export function render() {
 function renderGroupedProviderButtons() {
   if (!hermesProviders.length) {
     return `<div style="padding:10px 12px;background:var(--bg-tertiary);border-radius:var(--radius-sm,6px);color:var(--text-secondary);font-size:12px;line-height:1.6">
-      未能加载 provider 列表。Web 模式下可手动填写下方 Base URL 与 API Key 完成配置。
+      ${t('engine.hermesProvidersLoadFallback')}
     </div>`
   }
 
@@ -708,19 +708,19 @@ function renderGroupedProviderButtons() {
   const parts = []
 
   if (hermesGroups.apiKeyIntl.length) {
-    parts.push(`<div style="${sectionStyle}"><div style="${titleStyle}">国际 · API Key</div><div style="${rowStyle}">${hermesGroups.apiKeyIntl.map(btn).join('')}</div></div>`)
+    parts.push(`<div style="${sectionStyle}"><div style="${titleStyle}">${t('engine.hermesProviderGroupIntl')}</div><div style="${rowStyle}">${hermesGroups.apiKeyIntl.map(btn).join('')}</div></div>`)
   }
   if (hermesGroups.apiKeyCn.length) {
-    parts.push(`<div style="${sectionStyle}"><div style="${titleStyle}">国内 · API Key</div><div style="${rowStyle}">${hermesGroups.apiKeyCn.map(btn).join('')}</div></div>`)
+    parts.push(`<div style="${sectionStyle}"><div style="${titleStyle}">${t('engine.hermesProviderGroupCn')}</div><div style="${rowStyle}">${hermesGroups.apiKeyCn.map(btn).join('')}</div></div>`)
   }
   if (hermesGroups.aggregators.length) {
-    parts.push(`<div style="${sectionStyle}"><div style="${titleStyle}">聚合 / 路由</div><div style="${rowStyle}">${hermesGroups.aggregators.map(btn).join('')}</div></div>`)
+    parts.push(`<div style="${sectionStyle}"><div style="${titleStyle}">${t('engine.hermesProviderGroupAggregator')}</div><div style="${rowStyle}">${hermesGroups.aggregators.map(btn).join('')}</div></div>`)
   }
   if (hermesGroups.oauth.length) {
     const oauthItems = hermesGroups.oauth.map(p =>
-      `<div style="font-size:11px;color:var(--text-tertiary);margin-right:10px"><code>${p.name}</code>：需运行 <code>${p.cliAuthHint}</code></div>`
+      `<div style="font-size:11px;color:var(--text-tertiary);margin-right:10px"><code>${p.name}</code>：${t('engine.hermesProviderOAuthRunHint') || '需运行'} <code>${p.cliAuthHint}</code></div>`
     ).join('')
-    parts.push(`<div style="${sectionStyle}"><div style="${titleStyle}">OAuth 登录（需终端）</div><div style="display:flex;flex-wrap:wrap;gap:4px 0">${oauthItems}</div></div>`)
+    parts.push(`<div style="${sectionStyle}"><div style="${titleStyle}">${t('engine.hermesProviderGroupOAuth')}</div><div style="display:flex;flex-wrap:wrap;gap:4px 0">${oauthItems}</div></div>`)
   }
 
   return parts.join('')

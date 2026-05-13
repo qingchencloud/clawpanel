@@ -46,6 +46,31 @@ export default {
   choiceSecondaryLater: _('稍后再说', 'Decide later', '稍後再說'),
   hermesSetupDesc: _('安装并配置 Hermes Agent', 'Install and configure Hermes Agent', '安裝並配置 Hermes Agent'),
   hermesPhaseClickHint: _('点击可返回此步骤', 'Click to go back to this step', '點擊可返回此步驟', 'このステップに戻るにはクリック', '이 단계로 돌아가려면 클릭'),
+  // 安装向导 5 个阶段标签
+  hermesPhaseDetect: _('检测', 'Detect', '檢測', '検出', '감지', 'Phát hiện', 'Detectar', 'Detectar', 'Обнаружение', 'Détection', 'Erkennung'),
+  hermesPhaseInstall: _('安装', 'Install', '安裝', 'インストール', '설치', 'Cài đặt', 'Instalar', 'Instalar', 'Установка', 'Installer', 'Installieren'),
+  hermesPhaseConfigure: _('配置', 'Configure', '配置', '設定', '구성', 'Cấu hình', 'Configurar', 'Configurar', 'Настройка', 'Configurer', 'Konfigurieren'),
+  hermesPhaseGateway: _('启动', 'Start', '啟動', '起動', '시작', 'Khởi động', 'Iniciar', 'Iniciar', 'Запуск', 'Démarrer', 'Starten'),
+  hermesPhaseComplete: _('完成', 'Complete', '完成', '完了', '완료', 'Hoàn tất', 'Completo', 'Concluído', 'Готово', 'Terminé', 'Fertig'),
+  // Provider 分组标题
+  hermesProviderGroupIntl: _('国际 · API Key', 'International · API Key', '國際 · API Key', '海外 · API Key', '국제 · API Key', 'Quốc tế · API Key', 'Internacional · API Key', 'Internacional · API Key', 'Международные · API Key', 'International · API Key', 'International · API Key'),
+  hermesProviderGroupCn: _('国内 · API Key', 'Mainland · API Key', '中國大陸 · API Key', '中国大陸 · API Key', '중국 본토 · API Key', 'Trung Quốc · API Key', 'China · API Key', 'China · API Key', 'Китай · API Key', 'Chine continentale · API Key', 'China · API Key'),
+  hermesProviderGroupAggregator: _('聚合 / 路由', 'Aggregator / Router', '聚合 / 路由', 'アグリゲーター / ルーター', '집계 / 라우터', 'Tổng hợp / Định tuyến', 'Agregador / Enrutador', 'Agregador / Roteador', 'Агрегатор / Маршрутизатор', 'Agrégateur / Routeur', 'Aggregator / Router'),
+  hermesProviderGroupOAuth: _('OAuth 登录（需终端）', 'OAuth Login (Terminal needed)', 'OAuth 登入（需終端）', 'OAuth ログイン（ターミナルが必要）', 'OAuth 로그인 (터미널 필요)', 'Đăng nhập OAuth (cần Terminal)', 'OAuth Login (requiere Terminal)', 'Login OAuth (requer Terminal)', 'OAuth вход (требуется терминал)', 'Connexion OAuth (Terminal requis)', 'OAuth-Login (Terminal erforderlich)'),
+  hermesProviderOAuthRunHint: _('需运行', 'run', '需執行', '実行', '실행 필요', 'cần chạy', 'ejecuta', 'execute', 'требуется', 'exécuter', 'ausführen'),
+  hermesProvidersLoadFallback: _(
+    '未能加载 provider 列表。Web 模式下可手动填写下方 Base URL 与 API Key 完成配置。',
+    'Failed to load provider list. In Web mode you can fill in Base URL and API Key manually below.',
+    '未能載入 provider 列表。Web 模式下可手動填寫下方 Base URL 與 API Key 完成設定。',
+    'プロバイダー一覧の読み込みに失敗しました。Web モードでは下の Base URL と API Key を手動で入力できます。',
+    'provider 목록을 불러오지 못했습니다. Web 모드에서 아래 Base URL과 API Key를 수동으로 입력할 수 있습니다.',
+    'Không tải được danh sách provider. Ở chế độ Web bạn có thể điền Base URL và API Key bên dưới.',
+    'No se pudo cargar la lista de providers. En modo Web puedes rellenar Base URL y API Key abajo.',
+    'Não foi possível carregar a lista de providers. No modo Web preencha manualmente Base URL e API Key abaixo.',
+    'Не удалось загрузить список провайдеров. В Web-режиме укажите Base URL и API Key ниже вручную.',
+    'Impossible de charger la liste des providers. En mode Web, saisissez Base URL et API Key ci-dessous.',
+    'Provider-Liste konnte nicht geladen werden. Im Web-Modus Base URL und API Key unten manuell eintragen.'
+  ),
   hermesSetupIntro: _(
     'Hermes Agent 是一个具有工具调用能力的 AI 助手框架。点击下方按钮一键安装，无需终端操作。',
     'Hermes Agent is an AI assistant with tool-calling capabilities. Click the button below to install — no terminal needed.',
