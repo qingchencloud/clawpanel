@@ -557,6 +557,8 @@ export default {
   hermesOAuthDeviceTimeout: _('登录超时（10 分钟未完成）', 'Login timed out (10 min)', '登入逾時（10 分鐘未完成）'),
   hermesOAuthDeviceFailed: _('授权失败', 'Authorization failed', '授權失敗'),
   hermesOAuthDisconnectFailed: _('断开失败', 'Disconnect failed', '中斷失敗'),
+  // Hermes UX 小白化：chat profile 切换错误
+  chatProfileSwitchFailed: _('切换 Profile 失败', 'Switch profile failed', '切換 Profile 失敗'),
   // Web 模式（远程浏览器）下流式聊天暂不可用
   chatWebModeStreamingUnsupported: _(
     'Web 模式暂不支持 Hermes 实时流式聊天（依赖桌面端事件桥）。请打开桌面客户端使用此功能。',

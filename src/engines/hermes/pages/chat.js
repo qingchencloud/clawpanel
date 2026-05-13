@@ -13,7 +13,8 @@
  *
  * State lives in `chat-store.js`; this module only does DOM + events.
  */
-import { t } from '../../../lib/i18n.js'
+import * as tts from '../../../lib/tts.js'
+import { humanizeError } from '../../../lib/humanize-error.js'
 import { api, invalidate } from '../../../lib/tauri-api.js'
 import { toast } from '../../../components/toast.js'
 import { showConfirm } from '../../../components/modal.js'
@@ -1008,7 +1009,7 @@ export function render() {
           await store.switchProfile(name)
           toast(t('engine.chatProfileSwitched').replace('{name}', name), 'success')
         } catch (err) {
-          toast((err?.message || String(err)), 'error')
+          toast(humanizeError(err, t('engine.chatProfileSwitchFailed') || 'Profile switch failed'), 'error')
         }
       })
     })
