@@ -2164,7 +2164,19 @@ pub async fn hermes_read_config_full() -> Result<Value, String> {
 // ---------------------------------------------------------------------------
 
 /// 找到 Hermes venv 的 Python 解释器路径
+///
+/// 优先级（P1-3 优化）：
+/// 1. 环境变量 `HERMES_PYTHON` — 适配自定义 venv（brew / uv tool / 容器等非默认路径）
+/// 2. ~/.hermes-venv/bin/python (Unix) 或 ~/.hermes-venv/Scripts/python.exe (Windows)
 fn hermes_venv_python() -> Option<PathBuf> {
+    // 1. HERMES_PYTHON 环境变量优先
+    if let Ok(custom) = std::env::var("HERMES_PYTHON") {
+        let p = PathBuf::from(custom);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    // 2. 默认 venv 位置
     let venv_dir = dirs::home_dir()?.join(".hermes-venv");
     #[cfg(target_os = "windows")]
     let py = venv_dir.join("Scripts").join("python.exe");

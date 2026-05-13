@@ -429,6 +429,14 @@ export default {
   chatSlashPort: _('端口', 'Port', '埠'),
   chatSlashModel: _('模型', 'Model', '模型'),
   chatSlashRedirect: _('正在跳转到 {page}...', 'Redirecting to {page}...', '正在跳轉到 {page}...'),
+  // Batch 1 §B: Hermes config.js 编辑器（去掉硬编码）
+  hermesConfigEyebrow: _('HERMES AGENT · 配置', 'HERMES AGENT · CONFIG', 'HERMES AGENT · 設定'),
+  hermesConfigReload: _('重新加载', 'Reload', '重新載入'),
+  hermesConfigSave: _('保存配置', 'Save', '儲存設定'),
+  hermesConfigSaveSuccess: _('配置已保存，建议重启 Hermes Gateway 生效', 'Saved. Restart Hermes Gateway to take effect.', '已儲存設定，建議重啟 Hermes Gateway 生效'),
+  hermesConfigStatusSaving: _('保存中…', 'Saving…', '儲存中…'),
+  hermesConfigStatusLoading: _('加载中…', 'Loading…', '載入中…'),
+  hermesConfigStatusReady: _('raw yaml 编辑器', 'raw yaml editor', 'raw yaml 編輯器'),
   // 停止流式
   chatStop: _('停止', 'Stop', '停止'),
   chatStopped: _('已停止当前回复', 'Run stopped', '已停止目前回覆'),
