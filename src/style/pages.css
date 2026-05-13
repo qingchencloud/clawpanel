@@ -2657,6 +2657,78 @@
    engines/hermes/style/hermes.css）。原来 .hm-memory-* 那一坨规则已无任何
    JS / CSS 引用，已在此处删除。 */
 
+/* === 通用页面级内联错误（profiles / kanban / oauth 等加载失败时显示） === */
+.page-inline-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin: 16px 0;
+  padding: 16px 18px;
+  border: 1px solid var(--border-primary);
+  border-left: 3px solid var(--error, #ef4444);
+  border-radius: 12px;
+  background: var(--bg-glass);
+  color: var(--text-primary);
+}
+.page-inline-error-icon {
+  font-size: 20px;
+  line-height: 1;
+  margin-top: 2px;
+  flex: 0 0 auto;
+}
+.page-inline-error-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.page-inline-error-message {
+  color: var(--error, #ef4444);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.page-inline-error-hint {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.page-inline-error-details {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.page-inline-error-details summary {
+  cursor: pointer;
+  user-select: none;
+  padding: 2px 0;
+  list-style: none;
+}
+.page-inline-error-details summary::before {
+  content: '▶';
+  display: inline-block;
+  font-size: 9px;
+  margin-right: 6px;
+  transition: transform 0.18s ease;
+}
+.page-inline-error-details[open] summary::before {
+  transform: rotate(90deg);
+}
+.page-inline-error-details pre {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  background: var(--bg-tertiary, rgba(0,0,0,0.04));
+  border-radius: 6px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow: auto;
+}
+
 /* === Engine Select · Monolith 对角线全屏 ===
    左上三角 OpenClaw（石墨黑）vs 右下三角 Hermes（象牙白）。
    用 position: fixed 跳出 #content 范围，覆盖整个 viewport（含 sidebar）。 */

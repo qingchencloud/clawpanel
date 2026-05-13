@@ -24,6 +24,20 @@ function escHtml(s) {
 }
 function escAttr(s) { return escHtml(s) }
 
+function renderInlineError(err) {
+  const h = humanizeError(err, t('engine.hermesProfilesTitle'))
+  return `
+    <div class="page-inline-error">
+      <div class="page-inline-error-icon">⚠️</div>
+      <div class="page-inline-error-body">
+        <div class="page-inline-error-message">${escHtml(h.message)}</div>
+        ${h.hint ? `<div class="page-inline-error-hint">${escHtml(h.hint)}</div>` : ''}
+        ${h.raw ? `<details class="page-inline-error-details"><summary>${escHtml(t('common.errorRawLabel'))}</summary><pre>${escHtml(h.raw)}</pre></details>` : ''}
+      </div>
+    </div>
+  `
+}
+
 export function render() {
   const el = document.createElement('div')
   el.className = 'page'
@@ -47,7 +61,7 @@ export function render() {
       </div>
       <div id="hm-profiles-content">
         ${loading ? `<div style="padding:32px;text-align:center;color:var(--text-tertiary)">${escHtml(t('common.loading'))}…</div>` : ''}
-        ${error ? `<div style="color:var(--error);padding:20px">${escHtml(error)}</div>` : ''}
+        ${error ? renderInlineError(error) : ''}
         ${(!loading && !error && !profiles.length) ? `
           <div class="empty-state empty-compact">
             <div class="empty-icon">📁</div>
@@ -111,7 +125,7 @@ export function render() {
         raw: p,
       }))
     } catch (e) {
-      error = String(e?.message || e)
+      error = e
     } finally {
       loading = false
       draw()

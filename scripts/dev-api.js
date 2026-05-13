@@ -7227,15 +7227,10 @@ const handlers = {
 
   // Batch 3 §L: 文件管理器（Web 模式走 Node fs，限定 hermes_home 子树）
   _hermesHome() {
-    const fs = require('node:fs')
-    const path = require('node:path')
-    const os = require('node:os')
     if (process.env.HERMES_HOME) return process.env.HERMES_HOME
     return path.join(os.homedir(), '.hermes')
   },
   _validateFsPath(rel) {
-    const fs = require('node:fs')
-    const path = require('node:path')
     const root = handlers._hermesHome()
     const target = rel ? path.resolve(root, rel) : root
     const canonRoot = fs.realpathSync.native?.(root) || root
@@ -7243,14 +7238,13 @@ const handlers = {
     return target
   },
   async hermes_fs_list({ path: p = '' } = {}) {
-    const fs = require('node:fs')
     const target = handlers._validateFsPath(p)
     if (!fs.existsSync(target)) throw new Error(`目录不存在: ${target}`)
     const stat = fs.statSync(target)
     if (!stat.isDirectory()) throw new Error(`不是目录: ${target}`)
     let entries = fs.readdirSync(target, { withFileTypes: true }).filter(e => !e.name.startsWith('.') || e.name === '.env')
     entries = entries.slice(0, 2000).map(e => {
-      const sub = require('node:path').join(target, e.name)
+      const sub = path.join(target, e.name)
       const m = fs.statSync(sub)
       return {
         name: e.name,
@@ -7263,7 +7257,6 @@ const handlers = {
     return { path: target, entries }
   },
   async hermes_fs_read({ path: p } = {}) {
-    const fs = require('node:fs')
     const target = handlers._validateFsPath(p)
     if (!fs.existsSync(target) || !fs.statSync(target).isFile()) throw new Error(`不是文件: ${target}`)
     const stat = fs.statSync(target)
@@ -7275,7 +7268,6 @@ const handlers = {
     return { path: target, size: stat.size, text, binary_b64 }
   },
   async hermes_fs_write({ path: p, content } = {}) {
-    const fs = require('node:fs')
     const target = handlers._validateFsPath(p)
     if (Buffer.byteLength(content || '', 'utf8') > 5 * 1024 * 1024) throw new Error('内容过大')
     fs.writeFileSync(target, content || '', 'utf8')
@@ -7318,12 +7310,29 @@ const handlers = {
       }
       return opts
     }
+    // 把网络错误（fetch failed / ECONNREFUSED）转成友好错，方便前端 humanizeError 归类
+    const friendly = (err) => {
+      const msg = String(err?.message || err || '')
+      if (/fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|aborted/i.test(msg)) {
+        return new Error(`Hermes Dashboard 未运行（端口 ${port} 无服务）。请在桌面端 ClawPanel 启动 Hermes Agent，或在 Settings 中配置远端 Dashboard 地址`)
+      }
+      return err instanceof Error ? err : new Error(msg)
+    }
     let token = await handlers._getDashboardToken(port, false).catch(() => null)
-    let resp = await globalThis.fetch(url, buildOpts(token))
+    let resp
+    try {
+      resp = await globalThis.fetch(url, buildOpts(token))
+    } catch (err) {
+      throw friendly(err)
+    }
     if (resp.status === 401) {
       // 强制刷新 + 重试
-      token = await handlers._getDashboardToken(port, true)
-      resp = await globalThis.fetch(url, buildOpts(token))
+      try {
+        token = await handlers._getDashboardToken(port, true)
+        resp = await globalThis.fetch(url, buildOpts(token))
+      } catch (err) {
+        throw friendly(err)
+      }
     }
     const text = await resp.text().catch(() => '')
     if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${text}（提示：请先启动 Dashboard）`)

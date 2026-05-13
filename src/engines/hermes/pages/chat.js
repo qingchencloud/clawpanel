@@ -19,6 +19,7 @@ import { api, invalidate } from '../../../lib/tauri-api.js'
 import { toast } from '../../../components/toast.js'
 import { showConfirm } from '../../../components/modal.js'
 import { getChatStore, getSourceLabel } from '../lib/chat-store.js'
+import { t } from '../../../lib/i18n.js'
 
 // ----------------------------------------------------------- helpers
 
