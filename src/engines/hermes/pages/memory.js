@@ -13,6 +13,7 @@ import { t } from '../../../lib/i18n.js'
 import { api } from '../../../lib/tauri-api.js'
 import { toast } from '../../../components/toast.js'
 import { showContentModal } from '../../../components/modal.js'
+import { humanizeError } from '../../../lib/humanize-error.js'
 
 function escHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -212,7 +213,7 @@ export function render() {
         saveBtn.disabled = false
         saveBtn.textContent = t('engine.memorySave')
       }
-      toast(t('engine.memorySaveFailed') + ': ' + (e?.message || e), 'error')
+      toast(humanizeError(e, t('engine.memorySaveFailed')), 'error')
     }
     saving = false
     draw()

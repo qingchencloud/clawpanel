@@ -23,6 +23,7 @@
 import { t } from '../../../lib/i18n.js'
 import { api } from '../../../lib/tauri-api.js'
 import { toast } from '../../../components/toast.js'
+import { humanizeError } from '../../../lib/humanize-error.js'
 
 function escHtml(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -124,7 +125,7 @@ export function render() {
     } catch (e) {
       console.error('Failed to load skills:', e)
       categories = []
-      toast(t('engine.skillsLoadFailed') + ': ' + (e?.message || e), 'error')
+      toast(humanizeError(e, t('engine.skillsLoadFailed')), 'error')
     }
     loading = false
     draw()
@@ -247,7 +248,7 @@ export function render() {
         'success',
       )
     } catch (e) {
-      toast(t('engine.skillsToggleFailed') + ': ' + (e?.message || e), 'error')
+      toast(humanizeError(e, t('engine.skillsToggleFailed')), 'error')
     } finally {
       toggling.delete(skill.slug)
       draw()

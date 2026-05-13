@@ -4,6 +4,7 @@
  */
 import { t } from '../../../lib/i18n.js'
 import { api } from '../../../lib/tauri-api.js'
+import { humanizeError } from '../../../lib/humanize-error.js'
 
 function esc(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -108,7 +109,7 @@ export function render() {
         jobs = Array.isArray(data) ? data : []
         errorMsg = ''
       } catch (_) {
-        errorMsg = String(e.message || e)
+        errorMsg = humanizeError(e, t('engine.cronLoadFailed') || 'Load cron jobs failed')
         jobs = []
       }
     }
@@ -572,7 +573,7 @@ export function render() {
         editingJob = null
         await loadJobs()
       } catch (e) {
-        errorMsg = String(e.message || e)
+        errorMsg = humanizeError(e, t('engine.cronSaveFailed') || 'Save cron job failed')
       }
       busy = false; draw()
     })

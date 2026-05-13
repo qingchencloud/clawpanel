@@ -623,6 +623,8 @@ export default {
   extensionsRescanFailed: _('重新扫描失败', 'Rescan failed', '重新掃描失敗'),
   hermesConfigLoadFailed: _('加载配置失败', 'Load config failed', '載入設定失敗'),
   hermesConfigSaveFailed: _('保存配置失败', 'Save config failed', '儲存設定失敗'),
+  cronLoadFailed: _('加载定时任务失败', 'Load cron jobs failed', '載入定時任務失敗'),
+  cronSaveFailed: _('保存定时任务失败', 'Save cron job failed', '儲存定時任務失敗'),
   // Web 模式（远程浏览器）下流式聊天暂不可用
   chatWebModeStreamingUnsupported: _(
     'Web 模式暂不支持 Hermes 实时流式聊天（依赖桌面端事件桥）。请打开桌面客户端使用此功能。',
