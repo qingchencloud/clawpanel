@@ -9,6 +9,27 @@ export function isTauriRuntime() {
   return !!window.__TAURI_INTERNALS__ || !!window.__TAURI__ || window.location?.hostname === 'tauri.localhost'
 }
 
+let _tauriListenFn = null
+
+/**
+ * 安全订阅 Tauri 事件。Web 模式下返回 noop unsubscriber，
+ * 避免动态 import `@tauri-apps/api/event` 时触碰
+ * `window.__TAURI_INTERNALS__.transformCallback` 引发
+ * "Cannot read properties of undefined" 报错（issue #256）。
+ *
+ * 用法：
+ *   const unlisten = await safeTauriListen('hermes-install-log', e => ...)
+ *   unlisten()  // 取消订阅
+ */
+export async function safeTauriListen(event, cb) {
+  if (!isTauriRuntime()) return () => {}
+  if (!_tauriListenFn) {
+    const mod = await import('@tauri-apps/api/event')
+    _tauriListenFn = mod.listen
+  }
+  return _tauriListenFn(event, cb)
+}
+
 // 仅在 Node.js 后端实现的命令（Tauri Rust 不处理），强制走 webInvoke
 const WEB_ONLY_CMDS = new Set([
   'instance_list', 'instance_add', 'instance_remove', 'instance_set_active',

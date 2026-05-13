@@ -2,7 +2,7 @@
  * Hermes Agent 仪表盘
  */
 import { t } from '../../../lib/i18n.js'
-import { api, isTauriRuntime } from '../../../lib/tauri-api.js'
+import { api, safeTauriListen } from '../../../lib/tauri-api.js'
 import {
   loadHermesProviders,
   inferProviderByBaseUrl,
@@ -19,20 +19,6 @@ const ICONS = {
 
 // Provider registry—异步加载，第一次 render 前填充
 let hermesProviders = []
-
-// Lazy Tauri event listen (avoid top-level await for vite build).
-// Web 模式下 `@tauri-apps/api/event` 的模块顶层会触碰 `window.__TAURI_INTERNALS__.transformCallback`
-// 导致 "Cannot read properties of undefined (reading 'transformCallback')"，
-// 因此非 Tauri 环境直接 noop。
-let _listenFn = null
-async function tauriListen(event, cb) {
-  if (!isTauriRuntime()) return () => {}
-  if (!_listenFn) {
-    const mod = await import('@tauri-apps/api/event')
-    _listenFn = mod.listen
-  }
-  return _listenFn(event, cb)
-}
 
 const HERMES_DASHBOARD_URL = 'http://127.0.0.1:9119/'
 
@@ -862,7 +848,7 @@ export function render() {
   async function setupListeners() {
     try {
       // 监听 Guardian 推送的状态变化
-      const unlisten1 = await tauriListen('hermes-gateway-status', (evt) => {
+      const unlisten1 = await safeTauriListen('hermes-gateway-status', (evt) => {
         const data = evt.payload
         if (info) {
           const wasRunning = info.gatewayRunning
@@ -877,13 +863,13 @@ export function render() {
       unlisteners.push(unlisten1)
 
       // 监听 Guardian 日志（显示在消息区）
-      const unlisten2 = await tauriListen('hermes-guardian-log', (evt) => {
+      const unlisten2 = await safeTauriListen('hermes-guardian-log', (evt) => {
         showGwMsg(evt.payload || '', false)
       })
       unlisteners.push(unlisten2)
 
       // 监听 config.yaml 自愈事件（api_server guardian）
-      const unlisten3 = await tauriListen('hermes-config-patched', async (evt) => {
+      const unlisten3 = await safeTauriListen('hermes-config-patched', async (evt) => {
         const { toast } = await import('../../../components/toast.js')
         const msg = evt?.payload?.message || t('engine.dashConfigPatched')
         toast(msg, 'info', { duration: 6000 })

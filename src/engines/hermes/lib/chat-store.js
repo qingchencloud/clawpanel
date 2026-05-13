@@ -20,7 +20,7 @@
  *   - File attachment uploads (kept out of scope for Phase 4).
  *   - Full tmux-like run resume (Tauri events are in-process and reliable).
  */
-import { api, isTauriRuntime } from '../../../lib/tauri-api.js'
+import { api, isTauriRuntime, safeTauriListen } from '../../../lib/tauri-api.js'
 
 // ---------- constants ----------
 
@@ -208,24 +208,6 @@ function mapSessionSummary(s) {
 
 // ---------- Tauri event bridge ----------
 //
-// Streaming relies on Tauri's `hermes-run-*` events. In Web mode (远程浏览器
-// 访问 ClawPanel）these events don't exist — and importing
-// `@tauri-apps/api/event` itself touches `window.__TAURI_INTERNALS__.transformCallback`
-// which crashes with "Cannot read properties of undefined (reading 'transformCallback')".
-//
-// To stay safe we short-circuit to a no-op unsubscriber when not running inside
-// Tauri.
-
-let _listenFn = null
-async function tauriListen(event, cb) {
-  if (!isTauriRuntime()) return () => {}
-  if (!_listenFn) {
-    const mod = await import('@tauri-apps/api/event')
-    _listenFn = mod.listen
-  }
-  return _listenFn(event, cb)
-}
-
 // ---------- store implementation ----------
 
 function createStore() {
@@ -645,7 +627,7 @@ function createStore() {
   async function attachStreamListeners(runSessionId) {
     detachStreamListeners()
     const runSession = () => state.sessions.find(x => x.id === runSessionId) || null
-    const u1 = await tauriListen('hermes-run-delta', (e) => {
+    const u1 = await safeTauriListen('hermes-run-delta', (e) => {
       const delta = e?.payload?.delta || ''
       if (!delta) return
       const s = runSession()
@@ -659,7 +641,7 @@ function createStore() {
       msg.content += delta
       notify()
     })
-    const u2 = await tauriListen('hermes-run-tool', (e) => {
+    const u2 = await safeTauriListen('hermes-run-tool', (e) => {
       const evt = e?.payload || {}
       const evtType = evt.event || ''
       const toolName = evt.tool || evt.tool_name || evt.name || 'tool'
@@ -703,7 +685,7 @@ function createStore() {
       }
       notify()
     })
-    const u3 = await tauriListen('hermes-run-done', () => {
+    const u3 = await safeTauriListen('hermes-run-done', () => {
       const s = runSession()
       if (!s) { cleanupAfterRun(); return }
 
@@ -740,7 +722,7 @@ function createStore() {
       persistSessions()
       cleanupAfterRun()
     })
-    const u4 = await tauriListen('hermes-run-error', (e) => {
+    const u4 = await safeTauriListen('hermes-run-error', (e) => {
       const err = e?.payload?.error || 'unknown error'
       const s = runSession()
       if (s) {

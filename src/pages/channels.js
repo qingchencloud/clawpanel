@@ -2,7 +2,7 @@
  * 消息渠道管理
  * 渠道列表 + Agent 对接（多绑定、独立配置、渠道测试）
  */
-import { api, invalidate } from '../lib/tauri-api.js'
+import { api, invalidate, safeTauriListen } from '../lib/tauri-api.js'
 import { toast } from '../components/toast.js'
 import { showContentModal, showConfirm } from '../components/modal.js'
 import { icon } from '../lib/icons.js'
@@ -1530,7 +1530,7 @@ async function openConfigDialog(pid, page, state, accountId) {
         const logBox = actionResultEl.querySelector('#channel-action-log-box')
         const progressBar = actionResultEl.querySelector('#channel-action-progress-bar')
         const progressText = actionResultEl.querySelector('#channel-action-progress-text')
-        const { listen } = await import('@tauri-apps/api/event')
+        const listen = safeTauriListen
         let unlistenLog = null, unlistenProgress = null
         let _qrTimer = null
         const cleanup = () => { unlistenLog?.(); unlistenProgress?.(); clearTimeout(_qrTimer) }
@@ -1923,7 +1923,7 @@ async function openConfigDialog(pid, page, state, accountId) {
       const logBox = actionResultEl.querySelector('#channel-action-log-box')
       const progressBar = actionResultEl.querySelector('#channel-action-progress-bar')
       const progressText = actionResultEl.querySelector('#channel-action-progress-text')
-      const { listen } = await import('@tauri-apps/api/event')
+      const listen = safeTauriListen
       let unlistenLog = null
       let unlistenProgress = null
       let unlistenDone = null
@@ -2110,7 +2110,7 @@ async function openConfigDialog(pid, page, state, accountId) {
           const progressText = resultEl.querySelector('#plugin-progress-text')
           let unlistenLog, unlistenProgress
           try {
-            const { listen } = await import('@tauri-apps/api/event')
+            const listen = safeTauriListen
             unlistenLog = await listen('plugin-log', (e) => {
               logBox.textContent += e.payload + '\n'
               logBox.scrollTop = logBox.scrollHeight

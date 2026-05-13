@@ -2,7 +2,7 @@
  * 关于页面
  * 版本信息、项目链接、相关项目、系统环境
  */
-import { api } from '../lib/tauri-api.js'
+import { api, safeTauriListen } from '../lib/tauri-api.js'
 import { toast } from '../components/toast.js'
 import { showUpgradeModal, showConfirm, showContentModal } from '../components/modal.js'
 import { setUpgrading } from '../lib/app-state.js'
@@ -217,8 +217,7 @@ async function loadHermesData(page) {
 
         let unlisten = null
         try {
-          const { listen } = await import('@tauri-apps/api/event')
-          unlisten = await listen('hermes-install-log', (e) => {
+          unlisten = await safeTauriListen('hermes-install-log', (e) => {
             modal.appendLog(String(e.payload))
           })
         } catch (_) {}
