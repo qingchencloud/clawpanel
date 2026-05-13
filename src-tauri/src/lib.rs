@@ -290,20 +290,7 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("启动 ClawPanel 失败")
-        .run(|_app, event| {
-            if let tauri::RunEvent::Exit = event {
-                #[cfg(target_os = "windows")]
-                {
-                    // 退出时关闭 Gateway 终端窗口
-                    use std::os::windows::process::CommandExt;
-                    const CREATE_NO_WINDOW: u32 = 0x08000000;
-                    let _ = std::process::Command::new("taskkill")
-                        .args(["/fi", "WINDOWTITLE eq OpenClaw Gateway"])
-                        .creation_flags(CREATE_NO_WINDOW)
-                        .output();
-                }
-            }
-        });
+        .run(|_app, _event| {});
 }
 
 /// 启动时清理落后版本的热更新目录（issue #261）。
