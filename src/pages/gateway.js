@@ -297,6 +297,15 @@ function bindConfigEvents(el) {
 
 async function saveConfig(page, state) {
   const port = parseInt(page.querySelector('#gw-port')?.value) || 18789
+
+  // P1-6: 用内核 config.schema.lookup 即时校验 port（无 schema 时降级放行）
+  const portCheck = await validateField('gateway.port', port)
+  if (!portCheck.ok) {
+    toast(portCheck.message, 'error')
+    page.querySelector('#gw-port')?.focus()
+    return
+  }
+
   const bindRadio = page.querySelector('input[name="gw-bind"]:checked')
   const bind = bindRadio?.value || 'loopback'
   const mode = 'local'
