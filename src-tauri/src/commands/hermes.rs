@@ -2109,8 +2109,8 @@ pub async fn hermes_read_config_full() -> Result<Value, String> {
         .map_err(|e| format!("Failed to read config.yaml: {e}"))?;
 
     // 解析 YAML → JSON
-    let yaml_value: serde_yaml::Value = serde_yaml::from_str(&raw)
-        .map_err(|e| format!("Invalid YAML in config.yaml: {e}"))?;
+    let yaml_value: serde_yaml::Value =
+        serde_yaml::from_str(&raw).map_err(|e| format!("Invalid YAML in config.yaml: {e}"))?;
     let config_json: Value = serde_json::to_value(&yaml_value)
         .map_err(|e| format!("YAML→JSON conversion failed: {e}"))?;
 
@@ -2134,10 +2134,7 @@ pub async fn hermes_read_config_full() -> Result<Value, String> {
     let highlights: serde_json::Map<String, Value> = highlight_keys
         .iter()
         .map(|k| {
-            let v = config_json
-                .get(*k)
-                .cloned()
-                .unwrap_or(Value::Null);
+            let v = config_json.get(*k).cloned().unwrap_or(Value::Null);
             ((*k).to_string(), v)
         })
         .collect();
@@ -2223,8 +2220,7 @@ async fn run_venv_python_json(script: &str) -> Result<Value, String> {
         .find(|l| !l.trim().is_empty())
         .unwrap_or("")
         .trim();
-    serde_json::from_str(last_line)
-        .map_err(|e| format!("Python 输出解析失败: {e}\n原文: {stdout}"))
+    serde_json::from_str(last_line).map_err(|e| format!("Python 输出解析失败: {e}\n原文: {stdout}"))
 }
 
 #[tauri::command]
@@ -2247,8 +2243,8 @@ except Exception as e:
 pub async fn hermes_lazy_deps_status(features: Vec<String>) -> Result<Value, String> {
     // 把 features 列表序列化成 Python 合法的列表字面量
     // serde_json 的输出（如 ["platform.telegram","platform.discord"]）正好是 Python 合法字面量
-    let features_literal = serde_json::to_string(&features)
-        .map_err(|e| format!("features 序列化失败: {e}"))?;
+    let features_literal =
+        serde_json::to_string(&features).map_err(|e| format!("features 序列化失败: {e}"))?;
     let script = format!(
         r#"
 import json
@@ -2273,8 +2269,8 @@ except Exception as e:
 #[tauri::command]
 pub async fn hermes_lazy_deps_ensure(feature: String) -> Result<Value, String> {
     // serde_json::to_string 把字符串包成 Python 合法的字符串字面量（已含引号 + escape）
-    let feature_literal = serde_json::to_string(&feature)
-        .map_err(|e| format!("feature 名序列化失败: {e}"))?;
+    let feature_literal =
+        serde_json::to_string(&feature).map_err(|e| format!("feature 名序列化失败: {e}"))?;
     let script = format!(
         r#"
 import json, sys
@@ -3412,9 +3408,17 @@ fn normalize_hermes_stream_event(
         .map(|s| Value::String(s.to_string()))
         .unwrap_or(Value::Null);
     match event_type {
-        "message.delta" | "run.completed" | "run.failed" | "run.cancelled"
-        | "tool.started" | "tool.completed" | "tool.progress" | "tool.error"
-        | "reasoning.available" | "approval.request" | "approval.responded" => {
+        "message.delta"
+        | "run.completed"
+        | "run.failed"
+        | "run.cancelled"
+        | "tool.started"
+        | "tool.completed"
+        | "tool.progress"
+        | "tool.error"
+        | "reasoning.available"
+        | "approval.request"
+        | "approval.responded" => {
             let mut out = evt.clone();
             if out.get("run_id").is_none() {
                 out["run_id"] = Value::String(run_id.to_string());
@@ -3747,7 +3751,10 @@ pub async fn hermes_run_stop(run_id: String) -> Result<Value, String> {
         let body = resp.text().await.unwrap_or_default();
         return Err(format!("stop 失败 HTTP {}: {}", status.as_u16(), body));
     }
-    Ok(resp.json::<Value>().await.unwrap_or(serde_json::json!({ "ok": true })))
+    Ok(resp
+        .json::<Value>()
+        .await
+        .unwrap_or(serde_json::json!({ "ok": true })))
 }
 
 // ---------------------------------------------------------------------------
@@ -3770,7 +3777,11 @@ pub async fn hermes_run_approval(run_id: String, choice: String) -> Result<Value
     }
     let normalized_choice = match choice.as_str() {
         "once" | "session" | "always" | "deny" => choice,
-        other => return Err(format!("approval choice 必须是 once/session/always/deny，收到 {other}")),
+        other => {
+            return Err(format!(
+                "approval choice 必须是 once/session/always/deny，收到 {other}"
+            ))
+        }
     };
     let gw_url = hermes_gateway_url();
     let url = format!("{gw_url}/v1/runs/{run_id}/approval");
@@ -3792,7 +3803,10 @@ pub async fn hermes_run_approval(run_id: String, choice: String) -> Result<Value
         let body = resp.text().await.unwrap_or_default();
         return Err(format!("approval 失败 HTTP {}: {}", status.as_u16(), body));
     }
-    Ok(resp.json::<Value>().await.unwrap_or(serde_json::json!({ "ok": true })))
+    Ok(resp
+        .json::<Value>()
+        .await
+        .unwrap_or(serde_json::json!({ "ok": true })))
 }
 
 // ---------------------------------------------------------------------------
@@ -3830,7 +3844,9 @@ pub async fn hermes_run_status(run_id: String) -> Result<Value, String> {
         let body = resp.text().await.unwrap_or_default();
         return Err(format!("status 失败 HTTP {}: {}", status.as_u16(), body));
     }
-    resp.json::<Value>().await.map_err(|e| format!("解析 JSON 失败: {e}"))
+    resp.json::<Value>()
+        .await
+        .map_err(|e| format!("解析 JSON 失败: {e}"))
 }
 
 // ---------------------------------------------------------------------------
@@ -3856,18 +3872,21 @@ pub async fn hermes_session_export(session_id: String) -> Result<Value, String> 
         .build()
         .map_err(|e| format!("HTTP 客户端创建失败: {e}"))?;
 
-    let resp = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("export 请求失败: {}（提示：请先启动 Dashboard）", reqwest_error_detail(&e)))?;
+    let resp = client.get(&url).send().await.map_err(|e| {
+        format!(
+            "export 请求失败: {}（提示：请先启动 Dashboard）",
+            reqwest_error_detail(&e)
+        )
+    })?;
     let status = resp.status();
     if !status.is_success() {
         let body = resp.text().await.unwrap_or_default();
         return Err(format!("export 失败 HTTP {}: {}", status.as_u16(), body));
     }
     // 让前端拿原始 JSON 自己打包下载（保留完整结构）
-    resp.json::<Value>().await.map_err(|e| format!("解析 JSON 失败: {e}"))
+    resp.json::<Value>()
+        .await
+        .map_err(|e| format!("解析 JSON 失败: {e}"))
 }
 
 // ---------------------------------------------------------------------------
@@ -3990,10 +4009,12 @@ pub async fn hermes_dashboard_api_proxy(
 
     // 拿缓存的 token（首次为空，让 send 触发 401 再抓）
     let mut token = dashboard_session_token(port, false).await.ok();
-    let resp = build_request(token.as_deref())?
-        .send()
-        .await
-        .map_err(|e| format!("Dashboard 请求失败: {}（提示：请先启动 Dashboard）", reqwest_error_detail(&e)))?;
+    let resp = build_request(token.as_deref())?.send().await.map_err(|e| {
+        format!(
+            "Dashboard 请求失败: {}（提示：请先启动 Dashboard）",
+            reqwest_error_detail(&e)
+        )
+    })?;
 
     let status = resp.status();
     if status.as_u16() == 401 {
@@ -4008,15 +4029,14 @@ pub async fn hermes_dashboard_api_proxy(
         if !retry_status.is_success() {
             return Err(format!("HTTP {}: {}", retry_status.as_u16(), body));
         }
-        return Ok(serde_json::from_str::<Value>(&body).unwrap_or_else(|_| Value::String(body)));
+        return Ok(serde_json::from_str::<Value>(&body).unwrap_or(Value::String(body)));
     }
 
     let resp_body = resp.text().await.unwrap_or_default();
     if !status.is_success() {
         return Err(format!("HTTP {}: {}", status.as_u16(), resp_body));
     }
-    Ok(serde_json::from_str::<Value>(&resp_body)
-        .unwrap_or_else(|_| Value::String(resp_body)))
+    Ok(serde_json::from_str::<Value>(&resp_body).unwrap_or(Value::String(resp_body)))
 }
 
 /// Batch 3 §K: 多模态附件结构
@@ -4027,7 +4047,9 @@ pub async fn hermes_dashboard_api_proxy(
 pub struct HermesAttachment {
     pub kind: String,
     pub mime: String,
+    /// 原始文件名（前端可选传入，用于日志/调试展示）— 当前未读取，保留供后续展开附件清单 UI 使用
     #[serde(default)]
+    #[allow(dead_code)]
     pub name: Option<String>,
     /// base64 编码的内容（不含 data:image/...,base64, 前缀，仅纯 base64）
     pub data_base64: String,
@@ -6116,7 +6138,9 @@ fn multi_gw_pids_get(name: &str) -> Option<u32> {
 
 fn multi_gw_pids_set(name: &str, pid: u32) {
     if let Ok(mut guard) = MULTI_GW_PIDS.lock() {
-        guard.get_or_insert_with(HashMap::new).insert(name.to_string(), pid);
+        guard
+            .get_or_insert_with(HashMap::new)
+            .insert(name.to_string(), pid);
     }
 }
 
@@ -6234,8 +6258,16 @@ pub async fn hermes_multi_gateway_list() -> Result<Value, String> {
     let configs = read_multi_gateways_config();
     let mut result = Vec::new();
     for cfg in configs {
-        let name = cfg.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let profile = cfg.get("profile").and_then(|v| v.as_str()).unwrap_or("default").to_string();
+        let name = cfg
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let profile = cfg
+            .get("profile")
+            .and_then(|v| v.as_str())
+            .unwrap_or("default")
+            .to_string();
         if name.is_empty() {
             continue;
         }
@@ -6245,8 +6277,13 @@ pub async fn hermes_multi_gateway_list() -> Result<Value, String> {
         let pid_alive = pid_opt.map(pid_is_alive).unwrap_or(false);
         // TCP probe（即使 PID 死了，也可能其他进程占着端口）
         let addr = format!("127.0.0.1:{port}");
-        let tcp_running = addr.parse::<std::net::SocketAddr>().ok()
-            .and_then(|sa| std::net::TcpStream::connect_timeout(&sa, std::time::Duration::from_millis(300)).ok())
+        let tcp_running = addr
+            .parse::<std::net::SocketAddr>()
+            .ok()
+            .and_then(|sa| {
+                std::net::TcpStream::connect_timeout(&sa, std::time::Duration::from_millis(300))
+                    .ok()
+            })
             .is_some();
         result.push(serde_json::json!({
             "name": name,
@@ -6261,10 +6298,7 @@ pub async fn hermes_multi_gateway_list() -> Result<Value, String> {
 }
 
 #[tauri::command]
-pub async fn hermes_multi_gateway_add(
-    name: String,
-    profile: String,
-) -> Result<Value, String> {
+pub async fn hermes_multi_gateway_add(name: String, profile: String) -> Result<Value, String> {
     let name = name.trim().to_string();
     let profile = profile.trim().to_string();
     if name.is_empty() {
@@ -6274,11 +6308,17 @@ pub async fn hermes_multi_gateway_add(
         return Err("Profile 不能为空".into());
     }
     // 名称合法性检查（同 hermes profile 规则）
-    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
         return Err("名称只能含字母/数字/下划线/连字符".into());
     }
     let mut configs = read_multi_gateways_config();
-    if configs.iter().any(|c| c.get("name").and_then(|v| v.as_str()) == Some(&name)) {
+    if configs
+        .iter()
+        .any(|c| c.get("name").and_then(|v| v.as_str()) == Some(&name))
+    {
         return Err(format!("名称 \"{name}\" 已存在"));
     }
     configs.push(serde_json::json!({ "name": name, "profile": profile }));
@@ -6330,7 +6370,8 @@ pub async fn hermes_multi_gateway_start(
     }
     let addr = format!("127.0.0.1:{port}");
     if let Ok(sa) = addr.parse::<std::net::SocketAddr>() {
-        if std::net::TcpStream::connect_timeout(&sa, std::time::Duration::from_millis(300)).is_ok() {
+        if std::net::TcpStream::connect_timeout(&sa, std::time::Duration::from_millis(300)).is_ok()
+        {
             return Err(format!(
                 "端口 {port} 已被占用（非 ClawPanel spawn 的进程，无法接管。请用 services 页停掉默认 Gateway 后重试）"
             ));
@@ -6340,8 +6381,8 @@ pub async fn hermes_multi_gateway_start(
     let enhanced = hermes_enhanced_path();
     let home = hermes_home();
     let log_path = home.join(format!("gateway-{name}-run.log"));
-    let log_file = std::fs::File::create(&log_path)
-        .map_err(|e| format!("创建日志文件失败: {e}"))?;
+    let log_file =
+        std::fs::File::create(&log_path).map_err(|e| format!("创建日志文件失败: {e}"))?;
     let log_err = log_file
         .try_clone()
         .map_err(|e| format!("克隆日志句柄失败: {e}"))?;
@@ -6379,13 +6420,18 @@ pub async fn hermes_multi_gateway_start(
     std::mem::forget(child); // 不等待进程，由 PID 跟踪
     multi_gw_pids_set(&name, pid);
 
-    let _ = app.emit("hermes-multi-gateway-changed", serde_json::json!({ "name": &name, "action": "started" }));
+    let _ = app.emit(
+        "hermes-multi-gateway-changed",
+        serde_json::json!({ "name": &name, "action": "started" }),
+    );
 
     // 等端口起来（最多 8 秒）
     for _ in 0..40 {
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         if let Ok(sa) = addr.parse::<std::net::SocketAddr>() {
-            if std::net::TcpStream::connect_timeout(&sa, std::time::Duration::from_millis(200)).is_ok() {
+            if std::net::TcpStream::connect_timeout(&sa, std::time::Duration::from_millis(200))
+                .is_ok()
+            {
                 return Ok(serde_json::json!({
                     "started": true, "pid": pid, "port": port
                 }));
@@ -6398,9 +6444,7 @@ pub async fn hermes_multi_gateway_start(
 }
 
 #[tauri::command]
-pub async fn hermes_multi_gateway_stop(
-    name: String,
-) -> Result<Value, String> {
+pub async fn hermes_multi_gateway_stop(name: String) -> Result<Value, String> {
     let name = name.trim().to_string();
     let pid = multi_gw_pids_get(&name);
     if pid.is_none() || !pid_is_alive(pid.unwrap()) {
@@ -6438,8 +6482,8 @@ pub async fn hermes_multi_gateway_stop(
 // 提供：list / read / write 三个基础命令，前端组合成文件管理器 UI。
 // ============================================================================
 
-const FS_MAX_READ_BYTES: u64 = 5 * 1024 * 1024;  // 5 MB
-const FS_MAX_LIST_ENTRIES: usize = 2000;          // 单次最多返回 2000 条
+const FS_MAX_READ_BYTES: u64 = 5 * 1024 * 1024; // 5 MB
+const FS_MAX_LIST_ENTRIES: usize = 2000; // 单次最多返回 2000 条
 
 /// 验证路径在 hermes_home 子树内（防 path traversal）。
 /// 返回安全的绝对路径，或 Err。
@@ -6456,10 +6500,7 @@ fn validate_hermes_fs_path(rel_path: &str) -> Result<PathBuf, String> {
             let canonical_root = root.canonicalize().unwrap_or(root.clone());
             let canonical_target = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
             if !canonical_target.starts_with(&canonical_root) {
-                return Err(format!(
-                    "路径必须在 {} 子树内",
-                    root.to_string_lossy()
-                ));
+                return Err(format!("路径必须在 {} 子树内", root.to_string_lossy()));
             }
             canonical_target
         } else {
@@ -6469,10 +6510,7 @@ fn validate_hermes_fs_path(rel_path: &str) -> Result<PathBuf, String> {
             let canon = joined.canonicalize().unwrap_or(joined.clone());
             let canonical_root = root.canonicalize().unwrap_or(root.clone());
             if !canon.starts_with(&canonical_root) {
-                return Err(format!(
-                    "路径不能跳出 {} 目录",
-                    root.to_string_lossy()
-                ));
+                return Err(format!("路径不能跳出 {} 目录", root.to_string_lossy()));
             }
             canon
         }
@@ -6494,16 +6532,20 @@ pub async fn hermes_fs_list(path: String) -> Result<Value, String> {
     for entry in read_dir.flatten().take(FS_MAX_LIST_ENTRIES) {
         let name = entry.file_name().to_string_lossy().to_string();
         if name.starts_with('.') && name != ".env" && name != ".hermes" {
-            continue;  // 隐藏文件默认不显示（.env 除外因为 Hermes 用它）
+            continue; // 隐藏文件默认不显示（.env 除外因为 Hermes 用它）
         }
         let ft = match entry.file_type() {
             Ok(t) => t,
             Err(_) => continue,
         };
         let meta = entry.metadata().ok();
-        let size = meta.as_ref().and_then(|m| if m.is_file() { Some(m.len()) } else { None });
+        let size = meta
+            .as_ref()
+            .and_then(|m| if m.is_file() { Some(m.len()) } else { None });
         let modified = meta.as_ref().and_then(|m| m.modified().ok()).and_then(|t| {
-            t.duration_since(std::time::UNIX_EPOCH).ok().map(|d| d.as_secs())
+            t.duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .map(|d| d.as_secs())
         });
         entries.push(serde_json::json!({
             "name": name,
@@ -6517,7 +6559,11 @@ pub async fn hermes_fs_list(path: String) -> Result<Value, String> {
         let ak = a.get("kind").and_then(|v| v.as_str()).unwrap_or("");
         let bk = b.get("kind").and_then(|v| v.as_str()).unwrap_or("");
         if ak != bk {
-            return if ak == "dir" { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
+            return if ak == "dir" {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Greater
+            };
         }
         let an = a.get("name").and_then(|v| v.as_str()).unwrap_or("");
         let bn = b.get("name").and_then(|v| v.as_str()).unwrap_or("");
@@ -6538,7 +6584,9 @@ pub async fn hermes_fs_read(path: String) -> Result<Value, String> {
     if !target.is_file() {
         return Err(format!("不是文件: {}", target.to_string_lossy()));
     }
-    let meta = target.metadata().map_err(|e| format!("读元数据失败: {e}"))?;
+    let meta = target
+        .metadata()
+        .map_err(|e| format!("读元数据失败: {e}"))?;
     if meta.len() > FS_MAX_READ_BYTES {
         return Err(format!(
             "文件过大（{} bytes），最大 {} bytes",
@@ -6566,10 +6614,11 @@ pub async fn hermes_fs_read(path: String) -> Result<Value, String> {
 /// 简单的 base64 编码（不引新依赖）
 fn base64_encode(bytes: &[u8]) -> String {
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity((bytes.len() + 2) / 3 * 4);
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     let mut i = 0;
     while i + 3 <= bytes.len() {
-        let n = (u32::from(bytes[i]) << 16) | (u32::from(bytes[i + 1]) << 8) | u32::from(bytes[i + 2]);
+        let n =
+            (u32::from(bytes[i]) << 16) | (u32::from(bytes[i + 1]) << 8) | u32::from(bytes[i + 2]);
         out.push(CHARS[((n >> 18) & 0x3F) as usize] as char);
         out.push(CHARS[((n >> 12) & 0x3F) as usize] as char);
         out.push(CHARS[((n >> 6) & 0x3F) as usize] as char);
@@ -6604,7 +6653,11 @@ pub async fn hermes_fs_write(path: String, content: String) -> Result<Value, Str
     }
     // 写入大小限制（防止巨型文件意外写入）
     if content.len() as u64 > FS_MAX_READ_BYTES {
-        return Err(format!("内容过大（{} bytes），最大 {} bytes", content.len(), FS_MAX_READ_BYTES));
+        return Err(format!(
+            "内容过大（{} bytes），最大 {} bytes",
+            content.len(),
+            FS_MAX_READ_BYTES
+        ));
     }
     std::fs::write(&target, content.as_bytes()).map_err(|e| format!("写入失败: {e}"))?;
     let meta = target.metadata().ok();
