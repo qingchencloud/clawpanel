@@ -7225,6 +7225,13 @@ const handlers = {
     return await resp.json().catch(() => ({ ok: true }))
   },
 
+  // Batch 2 §G: 多 Gateway（Web 模式不支持本地进程管理）
+  hermes_multi_gateway_list() { return [] },
+  hermes_multi_gateway_add() { throw new Error('Web 模式不支持多 Gateway 管理（请使用桌面客户端）') },
+  hermes_multi_gateway_remove() { throw new Error('Web 模式不支持多 Gateway 管理') },
+  hermes_multi_gateway_start() { throw new Error('Web 模式不支持多 Gateway 管理') },
+  hermes_multi_gateway_stop() { throw new Error('Web 模式不支持多 Gateway 管理') },
+
   // Batch 2 §H 基础设施: 通用 Dashboard 9119 HTTP 代理（含 session token 注入）
   // _dashboardToken 模块级缓存；401 时刷新重试
   async _fetchDashboardToken(port) {

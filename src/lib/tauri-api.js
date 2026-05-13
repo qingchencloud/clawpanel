@@ -488,6 +488,12 @@ export const api = {
     body: body == null ? null : (typeof body === 'string' ? body : JSON.stringify(body)),
     headers: headers || null,
   }),
+  // Batch 2 §G: 多 Gateway 看板
+  hermesMultiGatewayList: () => invoke('hermes_multi_gateway_list'),
+  hermesMultiGatewayAdd: (name, profile) => invoke('hermes_multi_gateway_add', { name, profile }),
+  hermesMultiGatewayRemove: (name) => invoke('hermes_multi_gateway_remove', { name }),
+  hermesMultiGatewayStart: (name) => invoke('hermes_multi_gateway_start', { name }),
+  hermesMultiGatewayStop: (name) => invoke('hermes_multi_gateway_stop', { name }),
   hermesReadConfig: () => invoke('hermes_read_config'),
   hermesReadConfigFull: () => invoke('hermes_read_config_full'),
   hermesLazyDepsFeatures: () => cachedInvoke('hermes_lazy_deps_features', {}, 600000),
