@@ -5039,6 +5039,65 @@ body[data-active-engine="hermes"][data-theme="dark"] {
   border-radius: 50%;
   animation: hm-chat-live-pulse 1.6s ease-in-out infinite;
 }
+
+/* ---- Batch 1 §C-bis: Approval Flow 气泡 ---- */
+[data-engine="hermes"] .hm-chat-approval {
+  margin: 12px 0 16px 42px;
+  padding: 16px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 720px;
+}
+[data-engine="hermes"] .hm-chat-approval-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+[data-engine="hermes"] .hm-chat-approval-emoji {
+  font-size: 22px;
+  line-height: 1;
+}
+[data-engine="hermes"] .hm-chat-approval-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--hm-text-primary);
+  line-height: 1.4;
+}
+[data-engine="hermes"] .hm-chat-approval-args {
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-family: var(--hm-font-mono, monospace);
+  color: var(--hm-text-secondary);
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+[data-engine="hermes"] .hm-chat-approval-hint {
+  font-size: 12px;
+  color: var(--hm-text-tertiary);
+  line-height: 1.5;
+}
+[data-engine="hermes"] .hm-chat-approval-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+[data-theme="dark"] [data-engine="hermes"] .hm-chat-approval {
+  background: rgba(245, 158, 11, 0.10);
+  border-color: rgba(245, 158, 11, 0.45);
+}
+[data-theme="dark"] [data-engine="hermes"] .hm-chat-approval-args {
+  background: rgba(255, 255, 255, 0.04);
+}
+
 [data-engine="hermes"] .hm-chat-live-tools {
   display: flex;
   flex-direction: column;

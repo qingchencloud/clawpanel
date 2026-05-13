@@ -3400,8 +3400,9 @@ fn normalize_hermes_stream_event(
         .map(|s| Value::String(s.to_string()))
         .unwrap_or(Value::Null);
     match event_type {
-        "message.delta" | "run.completed" | "run.failed" | "tool.started" | "tool.completed"
-        | "tool.progress" | "tool.error" => {
+        "message.delta" | "run.completed" | "run.failed" | "run.cancelled"
+        | "tool.started" | "tool.completed" | "tool.progress" | "tool.error"
+        | "reasoning.available" | "approval.request" | "approval.responded" => {
             let mut out = evt.clone();
             if out.get("run_id").is_none() {
                 out["run_id"] = Value::String(run_id.to_string());
@@ -3530,6 +3531,18 @@ fn emit_hermes_stream_event(
         }
         "reasoning.available" => {
             let _ = app.emit("hermes-run-reasoning", evt.clone());
+        }
+        // Batch 1 §C 新增：Approval Flow 4 类真实事件（已用源码 api_server.py 确认）
+        "approval.request" => {
+            let _ = app.emit("hermes-run-approval-request", evt.clone());
+        }
+        "approval.responded" => {
+            let _ = app.emit("hermes-run-approval-responded", evt.clone());
+        }
+        "run.cancelled" => {
+            let _ = app.emit("hermes-run-cancelled", evt.clone());
+            // 中断也是终态 — 让流循环可以 return Ok(true) 结束读
+            return Ok(true);
         }
         "run.completed" => {
             if let Some(output) = evt["output"].as_str() {
@@ -3674,6 +3687,100 @@ async fn try_hermes_responses_run(
         }),
     );
     Ok(Some(run_id))
+}
+
+/// 读取 Hermes API_SERVER_KEY（从 ~/.hermes/.env），与 hermes_agent_run 共用。
+fn read_hermes_api_key() -> String {
+    let env_path = hermes_home().join(".env");
+    let mut key = String::new();
+    if let Ok(content) = std::fs::read_to_string(&env_path) {
+        for line in content.lines() {
+            let line = line.trim();
+            if let Some(val) = line.strip_prefix("API_SERVER_KEY=") {
+                key = val.trim().to_string();
+                break;
+            }
+        }
+    }
+    key
+}
+
+// ---------------------------------------------------------------------------
+// Batch 1 §D: hermes_run_stop — 真正中断 run（POST /v1/runs/{run_id}/stop）
+//
+// 原本 chat-store 的 stopStreaming() 只 abort 本地 SSE，后端 agent 继续跑完
+// 「Stop 假停」问题：从 hermes 源码确认真实端点是 /v1/runs/{run_id}/stop（用 run_id 不是 session_id）。
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn hermes_run_stop(run_id: String) -> Result<Value, String> {
+    if run_id.is_empty() {
+        return Err("run_id 不能为空".to_string());
+    }
+    let gw_url = hermes_gateway_url();
+    let url = format!("{gw_url}/v1/runs/{run_id}/stop");
+    let api_key = read_hermes_api_key();
+    let client = hermes_gateway_http_client(std::time::Duration::from_secs(5))
+        .map_err(|e| format!("HTTP 客户端创建失败: {e}"))?;
+    let mut req = client.post(&url);
+    if !api_key.is_empty() {
+        req = req.header("Authorization", format!("Bearer {api_key}"));
+    }
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| format!("stop 请求失败: {}", reqwest_error_detail(&e)))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("stop 失败 HTTP {}: {}", status.as_u16(), body));
+    }
+    Ok(resp.json::<Value>().await.unwrap_or(serde_json::json!({ "ok": true })))
+}
+
+// ---------------------------------------------------------------------------
+// Batch 1 §C-bis: hermes_run_approval — 批准/拒绝 Hermes 内核的工具调用
+//
+// Hermes 跑高危工具（terminal / code_execution）默认是 ask once 模式，
+// 触发 approval.request SSE 事件，前端要弹给用户 4 个选项：
+//   - "once"    一次性批准（默认）
+//   - "session" 本 session 内都批准
+//   - "always"  全局总是批准（极少用）
+//   - "deny"    拒绝（run 会被 cancelled）
+//
+// 端点：POST /v1/runs/{run_id}/approval { choice }
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn hermes_run_approval(run_id: String, choice: String) -> Result<Value, String> {
+    if run_id.is_empty() {
+        return Err("run_id 不能为空".to_string());
+    }
+    let normalized_choice = match choice.as_str() {
+        "once" | "session" | "always" | "deny" => choice,
+        other => return Err(format!("approval choice 必须是 once/session/always/deny，收到 {other}")),
+    };
+    let gw_url = hermes_gateway_url();
+    let url = format!("{gw_url}/v1/runs/{run_id}/approval");
+    let api_key = read_hermes_api_key();
+    let client = hermes_gateway_http_client(std::time::Duration::from_secs(5))
+        .map_err(|e| format!("HTTP 客户端创建失败: {e}"))?;
+    let mut req = client
+        .post(&url)
+        .json(&serde_json::json!({ "choice": normalized_choice }));
+    if !api_key.is_empty() {
+        req = req.header("Authorization", format!("Bearer {api_key}"));
+    }
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| format!("approval 请求失败: {}", reqwest_error_detail(&e)))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("approval 失败 HTTP {}: {}", status.as_u16(), body));
+    }
+    Ok(resp.json::<Value>().await.unwrap_or(serde_json::json!({ "ok": true })))
 }
 
 #[tauri::command]

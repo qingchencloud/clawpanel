@@ -228,6 +228,12 @@ function createStore() {
     // Live tool calls for the current run (shown in the streaming indicator).
     liveTools: [],             // [{ id, name, status, preview, args, result }]
 
+    // Batch 1 §C/§D/§C-bis: run-level 状态
+    currentRunId: null,        // 当前 run 的 id（来自 hermes-run-started 事件）
+    pendingApproval: null,     // 待批准工具调用 { tool, args, request_id, choices, run_id }
+    hasReasoning: false,       // 本轮有推理链可读（reasoning.available 触发）
+    aborting: false,           // 用户点 Stop 后等 run.cancelled 期间
+
     // UI prefs (persisted).
     pinned: new Set(loadJson(STORAGE_PINNED_PREFIX + profileKey(safeGet(STORAGE_PROFILE) || 'default')) || []),
     collapsed: new Set(loadJson(STORAGE_COLLAPSED_PREFIX + profileKey(safeGet(STORAGE_PROFILE) || 'default')) || []),
@@ -736,7 +742,60 @@ function createStore() {
       }
       cleanupAfterRun()
     })
-    unlisteners.push(u1, u2, u3, u4)
+    // Batch 1 §C/§D/§C-bis: 监听新事件
+    const u5 = await safeTauriListen('hermes-run-started', (e) => {
+      const rid = e?.payload?.run_id
+      if (rid) state.currentRunId = rid
+      notify()
+    })
+    const u6 = await safeTauriListen('hermes-run-approval-request', (e) => {
+      const evt = e?.payload || {}
+      state.pendingApproval = {
+        runId: evt.run_id || state.currentRunId,
+        tool: evt.tool || evt.tool_name || 'tool',
+        args: evt.args || evt.arguments || evt.parameters || evt.input || null,
+        requestId: evt.request_id || evt.id || null,
+        choices: Array.isArray(evt.choices) && evt.choices.length ? evt.choices : ['once', 'session', 'always', 'deny'],
+        rawEvent: evt,
+      }
+      notify()
+    })
+    const u7 = await safeTauriListen('hermes-run-approval-responded', () => {
+      state.pendingApproval = null
+      notify()
+    })
+    const u8 = await safeTauriListen('hermes-run-cancelled', () => {
+      // 用户主动中断或服务端取消 — 把 pending assistant 标记为 (stopped) 并清状态
+      const s = runSession()
+      if (s) {
+        const msg = s.messages.find(m => m.id === state.pendingAssistantId)
+        if (msg) {
+          delete msg.isStreaming
+          if (!msg.content.trim()) msg.content = '_(stopped)_'
+          else if (!msg.content.endsWith('(stopped)')) msg.content = msg.content.trimEnd() + ' _(stopped)_'
+        }
+        // 提交已知工具调用
+        for (const t of state.liveTools) {
+          if (t.status === 'done' || t.status === 'error') {
+            s.messages.push({
+              id: uid(), role: 'tool', content: '', timestamp: Date.now(),
+              toolName: t.name, toolPreview: t.preview || undefined,
+              toolArgs: stringifyMaybe(t.args), toolResult: stringifyMaybe(t.result),
+              toolStatus: t.error ? 'error' : 'done',
+            })
+          }
+        }
+        s.updatedAt = Date.now()
+        persistSessionMessages(s.id)
+        persistSessions()
+      }
+      cleanupAfterRun()
+    })
+    const u9 = await safeTauriListen('hermes-run-reasoning', () => {
+      state.hasReasoning = true
+      notify()
+    })
+    unlisteners.push(u1, u2, u3, u4, u5, u6, u7, u8, u9)
   }
 
   function detachStreamListeners() {
@@ -868,6 +927,40 @@ function createStore() {
     } else if (eventType === 'run.failed') {
       failStreamRun(runSessionId, evt.error || 'unknown error')
     }
+    // Batch 1 §C/§D/§C-bis: Web 模式同步处理新事件
+    else if (eventType === 'run.cancelled') {
+      const s = state.sessions.find(x => x.id === runSessionId)
+      if (s) {
+        const msg = s.messages.find(m => m.id === state.pendingAssistantId)
+        if (msg) {
+          delete msg.isStreaming
+          if (!msg.content.trim()) msg.content = '_(stopped)_'
+          else if (!msg.content.endsWith('(stopped)')) msg.content = msg.content.trimEnd() + ' _(stopped)_'
+        }
+        s.updatedAt = Date.now()
+        persistSessionMessages(s.id)
+      }
+      cleanupAfterRun()
+    }
+    else if (eventType === 'approval.request') {
+      state.pendingApproval = {
+        runId: evt.run_id || state.currentRunId,
+        tool: evt.tool || evt.tool_name || 'tool',
+        args: evt.args || evt.arguments || evt.parameters || evt.input || null,
+        requestId: evt.request_id || evt.id || null,
+        choices: Array.isArray(evt.choices) && evt.choices.length ? evt.choices : ['once', 'session', 'always', 'deny'],
+        rawEvent: evt,
+      }
+      notify()
+    }
+    else if (eventType === 'approval.responded') {
+      state.pendingApproval = null
+      notify()
+    }
+    else if (eventType === 'reasoning.available') {
+      state.hasReasoning = true
+      notify()
+    }
   }
 
   function cleanupAfterRun() {
@@ -875,6 +968,11 @@ function createStore() {
     state.runningSessionId = null
     state.pendingAssistantId = null
     state.liveTools = []
+    // Batch 1 §C/§D/§C-bis: 重置 run-level 字段
+    state.currentRunId = null
+    state.pendingApproval = null
+    state.aborting = false
+    // hasReasoning 保留到下次 run 开始（让用户看完上一轮思考链）
     streamAbortController = null
     detachStreamListeners()
     notify()
@@ -902,6 +1000,14 @@ function createStore() {
    */
   function stopStreaming() {
     if (!state.streaming) return
+    state.aborting = true
+    notify()
+    // Batch 1 §D: 走真实端点中断（用 run_id 不是 session_id）
+    if (state.currentRunId) {
+      api.hermesRunStop(state.currentRunId).catch(err => {
+        console.warn('[chat-store] hermes_run_stop failed:', err)
+      })
+    }
     if (streamAbortController) {
       try { streamAbortController.abort() } catch {}
     }
@@ -1090,6 +1196,22 @@ function createStore() {
     toggleCollapsed,
     sendMessage,
     stopStreaming,
+    // Batch 1 §C-bis: Approval Flow — 让 UI 调用回复批准
+    respondApproval(choice) {
+      const pending = state.pendingApproval
+      if (!pending || !pending.runId) return Promise.reject(new Error('no pending approval'))
+      const normalized = ['once', 'session', 'always', 'deny'].includes(choice) ? choice : 'once'
+      // 乐观清掉 — 等服务端 approval.responded 事件作权威清理
+      state.pendingApproval = null
+      notify()
+      return api.hermesRunApproval(pending.runId, normalized).catch(err => {
+        console.warn('[chat-store] hermes_run_approval failed:', err)
+        // 失败时恢复
+        state.pendingApproval = pending
+        notify()
+        throw err
+      })
+    },
     pushLocalAssistant,
     pushLocalUser,
     clearActive,

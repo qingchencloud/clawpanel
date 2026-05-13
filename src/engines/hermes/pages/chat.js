@@ -1120,6 +1120,20 @@ export function render() {
       toast(t('engine.chatStopped'), 'success')
     })
 
+    // Batch 1 §C-bis: Approval Flow 按钮点击
+    el.querySelectorAll('.hm-chat-approval-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const choice = btn.dataset.approvalChoice
+        if (!choice) return
+        btn.disabled = true
+        try {
+          await store.respondApproval(choice)
+        } catch (err) {
+          toast(t('engine.chatApprovalFailed'), 'error')
+        }
+      })
+    })
+
     el.querySelectorAll('.hm-chat-slash-item').forEach(item => {
       item.addEventListener('click', () => {
         const cmd = item.dataset.cmd

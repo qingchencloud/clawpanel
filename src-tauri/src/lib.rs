@@ -239,6 +239,8 @@ pub fn run() {
             hermes::hermes_capabilities,
             hermes::hermes_api_proxy,
             hermes::hermes_agent_run,
+            hermes::hermes_run_stop,
+            hermes::hermes_run_approval,
             hermes::hermes_read_config,
             hermes::hermes_read_config_full,
             hermes::hermes_lazy_deps_features,

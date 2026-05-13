@@ -475,6 +475,9 @@ export const api = {
   hermesApiProxy: (method, path, body, headers) => invoke('hermes_api_proxy', { method, path, body: body || null, headers: headers || null }),
   hermesAgentRun: (input, sessionId, conversationHistory, instructions) => invoke('hermes_agent_run', { input, sessionId: sessionId || null, conversationHistory: conversationHistory || null, instructions: instructions || null }),
   hermesAgentRunStream: (input, sessionId, conversationHistory, instructions, onEvent, options) => webStreamInvoke('hermes_agent_run_stream', { input, sessionId: sessionId || null, conversationHistory: conversationHistory || null, instructions: instructions || null }, onEvent, options),
+  // Batch 1 §D + §C-bis: 真正中断 + Approval Flow（用 run_id）
+  hermesRunStop: (runId) => invoke('hermes_run_stop', { runId }),
+  hermesRunApproval: (runId, choice) => invoke('hermes_run_approval', { runId, choice }),
   hermesReadConfig: () => invoke('hermes_read_config'),
   hermesReadConfigFull: () => invoke('hermes_read_config_full'),
   hermesLazyDepsFeatures: () => cachedInvoke('hermes_lazy_deps_features', {}, 600000),

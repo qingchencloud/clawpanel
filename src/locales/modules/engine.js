@@ -432,6 +432,15 @@ export default {
   // 停止流式
   chatStop: _('停止', 'Stop', '停止'),
   chatStopped: _('已停止当前回复', 'Run stopped', '已停止目前回覆'),
+  chatAborting: _('正在中断…', 'Aborting…', '正在中斷…'),
+  // Batch 1 §C-bis: Approval Flow 工具调用批准
+  chatApprovalTitle: _('Agent 想调用工具 "{tool}"，是否批准？', 'Agent wants to call tool "{tool}". Approve?', 'Agent 想呼叫工具 "{tool}"，是否批准？'),
+  chatApprovalHint: _('「一次性」最安全；「本次会话」让 Agent 自由用；「永久」全局信任此工具。', '"Once" is safest. "Session" lets the agent use it freely this session. "Always" trusts this tool globally.', '「一次性」最安全；「本次會話」讓 Agent 自由用；「永久」全局信任此工具。'),
+  chatApprovalOnce: _('一次性批准', 'Approve once', '一次性批准'),
+  chatApprovalSession: _('本次会话', 'This session', '本次會話'),
+  chatApprovalAlways: _('永久信任', 'Always', '永久信任'),
+  chatApprovalDeny: _('拒绝', 'Deny', '拒絕'),
+  chatApprovalFailed: _('批准失败', 'Approval failed', '批准失敗'),
   // Web 模式（远程浏览器）下流式聊天暂不可用
   chatWebModeStreamingUnsupported: _(
     'Web 模式暂不支持 Hermes 实时流式聊天（依赖桌面端事件桥）。请打开桌面客户端使用此功能。',

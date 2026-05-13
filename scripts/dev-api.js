@@ -7194,6 +7194,44 @@ const handlers = {
     return { ok: false, error: `Web 模式下无法预装依赖。请在桌面端 ClawPanel 完成 ${feature} 安装。` }
   },
 
+  // Batch 1 §D: 真正中断 — POST /v1/runs/{run_id}/stop
+  async hermes_run_stop({ runId } = {}) {
+    if (!runId) throw new Error('run_id 不能为空')
+    const url = `${hermesGatewayUrl()}/v1/runs/${encodeURIComponent(runId)}/stop`
+    const apiKey = _readHermesApiServerKey()
+    const headers = { 'User-Agent': 'ClawPanel-Web' }
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+    const resp = await globalThis.fetch(url, { method: 'POST', headers, signal: AbortSignal.timeout(5000) })
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '')
+      throw new Error(`stop 失败 HTTP ${resp.status}: ${body}`)
+    }
+    return await resp.json().catch(() => ({ ok: true }))
+  },
+
+  // Batch 1 §C-bis: Approval Flow — POST /v1/runs/{run_id}/approval { choice }
+  async hermes_run_approval({ runId, choice } = {}) {
+    if (!runId) throw new Error('run_id 不能为空')
+    if (!['once', 'session', 'always', 'deny'].includes(choice)) {
+      throw new Error(`approval choice 必须是 once/session/always/deny，收到 ${choice}`)
+    }
+    const url = `${hermesGatewayUrl()}/v1/runs/${encodeURIComponent(runId)}/approval`
+    const apiKey = _readHermesApiServerKey()
+    const headers = { 'User-Agent': 'ClawPanel-Web', 'Content-Type': 'application/json' }
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+    const resp = await globalThis.fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ choice }),
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '')
+      throw new Error(`approval 失败 HTTP ${resp.status}: ${body}`)
+    }
+    return await resp.json().catch(() => ({ ok: true }))
+  },
+
   // P1-4：完整解析 config.yaml，让前端能读 14+ 高价值字段
   // Web 模式不引入 yaml 依赖，简单返回 raw + null highlights（前端按需渲染）
   hermes_read_config_full() {
