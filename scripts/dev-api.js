@@ -7225,20 +7225,42 @@ const handlers = {
     return await resp.json().catch(() => ({ ok: true }))
   },
 
-  // Batch 2 §H 基础设施: 通用 Dashboard 9119 HTTP 代理
+  // Batch 2 §H 基础设施: 通用 Dashboard 9119 HTTP 代理（含 session token 注入）
+  // _dashboardToken 模块级缓存；401 时刷新重试
+  async _fetchDashboardToken(port) {
+    const resp = await globalThis.fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(5000) })
+    if (!resp.ok) throw new Error(`dashboard 首页 HTTP ${resp.status}`)
+    const html = await resp.text()
+    const m = html.match(/window\.__HERMES_SESSION_TOKEN__="([^"]+)"/)
+    if (!m) throw new Error('无法从 dashboard HTML 提取 session token')
+    handlers._dashboardToken = m[1]
+    return m[1]
+  },
+  async _getDashboardToken(port, forceRefresh = false) {
+    if (!forceRefresh && handlers._dashboardToken) return handlers._dashboardToken
+    return await handlers._fetchDashboardToken(port)
+  },
   async hermes_dashboard_api_proxy({ method = 'GET', path: reqPath = '/', body = null, headers: customHeaders } = {}) {
     const port = handlers._hermesDashboardPort()
     const url = `http://127.0.0.1:${port}${reqPath}`
-    const opts = { method: String(method).toUpperCase(), headers: { 'User-Agent': 'ClawPanel-Web' } }
-    opts.signal = AbortSignal.timeout(30000)
-    if (customHeaders && typeof customHeaders === 'object') {
-      Object.assign(opts.headers, customHeaders)
+    const buildOpts = (token) => {
+      const opts = { method: String(method).toUpperCase(), headers: { 'User-Agent': 'ClawPanel-Web' } }
+      opts.signal = AbortSignal.timeout(30000)
+      if (token) opts.headers['X-Hermes-Session-Token'] = token
+      if (customHeaders && typeof customHeaders === 'object') Object.assign(opts.headers, customHeaders)
+      if (body != null && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(opts.method)) {
+        opts.headers['Content-Type'] = 'application/json'
+        opts.body = typeof body === 'string' ? body : JSON.stringify(body)
+      }
+      return opts
     }
-    if (body != null && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(opts.method)) {
-      opts.headers['Content-Type'] = 'application/json'
-      opts.body = typeof body === 'string' ? body : JSON.stringify(body)
+    let token = await handlers._getDashboardToken(port, false).catch(() => null)
+    let resp = await globalThis.fetch(url, buildOpts(token))
+    if (resp.status === 401) {
+      // 强制刷新 + 重试
+      token = await handlers._getDashboardToken(port, true)
+      resp = await globalThis.fetch(url, buildOpts(token))
     }
-    const resp = await globalThis.fetch(url, opts)
     const text = await resp.text().catch(() => '')
     if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${text}（提示：请先启动 Dashboard）`)
     try { return JSON.parse(text) } catch { return text }

@@ -3882,6 +3882,67 @@ pub async fn hermes_session_export(session_id: String) -> Result<Value, String> 
 //   - hermes_dashboard_api_proxy 走 Dashboard 9119（无需 token，本地绑定）
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Dashboard session token 缓存
+//
+// Hermes Dashboard 9119 大部分 /api/* 端点需要 token 鉴权（_require_token）。
+// token 来源：进程启动时 secrets.token_urlsafe(32) 生成，注入到 SPA HTML 的
+//   <script>window.__HERMES_SESSION_TOKEN__="..."</script>
+// 没有公开获取 API，只能 GET / 抓 HTML 提取。
+//
+// 缓存策略：
+//   - 全局静态 Mutex<Option<String>> 保存
+//   - 401 时 invalidate 重抓一次（dashboard 进程重启会重生成 token）
+// ---------------------------------------------------------------------------
+
+use std::sync::Mutex;
+static DASHBOARD_SESSION_TOKEN: Mutex<Option<String>> = Mutex::new(None);
+
+async fn fetch_dashboard_session_token(port: u16) -> Result<String, String> {
+    let url = format!("http://127.0.0.1:{port}/");
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| format!("HTTP 客户端创建失败: {e}"))?;
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("拉 dashboard 首页失败: {}", reqwest_error_detail(&e)))?;
+    if !resp.status().is_success() {
+        return Err(format!("dashboard 首页 HTTP {}", resp.status().as_u16()));
+    }
+    let html = resp.text().await.unwrap_or_default();
+    // 正则匹配 window.__HERMES_SESSION_TOKEN__="..."
+    // 用简单的字符串搜索避免引入 regex crate（已有 regex 依赖但保持简单）
+    let needle = "window.__HERMES_SESSION_TOKEN__=\"";
+    if let Some(start) = html.find(needle) {
+        let after = &html[start + needle.len()..];
+        if let Some(end) = after.find('"') {
+            let token = &after[..end];
+            if !token.is_empty() {
+                return Ok(token.to_string());
+            }
+        }
+    }
+    Err("无法从 dashboard HTML 提取 session token（dashboard 可能未启动）".to_string())
+}
+
+async fn dashboard_session_token(port: u16, force_refresh: bool) -> Result<String, String> {
+    if !force_refresh {
+        if let Ok(guard) = DASHBOARD_SESSION_TOKEN.lock() {
+            if let Some(t) = guard.as_ref() {
+                return Ok(t.clone());
+            }
+        }
+    }
+    let token = fetch_dashboard_session_token(port).await?;
+    if let Ok(mut guard) = DASHBOARD_SESSION_TOKEN.lock() {
+        *guard = Some(token.clone());
+    }
+    Ok(token)
+}
+
 #[tauri::command]
 pub async fn hermes_dashboard_api_proxy(
     method: String,
@@ -3897,41 +3958,63 @@ pub async fn hermes_dashboard_api_proxy(
         .build()
         .map_err(|e| format!("HTTP 客户端创建失败: {e}"))?;
 
-    let mut req = match method.to_uppercase().as_str() {
-        "GET" => client.get(&url),
-        "POST" => client.post(&url),
-        "PUT" => client.put(&url),
-        "PATCH" => client.patch(&url),
-        "DELETE" => client.delete(&url),
-        _ => return Err(format!("不支持的方法: {method}")),
-    };
-
-    // 自定义 headers
-    if let Some(Value::Object(map)) = headers {
-        for (k, v) in map.iter() {
-            if let Some(s) = v.as_str() {
-                req = req.header(k, s);
+    let build_request = |token_opt: Option<&str>| -> Result<reqwest::RequestBuilder, String> {
+        let mut req = match method.to_uppercase().as_str() {
+            "GET" => client.get(&url),
+            "POST" => client.post(&url),
+            "PUT" => client.put(&url),
+            "PATCH" => client.patch(&url),
+            "DELETE" => client.delete(&url),
+            _ => return Err(format!("不支持的方法: {method}")),
+        };
+        // 自动注入 session token
+        if let Some(tok) = token_opt {
+            req = req.header("X-Hermes-Session-Token", tok);
+        }
+        // 自定义 headers
+        if let Some(Value::Object(map)) = headers.as_ref() {
+            for (k, v) in map.iter() {
+                if let Some(s) = v.as_str() {
+                    req = req.header(k, s);
+                }
             }
         }
-    }
+        // body
+        if let Some(b) = body.as_ref() {
+            req = req
+                .header("Content-Type", "application/json")
+                .body(b.clone());
+        }
+        Ok(req)
+    };
 
-    // body（POST/PUT/PATCH/DELETE）— 假定是 JSON 字符串
-    if let Some(b) = body {
-        req = req
-            .header("Content-Type", "application/json")
-            .body(b);
-    }
-
-    let resp = req
+    // 拿缓存的 token（首次为空，让 send 触发 401 再抓）
+    let mut token = dashboard_session_token(port, false).await.ok();
+    let resp = build_request(token.as_deref())?
         .send()
         .await
         .map_err(|e| format!("Dashboard 请求失败: {}（提示：请先启动 Dashboard）", reqwest_error_detail(&e)))?;
+
     let status = resp.status();
+    if status.as_u16() == 401 {
+        // token 失效或没拿到 — 强制刷新 + 重试一次
+        token = Some(dashboard_session_token(port, true).await?);
+        let retry = build_request(token.as_deref())?
+            .send()
+            .await
+            .map_err(|e| format!("Dashboard 重试失败: {}", reqwest_error_detail(&e)))?;
+        let retry_status = retry.status();
+        let body = retry.text().await.unwrap_or_default();
+        if !retry_status.is_success() {
+            return Err(format!("HTTP {}: {}", retry_status.as_u16(), body));
+        }
+        return Ok(serde_json::from_str::<Value>(&body).unwrap_or_else(|_| Value::String(body)));
+    }
+
     let resp_body = resp.text().await.unwrap_or_default();
     if !status.is_success() {
         return Err(format!("HTTP {}: {}", status.as_u16(), resp_body));
     }
-    // 尝试解析 JSON，失败回退到字符串包装
     Ok(serde_json::from_str::<Value>(&resp_body)
         .unwrap_or_else(|_| Value::String(resp_body)))
 }

@@ -5292,6 +5292,25 @@ body[data-active-engine="hermes"][data-theme="dark"] {
   color: var(--hm-text-secondary);
 }
 
+/* ---- Batch 3 §P: TTS 朗读按钮（复用 copy 按钮样式） ---- */
+[data-engine="hermes"] .hm-chat-msg-tts {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: 0;
+  color: var(--hm-text-tertiary);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.15s, color 0.15s;
+}
+[data-engine="hermes"] .hm-chat-msg-tts:hover {
+  background: var(--hm-surface-1);
+  color: var(--hm-accent);
+}
+
 [data-engine="hermes"] .hm-chat-live-tools {
   display: flex;
   flex-direction: column;

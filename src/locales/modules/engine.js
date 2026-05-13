@@ -519,6 +519,10 @@ export default {
   servicesConfirmRestart: _('确认重启 Gateway？', 'Restart Gateway?', '確認重啟 Gateway？'),
   servicesConfirmStop: _('确认停止 Gateway？', 'Stop Gateway?', '確認停止 Gateway？'),
   servicesImpactInflight: _('正在进行的 Agent 会话会被中断', 'In-flight agent runs will be aborted', '正在進行的 Agent 會話會被中斷'),
+  // Batch 3 §P: TTS 朗读（浏览器原生 Web Speech API）
+  chatSpeak: _('朗读', 'Speak', '朗讀'),
+  chatSpeakShort: _('朗读', 'Speak', '朗讀'),
+  chatSpeakFailed: _('朗读失败（浏览器不支持或无可用语音）', 'TTS failed (browser unsupported or no voices)', '朗讀失敗（瀏覽器不支援或無可用語音）'),
   // Web 模式（远程浏览器）下流式聊天暂不可用
   chatWebModeStreamingUnsupported: _(
     'Web 模式暂不支持 Hermes 实时流式聊天（依赖桌面端事件桥）。请打开桌面客户端使用此功能。',

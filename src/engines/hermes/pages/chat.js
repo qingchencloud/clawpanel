@@ -1039,6 +1039,25 @@ export function render() {
       })
     })
 
+    // Batch 3 §P: TTS 朗读按钮
+    el.querySelectorAll('[data-tts-mid]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const mid = btn.dataset.ttsMid
+        const s = store.activeSession()
+        const msg = s?.messages.find(m => m.id === mid)
+        if (!msg?.content) return
+        // 去掉 markdown 代码块和 url，简化朗读
+        const clean = String(msg.content)
+          .replace(/```[\s\S]*?```/g, ' [代码块] ')
+          .replace(/`([^`]+)`/g, '$1')
+          .replace(/!\[.*?\]\(.*?\)/g, '')
+          .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+          .trim()
+        tts.toggle(clean).catch(() => toast(t('engine.chatSpeakFailed'), 'error'))
+      })
+    })
+
     el.querySelectorAll('[data-copy-mid]').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation()
