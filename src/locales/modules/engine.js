@@ -299,6 +299,8 @@ export default {
   chatPlaceholder: _('输入消息...', 'Type a message...', '輸入訊息...'),
   chatSend: _('发送', 'Send', '發送'),
   chatNewSession: _('新对话', 'New Chat', '新對話'),
+  chatUntitledSession: _('未命名 · {id}', 'Untitled · {id}', '未命名 · {id}', '無題 · {id}', '제목 없음 · {id}', 'Chưa đặt tên · {id}', 'Sin título · {id}', 'Sem título · {id}', 'Без названия · {id}', 'Sans titre · {id}', 'Ohne Titel · {id}'),
+  chatSessionMsgCount: _('{n} 条', '{n} msgs', '{n} 則', '{n} 件', '{n}개', '{n} tin', '{n} mensajes', '{n} mensagens', '{n} сообщ.', '{n} messages', '{n} Nachrichten'),
   chatNewChat: _('新建', 'New chat', '新建'),
   chatThinking: _('正在思考...', 'Thinking...', '正在思考...'),
   chatError: _('发送失败: {error}', 'Send failed: {error}', '發送失敗: {error}'),

@@ -99,7 +99,14 @@ function formatTime(ts) {
 }
 
 function sessionDisplayTitle(s) {
-  return s.title || t('engine.chatNewSession')
+  if (s.title) return s.title
+  // 没有标题时用 id 后 6 位区分（避免 20+ 个会话都显示"新对话"，让用户误以为是 mock 数据）
+  const sid = String(s.id || '')
+  if (sid && sid.length >= 6) {
+    const tail = sid.slice(-6)
+    return t('engine.chatUntitledSession', { id: tail })
+  }
+  return t('engine.chatNewSession')
 }
 
 /** Compact token formatter — `1234567 → "1.2M"`, `12345 → "12.3k"`, `42 → "42"`. */
@@ -373,6 +380,7 @@ export function render() {
           <div class="hm-chat-session-meta">
             ${s.model ? `<span class="hm-chat-session-model">${escHtml(s.model)}</span>` : ''}
             <span class="hm-chat-session-time">${escHtml(formatTime(s.updatedAt || s.createdAt))}</span>
+            ${s.messageCount > 0 ? `<span class="hm-chat-session-msgs">${escHtml(t('engine.chatSessionMsgCount', { n: s.messageCount }))}</span>` : ''}
           </div>
         </div>
         ${selectionMode ? '' : `
