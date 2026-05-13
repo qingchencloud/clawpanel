@@ -8583,7 +8583,8 @@ const handlers = {
   download_frontend_update() { throw new Error('Web 模式无需前端热更新，刷新浏览器即可') },
   rollback_frontend_update() { throw new Error('Web 模式不支持前端热更新回滚') },
   get_update_status() { return { status: 'idle', mode: 'web' } },
-  check_panel_update() { return { hasUpdate: false } },
+  // 注意：check_panel_update 的真实实现在前面（line ~6785）—— 走 GitHub/Gitee release API。
+  // 这里不能再 stub，否则 object literal 的后定义会覆盖前者，导致 Web 模式永远看不到新版。
 
   // —— 应用重启（Web 端由 tauri-api.js 包装层直接调 location.reload，到这里说明绕过了包装）——
   relaunch_app() { throw new Error('Web 模式请直接刷新浏览器') },

@@ -1,6 +1,8 @@
 /**
  * 极简 hash 路由
  */
+import { t } from './lib/i18n.js'
+
 const routes = {}
 const _moduleCache = {}
 let _contentEl = null
@@ -63,7 +65,7 @@ async function loadRoute() {
     spinnerEl.className = 'page-loader'
     spinnerEl.innerHTML = `
       <div class="page-loader-spinner"></div>
-      <div class="page-loader-text">加载中...</div>
+      <div class="page-loader-text">${escHtml(t('common.loading'))}</div>
     `
     _contentEl.appendChild(spinnerEl)
 
@@ -142,9 +144,9 @@ function showLoadError(container, hash, error) {
       <div style="color:var(--error,#ef4444);margin-bottom:12px">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
       </div>
-      <div class="page-loader-text" style="color:var(--text-primary)">页面加载失败</div>
+      <div class="page-loader-text" style="color:var(--text-primary)">${escHtml(t('common.pageLoadFailed'))}</div>
       <div style="color:var(--text-tertiary);font-size:12px;margin:8px 0 16px;max-width:400px;word-break:break-all">${escHtml(String(error?.message || error))}</div>
-      <button onclick="location.hash='${hash}';location.reload()" style="padding:6px 20px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);cursor:pointer;font-size:13px">重新加载</button>
+      <button onclick="location.hash='${hash}';location.reload()" style="padding:6px 20px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);cursor:pointer;font-size:13px">${escHtml(t('common.reloadRetry'))}</button>
     </div>
   `
 }

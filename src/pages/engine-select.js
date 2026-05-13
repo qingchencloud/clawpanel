@@ -43,6 +43,7 @@ const ICONS = {
 let _busy = false
 let _revealEl = null
 let _homeEl = null
+let _animTimers = []  // 跟踪动画 setTimeout，cleanup 时清
 
 export async function render() {
   const page = document.createElement('div')
@@ -185,13 +186,15 @@ async function chooseWithAnimation(page, panel, option, engine) {
 
   // 阶段 1: 三角形扩满（CSS 通过 [data-expanding] 触发 clip-path 变化）
   // 阶段 2: 600ms 后开始中心圆扩散
-  setTimeout(() => {
-    _revealEl.dataset.engine = engine
-    _revealEl.classList.add('es-reveal-active')
-  }, 600)
+  _animTimers.push(setTimeout(() => {
+    if (_revealEl) {
+      _revealEl.dataset.engine = engine
+      _revealEl.classList.add('es-reveal-active')
+    }
+  }, 600))
 
   // 阶段 3: 1300ms 后保存选择 + 切换路由
-  setTimeout(async () => {
+  _animTimers.push(setTimeout(async () => {
     try {
       await applyEngineSelection({
         activeEngineId: option.activeEngineId,
@@ -202,21 +205,22 @@ async function chooseWithAnimation(page, panel, option, engine) {
       })
       navigate(option.targetRoute)
       // 给新页面一点渲染时间后淡出 reveal 层
-      setTimeout(() => {
+      _animTimers.push(setTimeout(() => {
         if (_revealEl) {
           _revealEl.classList.add('es-reveal-fadeout')
-          setTimeout(() => removeRevealNodes(), 600)
+          _animTimers.push(setTimeout(() => removeRevealNodes(), 600))
         }
-      }, 280)
+      }, 280))
     } catch (error) {
       console.error('[engine-select] choose failed:', error)
       toast(t('engine.choiceSaveFailed'), 'error')
       // 失败回退：移除动画层 + 解除 busy
       removeRevealNodes()
-      delete stage.dataset.expanding
+      // stage 可能已不在 DOM（路由已切走）— 防御性访问
+      try { delete stage.dataset.expanding } catch (_) {}
       _busy = false
     }
-  }, 1300)
+  }, 1300))
 }
 
 function ensureRevealNodes() {
@@ -239,8 +243,12 @@ function removeRevealNodes() {
 }
 
 export function cleanup() {
-  // 路由切走时不主动销毁 reveal 节点（动画完成后会自行淡出）
-  // 这里仅重置 busy（防卡死）
+  // 路由切走时清所有 setTimeout，避免动画后期调 navigate / mutate stale element
+  for (const id of _animTimers) {
+    try { clearTimeout(id) } catch (_) {}
+  }
+  _animTimers = []
+  // 不主动销毁 reveal 节点（动画完成后会自行淡出）— 但万一动画被中断，亦初始化允许下次 ensureRevealNodes 重新创建
   _busy = false
 }
 

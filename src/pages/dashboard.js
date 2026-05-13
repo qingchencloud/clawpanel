@@ -142,7 +142,7 @@ async function _loadDashboardDataInner(page, fullRefresh) {
   // 轻量调用（读文件）每次都做；重量调用（spawn CLI/网络请求）只在首次或手动刷新时做
   const withTimeout = (promise, ms) => Promise.race([
     promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error(`超时(${ms/1000}s)`)), ms))
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`Timed out after ${(ms/1000).toFixed(1)}s`)), ms))
   ])
   const shouldFetchVersion = !_dashboardInitialized || fullRefresh || !_dashboardVersionCache || versionInfoIncomplete(_dashboardVersionCache)
   if (shouldFetchVersion && (fullRefresh || versionInfoIncomplete(_dashboardVersionCache))) {
