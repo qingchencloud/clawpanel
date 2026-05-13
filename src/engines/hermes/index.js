@@ -86,7 +86,11 @@ export default {
         { route: '/h/skills', label: t('sidebar.skills'), icon: 'skills' },
         { route: '/h/memory', label: t('sidebar.memory'), icon: 'memory' },
         { route: '/h/cron', label: t('sidebar.cron'), icon: 'clock' },
-          { route: '/h/extensions', label: t('sidebar.extensions'), icon: 'package' },
+        { route: '/h/profiles', label: t('engine.hermesProfilesTitle'), icon: 'agents' },
+        { route: '/h/kanban', label: t('engine.hermesKanbanTitle'), icon: 'inbox' },
+        { route: '/h/oauth', label: t('engine.hermesOAuthTitle'), icon: 'memory' },
+        { route: '/h/lazy-deps', label: t('hermesLazyDeps.title'), icon: 'package' },
+        { route: '/h/extensions', label: t('sidebar.extensions'), icon: 'package' },
       ]
     }, {
       section: '',
