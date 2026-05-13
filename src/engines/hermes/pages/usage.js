@@ -1,6 +1,7 @@
 import { api } from '../../../lib/tauri-api.js'
 import { t } from '../../../lib/i18n.js'
 import { icon } from '../../../lib/icons.js'
+import { humanizeError } from '../../../lib/humanize-error.js'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -374,8 +375,8 @@ export function render() {
         if (!alive) return
         sessions = Array.isArray(rows) ? rows : []
         analytics = null
-      } catch (_) {
-        error = err?.message || String(err)
+      } catch (err) {
+        error = humanizeError(err, t('engine.usageLoadFailed') || 'Load usage failed')
       }
     } finally {
       if (!alive) return

@@ -4,6 +4,7 @@ import { toast } from '../../../components/toast.js'
 import { showConfirm } from '../../../components/modal.js'
 import { icon } from '../../../lib/icons.js'
 import { getChatStore, getSourceLabel } from '../lib/chat-store.js'
+import { humanizeError } from '../../../lib/humanize-error.js'
 
 function escHtml(value) {
   return String(value ?? '')
@@ -163,7 +164,7 @@ export function render() {
       selected = new Set([...selected].filter(key => rows.some(s => sessionKey(s) === key)))
       selectedKey = selectedKey && rows.some(s => sessionKey(s) === selectedKey) ? selectedKey : (visible[0] ? sessionKey(visible[0]) : null)
     } catch (err) {
-      toast(String(err?.message || err), 'error')
+      toast(humanizeError(err, t('engine.sessionsLoadFailed') || 'Load sessions failed'), 'error')
     } finally {
       loading = false
       draw()
@@ -184,7 +185,7 @@ export function render() {
       session.source = session.source || detail?.source || ''
       session.messageCount = session.messageCount || session.messages.length
     } catch (err) {
-      toast(t('engine.sessionsDetailLoadFailed') + ': ' + (err?.message || err), 'error')
+      toast(humanizeError(err, t('engine.sessionsDetailLoadFailed')), 'error')
     } finally {
       detailLoadingKey = null
       if (redraw) draw()
@@ -342,7 +343,7 @@ export function render() {
       await store.switchSession(session.id)
       window.location.hash = '#/h/chat'
     } catch (err) {
-      toast(String(err?.message || err), 'error')
+      toast(humanizeError(err, t('engine.sessionsSwitchFailed') || 'Switch failed'), 'error')
     } finally {
       busy = false
       draw()
@@ -364,7 +365,7 @@ export function render() {
       if (session.profile === store.state.activeProfile) await store.loadSessions()
       toast(t('engine.chatSessionDeleted'), 'success')
     } catch (err) {
-      toast(t('engine.chatDeleteFailed') + ': ' + (err?.message || err), 'error')
+      toast(humanizeError(err, t('engine.chatDeleteFailed')), 'error')
     }
     draw()
   }
@@ -475,7 +476,7 @@ export function render() {
         URL.revokeObjectURL(url)
         toast(t('engine.sessionsExportSuccess'), 'success')
       } catch (err) {
-        toast(t('engine.sessionsExportFailed') + ': ' + (err?.message || err), 'error')
+        toast(humanizeError(err, t('engine.sessionsExportFailed')), 'error')
       } finally {
         btn.disabled = false
       }

@@ -4,6 +4,7 @@
 import { t } from '../../../lib/i18n.js'
 import { api } from '../../../lib/tauri-api.js'
 import { toast } from '../../../components/toast.js'
+import { humanizeError } from '../../../lib/humanize-error.js'
 
 export function render() {
   const el = document.createElement('div')
@@ -61,7 +62,7 @@ export function render() {
       const data = await api.hermesConfigRawRead()
       yaml = data?.yaml || ''
     } catch (err) {
-      error = String(err?.message || err).replace(/^Error:\s*/, '')
+      error = humanizeError(err, t('engine.hermesConfigLoadFailed') || 'Load config failed')
     } finally {
       loading = false
       draw()
@@ -78,7 +79,7 @@ export function render() {
       await api.hermesConfigRawWrite(yaml)
       toast(t('engine.hermesConfigSaveSuccess'), 'success')
     } catch (err) {
-      error = String(err?.message || err).replace(/^Error:\s*/, '')
+      error = humanizeError(err, t('engine.hermesConfigSaveFailed') || 'Save failed')
       toast(error, 'error')
     } finally {
       saving = false

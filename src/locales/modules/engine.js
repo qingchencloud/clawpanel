@@ -614,6 +614,15 @@ export default {
   hermesGroupChatRunFailed: _('运行失败', 'Run failed', '執行失敗'),
   hermesGroupChatNoOutput: _('（无输出）', '(no output)', '（無輸出）'),
   hermesGroupChatWebUnsupported: _('Web 模式不支持群聊（依赖 hermesAgentRun，需桌面端事件桥）。请用桌面客户端。', 'Group chat is not supported in Web mode (requires desktop event bridge). Use the desktop app.', 'Web 模式不支援群聊（依賴 hermesAgentRun，需桌面端事件橋）。請用桌面客戶端。'),
+  // Hermes UX 小白化：补齐 humanizeError fallback 用到的 i18n
+  sessionsLoadFailed: _('加载会话失败', 'Load sessions failed', '載入會話失敗'),
+  sessionsSwitchFailed: _('切换会话失败', 'Switch session failed', '切換會話失敗'),
+  usageLoadFailed: _('加载用量失败', 'Load usage failed', '載入用量失敗'),
+  extensionsThemeSaveFailed: _('保存主题失败', 'Save theme failed', '儲存主題失敗'),
+  extensionsLoadFailed: _('加载扩展失败', 'Load extensions failed', '載入擴充功能失敗'),
+  extensionsRescanFailed: _('重新扫描失败', 'Rescan failed', '重新掃描失敗'),
+  hermesConfigLoadFailed: _('加载配置失败', 'Load config failed', '載入設定失敗'),
+  hermesConfigSaveFailed: _('保存配置失败', 'Save config failed', '儲存設定失敗'),
   // Web 模式（远程浏览器）下流式聊天暂不可用
   chatWebModeStreamingUnsupported: _(
     'Web 模式暂不支持 Hermes 实时流式聊天（依赖桌面端事件桥）。请打开桌面客户端使用此功能。',

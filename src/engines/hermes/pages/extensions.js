@@ -2,6 +2,7 @@ import { api } from '../../../lib/tauri-api.js'
 import { icon } from '../../../lib/icons.js'
 import { toast } from '../../../components/toast.js'
 import { t } from '../../../lib/i18n.js'
+import { humanizeError } from '../../../lib/humanize-error.js'
 
 function esc(value) {
   return String(value || '')
@@ -137,14 +138,14 @@ export function render() {
         const probe = await api.hermesDashboardProbe().catch(() => ({ running: false, port: 9119 }))
         if (probe?.running) {
           try { await openWith(probe.port || 9119) }
-          catch (err) { toast(t('engine.dashNativePanelOpenFail') + ': ' + (err?.message || err), 'error') }
+          catch (err) { toast(humanizeError(err, t('engine.dashNativePanelOpenFail')), 'error') }
           return
         }
         // 2. auto-start
         const r = await api.hermesDashboardStart().catch(() => ({ started: false, kind: 'spawn_failed', port: probe?.port || 9119 }))
         if (r?.started) {
           try { await openWith(r.port || 9119) }
-          catch (err) { toast(t('engine.dashNativePanelOpenFail') + ': ' + (err?.message || err), 'error') }
+          catch (err) { toast(humanizeError(err, t('engine.dashNativePanelOpenFail')), 'error') }
           return
         }
         // 3. 失败 → toast（dashboard 页面有完整安装流程，这里只引导）
@@ -166,7 +167,7 @@ export function render() {
           toast(t('engine.extensionsThemeSaved'), 'success')
           draw()
         } catch (err) {
-          toast(String(err?.message || err).replace(/^Error:\s*/, ''), 'error')
+          toast(humanizeError(err, t('engine.extensionsThemeSaveFailed') || 'Save theme failed'), 'error')
         }
       })
     })
@@ -187,7 +188,7 @@ export function render() {
       plugins = Array.isArray(pluginData) ? pluginData : []
       analytics = usageData || null
     } catch (err) {
-      error = String(err?.message || err).replace(/^Error:\s*/, '')
+      error = humanizeError(err, t('engine.extensionsLoadFailed') || 'Load failed')
     } finally {
       loading = false
       draw()
@@ -200,7 +201,7 @@ export function render() {
       await load()
       toast(t('engine.extensionsPluginsRescanned'), 'success')
     } catch (err) {
-      toast(String(err?.message || err).replace(/^Error:\s*/, ''), 'error')
+      toast(humanizeError(err, t('engine.extensionsRescanFailed') || 'Rescan failed'), 'error')
     }
   }
 

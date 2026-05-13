@@ -71,7 +71,7 @@ async function loadAndRender(page) {
   try {
     featuresResp = await api.hermesLazyDepsFeatures()
   } catch (e) {
-    content.innerHTML = `<div style="color:var(--error);padding:20px">${escapeHtml(t('hermesLazyDeps.loadFailed'))}: ${escapeHtml(String(e))}</div>`
+    content.innerHTML = `<div style="color:var(--error);padding:20px">${escapeHtml(humanizeError(e, t('hermesLazyDeps.loadFailed')))}</div>`
     return
   }
 
