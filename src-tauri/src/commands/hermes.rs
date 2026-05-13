@@ -2278,6 +2278,12 @@ pub async fn hermes_update_model(
                 provider_written = true;
                 continue;
             }
+            // 与 Hermes 内核 8ac351407 保持一致：切模型时清掉旧 context_length，
+            // 否则新模型会沿用上一个模型的 context window（典型表现：context 报错
+            // / 输出被截断）。删除该行即可，Hermes 会按新模型默认窗口生效。
+            if trimmed.starts_with("context_length:") {
+                continue;
+            }
         }
         out.push(line.to_string());
     }
