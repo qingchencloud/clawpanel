@@ -10,6 +10,8 @@
  * 6. 开始正常通信
  */
 import { api } from './tauri-api.js'
+import { t } from './i18n.js'
+import { KERNEL_TARGET } from './feature-catalog.js'
 
 export function uuid() {
   if (crypto.randomUUID) return crypto.randomUUID()
@@ -51,6 +53,27 @@ function isMethodUnsupportedError(err) {
   if (/unknown\s+(method|rpc|handler)/.test(msg)) return true
   if (/no\s+handler\s+for/.test(msg)) return true
   return false
+}
+
+/**
+ * 判断 Gateway 关闭原因是否暗示 v3 协议 / 签名 payload 不被支持。
+ * 老内核（仅 v1/v2 签名 payload，minProtocol < 3）会用类似 `device signature invalid`
+ * 或 `protocol mismatch` 关闭，字面对小白用户毫无意义，需要替换为人话。
+ */
+function isProtocolIncompatReason(reason) {
+  return /signature\s+invalid|invalid\s+signature|protocol\s+mismatch|unsupported\s+protocol|min(imum)?\s*protocol|max(imum)?\s*protocol/i.test(reason || '')
+}
+
+/**
+ * 构造「Gateway 内核过旧、不支持当前握手协议」的友好提示文案。
+ * 直接读 feature-catalog 的 KERNEL_TARGET 常量，避免循环依赖 kernel.js。
+ */
+function kernelTooOldMessage() {
+  const recommended =
+    KERNEL_TARGET?.openclaw?.chinese ||
+    KERNEL_TARGET?.openclaw?.official ||
+    '2026.5.x'
+  return t('kernel.tooOldForProtocol', { recommended })
 }
 
 export class WsClient {
@@ -306,7 +329,16 @@ export class WsClient {
           }, 30000)
           return
         }
-        // 其他 1008（如 invalid role、protocol mismatch）→ 显示错误
+        // Gateway 内核过旧：不支持 ClawPanel 0.15+ 使用的 v3 签名 payload / minProtocol=3
+        // 关闭 reason 通常是 'device signature invalid' / 'protocol mismatch'
+        if (isProtocolIncompatReason(reason)) {
+          console.warn('[ws] Gateway 协议/签名不兼容（内核过旧）:', e.reason)
+          this._intentionalClose = true
+          this._flushPending()
+          this._setConnected(false, 'error', kernelTooOldMessage())
+          return
+        }
+        // 其他 1008（如 invalid role）→ 显示错误
         console.warn('[ws] 收到 1008 关闭:', e.reason)
         this._setConnected(false, 'error', e.reason || '连接被 Gateway 拒绝')
         return
@@ -435,6 +467,24 @@ export class WsClient {
           // 标 reconnecting 而非 error，UI 上显示的是 spinner 不是红色叉
           this._setConnected(false, 'reconnecting', 'Gateway 启动中...')
           setTimeout(() => { if (!this._intentionalClose) this._doConnect() }, retryMs)
+          return
+        }
+
+        // Gateway 内核过旧：自动配对后仍签名失败，或上游已明确返回协议不兼容
+        // → 大概率是老 Gateway 不识别 v3 payload / minProtocol=3，给「内核过旧」提示
+        if (!handled && (
+          detailCode === 'DEVICE_AUTH_SIGNATURE_INVALID' ||
+          detailCode === 'DEVICE_AUTH_INVALID' ||
+          detailCode === 'PROTOCOL_VERSION_MISMATCH' ||
+          detailCode === 'UNSUPPORTED_PROTOCOL'
+        )) {
+          const friendly = kernelTooOldMessage()
+          this._intentionalClose = true
+          this._flushPending()
+          this._setConnected(false, 'error', friendly)
+          this._readyCallbacks.forEach(fn => {
+            try { fn(null, null, { error: true, message: friendly, detailCode, nextStep }) } catch {}
+          })
           return
         }
 

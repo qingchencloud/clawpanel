@@ -2237,7 +2237,8 @@
       "title": "New kernel available",
       "subtitle": "{from} → {to}, click to upgrade",
       "dismissTooltip": "Don't remind me this session"
-    }
+    },
+    "tooOldForProtocol": "Gateway kernel is too old and does not support the handshake protocol used by this ClawPanel. Please upgrade the OpenClaw kernel to the recommended version ({recommended}) and retry. You can upgrade from \"Services → OpenClaw → Upgrade\"."
   },
   "cliConflict": {
     "title": "Detected {count} possibly conflicting OpenClaw installation(s)",
