@@ -8617,9 +8617,8 @@ async function _handleHermesAgentRunStream(req, res, args = {}) {
     if (args.conversationHistory) payload.conversation_history = args.conversationHistory
     if (args.instructions) payload.instructions = args.instructions
 
-    const handledByResponses = await _tryHermesResponsesStream(gwUrl, apiKey, payload, args, controller, res)
-    if (handledByResponses) return
-
+    // 优先 /v1/runs：支持 body.session_id 复用，避免 Hermes session 暴增（#275）。
+    // /v1/responses 上游强制每次生成新 UUID 作 session id，只作为老版本兼容的 fallback。
     const startedResp = await globalThis.fetch(`${gwUrl}/v1/runs`, {
       method: 'POST',
       headers,
@@ -8627,6 +8626,13 @@ async function _handleHermesAgentRunStream(req, res, args = {}) {
       signal: controller.signal,
     })
     if (!startedResp.ok) {
+      // 404 → 老版本 Hermes Agent 没 /v1/runs，降级 /v1/responses
+      if (startedResp.status === 404) {
+        try { await startedResp.body?.cancel() } catch {}
+        const handledByResponses = await _tryHermesResponsesStream(gwUrl, apiKey, payload, args, controller, res)
+        if (handledByResponses) return
+        throw new Error('HTTP 404: /v1/runs 不存在，且 /v1/responses fallback 失败')
+      }
       const text = await startedResp.text()
       throw new Error(`HTTP ${startedResp.status}: ${text}`)
     }

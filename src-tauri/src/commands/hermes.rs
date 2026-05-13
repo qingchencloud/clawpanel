@@ -3394,12 +3394,9 @@ pub async fn hermes_agent_run(
         payload["instructions"] = Value::String(inst.clone());
     }
 
-    if let Some(response_run_id) =
-        try_hermes_responses_run(&app, &gw_url, &api_key, &payload, session_id.as_deref()).await?
-    {
-        return Ok(response_run_id);
-    }
-
+    // 优先 /v1/runs：该端点显式支持 body.session_id，按 client 传的 session id 复用 session，
+    // 避免 Hermes 服务端 `sessions list` 中每条消息生成一个新 session（issue #275）。
+    // /v1/responses 会忽略 body.session_id 并对每次请求新建 session_id，所以不作为主路径。
     let client = hermes_gateway_http_client(std::time::Duration::from_secs(10))
         .map_err(|e| format!("HTTP 客户端创建失败: {e}"))?;
 
@@ -3425,6 +3422,16 @@ pub async fn hermes_agent_run(
     };
     if !resp.status().is_success() {
         let status = resp.status().as_u16();
+        // 404 → 老版本 Hermes Agent 没有 /v1/runs，降级到 /v1/responses 兼容
+        // （代价：session 会暴增，但至少能用；建议用户升级 Hermes Agent）
+        if status == 404 {
+            if let Some(response_run_id) =
+                try_hermes_responses_run(&app, &gw_url, &api_key, &payload, session_id.as_deref())
+                    .await?
+            {
+                return Ok(response_run_id);
+            }
+        }
         let text = resp.text().await.unwrap_or_default();
         return Err(format!("HTTP {status}: {text}"));
     }
