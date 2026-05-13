@@ -76,6 +76,7 @@ export default {
       items: [
         { route: '/h/dashboard', label: t('sidebar.dashboard'), icon: 'dashboard' },
         { route: '/h/chat', label: t('sidebar.chat'), icon: 'chat' },
+        { route: '/h/group-chat', label: t('engine.hermesGroupChatTitle'), icon: 'agents' },
         { route: '/h/sessions', label: t('sidebar.sessions'), icon: 'inbox' },
         { route: '/h/logs', label: t('sidebar.logs'), icon: 'logs' },
         { route: '/h/usage', label: t('sidebar.usage'), icon: 'bar-chart' },
@@ -90,6 +91,7 @@ export default {
         { route: '/h/gateways', label: t('engine.hermesGatewaysTitle'), icon: 'gateway' },
         { route: '/h/kanban', label: t('engine.hermesKanbanTitle'), icon: 'inbox' },
         { route: '/h/oauth', label: t('engine.hermesOAuthTitle'), icon: 'memory' },
+        { route: '/h/files', label: t('engine.hermesFilesTitle'), icon: 'folder' },
         { route: '/h/lazy-deps', label: t('hermesLazyDeps.title'), icon: 'package' },
         { route: '/h/extensions', label: t('sidebar.extensions'), icon: 'package' },
       ]
