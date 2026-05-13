@@ -283,7 +283,9 @@ const P_MINIMAX_OAUTH: HermesProvider = HermesProvider {
 
 const P_ALIBABA: HermesProvider = HermesProvider {
     id: "alibaba",
-    name: "Alibaba Cloud (DashScope)",
+    // 与 Hermes 内核 1e01b25e7 保持一致：显示名重命名为 Qwen Cloud，
+    // slug "alibaba" 与 DASHSCOPE_API_KEY env var 保持不变（用户现有配置不受影响）。
+    name: "Qwen Cloud",
     auth_type: AUTH_API_KEY,
     base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
     base_url_env_var: "DASHSCOPE_BASE_URL",
