@@ -76,6 +76,25 @@ export default {
   proxyCleared: _('网络代理已关闭', 'Network proxy disabled', '網路代理已關閉', 'ネットワークプロキシ無効化', '네트워크 프록시 비활성화됨'),
   modelProxyOn: _('模型请求将走代理', 'Model requests will use proxy', '模型請求將走代理', 'モデルリクエストはプロキシを使用します', '모델 요청이 프록시를 사용합니다'),
   modelProxyOff: _('模型请求已关闭代理', 'Model requests proxy disabled', '模型請求已關閉代理', 'モデルリクエストプロキシ無効化', '모델 요청 프록시 비활성화됨'),
+  hermesMirror: _(
+    'Hermes 安装镜像',
+    'Hermes Install Mirror',
+    'Hermes 安裝鏡像',
+    'Hermes インストールミラー',
+    'Hermes 설치 미러'
+  ),
+  hermesMirrorHint: _(
+    '当 Hermes Agent 安装/升级因 GitHub 网络不通失败时，在这里填入可用的 Git 镜像前缀（如 https://ghproxy.com/）。仅作为环境变量临时生效，不会修改全局 git 配置。留空 = 直接连 GitHub。',
+    'When installing/upgrading Hermes Agent fails because GitHub is unreachable, set a Git mirror prefix here (e.g. https://ghproxy.com/). Applied only as a per-process environment override; your global git config is untouched. Leave empty to connect GitHub directly.',
+    '當 Hermes Agent 安裝/升級因 GitHub 網路不通失敗時，在這裡填入可用的 Git 鏡像前綴（如 https://ghproxy.com/）。僅作為環境變數臨時生效，不會修改全局 git 配置。留空 = 直接連 GitHub。'
+  ),
+  hermesMirrorPlaceholder: _(
+    'https://ghproxy.com/  （留空 = 不使用镜像）',
+    'https://ghproxy.com/  (leave empty to disable)',
+    'https://ghproxy.com/  （留空 = 不使用鏡像）'
+  ),
+  hermesMirrorSaved: _('Hermes 安装镜像已保存', 'Hermes install mirror saved', 'Hermes 安裝鏡像已儲存'),
+  hermesMirrorCleared: _('已关闭 Hermes 安装镜像', 'Hermes install mirror disabled', '已關閉 Hermes 安裝鏡像'),
   gitPath: _('Git 可执行文件路径', 'Git Executable Path', 'Git 可執行檔路徑', 'Git 実行ファイルパス', 'Git 실행 파일 경로'),
   gitPathHint: _('自定义 Git 可执行文件路径。留空则自动从系统 PATH 中查找。当系统找不到 Git 时，可在此手动指定完整路径。', 'Custom Git executable path. Leave empty to auto-detect from system PATH. Specify the full path here if the system cannot find Git.', '自定義 Git 可執行檔路徑。留空則自動從系統 PATH 中尋找。當系統找不到 Git 時，可在此手動指定完整路徑。', 'カスタム Git 実行ファイルパス。空欄にするとシステム PATH から自動検出します。システムが Git を見つけられない場合はここにフルパスを指定してください。'),
   gitPathPlaceholder: _('留空自动检测，例如 C:\\Program Files\\Git\\cmd\\git.exe', 'Leave empty for auto-detect, e.g. C:\\Program Files\\Git\\cmd\\git.exe', '留空自動檢測，例如 /usr/local/bin/git', '空欄で自動検出、例: C:\\Program Files\\Git\\cmd\\git.exe'),

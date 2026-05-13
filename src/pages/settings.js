@@ -113,6 +113,11 @@ export async function render() {
       <div id="cli-binding-bar"><div class="stat-card loading-placeholder" style="height:48px"></div></div>
     </div>`}
 
+    <div class="config-section" id="hermes-mirror-section">
+      <div class="config-section-title">${t('settings.hermesMirror')}</div>
+      <div id="hermes-mirror-bar"><div class="stat-card loading-placeholder" style="height:48px"></div></div>
+    </div>
+
     <div class="config-section" id="language-section">
       <div class="config-section-title">${t('settings.language')}</div>
       <div id="language-bar"></div>
@@ -132,7 +137,7 @@ export async function render() {
 
 async function loadAll(page) {
   const isHermes = getActiveEngineId() === 'hermes'
-  const tasks = [loadProxyConfig(page), loadModelProxyConfig(page)]
+  const tasks = [loadProxyConfig(page), loadModelProxyConfig(page), loadHermesMirror(page)]
   if (!isHermes) {
     tasks.push(loadOpenclawDir(page), loadOpenclawSearchPaths(page), loadDockerDefaults(page), loadGitPath(page), loadCliBinding(page), loadRegistry(page))
   }
@@ -477,6 +482,12 @@ function bindEvents(page) {
         case 'reset-git-path':
           await handleResetGitPath(page)
           break
+        case 'save-hermes-mirror':
+          await handleSaveHermesMirror(page)
+          break
+        case 'reset-hermes-mirror':
+          await handleResetHermesMirror(page)
+          break
         case 'scan-git-paths':
           await handleScanGitPaths(page)
           break
@@ -657,6 +668,50 @@ async function handleResetGitPath(page) {
   await api.writePanelConfig(cfg)
   toast(t('settings.gitPathCleared'), 'success')
   await loadGitPath(page)
+}
+
+// ===== Hermes 安装镜像 =====
+
+async function loadHermesMirror(page) {
+  const bar = page.querySelector('#hermes-mirror-bar')
+  if (!bar) return
+  try {
+    const cfg = await api.readPanelConfig()
+    const value = cfg?.gitMirror || ''
+    bar.innerHTML = `
+      <div class="stat-card" style="padding:16px">
+        <p style="font-size:var(--font-size-xs);color:var(--text-tertiary);margin-bottom:12px;line-height:1.5">${t('settings.hermesMirrorHint')}</p>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input class="input" data-name="hermes-mirror" value="${escapeHtml(value)}" placeholder="${t('settings.hermesMirrorPlaceholder')}" style="flex:1;min-width:240px">
+          <button class="btn btn-primary btn-sm" data-action="save-hermes-mirror">${t('common.save')}</button>
+          ${value ? `<button class="btn btn-secondary btn-sm" data-action="reset-hermes-mirror">${t('settings.resetDefault')}</button>` : ''}
+        </div>
+      </div>`
+  } catch (e) {
+    bar.innerHTML = `<div class="stat-card" style="padding:16px;color:var(--error)">${e}</div>`
+  }
+}
+
+async function handleSaveHermesMirror(page) {
+  const input = page.querySelector('[data-name="hermes-mirror"]')
+  const value = (input?.value || '').trim()
+  const cfg = await api.readPanelConfig()
+  if (value) {
+    cfg.gitMirror = value
+  } else {
+    delete cfg.gitMirror
+  }
+  await api.writePanelConfig(cfg)
+  toast(value ? t('settings.hermesMirrorSaved') : t('settings.hermesMirrorCleared'), 'success')
+  await loadHermesMirror(page)
+}
+
+async function handleResetHermesMirror(page) {
+  const cfg = await api.readPanelConfig()
+  delete cfg.gitMirror
+  await api.writePanelConfig(cfg)
+  toast(t('settings.hermesMirrorCleared'), 'success')
+  await loadHermesMirror(page)
 }
 
 // ===== CLI 绑定 =====

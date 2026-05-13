@@ -1393,6 +1393,61 @@ fn sanitize_hermes_install_output(text: &str) -> String {
     out.replace("NousResearch/hermes-agent", "hermes-agent")
 }
 
+/// 从 panelConfig.gitMirror 读取镜像前缀（如 "https://ghproxy.com/"）。
+/// 为空/未设置 → 不启用镜像。
+fn git_mirror_prefix() -> Option<String> {
+    super::read_panel_config_value()
+        .and_then(|v| v.get("gitMirror")?.as_str().map(String::from))
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// 给 tokio::process::Command 注入 git insteadOf 重写 env，
+/// 进程级别（不污染用户全局 ~/.gitconfig）。仅当配置了镜像时会动作。
+fn apply_git_mirror_env(cmd: &mut tokio::process::Command) {
+    let Some(mirror) = git_mirror_prefix() else {
+        return;
+    };
+    let mirror = if mirror.ends_with('/') {
+        mirror
+    } else {
+        format!("{mirror}/")
+    };
+    // git 读取 GIT_CONFIG_COUNT 个临时配置项，仅影响当前进程
+    cmd.env("GIT_CONFIG_COUNT", "1");
+    cmd.env(
+        "GIT_CONFIG_KEY_0",
+        format!("url.{mirror}https://github.com/.insteadOf"),
+    );
+    cmd.env("GIT_CONFIG_VALUE_0", "https://github.com/");
+}
+
+/// 诊断 Hermes 安装/升级输出是否命中「网络无法访问」类失败，
+/// 命中返回建议文案（含「可在设置页启用 Git 镜像」提示）。
+fn diagnose_install_network_error(text: &str) -> Option<String> {
+    let lower = text.to_lowercase();
+    let hits = [
+        "failed to connect to github.com",
+        "could not connect to server",
+        "failed to clone",
+        "unable to access",
+        "git operation failed",
+        "connection timed out",
+        "connection refused",
+        "network is unreachable",
+        "could not resolve host",
+    ];
+    if !hits.iter().any(|h| lower.contains(h)) {
+        return None;
+    }
+    Some(
+        "⚠ 检测到安装过程中无法访问外部 Git 服务。请任选一项重试：\
+\n  1) 在「设置 → 网络代理」配置可用代理后重试；\
+\n  2) 在「设置 → Hermes 安装镜像」填入可用的 Git 镜像前缀。"
+            .to_string(),
+    )
+}
+
 /// 通过 uv tool install 安装 Hermes Agent
 async fn install_via_uv_tool(
     app: &tauri::AppHandle,
@@ -1427,6 +1482,8 @@ async fn install_via_uv_tool(
     cmd.env("PATH", hermes_enhanced_path());
     // uv 需要 git 来克隆仓库
     cmd.env("GIT_TERMINAL_PROMPT", "0");
+    // 用户配置了 Git 镜像（如 ghproxy）→ 进程级注入 insteadOf 重写
+    apply_git_mirror_env(&mut cmd);
 
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
@@ -1469,10 +1526,21 @@ async fn install_via_uv_tool(
         let _ = update_cmd.output().await;
         Ok(())
     } else {
+        let cleaned = sanitize_hermes_install_output(stderr.trim());
+        // 命中 git/network 失败 → 在日志流尾部追加诊断 + 给最终错误消息加上提示
+        if let Some(hint) = diagnose_install_network_error(&cleaned) {
+            let _ = app.emit("hermes-install-log", &hint);
+            return Err(format!(
+                "安装失败 (exit {}): {}\n\n{}",
+                output.status.code().unwrap_or(-1),
+                cleaned,
+                hint
+            ));
+        }
         Err(format!(
             "安装失败 (exit {}): {}",
             output.status.code().unwrap_or(-1),
-            sanitize_hermes_install_output(stderr.trim())
+            cleaned
         ))
     }
 }
@@ -1529,6 +1597,7 @@ async fn install_via_uv_pip(
     if let Some(mirror) = pypi_mirror_url() {
         pip_cmd.args(["--index-url", &mirror]);
     }
+    apply_git_mirror_env(&mut pip_cmd);
     super::apply_proxy_env_tokio(&mut pip_cmd);
     #[cfg(target_os = "windows")]
     pip_cmd.creation_flags(CREATE_NO_WINDOW);
@@ -2805,6 +2874,7 @@ pub async fn update_hermes(app: tauri::AppHandle) -> Result<String, String> {
     if let Some(mirror) = pypi_mirror_url() {
         cmd.args(["--index-url", &mirror]);
     }
+    apply_git_mirror_env(&mut cmd);
     super::apply_proxy_env_tokio(&mut cmd);
     cmd.env("PATH", hermes_enhanced_path());
     #[cfg(target_os = "windows")]
@@ -2828,10 +2898,12 @@ pub async fn update_hermes(app: tauri::AppHandle) -> Result<String, String> {
         let _ = app.emit("hermes-install-progress", 100u32);
         Ok("升级完成".into())
     } else {
-        Err(format!(
-            "升级失败: {}",
-            sanitize_hermes_install_output(stderr.trim())
-        ))
+        let cleaned = sanitize_hermes_install_output(stderr.trim());
+        if let Some(hint) = diagnose_install_network_error(&cleaned) {
+            let _ = app.emit("hermes-install-log", &hint);
+            return Err(format!("升级失败: {}\n\n{}", cleaned, hint));
+        }
+        Err(format!("升级失败: {}", cleaned))
     }
 }
 

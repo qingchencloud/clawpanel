@@ -168,6 +168,54 @@ function sanitizeHermesInstallOutput(text = '') {
     .replaceAll('NousResearch/hermes-agent', 'hermes-agent')
 }
 
+// 读取 panel config (~/.openclaw/clawpanel.json) 中的 gitMirror 前缀。
+// 为空/未设置 → 返回 '' 不启用镜像。
+function gitMirrorPrefix() {
+  try {
+    const cfgPath = path.join(DEFAULT_OPENCLAW_DIR, 'clawpanel.json')
+    if (!fs.existsSync(cfgPath)) return ''
+    const raw = fs.readFileSync(cfgPath, 'utf8')
+    const cfg = JSON.parse(raw)
+    const v = String(cfg?.gitMirror || '').trim()
+    return v
+  } catch {
+    return ''
+  }
+}
+
+// 返回一个 env 添加包，含 GIT_CONFIG_COUNT/KEY/VALUE 临时重写。
+// 未配置镜像 → 返回空对象。
+function gitMirrorEnv() {
+  let mirror = gitMirrorPrefix()
+  if (!mirror) return {}
+  if (!mirror.endsWith('/')) mirror += '/'
+  return {
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: `url.${mirror}https://github.com/.insteadOf`,
+    GIT_CONFIG_VALUE_0: 'https://github.com/',
+  }
+}
+
+// 判断输出是否命中 「网络无法访问」 类失败，命中返回建议文案。
+function diagnoseHermesInstallError(text = '') {
+  const lower = String(text || '').toLowerCase()
+  const hits = [
+    'failed to connect to github.com',
+    'could not connect to server',
+    'failed to clone',
+    'unable to access',
+    'git operation failed',
+    'connection timed out',
+    'connection refused',
+    'network is unreachable',
+    'could not resolve host',
+  ]
+  if (!hits.some(h => lower.includes(h))) return null
+  return '⚠ 检测到安装过程中无法访问外部 Git 服务。请任选一项重试：'
+    + '\n  1) 在「设置 → 网络代理」配置可用代理后重试；'
+    + '\n  2) 在「设置 → Hermes 安装镜像」填入可用的 Git 镜像前缀。'
+}
+
 let _hermesGwProcess = null
 
 const __dev_dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -6884,13 +6932,18 @@ const handlers = {
       ? ['pip', 'install', pkg]
       : ['tool', 'install', '--force', pkg, '--python', '3.11', '--with', 'croniter']
     const result = spawnSync(uv, installArgs, {
-      env: { ...process.env, PATH: hermesEnhancedPath(), GIT_TERMINAL_PROMPT: '0' },
+      env: { ...process.env, PATH: hermesEnhancedPath(), GIT_TERMINAL_PROMPT: '0', ...gitMirrorEnv() },
       timeout: 600000,
       windowsHide: true,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     })
-    if (result.status !== 0) throw new Error(`安装失败: ${sanitizeHermesInstallOutput((result.stderr || '').trim())}`)
+    if (result.status !== 0) {
+      const cleaned = sanitizeHermesInstallOutput((result.stderr || '').trim())
+      const hint = diagnoseHermesInstallError(cleaned)
+      if (hint) throw new Error(`安装失败: ${cleaned}\n\n${hint}`)
+      throw new Error(`安装失败: ${cleaned}`)
+    }
     // 3. 验证
     const ver = runHermesSilent('hermes', ['version'])
     if (ver.ok) return ver.stdout
@@ -8243,10 +8296,15 @@ const handlers = {
     const uv = fs.existsSync(uvPath) ? uvPath : 'uv'
     const pkg = 'hermes-agent[web] @ git+https://github.com/NousResearch/hermes-agent.git'
     const result = spawnSync(uv, ['tool', 'install', '--reinstall', pkg, '--python', '3.11', '--with', 'croniter'], {
-      env: { ...process.env, PATH: hermesEnhancedPath(), GIT_TERMINAL_PROMPT: '0' },
+      env: { ...process.env, PATH: hermesEnhancedPath(), GIT_TERMINAL_PROMPT: '0', ...gitMirrorEnv() },
       timeout: 600000, windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
     })
-    if (result.status !== 0) throw new Error(`升级失败: ${sanitizeHermesInstallOutput((result.stderr || '').trim())}`)
+    if (result.status !== 0) {
+      const cleaned = sanitizeHermesInstallOutput((result.stderr || '').trim())
+      const hint = diagnoseHermesInstallError(cleaned)
+      if (hint) throw new Error(`升级失败: ${cleaned}\n\n${hint}`)
+      throw new Error(`升级失败: ${cleaned}`)
+    }
     return '升级完成'
   },
 
