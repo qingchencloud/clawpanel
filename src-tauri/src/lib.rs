@@ -297,8 +297,8 @@ pub fn run() {
                     // 退出时关闭 Gateway 终端窗口
                     use std::os::windows::process::CommandExt;
                     const CREATE_NO_WINDOW: u32 = 0x08000000;
-                    let _ = std::process::Command::new("cmd")
-                        .args(["/c", "taskkill", "/fi", "WINDOWTITLE eq OpenClaw Gateway"])
+                    let _ = std::process::Command::new("taskkill")
+                        .args(["/fi", "WINDOWTITLE eq OpenClaw Gateway"])
                         .creation_flags(CREATE_NO_WINDOW)
                         .output();
                 }
