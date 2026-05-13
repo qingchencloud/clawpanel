@@ -7159,6 +7159,28 @@ const handlers = {
     return { model: displayModel, model_raw: modelName, base_url: baseUrl, provider, api_key: apiKey, config_exists: fs.existsSync(configPath) }
   },
 
+  // P1-4：完整解析 config.yaml，让前端能读 14+ 高价值字段
+  // Web 模式不引入 yaml 依赖，简单返回 raw + null highlights（前端按需渲染）
+  hermes_read_config_full() {
+    const configPath = path.join(hermesHome(), 'config.yaml')
+    if (!fs.existsSync(configPath)) {
+      return { exists: false, raw: '', config: {}, highlights: {} }
+    }
+    let raw = ''
+    try { raw = fs.readFileSync(configPath, 'utf8') } catch {}
+    // Web 模式下不强制 yaml 解析（避免新增依赖），前端可走 raw 自己 parse 或者 fallback 到桌面端
+    const highlightKeys = [
+      'streaming', 'stt_enabled', 'quick_commands', 'reset_triggers',
+      'default_reset_policy', 'unauthorized_dm_behavior',
+      'session_store_max_age_days', 'always_log_local',
+      'group_sessions_per_user', 'thread_sessions_per_user',
+      'platforms', 'dashboard', 'memory', 'skills',
+    ]
+    const highlights = {}
+    highlightKeys.forEach(k => { highlights[k] = null })
+    return { exists: true, raw, config: {}, highlights }
+  },
+
   hermes_list_providers() {
     return HERMES_PROVIDER_REGISTRY.map(p => ({
       ...p,

@@ -476,6 +476,7 @@ export const api = {
   hermesAgentRun: (input, sessionId, conversationHistory, instructions) => invoke('hermes_agent_run', { input, sessionId: sessionId || null, conversationHistory: conversationHistory || null, instructions: instructions || null }),
   hermesAgentRunStream: (input, sessionId, conversationHistory, instructions, onEvent, options) => webStreamInvoke('hermes_agent_run_stream', { input, sessionId: sessionId || null, conversationHistory: conversationHistory || null, instructions: instructions || null }, onEvent, options),
   hermesReadConfig: () => invoke('hermes_read_config'),
+  hermesReadConfigFull: () => invoke('hermes_read_config_full'),
   hermesFetchModels: (baseUrl, apiKey, apiType, provider) => invoke('hermes_fetch_models', { baseUrl, apiKey, apiType: apiType || null, provider: provider || null }),
   hermesUpdateModel: (model, provider) => invoke('hermes_update_model', { model, provider: provider || null }),
   hermesListProviders: () => cachedInvoke('hermes_list_providers', {}, 600000),

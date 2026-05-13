@@ -240,6 +240,7 @@ pub fn run() {
             hermes::hermes_api_proxy,
             hermes::hermes_agent_run,
             hermes::hermes_read_config,
+            hermes::hermes_read_config_full,
             hermes::hermes_fetch_models,
             hermes::hermes_update_model,
             hermes::hermes_detect_environments,

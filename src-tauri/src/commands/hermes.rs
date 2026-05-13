@@ -2069,6 +2069,88 @@ pub async fn hermes_read_config() -> Result<Value, String> {
 }
 
 // ---------------------------------------------------------------------------
+// hermes_read_config_full — 解析整个 config.yaml 为 JSON 返回给前端
+//
+// 与轻量版 hermes_read_config（仅返回 5 个 model 相关字段）互补：
+// 前者用于 model 配置页快速展示，本命令用于「高级配置编辑器」让用户能看到/改
+// Gateway 端 14+ 个顶层配置项，比如 quick_commands / streaming / reset_triggers /
+// stt_enabled / unauthorized_dm_behavior 等。
+//
+// 返回值结构：
+//   {
+//     "exists": true,                       // config.yaml 是否存在
+//     "raw": "...yaml string...",            // 原文（给 yaml editor）
+//     "config": { ...full json... },         // 整份 yaml 转成 JSON
+//     "highlights": {                        // 14 个高价值字段单独抽出，前端直接 .x 访问
+//       "streaming": {...}, "stt_enabled": true, "quick_commands": {...},
+//       "reset_triggers": [...], "default_reset_policy": {...},
+//       "unauthorized_dm_behavior": "pair", "session_store_max_age_days": 90,
+//       "always_log_local": true,
+//       "group_sessions_per_user": false, "thread_sessions_per_user": false,
+//       ... 等
+//     }
+//   }
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn hermes_read_config_full() -> Result<Value, String> {
+    let config_path = hermes_home().join("config.yaml");
+
+    if !config_path.exists() {
+        return Ok(serde_json::json!({
+            "exists": false,
+            "raw": "",
+            "config": {},
+            "highlights": {},
+        }));
+    }
+
+    let raw = std::fs::read_to_string(&config_path)
+        .map_err(|e| format!("Failed to read config.yaml: {e}"))?;
+
+    // 解析 YAML → JSON
+    let yaml_value: serde_yaml::Value = serde_yaml::from_str(&raw)
+        .map_err(|e| format!("Invalid YAML in config.yaml: {e}"))?;
+    let config_json: Value = serde_json::to_value(&yaml_value)
+        .map_err(|e| format!("YAML→JSON conversion failed: {e}"))?;
+
+    // 抽取 14 个高价值顶层字段（如不存在保持 null，前端按需渲染）
+    let highlight_keys = [
+        "streaming",
+        "stt_enabled",
+        "quick_commands",
+        "reset_triggers",
+        "default_reset_policy",
+        "unauthorized_dm_behavior",
+        "session_store_max_age_days",
+        "always_log_local",
+        "group_sessions_per_user",
+        "thread_sessions_per_user",
+        "platforms",
+        "dashboard",
+        "memory",
+        "skills",
+    ];
+    let highlights: serde_json::Map<String, Value> = highlight_keys
+        .iter()
+        .map(|k| {
+            let v = config_json
+                .get(*k)
+                .cloned()
+                .unwrap_or(Value::Null);
+            ((*k).to_string(), v)
+        })
+        .collect();
+
+    Ok(serde_json::json!({
+        "exists": true,
+        "raw": raw,
+        "config": config_json,
+        "highlights": Value::Object(highlights),
+    }))
+}
+
+// ---------------------------------------------------------------------------
 // hermes_fetch_models — 从 API 获取模型列表（后端代理，避免 CORS）
 // ---------------------------------------------------------------------------
 
