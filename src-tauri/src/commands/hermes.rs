@@ -3832,6 +3832,72 @@ pub async fn hermes_session_export(session_id: String) -> Result<Value, String> 
     resp.json::<Value>().await.map_err(|e| format!("解析 JSON 失败: {e}"))
 }
 
+// ---------------------------------------------------------------------------
+// Batch 2 §H 基础设施: hermes_dashboard_api_proxy
+//
+// 通用 Dashboard 9119 HTTP 代理 — 让前端直接调任意 /api/* 端点。
+// Profiles / Kanban / OAuth / Sessions（高级）等都走这一个入口，
+// 避免给每个端点都写专属 Tauri 命令。
+//
+// 与 hermes_api_proxy 区别：
+//   - hermes_api_proxy 走 Gateway 8642（含 API_SERVER_KEY 认证）
+//   - hermes_dashboard_api_proxy 走 Dashboard 9119（无需 token，本地绑定）
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn hermes_dashboard_api_proxy(
+    method: String,
+    path: String,
+    body: Option<String>,
+    headers: Option<Value>,
+) -> Result<Value, String> {
+    let port = hermes_dashboard_port();
+    let url = format!("http://127.0.0.1:{port}{path}");
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("HTTP 客户端创建失败: {e}"))?;
+
+    let mut req = match method.to_uppercase().as_str() {
+        "GET" => client.get(&url),
+        "POST" => client.post(&url),
+        "PUT" => client.put(&url),
+        "PATCH" => client.patch(&url),
+        "DELETE" => client.delete(&url),
+        _ => return Err(format!("不支持的方法: {method}")),
+    };
+
+    // 自定义 headers
+    if let Some(Value::Object(map)) = headers {
+        for (k, v) in map.iter() {
+            if let Some(s) = v.as_str() {
+                req = req.header(k, s);
+            }
+        }
+    }
+
+    // body（POST/PUT/PATCH/DELETE）— 假定是 JSON 字符串
+    if let Some(b) = body {
+        req = req
+            .header("Content-Type", "application/json")
+            .body(b);
+    }
+
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| format!("Dashboard 请求失败: {}（提示：请先启动 Dashboard）", reqwest_error_detail(&e)))?;
+    let status = resp.status();
+    let resp_body = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(format!("HTTP {}: {}", status.as_u16(), resp_body));
+    }
+    // 尝试解析 JSON，失败回退到字符串包装
+    Ok(serde_json::from_str::<Value>(&resp_body)
+        .unwrap_or_else(|_| Value::String(resp_body)))
+}
+
 /// Batch 3 §K: 多模态附件结构
 ///
 /// 前端传过来的附件描述（图片用 base64 直传）。

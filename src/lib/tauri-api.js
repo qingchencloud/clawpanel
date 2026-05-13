@@ -480,6 +480,12 @@ export const api = {
   hermesRunApproval: (runId, choice) => invoke('hermes_run_approval', { runId, choice }),
   // Batch 1 §E: 会话消息导出（走 dashboard /api/sessions/{id}/messages）
   hermesSessionExport: (sessionId) => invoke('hermes_session_export', { sessionId }),
+  // Batch 2 §H 基础设施: 通用 Dashboard 9119 HTTP 代理
+  hermesDashboardApi: (method, path, body, headers) => invoke('hermes_dashboard_api_proxy', {
+    method, path,
+    body: body == null ? null : (typeof body === 'string' ? body : JSON.stringify(body)),
+    headers: headers || null,
+  }),
   hermesReadConfig: () => invoke('hermes_read_config'),
   hermesReadConfigFull: () => invoke('hermes_read_config_full'),
   hermesLazyDepsFeatures: () => cachedInvoke('hermes_lazy_deps_features', {}, 600000),

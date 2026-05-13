@@ -242,6 +242,7 @@ pub fn run() {
             hermes::hermes_run_stop,
             hermes::hermes_run_approval,
             hermes::hermes_session_export,
+            hermes::hermes_dashboard_api_proxy,
             hermes::hermes_read_config,
             hermes::hermes_read_config_full,
             hermes::hermes_lazy_deps_features,

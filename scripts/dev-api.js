@@ -7209,6 +7209,25 @@ const handlers = {
     return await resp.json().catch(() => ({ ok: true }))
   },
 
+  // Batch 2 §H 基础设施: 通用 Dashboard 9119 HTTP 代理
+  async hermes_dashboard_api_proxy({ method = 'GET', path: reqPath = '/', body = null, headers: customHeaders } = {}) {
+    const port = handlers._hermesDashboardPort()
+    const url = `http://127.0.0.1:${port}${reqPath}`
+    const opts = { method: String(method).toUpperCase(), headers: { 'User-Agent': 'ClawPanel-Web' } }
+    opts.signal = AbortSignal.timeout(30000)
+    if (customHeaders && typeof customHeaders === 'object') {
+      Object.assign(opts.headers, customHeaders)
+    }
+    if (body != null && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(opts.method)) {
+      opts.headers['Content-Type'] = 'application/json'
+      opts.body = typeof body === 'string' ? body : JSON.stringify(body)
+    }
+    const resp = await globalThis.fetch(url, opts)
+    const text = await resp.text().catch(() => '')
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${text}（提示：请先启动 Dashboard）`)
+    try { return JSON.parse(text) } catch { return text }
+  },
+
   // Batch 1 §E: Sessions 导出（走 dashboard 9119）
   async hermes_session_export({ sessionId } = {}) {
     if (!sessionId) throw new Error('session_id 不能为空')
