@@ -249,6 +249,7 @@ export function render() {
           <div class="hm-session-detail-actions">
             <button class="hm-sessions-btn" id="hm-session-open-chat">${icon('message-circle', 14)}${escHtml(t('engine.sessionsOpenChat'))}</button>
             ${canPin ? `<button class="hm-sessions-btn" id="hm-session-pin">${icon(store.state.pinned.has(session.id) ? 'crown' : 'target', 14)}${escHtml(store.state.pinned.has(session.id) ? t('engine.sessionsUnpin') : t('engine.sessionsPin'))}</button>` : ''}
+            <button class="hm-sessions-btn" id="hm-session-export" data-session-id="${escAttr(session.id)}">${icon('download', 14)}${escHtml(t('engine.sessionsExport'))}</button>
             <button class="hm-sessions-btn is-danger" id="hm-session-delete" data-session-key="${escAttr(key)}">${icon('trash', 14)}${escHtml(t('engine.chatDeleteSession'))}</button>
           </div>
         </div>
@@ -453,6 +454,31 @@ export function render() {
     })
     el.querySelector('#hm-session-delete')?.addEventListener('click', async () => {
       await deleteOne(currentSession())
+    })
+
+    // Batch 1 §E: 会话导出
+    el.querySelector('#hm-session-export')?.addEventListener('click', async (e) => {
+      const sid = e.currentTarget.dataset.sessionId
+      if (!sid) return
+      const btn = e.currentTarget
+      btn.disabled = true
+      try {
+        const data = await api.hermesSessionExport(sid)
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `hermes-session-${sid}.json`
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        URL.revokeObjectURL(url)
+        toast(t('engine.sessionsExportSuccess'), 'success')
+      } catch (err) {
+        toast(t('engine.sessionsExportFailed') + ': ' + (err?.message || err), 'error')
+      } finally {
+        btn.disabled = false
+      }
     })
   }
 

@@ -437,6 +437,10 @@ export default {
   hermesConfigStatusSaving: _('保存中…', 'Saving…', '儲存中…'),
   hermesConfigStatusLoading: _('加载中…', 'Loading…', '載入中…'),
   hermesConfigStatusReady: _('raw yaml 编辑器', 'raw yaml editor', 'raw yaml 編輯器'),
+  // Batch 1 §E: 会话导出
+  sessionsExport: _('导出', 'Export', '匯出'),
+  sessionsExportSuccess: _('已导出', 'Exported', '已匯出'),
+  sessionsExportFailed: _('导出失败', 'Export failed', '匯出失敗'),
   // 停止流式
   chatStop: _('停止', 'Stop', '停止'),
   chatStopped: _('已停止当前回复', 'Run stopped', '已停止目前回覆'),

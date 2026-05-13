@@ -3795,6 +3795,43 @@ pub async fn hermes_run_approval(run_id: String, choice: String) -> Result<Value
     Ok(resp.json::<Value>().await.unwrap_or(serde_json::json!({ "ok": true })))
 }
 
+// ---------------------------------------------------------------------------
+// Batch 1 §E: hermes_session_export — 导出会话消息（走 dashboard 9119）
+//
+// 校对稿订正：不走 CLI `hermes sessions export`，直接调
+// `GET http://127.0.0.1:{dashboard_port}/api/sessions/{session_id}/messages`
+// 拿 JSON 后由前端打包下载（避免 CLI 子进程开销 + Web 模式不可达）。
+//
+// 注意：dashboard server 需要先启动（用户没启的话调 hermes_dashboard_start）
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn hermes_session_export(session_id: String) -> Result<Value, String> {
+    if session_id.is_empty() {
+        return Err("session_id 不能为空".to_string());
+    }
+    let port = hermes_dashboard_port();
+    let url = format!("http://127.0.0.1:{port}/api/sessions/{session_id}/messages");
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("HTTP 客户端创建失败: {e}"))?;
+
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("export 请求失败: {}（提示：请先启动 Dashboard）", reqwest_error_detail(&e)))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("export 失败 HTTP {}: {}", status.as_u16(), body));
+    }
+    // 让前端拿原始 JSON 自己打包下载（保留完整结构）
+    resp.json::<Value>().await.map_err(|e| format!("解析 JSON 失败: {e}"))
+}
+
 #[tauri::command]
 pub async fn hermes_agent_run(
     app: tauri::AppHandle,

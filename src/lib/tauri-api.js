@@ -478,6 +478,8 @@ export const api = {
   // Batch 1 §D + §C-bis: 真正中断 + Approval Flow（用 run_id）
   hermesRunStop: (runId) => invoke('hermes_run_stop', { runId }),
   hermesRunApproval: (runId, choice) => invoke('hermes_run_approval', { runId, choice }),
+  // Batch 1 §E: 会话消息导出（走 dashboard /api/sessions/{id}/messages）
+  hermesSessionExport: (sessionId) => invoke('hermes_session_export', { sessionId }),
   hermesReadConfig: () => invoke('hermes_read_config'),
   hermesReadConfigFull: () => invoke('hermes_read_config_full'),
   hermesLazyDepsFeatures: () => cachedInvoke('hermes_lazy_deps_features', {}, 600000),

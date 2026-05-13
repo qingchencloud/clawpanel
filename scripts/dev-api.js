@@ -7209,6 +7209,19 @@ const handlers = {
     return await resp.json().catch(() => ({ ok: true }))
   },
 
+  // Batch 1 §E: Sessions 导出（走 dashboard 9119）
+  async hermes_session_export({ sessionId } = {}) {
+    if (!sessionId) throw new Error('session_id 不能为空')
+    const port = handlers._hermesDashboardPort()
+    const url = `http://127.0.0.1:${port}/api/sessions/${encodeURIComponent(sessionId)}/messages`
+    const resp = await globalThis.fetch(url, { signal: AbortSignal.timeout(30000) })
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '')
+      throw new Error(`export 失败 HTTP ${resp.status}: ${body}（提示：请先启动 Dashboard）`)
+    }
+    return await resp.json()
+  },
+
   // Batch 1 §C-bis: Approval Flow — POST /v1/runs/{run_id}/approval { choice }
   async hermes_run_approval({ runId, choice } = {}) {
     if (!runId) throw new Error('run_id 不能为空')
