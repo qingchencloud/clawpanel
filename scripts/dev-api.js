@@ -7063,6 +7063,13 @@ const handlers = {
     return await resp.json()
   },
 
+  async hermes_capabilities() {
+    const url = `${hermesGatewayUrl()}/v1/capabilities`
+    const resp = await globalThis.fetch(url, { signal: AbortSignal.timeout(5000), headers: { 'User-Agent': 'ClawPanel-Web' } })
+    if (!resp.ok) throw new Error(`Gateway 返回 HTTP ${resp.status}`)
+    return await resp.json()
+  },
+
   async hermes_api_proxy({ method, path: reqPath, body, headers: customHeaders } = {}) {
     const url = `${hermesGatewayUrl()}${reqPath}`
     const opts = { method: method || 'GET', headers: { 'User-Agent': 'ClawPanel-Web' } }

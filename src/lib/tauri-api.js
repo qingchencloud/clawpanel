@@ -471,6 +471,7 @@ export const api = {
   configureHermes: (provider, apiKey, model, baseUrl) => invoke('configure_hermes', { provider, apiKey, model: model || null, baseUrl: baseUrl || null }),
   hermesGatewayAction: (action) => invoke('hermes_gateway_action', { action }),
   hermesHealthCheck: () => invoke('hermes_health_check'),
+  hermesCapabilities: () => invoke('hermes_capabilities'),
   hermesApiProxy: (method, path, body, headers) => invoke('hermes_api_proxy', { method, path, body: body || null, headers: headers || null }),
   hermesAgentRun: (input, sessionId, conversationHistory, instructions) => invoke('hermes_agent_run', { input, sessionId: sessionId || null, conversationHistory: conversationHistory || null, instructions: instructions || null }),
   hermesAgentRunStream: (input, sessionId, conversationHistory, instructions, onEvent, options) => webStreamInvoke('hermes_agent_run_stream', { input, sessionId: sessionId || null, conversationHistory: conversationHistory || null, instructions: instructions || null }, onEvent, options),

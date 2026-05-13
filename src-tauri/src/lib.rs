@@ -236,6 +236,7 @@ pub fn run() {
             hermes::configure_hermes,
             hermes::hermes_gateway_action,
             hermes::hermes_health_check,
+            hermes::hermes_capabilities,
             hermes::hermes_api_proxy,
             hermes::hermes_agent_run,
             hermes::hermes_read_config,

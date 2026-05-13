@@ -2649,6 +2649,34 @@ pub async fn hermes_health_check() -> Result<Value, String> {
 }
 
 // ---------------------------------------------------------------------------
+// hermes_capabilities — 探测 Gateway 暴露的 API 能力描述（GET /v1/capabilities）
+//
+// Hermes 内核 v2026.5.x 起暴露的「机器可读 capability 描述」，给外部 UI 用来
+// 动态适配可用功能，避免在前端写死哪些 endpoint/feature 存在。例：
+// 老版本的 Gateway 没有 `/v1/runs/{id}/approval`，新版有 → 用 capabilities 判
+// 断而不是用版本号匹配。
+//
+// 不可达 / 老版 Gateway 没有该 endpoint → 返回 Err，调用方应优雅降级。
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn hermes_capabilities() -> Result<Value, String> {
+    let url = format!("{}/v1/capabilities", hermes_gateway_url());
+
+    let client = hermes_gateway_http_client(std::time::Duration::from_secs(5))
+        .map_err(|e| format!("HTTP 客户端创建失败: {e}"))?;
+
+    match client.get(&url).send().await {
+        Ok(resp) if resp.status().is_success() => {
+            let body: Value = resp.json().await.unwrap_or(Value::Null);
+            Ok(body)
+        }
+        Ok(resp) => Err(format!("Gateway 返回 HTTP {}", resp.status())),
+        Err(e) => Err(format!("Gateway 不可达: {e}")),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // hermes_detect_environments — 检测 WSL2 / Docker 中的 Hermes Agent
 // ---------------------------------------------------------------------------
 
