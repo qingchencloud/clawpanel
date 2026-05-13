@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>V2-A · Bold Split — 黑白巨字</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box }
+  html, body { height: 100%; overflow: hidden; font-family: 'Inter', -apple-system, system-ui, sans-serif; -webkit-font-smoothing: antialiased }
+
+  .stage {
+    position: fixed;
+    inset: 0;
+    background: #fff;
+  }
+
+  /* 左上三角（黑） */
+  .panel-openclaw {
+    position: absolute;
+    inset: 0;
+    clip-path: polygon(0 0, 0 100%, 100% 0);
+    background: #0a0a0a;
+    cursor: pointer;
+    transition: filter 0.5s ease;
+  }
+  /* 右下三角（白）— 不需要单独 panel，body 是白底 */
+  .panel-hermes {
+    position: absolute;
+    inset: 0;
+    clip-path: polygon(100% 0, 100% 100%, 0 100%);
+    background: #fff;
+    cursor: pointer;
+    transition: filter 0.5s ease;
+  }
+
+  /* 中线（细灰线） */
+  .divider {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(45deg, transparent calc(50% - 1px), #e5e5e5 50%, transparent calc(50% + 1px));
+    pointer-events: none;
+  }
+
+  /* 内容容器：absolute 定位，各自放在对角线的"远端"重心 */
+  .content {
+    position: absolute;
+    pointer-events: none;
+    transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease;
+  }
+  .content-openclaw {
+    top: 14%;
+    left: 8%;
+    color: #f5f5f5;
+    text-align: left;
+  }
+  .content-hermes {
+    bottom: 14%;
+    right: 8%;
+    color: #0a0a0a;
+    text-align: right;
+  }
+
+  /* hover 该三角形 → 内容浮起 + 字距拉开 + 另一侧变暗 */
+  .panel-openclaw:hover ~ .divider + .content-openclaw,
+  .panel-openclaw:hover + .content-openclaw {
+    transform: scale(1.04);
+  }
+  .panel-hermes:hover ~ .content-hermes {
+    transform: scale(1.04);
+  }
+  /* 悬停联动（用 :has 选择器，新浏览器都支持） */
+  .stage:has(.panel-openclaw:hover) .content-hermes { opacity: 0.35 }
+  .stage:has(.panel-hermes:hover) .content-openclaw { opacity: 0.35 }
+  .stage:has(.panel-openclaw:hover) .panel-openclaw { filter: brightness(1.15) }
+  .stage:has(.panel-hermes:hover) .panel-hermes { filter: brightness(0.97) }
+
+  /* —— 内容样式 —— */
+  .eyebrow {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    opacity: 0.55;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .eyebrow::before {
+    content: '';
+    width: 32px;
+    height: 1px;
+    background: currentColor;
+    opacity: 0.4;
+  }
+  .content-hermes .eyebrow { flex-direction: row-reverse }
+  .content-hermes .eyebrow::before { display: none }
+  .content-hermes .eyebrow::after {
+    content: '';
+    width: 32px;
+    height: 1px;
+    background: currentColor;
+    opacity: 0.4;
+  }
+
+  .title {
+    font-size: clamp(80px, 12vw, 180px);
+    font-weight: 200;
+    letter-spacing: -0.06em;
+    line-height: 0.9;
+    margin-bottom: 24px;
+    transition: letter-spacing 0.5s ease;
+  }
+
+  .desc {
+    font-size: 16px;
+    line-height: 1.7;
+    max-width: 380px;
+    opacity: 0.7;
+    font-weight: 300;
+    margin-bottom: 32px;
+  }
+  .content-hermes .desc { margin-left: auto }
+
+  .meta {
+    display: flex;
+    gap: 24px;
+    font-size: 12px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    opacity: 0.5;
+  }
+  .content-hermes .meta { justify-content: flex-end }
+
+  /* CTA 大箭头 */
+  .cta {
+    margin-top: 48px;
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 14px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 500;
+    opacity: 0.85;
+    transition: opacity 0.3s, gap 0.3s;
+  }
+  .stage:has(.panel-openclaw:hover) .content-openclaw .cta { opacity: 1; gap: 18px }
+  .stage:has(.panel-hermes:hover) .content-hermes .cta { opacity: 1; gap: 18px }
+  .cta-arrow {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1.5px solid currentColor;
+    display: grid;
+    place-items: center;
+    font-size: 14px;
+  }
+
+  /* —— 选中展开动画 —— */
+  .panel.expanding { clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); z-index: 5 }
+  .panel-openclaw.expanding, .panel-hermes.expanding { transition: clip-path 0.7s cubic-bezier(0.7, 0, 0.3, 1) }
+
+  .reveal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 20;
+    pointer-events: none;
+    transition: width 0.8s cubic-bezier(0.65, 0, 0.35, 1), height 0.8s cubic-bezier(0.65, 0, 0.35, 1);
+  }
+  .reveal.active { width: 250vmax; height: 250vmax }
+
+  .home-mock {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 8px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.5s ease;
+  }
+  .home-mock.show { opacity: 1; pointer-events: auto }
+  .home-mock .ht { font-size: 36px; font-weight: 200; letter-spacing: -0.02em }
+  .home-mock .hs { font-size: 12px; letter-spacing: 0.3em; text-transform: uppercase; opacity: 0.55 }
+
+  .reset-hint {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(128, 128, 128, 0.6);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    z-index: 40;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<div class="stage" id="stage">
+  <div class="panel panel-openclaw" data-engine="openclaw"></div>
+  <div class="panel panel-hermes" data-engine="hermes"></div>
+  <div class="divider"></div>
+
+  <div class="content content-openclaw">
+    <div class="eyebrow">01 · 通用助理</div>
+    <div class="title">OpenClaw</div>
+    <div class="desc">通用 AI 助理平台。模型、渠道、记忆、智能体，一个面板搞定全部。</div>
+    <div class="meta">
+      <span>Models</span>
+      <span>Channels</span>
+      <span>Agents</span>
+    </div>
+    <div class="cta">
+      Choose
+      <span class="cta-arrow">→</span>
+    </div>
+  </div>
+
+  <div class="content content-hermes">
+    <div class="eyebrow">02 · Agent 工作流</div>
+    <div class="title">Hermes</div>
+    <div class="desc">Agent 工作流引擎。工具调用、Profile、Kanban、Skills，让 Agent 真正能干活。</div>
+    <div class="meta">
+      <span>Tools</span>
+      <span>Skills</span>
+      <span>Profiles</span>
+    </div>
+    <div class="cta">
+      <span class="cta-arrow">→</span>
+      Choose
+    </div>
+  </div>
+</div>
+
+<div class="reveal" id="reveal"></div>
+<div class="home-mock" id="home">
+  <div class="ht" id="home-name"></div>
+  <div class="hs">Loading workspace…</div>
+</div>
+<div class="reset-hint">Click a side · Press R to reset</div>
+
+<script>
+  const stage = document.getElementById('stage')
+  const reveal = document.getElementById('reveal')
+  const home = document.getElementById('home')
+  const homeName = document.getElementById('home-name')
+
+  document.querySelectorAll('.panel').forEach(panel => {
+    panel.addEventListener('click', () => {
+      const engine = panel.dataset.engine
+      const other = stage.querySelector(`.panel:not([data-engine="${engine}"])`)
+      panel.classList.add('expanding')
+      other.style.opacity = '0'
+      stage.querySelectorAll('.content').forEach(c => c.style.opacity = '0')
+      stage.querySelector('.divider').style.opacity = '0'
+      setTimeout(() => {
+        const isOpenclaw = engine === 'openclaw'
+        reveal.style.background = isOpenclaw ? '#0a0a0a' : '#fff'
+        home.style.background = isOpenclaw ? '#0a0a0a' : '#fff'
+        home.style.color = isOpenclaw ? '#fff' : '#000'
+        homeName.textContent = isOpenclaw ? 'OpenClaw' : 'Hermes'
+        reveal.classList.add('active')
+      }, 600)
+      setTimeout(() => home.classList.add('show'), 1300)
+    })
+  })
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() === 'r') location.reload()
+  })
+</script>
+</body>
+</html>

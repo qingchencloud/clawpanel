@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>V2-B · Cinematic — 电影级双世界</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box }
+  html, body { height: 100%; overflow: hidden; font-family: 'Inter', -apple-system, system-ui, sans-serif; -webkit-font-smoothing: antialiased; background: #000 }
+
+  .stage { position: fixed; inset: 0 }
+
+  /* 左上三角：深蓝紫世界 */
+  .panel-openclaw {
+    position: absolute;
+    inset: 0;
+    clip-path: polygon(0 0, 0 100%, 100% 0);
+    cursor: pointer;
+    transition: filter 0.6s ease;
+    background:
+      radial-gradient(circle at 25% 35%, rgba(120, 90, 255, 0.5) 0%, transparent 45%),
+      radial-gradient(circle at 5% 95%, rgba(50, 30, 120, 0.6) 0%, transparent 50%),
+      linear-gradient(135deg, #1a1340 0%, #0d0828 100%);
+  }
+
+  /* 右下三角：暖橙琥珀世界 */
+  .panel-hermes {
+    position: absolute;
+    inset: 0;
+    clip-path: polygon(100% 0, 100% 100%, 0 100%);
+    cursor: pointer;
+    transition: filter 0.6s ease;
+    background:
+      radial-gradient(circle at 75% 65%, rgba(255, 130, 50, 0.45) 0%, transparent 45%),
+      radial-gradient(circle at 95% 5%, rgba(120, 50, 20, 0.6) 0%, transparent 50%),
+      linear-gradient(315deg, #2a1208 0%, #4a1f0a 100%);
+  }
+
+  /* 中线发光 */
+  .divider {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(45deg,
+      transparent 49.5%,
+      rgba(255, 255, 255, 0.3) 49.7%,
+      rgba(255, 255, 255, 0.85) 49.95%,
+      rgba(255, 255, 255, 1) 50%,
+      rgba(255, 255, 255, 0.85) 50.05%,
+      rgba(255, 255, 255, 0.3) 50.3%,
+      transparent 50.5%
+    );
+    pointer-events: none;
+    filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.4));
+    transition: opacity 0.6s ease;
+  }
+
+  /* 内容容器 — absolute 定位到三角形重心 */
+  .content {
+    position: absolute;
+    pointer-events: none;
+    color: #fff;
+    transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.5s ease, filter 0.5s ease;
+    z-index: 3;
+  }
+  .content-openclaw {
+    top: 12%;
+    left: 6%;
+    text-align: left;
+    max-width: 42vw;
+  }
+  .content-hermes {
+    bottom: 12%;
+    right: 6%;
+    text-align: right;
+    max-width: 42vw;
+  }
+
+  /* —— hover 联动效果 —— */
+  .stage:has(.panel-openclaw:hover) .content-hermes,
+  .stage:has(.panel-hermes:hover) .content-openclaw {
+    opacity: 0.3;
+    filter: blur(2px);
+  }
+  .stage:has(.panel-openclaw:hover) .panel-hermes,
+  .stage:has(.panel-hermes:hover) .panel-openclaw {
+    filter: brightness(0.5) saturate(0.6);
+  }
+  .stage:has(.panel-openclaw:hover) .content-openclaw,
+  .stage:has(.panel-hermes:hover) .content-hermes {
+    transform: scale(1.05);
+  }
+
+  /* 序号 */
+  .number {
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.4em;
+    opacity: 0.5;
+    margin-bottom: 32px;
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .number::before {
+    content: '';
+    width: 60px;
+    height: 1px;
+    background: currentColor;
+    opacity: 0.5;
+  }
+  .content-hermes .number { flex-direction: row-reverse }
+  .content-hermes .number::before { display: none }
+  .content-hermes .number::after {
+    content: '';
+    width: 60px;
+    height: 1px;
+    background: currentColor;
+    opacity: 0.5;
+  }
+
+  /* 巨大产品名 */
+  .title {
+    font-size: clamp(72px, 11vw, 168px);
+    font-weight: 100;
+    letter-spacing: -0.05em;
+    line-height: 0.88;
+    margin-bottom: 28px;
+    background: linear-gradient(180deg, #fff 30%, rgba(255, 255, 255, 0.55) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+
+  /* tagline 句子 */
+  .tagline {
+    font-size: clamp(18px, 1.6vw, 24px);
+    line-height: 1.55;
+    font-weight: 300;
+    max-width: 460px;
+    margin-bottom: 36px;
+    opacity: 0.85;
+  }
+  .content-hermes .tagline { margin-left: auto }
+
+  /* 特性 chips */
+  .chips {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 48px;
+    flex-wrap: wrap;
+  }
+  .content-hermes .chips { justify-content: flex-end }
+  .chip {
+    padding: 8px 16px;
+    font-size: 12px;
+    font-weight: 400;
+    letter-spacing: 0.05em;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 100px;
+    backdrop-filter: blur(10px);
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  /* CTA */
+  .cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 32px 14px 24px;
+    border-radius: 100px;
+    border: 1.5px solid rgba(255, 255, 255, 0.4);
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    backdrop-filter: blur(10px);
+    background: rgba(255, 255, 255, 0.05);
+    transition: all 0.4s ease;
+    pointer-events: none;
+  }
+  .stage:has(.panel-openclaw:hover) .content-openclaw .cta,
+  .stage:has(.panel-hermes:hover) .content-hermes .cta {
+    background: rgba(255, 255, 255, 0.95);
+    color: #0a0a0a;
+    border-color: rgba(255, 255, 255, 1);
+    transform: translateX(8px);
+  }
+  .content-hermes .cta { flex-direction: row-reverse; padding: 14px 24px 14px 32px }
+  .stage:has(.panel-hermes:hover) .content-hermes .cta { transform: translateX(-8px) }
+  .cta .arrow {
+    font-size: 16px;
+    transition: transform 0.3s;
+  }
+
+  /* 装饰：右上角的小品牌字母（每个三角形对角的另一边的角） */
+  .corner-mark {
+    position: absolute;
+    font-size: 11px;
+    letter-spacing: 0.4em;
+    color: rgba(255, 255, 255, 0.35);
+    text-transform: uppercase;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .corner-tl { top: 32px; left: 36px }
+  .corner-br { bottom: 32px; right: 36px }
+
+  /* 主标题 */
+  .top-banner {
+    position: fixed;
+    top: 32px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 11px;
+    letter-spacing: 0.4em;
+    text-transform: uppercase;
+    z-index: 5;
+    pointer-events: none;
+    font-weight: 500;
+  }
+
+  /* —— 选中展开动画 —— */
+  .panel.expanding { clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); z-index: 5 }
+  .panel { transition: clip-path 0.8s cubic-bezier(0.7, 0, 0.3, 1), filter 0.5s ease }
+
+  .reveal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 20;
+    pointer-events: none;
+    transition: width 0.9s cubic-bezier(0.65, 0, 0.35, 1), height 0.9s cubic-bezier(0.65, 0, 0.35, 1);
+  }
+  .reveal.active { width: 260vmax; height: 260vmax }
+
+  .home-mock {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 12px;
+    color: #fff;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.6s ease;
+  }
+  .home-mock.show { opacity: 1; pointer-events: auto }
+  .home-mock .ht {
+    font-size: 56px;
+    font-weight: 100;
+    letter-spacing: -0.04em;
+    background: linear-gradient(180deg, #fff, rgba(255, 255, 255, 0.6));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .home-mock .hs { font-size: 12px; letter-spacing: 0.4em; text-transform: uppercase; opacity: 0.5 }
+
+  .reset-hint {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    z-index: 40;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<div class="stage" id="stage">
+  <div class="panel panel-openclaw" data-engine="openclaw"></div>
+  <div class="panel panel-hermes" data-engine="hermes"></div>
+  <div class="divider"></div>
+
+  <div class="top-banner">— Choose your engine —</div>
+  <div class="corner-mark corner-tl">CLAWPANEL · 2026</div>
+  <div class="corner-mark corner-br">v0.15.3</div>
+
+  <div class="content content-openclaw">
+    <div class="number">01</div>
+    <div class="title">OpenClaw</div>
+    <div class="tagline">通用 AI 助理平台。模型、渠道、记忆、智能体——一个面板搞定全部。</div>
+    <div class="chips">
+      <div class="chip">Models</div>
+      <div class="chip">Channels</div>
+      <div class="chip">Memory</div>
+      <div class="chip">Agents</div>
+    </div>
+    <div class="cta">
+      Enter OpenClaw
+      <span class="arrow">→</span>
+    </div>
+  </div>
+
+  <div class="content content-hermes">
+    <div class="number">02</div>
+    <div class="title">Hermes</div>
+    <div class="tagline">Agent 工作流引擎。工具调用、Profile、Kanban、Skills——让 AI 真正能干活。</div>
+    <div class="chips">
+      <div class="chip">Tools</div>
+      <div class="chip">Skills</div>
+      <div class="chip">Kanban</div>
+      <div class="chip">Profiles</div>
+    </div>
+    <div class="cta">
+      <span class="arrow">→</span>
+      Enter Hermes
+    </div>
+  </div>
+</div>
+
+<div class="reveal" id="reveal"></div>
+<div class="home-mock" id="home">
+  <div class="ht" id="home-name"></div>
+  <div class="hs">Initializing workspace…</div>
+</div>
+<div class="reset-hint">Click a side · Press R to reset</div>
+
+<script>
+  const stage = document.getElementById('stage')
+  const reveal = document.getElementById('reveal')
+  const home = document.getElementById('home')
+  const homeName = document.getElementById('home-name')
+
+  const colors = {
+    openclaw: 'radial-gradient(circle at center, rgba(120, 90, 255, 0.4) 0%, #0d0828 70%)',
+    hermes:   'radial-gradient(circle at center, rgba(255, 130, 50, 0.4) 0%, #2a1208 70%)',
+  }
+
+  document.querySelectorAll('.panel').forEach(panel => {
+    panel.addEventListener('click', () => {
+      const engine = panel.dataset.engine
+      const other = stage.querySelector(`.panel:not([data-engine="${engine}"])`)
+      panel.classList.add('expanding')
+      other.style.opacity = '0'
+      stage.querySelectorAll('.content, .corner-mark, .top-banner').forEach(c => c.style.opacity = '0')
+      stage.querySelector('.divider').style.opacity = '0'
+      setTimeout(() => {
+        reveal.style.background = colors[engine]
+        home.style.background = colors[engine]
+        homeName.textContent = engine === 'openclaw' ? 'OpenClaw' : 'Hermes'
+        reveal.classList.add('active')
+      }, 700)
+      setTimeout(() => home.classList.add('show'), 1500)
+    })
+  })
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() === 'r') location.reload()
+  })
+</script>
+</body>
+</html>
