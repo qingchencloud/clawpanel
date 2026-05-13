@@ -473,6 +473,91 @@ mark {
   margin-bottom: var(--space-md);
 }
 
+/* P1-3: lazy_deps 依赖管理页 */
+.lazy-deps-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+}
+
+.lazy-deps-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: border-color 0.15s, transform 0.15s;
+}
+
+.lazy-deps-card:hover {
+  border-color: var(--primary);
+}
+
+.lazy-deps-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.lazy-deps-card-title {
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lazy-deps-card-meta {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono, monospace);
+  word-break: break-all;
+  line-height: 1.5;
+  max-height: 3em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.lazy-deps-missing {
+  font-size: var(--font-size-xs);
+  color: var(--warning, #f59e0b);
+}
+
+.lazy-deps-card-actions {
+  margin-top: auto;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.lazy-deps-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.lazy-deps-badge.ok {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--success, #22c55e);
+}
+
+.lazy-deps-badge.warn {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--warning, #f59e0b);
+}
+
+.lazy-deps-badge.unknown {
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+}
+
 /* ── 新手引导卡片 ── */
 .onboarding-card {
   background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(168, 85, 247, 0.05));

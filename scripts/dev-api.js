@@ -7159,6 +7159,41 @@ const handlers = {
     return { model: displayModel, model_raw: modelName, base_url: baseUrl, provider, api_key: apiKey, config_exists: fs.existsSync(configPath) }
   },
 
+  // P1-3 lazy_deps: Web 模式下不能调 venv python，但仍提供 feature 列表 + 提示用户走桌面端装
+  hermes_lazy_deps_features() {
+    const features = [
+      { feature: 'platform.telegram', specs: ['python-telegram-bot[webhooks]==22.6'] },
+      { feature: 'platform.discord', specs: ['discord.py[voice]==2.7.1'] },
+      { feature: 'platform.slack', specs: ['slack-bolt==1.27.0', 'slack-sdk==3.40.1', 'aiohttp==3.13.3'] },
+      { feature: 'platform.matrix', specs: ['matrix-nio[e2e]'] },
+      { feature: 'platform.dingtalk', specs: ['dingtalk-stream'] },
+      { feature: 'platform.feishu', specs: ['lark-oapi'] },
+      { feature: 'tts.edge', specs: ['edge-tts==7.2.7'] },
+      { feature: 'tts.elevenlabs', specs: ['elevenlabs==1.59.0'] },
+      { feature: 'stt.faster_whisper', specs: ['faster-whisper==1.2.1', 'sounddevice==0.5.5', 'numpy==2.4.3'] },
+      { feature: 'search.exa', specs: ['exa-py==2.10.2'] },
+      { feature: 'search.firecrawl', specs: ['firecrawl-py==4.17.0'] },
+      { feature: 'search.parallel', specs: ['parallel-web==0.4.2'] },
+      { feature: 'provider.anthropic', specs: ['anthropic==0.86.0'] },
+      { feature: 'provider.bedrock', specs: ['boto3==1.42.89'] },
+      { feature: 'memory.honcho', specs: ['honcho-ai==2.0.1'] },
+      { feature: 'memory.hindsight', specs: ['hindsight-client==0.6.1'] },
+      { feature: 'image.fal', specs: ['fal-client==0.13.1'] },
+    ]
+    return { ok: true, features }
+  },
+
+  hermes_lazy_deps_status({ features }) {
+    // Web 模式无法实际查询 venv，全部标 unknown
+    const status = {}
+    for (const f of features || []) status[f] = { known: true, satisfied: false, missing: [] }
+    return { ok: true, status }
+  },
+
+  hermes_lazy_deps_ensure({ feature }) {
+    return { ok: false, error: `Web 模式下无法预装依赖。请在桌面端 ClawPanel 完成 ${feature} 安装。` }
+  },
+
   // P1-4：完整解析 config.yaml，让前端能读 14+ 高价值字段
   // Web 模式不引入 yaml 依赖，简单返回 raw + null highlights（前端按需渲染）
   hermes_read_config_full() {
