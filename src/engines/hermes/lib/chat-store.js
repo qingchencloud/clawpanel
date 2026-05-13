@@ -28,6 +28,8 @@ const STORAGE_PROFILE = 'hermes_chat_profile_v1'
 const STORAGE_SESSIONS_PREFIX = 'hermes_chat_sessions_v2_'
 const STORAGE_ACTIVE_PREFIX = 'hermes_chat_active_v2_'
 const STORAGE_PINNED_PREFIX = 'hermes_chat_pinned_'
+// Batch 2 §I: 流恢复 — 持久化 run_id 用于切页/刷新后恢复
+const STORAGE_ACTIVE_RUN = 'hermes_chat_active_run_v1'
 const STORAGE_COLLAPSED_PREFIX = 'hermes_chat_collapsed_groups_'
 const STORAGE_MSGS_PREFIX = 'hermes_chat_msgs_v2_'
 const LIVE_BADGE_WINDOW_MS = 5 * 60 * 1000  // 5 min
@@ -968,10 +970,11 @@ function createStore() {
     state.runningSessionId = null
     state.pendingAssistantId = null
     state.liveTools = []
-    // Batch 1 §C/§D/§C-bis: 重置 run-level 字段
+    // Batch 1 §C/§D/§C-bis + Batch 2 §I: 重置 run-level 字段 + 清持久化
     state.currentRunId = null
     state.pendingApproval = null
     state.aborting = false
+    safeRemove(STORAGE_ACTIVE_RUN)
     // hasReasoning 保留到下次 run 开始（让用户看完上一轮思考链）
     streamAbortController = null
     detachStreamListeners()
@@ -1188,6 +1191,43 @@ function createStore() {
     isSessionLive,
     groupedSessions,
     subscribe,
+
+    // Batch 2 §I: 流恢复 — 切页/刷新后看是否有 in-flight run，是的话重新挂监听
+    async recoverIfRunning() {
+      if (state.streaming) return  // 已经在监听
+      const raw = safeGet(STORAGE_ACTIVE_RUN)
+      if (!raw) return
+      let info
+      try { info = JSON.parse(raw) } catch { safeRemove(STORAGE_ACTIVE_RUN); return }
+      if (!info?.runId || !info?.sessionId) { safeRemove(STORAGE_ACTIVE_RUN); return }
+      // 跨 profile 的 run 不恢复（用户已切了 profile）
+      if (info.profile && info.profile !== state.activeProfile) { safeRemove(STORAGE_ACTIVE_RUN); return }
+      // 超过 1 小时的 run 视为过期
+      if (info.t && Date.now() - info.t > 60 * 60 * 1000) { safeRemove(STORAGE_ACTIVE_RUN); return }
+
+      try {
+        const st = await api.hermesRunStatus(info.runId)
+        const status = String(st?.status || '')
+        if (status === 'running' || status === 'stopping' || status === 'waiting_for_approval') {
+          // 还在跑 — 重新挂监听 + 标 streaming
+          state.runningSessionId = info.sessionId
+          state.currentRunId = info.runId
+          state.streaming = true
+          if (status === 'stopping') state.aborting = true
+          await attachStreamListeners(info.sessionId)
+          notify()
+        } else {
+          // 已结束 — 拉一下最新 messages（让用户看到完整结果）
+          safeRemove(STORAGE_ACTIVE_RUN)
+          if (info.sessionId === state.activeSessionId) {
+            await refreshActiveMessages().catch(() => {})
+          }
+        }
+      } catch {
+        // status 查询失败，假装没事
+        safeRemove(STORAGE_ACTIVE_RUN)
+      }
+    },
 
     // actions
     loadSessions,

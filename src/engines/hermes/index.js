@@ -86,9 +86,7 @@ export default {
         { route: '/h/skills', label: t('sidebar.skills'), icon: 'skills' },
         { route: '/h/memory', label: t('sidebar.memory'), icon: 'memory' },
         { route: '/h/cron', label: t('sidebar.cron'), icon: 'clock' },
-        { route: '/h/profiles', label: t('engine.hermesProfilesTitle'), icon: 'agents' },
-        { route: '/h/lazy-deps', label: t('hermesLazyDeps.title'), icon: 'package' },
-        { route: '/h/extensions', label: t('sidebar.extensions'), icon: 'package' },
+          { route: '/h/extensions', label: t('sidebar.extensions'), icon: 'package' },
       ]
     }, {
       section: '',
@@ -115,6 +113,7 @@ export default {
       { path: '/h/cron', loader: () => import('./pages/cron.js') },
       { path: '/h/extensions', loader: () => import('./pages/extensions.js') },
       { path: '/h/profiles', loader: () => import('./pages/profiles.js') },
+      { path: '/h/kanban', loader: () => import('./pages/kanban.js') },
       { path: '/h/lazy-deps', loader: () => import('./pages/lazy-deps.js') },
       { path: '/h/services', loader: () => import('./pages/services.js') },
       { path: '/h/config', loader: () => import('./pages/config.js') },

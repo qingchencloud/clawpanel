@@ -241,6 +241,7 @@ pub fn run() {
             hermes::hermes_agent_run,
             hermes::hermes_run_stop,
             hermes::hermes_run_approval,
+            hermes::hermes_run_status,
             hermes::hermes_session_export,
             hermes::hermes_dashboard_api_proxy,
             hermes::hermes_read_config,

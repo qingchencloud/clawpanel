@@ -7194,6 +7194,22 @@ const handlers = {
     return { ok: false, error: `Web 模式下无法预装依赖。请在桌面端 ClawPanel 完成 ${feature} 安装。` }
   },
 
+  // Batch 2 §I: 流恢复 — GET /v1/runs/{run_id}
+  async hermes_run_status({ runId } = {}) {
+    if (!runId) throw new Error('run_id 不能为空')
+    const url = `${hermesGatewayUrl()}/v1/runs/${encodeURIComponent(runId)}`
+    const apiKey = _readHermesApiServerKey()
+    const headers = { 'User-Agent': 'ClawPanel-Web' }
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+    const resp = await globalThis.fetch(url, { headers, signal: AbortSignal.timeout(5000) })
+    if (resp.status === 404) return { run_id: runId, status: 'not_found' }
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '')
+      throw new Error(`status 失败 HTTP ${resp.status}: ${body}`)
+    }
+    return await resp.json()
+  },
+
   // Batch 1 §D: 真正中断 — POST /v1/runs/{run_id}/stop
   async hermes_run_stop({ runId } = {}) {
     if (!runId) throw new Error('run_id 不能为空')

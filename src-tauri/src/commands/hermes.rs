@@ -3796,6 +3796,44 @@ pub async fn hermes_run_approval(run_id: String, choice: String) -> Result<Value
 }
 
 // ---------------------------------------------------------------------------
+// Batch 2 §I: hermes_run_status — 查 run 当前状态（流恢复用）
+//
+// GET /v1/runs/{run_id} 返回 { run_id, status, last_event, output?, ... }
+// status 取值：running / stopping / completed / failed / cancelled / waiting_for_approval
+// 切页 / 刷新后用这个判断是否还需要重连 SSE 事件流
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn hermes_run_status(run_id: String) -> Result<Value, String> {
+    if run_id.is_empty() {
+        return Err("run_id 不能为空".to_string());
+    }
+    let gw_url = hermes_gateway_url();
+    let url = format!("{gw_url}/v1/runs/{run_id}");
+    let api_key = read_hermes_api_key();
+    let client = hermes_gateway_http_client(std::time::Duration::from_secs(5))
+        .map_err(|e| format!("HTTP 客户端创建失败: {e}"))?;
+    let mut req = client.get(&url);
+    if !api_key.is_empty() {
+        req = req.header("Authorization", format!("Bearer {api_key}"));
+    }
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| format!("status 请求失败: {}", reqwest_error_detail(&e)))?;
+    let status = resp.status();
+    if status.as_u16() == 404 {
+        // run 已过期或不存在 — 返回明确状态而不是错
+        return Ok(serde_json::json!({ "run_id": run_id, "status": "not_found" }));
+    }
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("status 失败 HTTP {}: {}", status.as_u16(), body));
+    }
+    resp.json::<Value>().await.map_err(|e| format!("解析 JSON 失败: {e}"))
+}
+
+// ---------------------------------------------------------------------------
 // Batch 1 §E: hermes_session_export — 导出会话消息（走 dashboard 9119）
 //
 // 校对稿订正：不走 CLI `hermes sessions export`，直接调

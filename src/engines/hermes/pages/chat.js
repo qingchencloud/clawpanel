@@ -311,6 +311,8 @@ export function render() {
   // --- initial session load + model meta ---
   store.loadSessions().then(() => draw())
   store.loadProfiles().then(() => draw()).catch(() => {})
+  // Batch 2 §I: 切页/刷新后看是否有 in-flight run，是的话重新挂监听
+  store.recoverIfRunning().catch(() => {})
   // 强制刷新安装/Gateway 状态缓存，避免用户刚在仪表盘启动 Gateway 后
   // 进聊天页看到 30s 过期的「未启动」误判。
   invalidate('check_hermes')
