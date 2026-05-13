@@ -18,6 +18,7 @@ import { api } from '../../../lib/tauri-api.js'
 import { toast } from '../../../components/toast.js'
 import { showModal, showContentModal } from '../../../components/modal.js'
 import { humanizeError } from '../../../lib/humanize-error.js'
+import { svgIcon } from '../lib/svg-icons.js'
 
 const KANBAN_BASE = '/api/plugins/kanban'
 
@@ -30,7 +31,7 @@ function renderInlineError(err) {
   const h = humanizeError(err, t('engine.hermesKanbanTaskLoadFailed'))
   return `
     <div class="page-inline-error">
-      <div class="page-inline-error-icon">⚠️</div>
+      <div class="page-inline-error-icon">${svgIcon('alert-triangle', { size: 20 })}</div>
       <div class="page-inline-error-body">
         <div class="page-inline-error-message">${escHtml(h.message)}</div>
         ${h.hint ? `<div class="page-inline-error-hint">${escHtml(h.hint)}</div>` : ''}
@@ -77,7 +78,7 @@ export function render() {
 
   function renderBoard() {
     if (!board?.columns?.length) {
-      return `<div class="empty-state empty-compact"><div class="empty-icon">📋</div><div class="empty-title">${escHtml(t('engine.hermesKanbanEmpty'))}</div></div>`
+      return `<div class="empty-state empty-compact"><div class="empty-icon">${svgIcon('clipboard-list', { size: 32 })}</div><div class="empty-title">${escHtml(t('engine.hermesKanbanEmpty'))}</div></div>`
     }
     return `
       <div class="hm-kanban-board">
@@ -107,7 +108,7 @@ export function render() {
         <div class="hm-kanban-task-meta">
           ${priorityBadge}
           ${assignee}
-          ${task.comment_count ? `<span class="hm-kanban-task-meta-item">💬 ${task.comment_count}</span>` : ''}
+          ${task.comment_count ? `<span class="hm-kanban-task-meta-item">${svgIcon('message-square', { size: 12 })} ${task.comment_count}</span>` : ''}
         </div>
       </div>
     `

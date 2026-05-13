@@ -438,6 +438,14 @@ mark {
   margin-bottom: var(--space-md);
   opacity: 0.85;
   user-select: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+}
+.empty-state .empty-icon svg {
+  width: 1em;
+  height: 1em;
 }
 
 .empty-state .empty-title {

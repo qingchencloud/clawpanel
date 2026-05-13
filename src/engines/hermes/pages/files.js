@@ -15,6 +15,7 @@ import { api } from '../../../lib/tauri-api.js'
 import { toast } from '../../../components/toast.js'
 import { showConfirm } from '../../../components/modal.js'
 import { humanizeError } from '../../../lib/humanize-error.js'
+import { svgIcon } from '../lib/svg-icons.js'
 
 function escHtml(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -35,14 +36,13 @@ function formatTime(secs) {
 }
 
 function iconForKind(kind, name) {
-  if (kind === 'dir') return '📁'
-  if (kind === 'symlink') return '🔗'
+  if (kind === 'dir') return svgIcon('folder', { size: 14 })
+  if (kind === 'symlink') return svgIcon('link-2', { size: 14 })
   const ext = (name.split('.').pop() || '').toLowerCase()
-  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) return '🖼️'
-  if (['md', 'txt'].includes(ext)) return '📝'
-  if (['json', 'yaml', 'yml', 'toml'].includes(ext)) return '⚙️'
-  if (['py', 'js', 'ts', 'rs', 'go'].includes(ext)) return '📄'
-  return '📄'
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) return svgIcon('image', { size: 14 })
+  if (['md', 'txt'].includes(ext)) return svgIcon('file-text', { size: 14 })
+  if (['json', 'yaml', 'yml', 'toml'].includes(ext)) return svgIcon('settings', { size: 14 })
+  return svgIcon('file', { size: 14 })
 }
 
 export function render() {
@@ -118,7 +118,7 @@ export function render() {
     }
     return `
       <div class="hm-files-list">
-        ${currentDir ? `<div class="hm-files-entry hm-files-entry--up" data-cd="${escAttr(parentDir(currentDir))}"><span class="hm-files-icon">📁</span><span class="hm-files-name">..</span></div>` : ''}
+        ${currentDir ? `<div class="hm-files-entry hm-files-entry--up" data-cd="${escAttr(parentDir(currentDir))}"><span class="hm-files-icon">${svgIcon('folder-up', { size: 14 })}</span><span class="hm-files-name">..</span></div>` : ''}
         ${entries.map(e => `
           <div class="hm-files-entry ${e.kind === 'dir' ? 'is-dir' : 'is-file'} ${selectedRel === joinRel(currentDir, e.name) ? 'is-selected' : ''}"
                data-kind="${escAttr(e.kind)}"

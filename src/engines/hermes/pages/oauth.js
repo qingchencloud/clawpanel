@@ -15,6 +15,7 @@ import { api } from '../../../lib/tauri-api.js'
 import { toast } from '../../../components/toast.js'
 import { showModal, showContentModal } from '../../../components/modal.js'
 import { humanizeError } from '../../../lib/humanize-error.js'
+import { svgIcon } from '../lib/svg-icons.js'
 
 const OAUTH_BASE = '/api/providers/oauth'
 
@@ -27,7 +28,7 @@ function renderInlineError(err) {
   const h = humanizeError(err, t('engine.hermesOAuthTitle'))
   return `
     <div class="page-inline-error">
-      <div class="page-inline-error-icon">⚠️</div>
+      <div class="page-inline-error-icon">${svgIcon('alert-triangle', { size: 20 })}</div>
       <div class="page-inline-error-body">
         <div class="page-inline-error-message">${escHtml(h.message)}</div>
         ${h.hint ? `<div class="page-inline-error-hint">${escHtml(h.hint)}</div>` : ''}
@@ -62,7 +63,7 @@ export function render() {
         ${error ? renderInlineError(error) : ''}
         ${(!loading && !error && !providers.length) ? `
           <div class="empty-state empty-compact">
-            <div class="empty-icon">🔐</div>
+            <div class="empty-icon">${svgIcon('lock', { size: 32 })}</div>
             <div class="empty-title">${escHtml(t('engine.hermesOAuthEmpty'))}</div>
           </div>` : ''}
         ${(!loading && providers.length) ? `

@@ -117,7 +117,7 @@ export function render() {
         levelFilter !== 'ALL' ? levelFilter : null,
       )
     } catch (e) {
-      entries = [{ raw: `⚠️ ${t('engine.logsLoadFailed')}: ${e.message || e}` }]
+      entries = [{ raw: `[ERROR] ${t('engine.logsLoadFailed')}: ${e.message || e}`, level: 'ERROR' }]
     }
     loading = false
     draw()

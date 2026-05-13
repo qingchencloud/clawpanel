@@ -15,6 +15,7 @@ import { t } from '../../../lib/i18n.js'
 import { api, isTauriRuntime } from '../../../lib/tauri-api.js'
 import { toast } from '../../../components/toast.js'
 import { humanizeError } from '../../../lib/humanize-error.js'
+import { svgIcon } from '../lib/svg-icons.js'
 
 function escHtml(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -131,7 +132,7 @@ export function render() {
     if (m.error) {
       return `
         <div class="hm-gc-msg hm-gc-msg--assistant hm-gc-msg--error">
-          <div class="hm-gc-msg-meta">${fromTag} <span style="color:var(--error)">⚠️ ${escHtml(t('engine.hermesGroupChatRunFailed'))}</span></div>
+          <div class="hm-gc-msg-meta">${fromTag} <span style="color:var(--error);display:inline-flex;align-items:center;gap:4px">${svgIcon('alert-triangle', { size: 12 })} ${escHtml(t('engine.hermesGroupChatRunFailed'))}</span></div>
           <div class="hm-gc-msg-bubble" style="color:var(--error)">${escHtml(m.error)}</div>
         </div>
       `

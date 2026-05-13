@@ -2675,6 +2675,14 @@
   line-height: 1;
   margin-top: 2px;
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--error, #ef4444);
+}
+.page-inline-error-icon svg {
+  width: 20px;
+  height: 20px;
 }
 .page-inline-error-body {
   flex: 1;

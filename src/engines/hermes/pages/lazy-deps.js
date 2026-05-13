@@ -11,16 +11,17 @@ import { t } from '../../../lib/i18n.js'
 import { api } from '../../../lib/tauri-api.js'
 import { toast } from '../../../components/toast.js'
 import { humanizeError } from '../../../lib/humanize-error.js'
+import { svgIcon } from '../lib/svg-icons.js'
 
 // feature 分类配置（决定分组顺序 + 图标 + 文案）
 const CATEGORIES = [
-  { prefix: 'platform.', emoji: '💬', titleKey: 'hermesLazyDeps.catPlatform' },
-  { prefix: 'tts.',      emoji: '🔊', titleKey: 'hermesLazyDeps.catTts' },
-  { prefix: 'stt.',      emoji: '🎙️', titleKey: 'hermesLazyDeps.catStt' },
-  { prefix: 'search.',   emoji: '🔍', titleKey: 'hermesLazyDeps.catSearch' },
-  { prefix: 'provider.', emoji: '🧠', titleKey: 'hermesLazyDeps.catProvider' },
-  { prefix: 'memory.',   emoji: '🗂️', titleKey: 'hermesLazyDeps.catMemory' },
-  { prefix: 'image.',    emoji: '🎨', titleKey: 'hermesLazyDeps.catImage' },
+  { prefix: 'platform.', icon: 'message-square', titleKey: 'hermesLazyDeps.catPlatform' },
+  { prefix: 'tts.',      icon: 'volume',         titleKey: 'hermesLazyDeps.catTts' },
+  { prefix: 'stt.',      icon: 'mic',            titleKey: 'hermesLazyDeps.catStt' },
+  { prefix: 'search.',   icon: 'search',         titleKey: 'hermesLazyDeps.catSearch' },
+  { prefix: 'provider.', icon: 'shield',         titleKey: 'hermesLazyDeps.catProvider' },
+  { prefix: 'memory.',   icon: 'inbox',          titleKey: 'hermesLazyDeps.catMemory' },
+  { prefix: 'image.',    icon: 'image',          titleKey: 'hermesLazyDeps.catImage' },
 ]
 
 const DESC_OVERRIDE_KEY = 'hermesLazyDeps.descOverride'  // i18n.key 下的 feature → 描述
@@ -28,7 +29,7 @@ const DESC_OVERRIDE_KEY = 'hermesLazyDeps.descOverride'  // i18n.key 下的 feat
 // 把 feature 按分类分组
 function groupByCategory(features) {
   const groups = CATEGORIES.map(c => ({ ...c, items: [] }))
-  const other = { prefix: '', emoji: '🧩', titleKey: 'hermesLazyDeps.catOther', items: [] }
+  const other = { prefix: '', icon: 'file', titleKey: 'hermesLazyDeps.catOther', items: [] }
   for (const f of features) {
     const cat = groups.find(g => f.feature.startsWith(g.prefix))
     if (cat) cat.items.push(f)
@@ -83,7 +84,7 @@ async function loadAndRender(page) {
   const features = featuresResp.features || []
   if (!features.length) {
     content.innerHTML = `<div class="empty-state empty-compact">
-      <div class="empty-icon">📦</div>
+      <div class="empty-icon">${svgIcon('inbox', { size: 32 })}</div>
       <div class="empty-title">${escapeHtml(t('hermesLazyDeps.emptyTitle'))}</div>
     </div>`
     return
@@ -113,7 +114,7 @@ function renderGroup(group, status) {
   return `
     <div class="config-section">
       <div class="config-section-title">
-        <span style="font-size:18px;line-height:1">${group.emoji}</span>
+        <span style="display:inline-flex;align-items:center;color:var(--accent);margin-right:8px">${svgIcon(group.icon, { size: 18 })}</span>
         ${escapeHtml(t(group.titleKey))}
       </div>
       <div class="lazy-deps-grid">
@@ -130,7 +131,7 @@ function renderItem(f, st) {
   const specsTitle = (f.specs || []).join('\n')
   const featureLabel = featureDisplayName(f.feature)
   const stateBadge = satisfied
-    ? `<span class="lazy-deps-badge ok">✓ ${escapeHtml(t('hermesLazyDeps.installed'))}</span>`
+    ? `<span class="lazy-deps-badge ok">${svgIcon('check', { size: 11 })} ${escapeHtml(t('hermesLazyDeps.installed'))}</span>`
     : (known
       ? `<span class="lazy-deps-badge warn">${escapeHtml(t('hermesLazyDeps.notInstalled'))}</span>`
       : `<span class="lazy-deps-badge unknown">?</span>`)
