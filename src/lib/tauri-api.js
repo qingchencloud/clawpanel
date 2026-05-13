@@ -473,7 +473,7 @@ export const api = {
   hermesHealthCheck: () => invoke('hermes_health_check'),
   hermesCapabilities: () => invoke('hermes_capabilities'),
   hermesApiProxy: (method, path, body, headers) => invoke('hermes_api_proxy', { method, path, body: body || null, headers: headers || null }),
-  hermesAgentRun: (input, sessionId, conversationHistory, instructions) => invoke('hermes_agent_run', { input, sessionId: sessionId || null, conversationHistory: conversationHistory || null, instructions: instructions || null }),
+  hermesAgentRun: (input, sessionId, conversationHistory, instructions, attachments) => invoke('hermes_agent_run', { input, sessionId: sessionId || null, conversationHistory: conversationHistory || null, instructions: instructions || null, attachments: attachments && attachments.length ? attachments : null }),
   hermesAgentRunStream: (input, sessionId, conversationHistory, instructions, onEvent, options) => webStreamInvoke('hermes_agent_run_stream', { input, sessionId: sessionId || null, conversationHistory: conversationHistory || null, instructions: instructions || null }, onEvent, options),
   // Batch 1 §D + §C-bis: 真正中断 + Approval Flow（用 run_id）
   hermesRunStop: (runId) => invoke('hermes_run_stop', { runId }),

@@ -288,6 +288,10 @@ export function render() {
   let inputValue = ''
   let inputFocused = false
   let inputCaret = 0                  // caret position restored after re-render
+  // Batch 3 §K: 多模态图片附件（仅 chat 这一帧暂存，发送后清掉）
+  let pendingAttachments = []         // [{ kind:'image', mime, name, data_base64 }]
+  const MAX_ATTACHMENTS = 5
+  const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024  // 10 MB
   let lastActiveSessionId = store.state.activeSessionId
   let forceScrollBottom = true
 
@@ -676,7 +680,22 @@ export function render() {
                 <span class="hm-chat-usage-value">${escHtml(formatCost(cost))}</span>
               </span>` : ''}
           </div>` : ''}
+        ${pendingAttachments.length ? `
+          <div class="hm-chat-attach-preview">
+            ${pendingAttachments.map((a, i) => `
+              <div class="hm-chat-attach-chip">
+                <img src="data:${escAttr(a.mime)};base64,${escAttr(a.data_base64)}" alt="${escAttr(a.name)}">
+                <span class="hm-chat-attach-chip-name" title="${escAttr(a.name)}">${escHtml(a.name)}</span>
+                <button class="hm-chat-attach-chip-remove" data-attach-remove="${i}" title="${escHtml(t('engine.chatAttachRemove'))}">×</button>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
         <div class="hm-chat-input-wrap ${streaming ? 'is-streaming' : ''}">
+          <button class="hm-chat-attach-btn" id="hm-chat-attach" title="${escHtml(t('engine.chatAttach'))}" ${streaming ? 'disabled' : ''}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+          </button>
+          <input type="file" id="hm-chat-attach-input" accept="image/*" multiple hidden>
           <textarea id="hm-chat-input" class="hm-chat-input"
                     placeholder="${escAttr(placeholder)}"
                     rows="1">${escHtml(inputValue)}</textarea>
@@ -686,7 +705,7 @@ export function render() {
                    ${ICONS.stop}
                  </button>`
               : `<button class="hm-chat-send-btn" id="hm-chat-send"
-                         ${(!active || !inputValue.trim() || hermesInstalled === false || !gwOnline) ? 'disabled' : ''}
+                         ${(!active || (!inputValue.trim() && !pendingAttachments.length) || hermesInstalled === false || !gwOnline) ? 'disabled' : ''}
                          title="${escHtml(hermesInstalled === false ? t('engine.chatHealthInstallMissing') : !gwOnline ? t('engine.chatHealthGatewayDown') : t('engine.chatSend'))}">
                    ${ICONS.send}
                  </button>`}
@@ -1134,6 +1153,59 @@ export function render() {
       })
     })
 
+    // Batch 3 §K: attach 按钮 / 文件 input / 拖拽 / 移除附件
+    const attachBtn = el.querySelector('#hm-chat-attach')
+    const attachInput = el.querySelector('#hm-chat-attach-input')
+    attachBtn?.addEventListener('click', () => attachInput?.click())
+    attachInput?.addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files || [])
+      for (const f of files) await addAttachmentFromFile(f)
+      e.target.value = ''  // reset 让用户能重选同一张图
+    })
+    // 移除附件
+    el.querySelectorAll('[data-attach-remove]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.attachRemove, 10)
+        if (Number.isFinite(idx) && idx >= 0 && idx < pendingAttachments.length) {
+          pendingAttachments.splice(idx, 1)
+          draw()
+        }
+      })
+    })
+    // 拖拽到输入区域
+    const dropZone = el.querySelector('.hm-chat-input-wrap')
+    if (dropZone && !dropZone.dataset.dragBound) {
+      dropZone.dataset.dragBound = '1'
+      dropZone.addEventListener('dragover', (e) => {
+        if (e.dataTransfer && Array.from(e.dataTransfer.items || []).some(it => it.kind === 'file')) {
+          e.preventDefault()
+          dropZone.classList.add('hm-chat-input-wrap--dragover')
+        }
+      })
+      dropZone.addEventListener('dragleave', () => dropZone.classList.remove('hm-chat-input-wrap--dragover'))
+      dropZone.addEventListener('drop', async (e) => {
+        e.preventDefault()
+        dropZone.classList.remove('hm-chat-input-wrap--dragover')
+        if (store.state.streaming) return
+        for (const f of e.dataTransfer.files || []) {
+          if (f.type.startsWith('image/')) await addAttachmentFromFile(f)
+        }
+      })
+      // 粘贴图片
+      dropZone.addEventListener('paste', async (e) => {
+        if (store.state.streaming) return
+        const items = e.clipboardData?.items || []
+        let handled = false
+        for (const it of items) {
+          if (it.kind === 'file' && it.type.startsWith('image/')) {
+            const f = it.getAsFile()
+            if (f) { await addAttachmentFromFile(f); handled = true }
+          }
+        }
+        if (handled) e.preventDefault()
+      })
+    }
+
     el.querySelectorAll('.hm-chat-slash-item').forEach(item => {
       item.addEventListener('click', () => {
         const cmd = item.dataset.cmd
@@ -1215,7 +1287,8 @@ export function render() {
 
   async function handleSend() {
     const text = inputValue.trim()
-    if (!text || store.state.streaming) return
+    // Batch 3 §K: 允许只发图片（text 为空但有 attachments）
+    if ((!text && !pendingAttachments.length) || store.state.streaming) return
 
     // Local slash commands short-circuit before going to the agent.
     if (text === '/clear') {
@@ -1273,9 +1346,55 @@ export function render() {
 
     // Normal user message → start agent run.
     forceScrollBottom = true
+    // Batch 3 §K: 在 resetInput 前先把 attachments 复制下来再清空
+    const sendAttachments = pendingAttachments.slice()
+    pendingAttachments = []
     resetInput()
     draw()
-    await store.sendMessage(text)
+    await store.sendMessage(text, { attachments: sendAttachments })
+  }
+
+  // Batch 3 §K: 把 File → base64（FileReader）
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader()
+      r.onload = () => {
+        const result = r.result || ''
+        // dataURL 形如 "data:image/png;base64,xxxx" — 我们要纯 base64
+        const commaIdx = String(result).indexOf(',')
+        resolve(commaIdx >= 0 ? String(result).slice(commaIdx + 1) : String(result))
+      }
+      r.onerror = () => reject(r.error || new Error('FileReader failed'))
+      r.readAsDataURL(file)
+    })
+  }
+
+  async function addAttachmentFromFile(file) {
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      toast(t('engine.chatAttachOnlyImage'), 'error')
+      return
+    }
+    if (file.size > MAX_ATTACHMENT_SIZE) {
+      toast(t('engine.chatAttachTooBig'), 'error')
+      return
+    }
+    if (pendingAttachments.length >= MAX_ATTACHMENTS) {
+      toast(t('engine.chatAttachTooMany'), 'error')
+      return
+    }
+    try {
+      const data_base64 = await fileToBase64(file)
+      pendingAttachments.push({
+        kind: 'image',
+        mime: file.type,
+        name: file.name || 'image',
+        data_base64,
+      })
+      draw()
+    } catch (err) {
+      toast(t('engine.chatAttachReadFailed'), 'error')
+    }
   }
 
   // ----------------------------------------------------------- search modal

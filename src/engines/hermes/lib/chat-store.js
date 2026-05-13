@@ -1063,18 +1063,23 @@ function createStore() {
 
   async function sendMessage(content, opts = {}) {
     const text = (content || '').trim()
-    if (!text || state.streaming) return
+    const atts = Array.isArray(opts.attachments) ? opts.attachments : []
+    if ((!text && !atts.length) || state.streaming) return
     let s = activeSession()
     if (!s) {
       s = createLocalSession()
     }
 
     // Append user message.
+    // Batch 3 §K: 多模态附件（仅图片）— 保存 dataUrl 用于气泡内渲染
     s.messages.push({
       id: uid(),
       role: 'user',
       content: text,
       timestamp: Date.now(),
+      attachments: atts.length
+        ? atts.map(a => ({ kind: a.kind, mime: a.mime, name: a.name || '', dataUrl: `data:${a.mime};base64,${a.data_base64}` }))
+        : undefined,
     })
     updateSessionTitleFromFirstUser(s)
     s.updatedAt = Date.now()
@@ -1096,7 +1101,7 @@ function createStore() {
 
       if (isTauriRuntime()) {
         await attachStreamListeners(s.id)
-        await api.hermesAgentRun(text, s.id, history.length ? history : null, opts.instructions || null)
+        await api.hermesAgentRun(text, s.id, history.length ? history : null, opts.instructions || null, atts.length ? atts : null)
       } else {
         streamAbortController = new AbortController()
         await api.hermesAgentRunStream(

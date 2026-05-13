@@ -453,6 +453,13 @@ export default {
   chatApprovalAlways: _('永久信任', 'Always', '永久信任'),
   chatApprovalDeny: _('拒绝', 'Deny', '拒絕'),
   chatApprovalFailed: _('批准失败', 'Approval failed', '批准失敗'),
+  // Batch 3 §K: 多模态图片
+  chatAttach: _('附加图片', 'Attach image', '附加圖片'),
+  chatAttachRemove: _('移除', 'Remove', '移除'),
+  chatAttachOnlyImage: _('只支持图片格式', 'Only image files are supported', '只支援圖片格式'),
+  chatAttachTooBig: _('图片过大（最大 10 MB）', 'Image too large (max 10 MB)', '圖片過大（最大 10 MB）'),
+  chatAttachTooMany: _('最多 5 张图片', 'Up to 5 images', '最多 5 張圖片'),
+  chatAttachReadFailed: _('读取图片失败', 'Failed to read image', '讀取圖片失敗'),
   // Web 模式（远程浏览器）下流式聊天暂不可用
   chatWebModeStreamingUnsupported: _(
     'Web 模式暂不支持 Hermes 实时流式聊天（依赖桌面端事件桥）。请打开桌面客户端使用此功能。',

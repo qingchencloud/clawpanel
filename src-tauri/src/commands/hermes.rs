@@ -3832,6 +3832,36 @@ pub async fn hermes_session_export(session_id: String) -> Result<Value, String> 
     resp.json::<Value>().await.map_err(|e| format!("解析 JSON 失败: {e}"))
 }
 
+/// Batch 3 §K: 多模态附件结构
+///
+/// 前端传过来的附件描述（图片用 base64 直传）。
+/// 支持 kind="image"（暂时只接图片，文件附件留作后续）。
+#[derive(serde::Deserialize, Clone)]
+pub struct HermesAttachment {
+    pub kind: String,
+    pub mime: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    /// base64 编码的内容（不含 data:image/...,base64, 前缀，仅纯 base64）
+    pub data_base64: String,
+}
+
+/// 构造 OpenAI 多模态 content：[{type:"text"}, {type:"image_url"}, ...]
+fn build_multimodal_input(text: &str, attachments: &[HermesAttachment]) -> Value {
+    let mut parts: Vec<Value> = Vec::new();
+    parts.push(serde_json::json!({ "type": "text", "text": text }));
+    for a in attachments {
+        if a.kind == "image" {
+            let url = format!("data:{};base64,{}", a.mime, a.data_base64);
+            parts.push(serde_json::json!({
+                "type": "image_url",
+                "image_url": { "url": url },
+            }));
+        }
+    }
+    Value::Array(parts)
+}
+
 #[tauri::command]
 pub async fn hermes_agent_run(
     app: tauri::AppHandle,
@@ -3839,6 +3869,7 @@ pub async fn hermes_agent_run(
     session_id: Option<String>,
     conversation_history: Option<Value>,
     instructions: Option<String>,
+    attachments: Option<Vec<HermesAttachment>>,
 ) -> Result<String, String> {
     let gw_url = hermes_gateway_url();
     let runs_url = format!("{gw_url}/v1/runs");
@@ -3862,7 +3893,12 @@ pub async fn hermes_agent_run(
         key
     };
 
-    let mut payload = serde_json::json!({ "input": input });
+    // Batch 3 §K: 有 attachments 时 input 改成多模态格式
+    let mut payload = if let Some(atts) = attachments.as_ref().filter(|v| !v.is_empty()) {
+        serde_json::json!({ "input": build_multimodal_input(&input, atts) })
+    } else {
+        serde_json::json!({ "input": input })
+    };
     if let Some(sid) = &session_id {
         payload["session_id"] = Value::String(sid.clone());
     }
