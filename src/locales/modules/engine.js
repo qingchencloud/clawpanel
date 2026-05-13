@@ -587,6 +587,19 @@ export default {
   hermesGatewayRemoveConfirm: _('确认从面板删除 Gateway "{name}"？（不会影响该 Profile 配置）', 'Remove Gateway "{name}" from panel? (Does not affect profile config)', '確認從面板刪除 Gateway "{name}"？（不會影響該 Profile 設定）'),
   hermesGatewayRemoved: _('Gateway "{name}" 已删除', 'Gateway "{name}" removed', 'Gateway "{name}" 已刪除'),
   hermesGatewayRemoveFailed: _('删除 Gateway 失败', 'Remove gateway failed', '刪除 Gateway 失敗'),
+  // Batch 3 §L: 文件管理器
+  hermesFilesTitle: _('文件管理器', 'Files', '檔案管理器'),
+  hermesFilesDesc: _('浏览和编辑 ~/.hermes 目录下的配置、记忆、日志等文件（限制 5MB 以内）', 'Browse and edit files under ~/.hermes (config, memory, logs — max 5MB)', '瀏覽和編輯 ~/.hermes 目錄下的設定、記憶、日誌等檔案'),
+  hermesFilesEmptyDir: _('（空目录）', '(empty directory)', '（空目錄）'),
+  hermesFilesSelectFile: _('从左侧选一个文件查看 / 编辑', 'Select a file from the left to view / edit', '從左側選一個檔案查看 / 編輯'),
+  hermesFilesSave: _('保存', 'Save', '儲存'),
+  hermesFilesSaveDirty: _('保存 *', 'Save *', '儲存 *'),
+  hermesFilesSaved: _('已保存', 'Saved', '已儲存'),
+  hermesFilesSaveFailed: _('保存失败', 'Save failed', '儲存失敗'),
+  hermesFilesBinary: _('二进制文件（不可编辑）', 'Binary file (not editable)', '二進位檔案（不可編輯）'),
+  hermesFilesUnreadable: _('文件无法读取', 'File unreadable', '檔案無法讀取'),
+  hermesFilesUnsavedConfirm: _('当前文件有未保存的修改，确认丢弃？', 'Current file has unsaved changes. Discard?', '目前檔案有未儲存的修改，確認丟棄？'),
+  hermesFilesDiscardChanges: _('丢弃', 'Discard', '丟棄'),
   // Web 模式（远程浏览器）下流式聊天暂不可用
   chatWebModeStreamingUnsupported: _(
     'Web 模式暂不支持 Hermes 实时流式聊天（依赖桌面端事件桥）。请打开桌面客户端使用此功能。',

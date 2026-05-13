@@ -7225,6 +7225,63 @@ const handlers = {
     return await resp.json().catch(() => ({ ok: true }))
   },
 
+  // Batch 3 §L: 文件管理器（Web 模式走 Node fs，限定 hermes_home 子树）
+  _hermesHome() {
+    const fs = require('node:fs')
+    const path = require('node:path')
+    const os = require('node:os')
+    if (process.env.HERMES_HOME) return process.env.HERMES_HOME
+    return path.join(os.homedir(), '.hermes')
+  },
+  _validateFsPath(rel) {
+    const fs = require('node:fs')
+    const path = require('node:path')
+    const root = handlers._hermesHome()
+    const target = rel ? path.resolve(root, rel) : root
+    const canonRoot = fs.realpathSync.native?.(root) || root
+    if (!target.startsWith(canonRoot)) throw new Error(`路径不能跳出 ${root}`)
+    return target
+  },
+  async hermes_fs_list({ path: p = '' } = {}) {
+    const fs = require('node:fs')
+    const target = handlers._validateFsPath(p)
+    if (!fs.existsSync(target)) throw new Error(`目录不存在: ${target}`)
+    const stat = fs.statSync(target)
+    if (!stat.isDirectory()) throw new Error(`不是目录: ${target}`)
+    let entries = fs.readdirSync(target, { withFileTypes: true }).filter(e => !e.name.startsWith('.') || e.name === '.env')
+    entries = entries.slice(0, 2000).map(e => {
+      const sub = require('node:path').join(target, e.name)
+      const m = fs.statSync(sub)
+      return {
+        name: e.name,
+        kind: e.isDirectory() ? 'dir' : e.isSymbolicLink() ? 'symlink' : 'file',
+        size: e.isFile() ? m.size : null,
+        modified: Math.floor(m.mtimeMs / 1000),
+      }
+    })
+    entries.sort((a, b) => a.kind !== b.kind ? (a.kind === 'dir' ? -1 : 1) : a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
+    return { path: target, entries }
+  },
+  async hermes_fs_read({ path: p } = {}) {
+    const fs = require('node:fs')
+    const target = handlers._validateFsPath(p)
+    if (!fs.existsSync(target) || !fs.statSync(target).isFile()) throw new Error(`不是文件: ${target}`)
+    const stat = fs.statSync(target)
+    if (stat.size > 5 * 1024 * 1024) throw new Error(`文件过大 (${stat.size} bytes)`)
+    const buf = fs.readFileSync(target)
+    let text = null, binary_b64 = null
+    try { text = buf.toString('utf8'); if (text.includes('\u0000')) { text = null; binary_b64 = buf.toString('base64') } }
+    catch { binary_b64 = buf.toString('base64') }
+    return { path: target, size: stat.size, text, binary_b64 }
+  },
+  async hermes_fs_write({ path: p, content } = {}) {
+    const fs = require('node:fs')
+    const target = handlers._validateFsPath(p)
+    if (Buffer.byteLength(content || '', 'utf8') > 5 * 1024 * 1024) throw new Error('内容过大')
+    fs.writeFileSync(target, content || '', 'utf8')
+    return { path: target, size: fs.statSync(target).size }
+  },
+
   // Batch 2 §G: 多 Gateway（Web 模式不支持本地进程管理）
   hermes_multi_gateway_list() { return [] },
   hermes_multi_gateway_add() { throw new Error('Web 模式不支持多 Gateway 管理（请使用桌面客户端）') },

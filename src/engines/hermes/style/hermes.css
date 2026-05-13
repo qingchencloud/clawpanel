@@ -5311,6 +5311,171 @@ body[data-active-engine="hermes"][data-theme="dark"] {
   color: var(--hm-accent);
 }
 
+/* ---- Batch 3 §L: 文件管理器 ---- */
+[data-engine="hermes"] .hm-files-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) 1fr;
+  gap: 16px;
+  height: calc(100vh - 200px);
+  min-height: 480px;
+}
+[data-engine="hermes"] .hm-files-tree {
+  background: var(--hm-surface-0);
+  border: 1px solid var(--hm-border);
+  border-radius: 10px;
+  padding: 12px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+[data-engine="hermes"] .hm-files-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-bottom: 10px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--hm-border);
+  font-size: 12px;
+  align-items: center;
+}
+[data-engine="hermes"] .hm-files-crumb {
+  color: var(--hm-accent);
+  text-decoration: none;
+  font-family: var(--font-mono);
+}
+[data-engine="hermes"] .hm-files-crumb:hover {
+  text-decoration: underline;
+}
+[data-engine="hermes"] .hm-files-crumb-sep {
+  color: var(--hm-text-tertiary);
+}
+[data-engine="hermes"] .hm-files-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+[data-engine="hermes"] .hm-files-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.1s;
+}
+[data-engine="hermes"] .hm-files-entry:hover {
+  background: var(--hm-surface-1);
+}
+[data-engine="hermes"] .hm-files-entry.is-selected {
+  background: var(--hm-surface-2);
+  color: var(--hm-accent);
+}
+[data-engine="hermes"] .hm-files-entry.is-dir .hm-files-name {
+  font-weight: 500;
+}
+[data-engine="hermes"] .hm-files-icon {
+  width: 16px;
+  flex-shrink: 0;
+  font-size: 14px;
+  line-height: 1;
+}
+[data-engine="hermes"] .hm-files-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[data-engine="hermes"] .hm-files-meta {
+  font-size: 10px;
+  color: var(--hm-text-tertiary);
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+}
+[data-engine="hermes"] .hm-files-pane {
+  background: var(--hm-surface-0);
+  border: 1px solid var(--hm-border);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+[data-engine="hermes"] .hm-files-pane-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--hm-text-tertiary);
+  font-size: 14px;
+}
+[data-engine="hermes"] .hm-files-pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--hm-border);
+  gap: 12px;
+}
+[data-engine="hermes"] .hm-files-pane-title {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+[data-engine="hermes"] .hm-files-pane-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+[data-engine="hermes"] .hm-files-pane-size {
+  font-size: 11px;
+  color: var(--hm-text-tertiary);
+  font-family: var(--font-mono);
+}
+[data-engine="hermes"] .hm-files-editor {
+  flex: 1;
+  border: 0;
+  outline: none;
+  padding: 14px 16px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  resize: none;
+  background: transparent;
+  color: var(--hm-text-primary);
+  width: 100%;
+}
+[data-engine="hermes"] .hm-files-binary-preview {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  overflow: auto;
+}
+[data-engine="hermes"] .hm-files-binary-preview img {
+  max-width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+}
+[data-engine="hermes"] .hm-files-binary-meta {
+  padding: 32px;
+  text-align: center;
+  color: var(--hm-text-tertiary);
+}
+@media (max-width: 768px) {
+  [data-engine="hermes"] .hm-files-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+  [data-engine="hermes"] .hm-files-tree {
+    max-height: 280px;
+  }
+}
+
 [data-engine="hermes"] .hm-chat-live-tools {
   display: flex;
   flex-direction: column;

@@ -494,6 +494,10 @@ export const api = {
   hermesMultiGatewayRemove: (name) => invoke('hermes_multi_gateway_remove', { name }),
   hermesMultiGatewayStart: (name) => invoke('hermes_multi_gateway_start', { name }),
   hermesMultiGatewayStop: (name) => invoke('hermes_multi_gateway_stop', { name }),
+  // Batch 3 §L: 文件管理器（限定在 hermes_home 子树内）
+  hermesFsList: (path = '') => invoke('hermes_fs_list', { path }),
+  hermesFsRead: (path) => invoke('hermes_fs_read', { path }),
+  hermesFsWrite: (path, content) => invoke('hermes_fs_write', { path, content }),
   hermesReadConfig: () => invoke('hermes_read_config'),
   hermesReadConfigFull: () => invoke('hermes_read_config_full'),
   hermesLazyDepsFeatures: () => cachedInvoke('hermes_lazy_deps_features', {}, 600000),
