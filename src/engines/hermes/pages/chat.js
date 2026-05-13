@@ -780,7 +780,7 @@ export function render() {
     if (hermesInstalled === false) {
       return `
         <div class="hm-chat-health-banner is-error">
-          <span class="hm-chat-health-icon" aria-hidden="true">⚠</span>
+          <span class="hm-chat-health-icon" aria-hidden="true">${svgIcon('alert-triangle', { size: 14 })}</span>
           <span class="hm-chat-health-msg">${escHtml(t('engine.chatHealthInstallMissing'))}</span>
           <a class="hm-chat-health-action" href="#/h/dashboard">${escHtml(t('engine.chatHealthGoDashboard'))}</a>
         </div>
@@ -789,7 +789,7 @@ export function render() {
     if (!gwOnline) {
       return `
         <div class="hm-chat-health-banner is-warn">
-          <span class="hm-chat-health-icon" aria-hidden="true">⚠</span>
+          <span class="hm-chat-health-icon" aria-hidden="true">${svgIcon('alert-triangle', { size: 14 })}</span>
           <span class="hm-chat-health-msg">${escHtml(t('engine.chatHealthGatewayDown'))}</span>
           <a class="hm-chat-health-action" href="#/h/dashboard">${escHtml(t('engine.chatHealthGoDashboard'))}</a>
         </div>

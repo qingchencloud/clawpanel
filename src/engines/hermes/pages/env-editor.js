@@ -9,6 +9,7 @@
  */
 import { api } from '../../../lib/tauri-api.js'
 import { toast } from '../../../components/toast.js'
+import { showConfirm } from '../../../components/modal.js'
 import { humanizeError } from '../../../lib/humanize-error.js'
 
 // NOTE: i18n keys for this page are not yet wired up in src/locales; using
@@ -254,7 +255,12 @@ export function render() {
         }
       })
       rowEl.querySelector('.env-delete-btn')?.addEventListener('click', async () => {
-        if (!confirm(`确定删除 ${row.key} 吗？`)) return
+        const ok = await showConfirm({
+          message: `确定删除 ${row.key} 吗？`,
+          confirmText: '删除',
+          variant: 'danger',
+        })
+        if (!ok) return
         try {
           await api.hermesEnvDelete(row.key)
           rows.splice(idx, 1)

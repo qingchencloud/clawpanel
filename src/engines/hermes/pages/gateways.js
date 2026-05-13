@@ -18,6 +18,7 @@ import { api } from '../../../lib/tauri-api.js'
 import { toast } from '../../../components/toast.js'
 import { showModal, showConfirm } from '../../../components/modal.js'
 import { humanizeError } from '../../../lib/humanize-error.js'
+import { svgIcon } from '../lib/svg-icons.js'
 
 function escHtml(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -52,7 +53,7 @@ export function render() {
         ${error ? `<div style="color:var(--error);padding:20px">${escHtml(error)}</div>` : ''}
         ${(!loading && !error && !gateways.length) ? `
           <div class="empty-state empty-compact">
-            <div class="empty-icon">⚙️</div>
+            <div class="empty-icon">${svgIcon('settings', { size: 32 })}</div>
             <div class="empty-title">${escHtml(t('engine.hermesGatewaysEmpty'))}</div>
             <div class="empty-desc" style="margin-top:8px">${escHtml(t('engine.hermesGatewaysEmptyHint'))}</div>
           </div>` : ''}
@@ -123,7 +124,8 @@ export function render() {
       profiles = arr.map(p => (typeof p === 'string' ? p : (p.name || ''))).filter(Boolean)
       if (!profiles.includes('default')) profiles.unshift('default')
     } catch (e) {
-      error = String(e?.message || e)
+      // 保留 Error 对象、给 humanizeError 输出友好提示
+      error = humanizeError(e, t('engine.hermesGatewaysLoadFailed') || 'Load failed')
     } finally {
       loading = false
       draw()

@@ -5,6 +5,7 @@
  */
 import { t } from '../../../lib/i18n.js'
 import { api, invalidate, isTauriRuntime } from '../../../lib/tauri-api.js'
+import { toast } from '../../../components/toast.js'
 import { getActiveEngine } from '../../../lib/engine-manager.js'
 import {
   loadHermesProviders,
@@ -611,7 +612,7 @@ export function render() {
     const provider = matched?.id || 'custom'
 
     if (!apiKey) {
-      alert('请输入 API Key')
+      toast(t('engine.installCustomEmpty') || '请输入 API Key', 'warning')
       return
     }
     try {
@@ -619,7 +620,8 @@ export function render() {
       phase = 'gateway'
       await refreshHermes()
     } catch (e) {
-      alert(`配置保存失败: ${e}`)
+      const msg = String(e?.message || e).replace(/^Error:\s*/, '')
+      toast(`${t('engine.configSaveFailed') || '配置保存失败'}: ${msg}`, 'error')
     }
   }
 
@@ -640,7 +642,7 @@ export function render() {
         errEl.textContent = msg || t('engine.gatewayStartFailed')
         errEl.style.display = 'block'
       } else {
-        alert(msg || t('engine.gatewayStartFailed'))
+        toast(msg || t('engine.gatewayStartFailed'), 'error')
       }
     } finally {
       gwStarting = false

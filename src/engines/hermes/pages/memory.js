@@ -12,7 +12,7 @@
 import { t } from '../../../lib/i18n.js'
 import { api } from '../../../lib/tauri-api.js'
 import { toast } from '../../../components/toast.js'
-import { showContentModal } from '../../../components/modal.js'
+import { showContentModal, showConfirm } from '../../../components/modal.js'
 import { humanizeError } from '../../../lib/humanize-error.js'
 
 function escHtml(s) {
@@ -135,13 +135,20 @@ export function render() {
     const ta = overlay.querySelector('#hm-mem-modal-textarea')
     const cancelBtn = overlay.querySelector('[data-action="cancel"]')
     const saveBtn = overlay.querySelector('#hm-mem-modal-save')
-    const closeWithConfirm = () => {
+    const closeWithConfirm = async () => {
       if (!editing) {
         overlay.remove()
         return
       }
       const dirty = editing.buffer !== (data[editing.key] || '')
-      if (dirty && !confirm(t('engine.memoryUnsaved'))) return
+      if (dirty) {
+        const ok = await showConfirm({
+          message: t('engine.memoryUnsaved'),
+          confirmText: t('common.confirm') || 'OK',
+          variant: 'danger',
+        })
+        if (!ok) return
+      }
       editing = null
       overlay.remove()
     }
@@ -183,10 +190,17 @@ export function render() {
     })
   }
 
-  function cancelEdit() {
+  async function cancelEdit() {
     if (!editing) return
     const dirty = editing.buffer !== (data[editing.key] || '')
-    if (dirty && !confirm(t('engine.memoryUnsaved'))) return
+    if (dirty) {
+      const ok = await showConfirm({
+        message: t('engine.memoryUnsaved'),
+        confirmText: t('common.confirm') || 'OK',
+        variant: 'danger',
+      })
+      if (!ok) return
+    }
     editing = null
     document.querySelector('.hm-mem-modal-overlay')?.remove()
     draw()
