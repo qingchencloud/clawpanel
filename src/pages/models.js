@@ -702,7 +702,7 @@ async function saveConfigOnly(state) {
     const primary = getCurrentPrimary(state.config)
     if (primary) applyDefaultModel(state)
     normalizeProviderUrls(state.config)
-    await api.writeOpenclawConfig(state.config)
+    await api.writeOpenclawConfig(state.config, { noReload: true })
   } catch (e) {
     toast(t('models.saveFailed') + ': ' + e, 'error')
   }
@@ -713,7 +713,7 @@ async function doAutoSave(state) {
     const primary = getCurrentPrimary(state.config)
     if (primary) applyDefaultModel(state)
     normalizeProviderUrls(state.config)
-    await api.writeOpenclawConfig(state.config)
+    await api.writeOpenclawConfig(state.config, { noReload: true })
 
     // ⚠ 只有 Gateway 已经在运行时才触发 restart 让配置生效。
     // 如果 Gateway 没启动（首次安装 / 用户手动停了），盲目调 restart_gateway 会：
@@ -1615,7 +1615,7 @@ async function handleBatchTest(section, state, providerKey) {
   }
 
   const aborted = ctrl.abort
-  autoSave(state)
+  saveConfigOnly(state)
   if (aborted) {
     toast(t('models.batchTestAborted', { ok, fail, skip: ids.length - ok - fail }), 'warning')
   } else {
