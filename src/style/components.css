@@ -232,6 +232,13 @@
   font-weight: 400;
 }
 
+.toast-structured .toast-action-btn {
+  align-self: flex-start;
+  margin-top: 8px;
+  font-size: var(--font-size-xs);
+  padding: 4px 10px;
+}
+
 .toast-structured .toast-raw {
   margin-top: 6px;
 }

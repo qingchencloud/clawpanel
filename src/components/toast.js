@@ -2,13 +2,15 @@
  * Toast 通知组件
  *
  * 入参 message 支持两种：
- *   1) string                                  —— 原来的纯文本（向后兼容）
- *   2) { message, hint?, raw? }                —— humanize-error.js 的友好错误对象：
+ *   1) string                                          —— 原来的纯文本（向后兼容）
+ *   2) { message, hint?, raw?, action? }               —— humanize-error.js 的友好错误对象：
  *        - message: 主行（用户视角）
  *        - hint:    副行小灰字（行动建议）
  *        - raw:     折叠在「技术详情」里的原始错误字符串
+ *        - action:  { label, route?, handler? } 智能行动按钮，点击跳转或调 handler
  */
 import { t } from '../lib/i18n.js'
+import { navigate } from '../router.js'
 
 let _container = null
 
@@ -49,6 +51,22 @@ export function toast(message, type = 'info', options = {}) {
       hintRow.className = 'toast-hint'
       hintRow.textContent = message.hint
       body.appendChild(hintRow)
+    }
+
+    if (message.action && message.action.label) {
+      const actionBtn = document.createElement('button')
+      actionBtn.type = 'button'
+      actionBtn.className = 'btn btn-xs btn-primary toast-action-btn'
+      actionBtn.textContent = `${message.action.label} →`
+      actionBtn.addEventListener('click', () => {
+        try {
+          if (typeof message.action.handler === 'function') message.action.handler()
+          else if (message.action.route) navigate(message.action.route)
+        } finally {
+          el.remove()
+        }
+      })
+      body.appendChild(actionBtn)
     }
 
     if (message.raw) {

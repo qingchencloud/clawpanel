@@ -88,10 +88,19 @@ function toRawString(e) {
   return String(e)
 }
 
+// 不同错误类型默认对应的行动按钮（label 走 i18n，route 直接跳转）
+const DEFAULT_ACTIONS = {
+  gatewayDown: { labelKey: 'common.errorAction.startGateway', route: '/services' },
+  cmdMissing: { labelKey: 'common.errorAction.openSettings', route: '/settings' },
+  permission: { labelKey: 'common.errorAction.openSettings', route: '/settings' },
+  auth: { labelKey: 'common.errorAction.checkApiKey', route: '/models' },
+  // network / timeout / busy / rateLimit / notFound / generic：不给默认 action（重试由用户自己控制）
+}
+
 /**
  * @param {unknown} e          - 原始错误（Error / string / Tauri Result）
  * @param {string}  [context]  - 操作上下文文案（如 t('channels.saveFailed')）
- * @returns {{ message: string, hint: string, raw: string }}
+ * @returns {{ message: string, hint: string, raw: string, action?: { label, route?, handler? } }}
  */
 export function humanizeError(e, context) {
   const raw = toRawString(e).trim()
@@ -111,8 +120,14 @@ export function humanizeError(e, context) {
 
   const message = ctx || t(`common.error.${kind}`)
   const hint = t(`common.errorHint.${kind}`)
+  const result = { message, hint, raw: rawTruncated, kind }
 
-  return { message, hint, raw: rawTruncated }
+  const defaultAction = DEFAULT_ACTIONS[kind]
+  if (defaultAction) {
+    result.action = { label: t(defaultAction.labelKey), route: defaultAction.route }
+  }
+
+  return result
 }
 
 /**

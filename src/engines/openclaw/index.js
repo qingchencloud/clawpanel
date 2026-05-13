@@ -88,6 +88,7 @@ export default {
       items: [
         { route: '/settings', label: t('sidebar.settings'), icon: 'settings' },
         { route: '/chat-debug', label: t('sidebar.checkRepair'), icon: 'diagnose' },
+        { route: '/glossary', label: t('sidebar.glossary'), icon: 'about' },
         { route: '/about', label: t('sidebar.about'), icon: 'about' },
       ]
     }]

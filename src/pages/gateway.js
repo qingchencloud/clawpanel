@@ -154,7 +154,7 @@ function renderConfig(page, state) {
         </div>
       </div>
       <div class="form-group" id="gw-auth-token-group" style="${gw.auth?.mode === 'password' ? 'display:none' : ''}">
-        <label class="form-label">${t('gateway.tokenLabel')}</label>
+        <label class="form-label">${t('gateway.tokenLabel')}${termHelpHtml('apikey')}</label>
         <div style="display:flex;gap:8px">
           <input class="form-input" id="gw-token" type="password" value="${_tokenDisplayStr(gw.auth?.token || gw.authToken)}" placeholder="${t('gateway.tokenPlaceholder')}" style="flex:1" ${_isSecretRef(gw.auth?.token) ? 'readonly' : ''}>
           <button class="btn btn-sm btn-secondary" id="btn-toggle-token">${t('gateway.show')}</button>
@@ -242,6 +242,7 @@ function renderConfig(page, state) {
   `
 
   bindConfigEvents(el)
+  attachTermTooltips(el)
 }
 
 function bindConfigEvents(el) {

@@ -59,6 +59,21 @@ const TERMS = {
     en: { name: 'Scope (Permissions)', desc: 'A whitelist of what the bot is allowed to do — read messages, send messages, manage members, etc. Too few = missing features; too many = security risk.' },
     zhTW: { name: '權限範圍（Scope）', desc: '機器人能做什麼的「白名單」—— 例如讀訊息、發訊息、改群成員等。Scope 給少了功能不足，給多了有安全風險。' },
   },
+  workspace: {
+    zhCN: { name: 'Workspace（工作目录）', desc: 'Agent 用来读写文件的「文件夹」。每个 Agent 可以指定独立的工作目录，互不干扰，避免误删别的 Agent 的资料。' },
+    en: { name: 'Workspace', desc: 'The "folder" the Agent reads/writes files in. Each Agent can have its own workspace so they don\'t accidentally touch each other\'s files.' },
+    zhTW: { name: 'Workspace（工作目錄）', desc: 'Agent 用來讀寫檔案的「資料夾」。每個 Agent 可以指定獨立的工作目錄，互不干擾，避免誤刪別的 Agent 的資料。' },
+  },
+  provider: {
+    zhCN: { name: 'Provider（服务商）', desc: '给你提供 AI 模型的厂商 —— 比如 OpenAI、Anthropic、DeepSeek、Qwen 等。每个 Provider 通常对应一个 API key。' },
+    en: { name: 'Provider', desc: 'A company that supplies AI models — OpenAI, Anthropic, DeepSeek, Qwen, etc. Each provider usually maps to one API key.' },
+    zhTW: { name: 'Provider（服務商）', desc: '給你提供 AI 模型的廠商 —— 例如 OpenAI、Anthropic、DeepSeek、Qwen 等。每個 Provider 通常對應一個 API key。' },
+  },
+  baseurl: {
+    zhCN: { name: 'Base URL（接口地址）', desc: '服务商 API 的「门牌号」—— 比如 `https://api.openai.com/v1`。换 Provider 时通常要改这个地址。' },
+    en: { name: 'Base URL', desc: 'The "address" of the provider\'s API — e.g. `https://api.openai.com/v1`. You change this when switching providers.' },
+    zhTW: { name: 'Base URL（介面位址）', desc: '服務商 API 的「門牌號」—— 例如 `https://api.openai.com/v1`。換 Provider 時通常要改這個位址。' },
+  },
 }
 
 function pickLang(item) {

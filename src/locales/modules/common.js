@@ -98,6 +98,12 @@ export default {
     generic: _('请稍后重试；如问题持续，请到日志页查看详情', 'Try again later; if the issue persists, check the Logs page for details', '請稍後重試；如問題持續，請到日誌頁查看詳情', '後で再試行してください。問題が続く場合はログページで詳細を確認してください', '잠시 후 다시 시도하세요; 문제가 계속되면 로그 페이지에서 자세히 확인하세요', 'Vui lòng thử lại sau; nếu lỗi vẫn xảy ra, hãy kiểm tra trang Nhật ký', 'Reintenta más tarde; si persiste, revisa la página de Registros', 'Tente novamente mais tarde; se persistir, verifique a página de Logs', 'Повторите позже; если ошибка не уходит — посмотрите страницу Логи', 'Réessayez plus tard ; si le problème persiste, consultez la page Journaux', 'Versuchen Sie es später erneut; bei anhaltendem Problem die Protokoll-Seite prüfen'),
   },
   errorRawLabel: _('技术详情', 'Technical details', '技術詳情', '技術的詳細', '기술 정보', 'Chi tiết kỹ thuật', 'Detalles técnicos', 'Detalhes técnicos', 'Технические подробности', 'Détails techniques', 'Technische Details'),
+  // 智能行动按钮（toast 副标题旁的快捷跳转）
+  errorAction: {
+    startGateway: _('去启动 Gateway', 'Start Gateway', '去啟動 Gateway', 'Gateway を起動', 'Gateway 시작', 'Khởi động Gateway', 'Iniciar Gateway', 'Iniciar Gateway', 'Запустить Gateway', 'Démarrer Gateway', 'Gateway starten'),
+    openSettings: _('打开设置', 'Open Settings', '打開設定', '設定を開く', '설정 열기', 'Mở cài đặt', 'Abrir configuración', 'Abrir configurações', 'Открыть настройки', 'Ouvrir les paramètres', 'Einstellungen öffnen'),
+    checkApiKey: _('检查 API Key', 'Check API Key', '檢查 API Key', 'API Key を確認', 'API Key 확인', 'Kiểm tra API Key', 'Comprobar API Key', 'Verificar API Key', 'Проверить API Key', 'Vérifier la clé API', 'API-Key prüfen'),
+  },
   // 空状态通用副本
   emptyGetStartedHint: _('点下面的按钮开始第一步', 'Click the button below to get started', '點下面的按鈕開始第一步', '下のボタンから最初の一歩を', '아래 버튼을 눌러 시작하세요', 'Nhấn nút bên dưới để bắt đầu', 'Pulsa el botón de abajo para empezar', 'Clique no botão abaixo para começar', 'Нажмите кнопку ниже, чтобы начать', 'Cliquez sur le bouton ci-dessous pour commencer', 'Klicken Sie auf die Schaltfläche unten, um zu starten'),
 }

@@ -93,6 +93,7 @@ export default {
       items: [
         { route: '/assistant', label: t('sidebar.assistant'), icon: 'assistant' },
         { route: '/settings', label: t('sidebar.settings'), icon: 'settings' },
+        { route: '/glossary', label: t('sidebar.glossary'), icon: 'about' },
         { route: '/about', label: t('sidebar.about'), icon: 'about' },
       ]
     }]

@@ -10,6 +10,7 @@ import { CHANNEL_LABELS } from '../lib/channel-labels.js'
 import { t } from '../lib/i18n.js'
 import { listAgentsCompat } from '../lib/api-compat.js'
 import { hasFeature } from '../lib/kernel.js'
+import { termHelpHtml, attachTermTooltips } from '../lib/term-tooltip.js'
 
 export async function render() {
   const page = document.createElement('div')
@@ -216,6 +217,7 @@ async function showAddAgentDialog(page, state) {
     return
   }
 
+  setTimeout(() => attachTermTooltips(document.body), 0)
   showModal({
     title: t('agents.addTitle'),
     fields: [
@@ -223,7 +225,7 @@ async function showAddAgentDialog(page, state) {
       { name: 'name', label: t('agents.agentName'), value: '', placeholder: t('agents.agentNamePlaceholder') },
       { name: 'emoji', label: t('agents.agentEmoji'), value: '', placeholder: t('agents.agentEmojiPlaceholder') },
       { name: 'model', label: t('agents.agentModel'), type: 'select', value: models[0]?.value || '', options: models },
-      { name: 'workspace', label: t('agents.agentWorkspace'), value: '', placeholder: t('agents.agentWorkspacePlaceholder') },
+      { name: 'workspace', label: t('agents.agentWorkspace') + termHelpHtml('workspace'), value: '', placeholder: t('agents.agentWorkspacePlaceholder') },
     ],
     onConfirm: async (result) => {
       const id = (result.id || '').trim()

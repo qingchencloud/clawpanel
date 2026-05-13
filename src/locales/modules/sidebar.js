@@ -35,5 +35,6 @@ export default {
   checkRepair: _('检测与修复', 'Check & Repair', '檢測與修復', '検出と修復', '검사 및 수리', 'Kiểm tra & Sửa chữa', 'Verificar y reparar', 'Verificar e reparar', 'Проверка и ремонт', 'Vérifier et réparer', 'Prüfen & Reparieren'),
   routeMap: _('路由地图', 'Route Map', '路由地圖', 'ルートマップ', '라우트 맵', 'Bản đồ tuyến', 'Mapa de rutas', 'Mapa de rotas', 'Карта маршрутов', 'Carte des routes', 'Routenkarte'),
   about: _('关于', 'About', '關於', 'について', '정보', 'Giới thiệu', 'Acerca de', 'Sobre', 'О программе', 'À propos', 'Über'),
+  glossary: _('术语', 'Glossary', '術語', '用語', '용어', 'Thuật ngữ', 'Glosario', 'Glossário', 'Глоссарий', 'Glossaire', 'Glossar'),
   setup: _('初始设置', 'Setup', '初始設定', '初期設定', '초기 설정', 'Thiết lập', 'Configuración inicial', 'Configuração inicial', 'Начальная настройка', 'Configuration initiale', 'Ersteinrichtung'),
 }
