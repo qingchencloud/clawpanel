@@ -633,6 +633,14 @@ async fn guardian_tick(app: &tauri::AppHandle) {
             return;
         }
 
+        if std::env::consts::OS == "windows" {
+            state.manual_hold = true;
+            state.auto_restart_count = 0;
+            state.last_restart_time = None;
+            guardian_log("检测到 Windows Gateway 终端窗口已关闭，按用户停机处理，不自动重启");
+            return;
+        }
+
         if let Some(last) = state.last_restart_time {
             if now.duration_since(last) < GUARDIAN_RESTART_COOLDOWN {
                 return;
@@ -1146,7 +1154,6 @@ mod platform {
     use std::os::windows::process::CommandExt;
     use std::path::{Path, PathBuf};
     use std::process::Command as StdCommand;
-    use std::process::Stdio;
     use std::sync::Mutex;
     use std::time::{Duration, Instant};
 
@@ -1154,6 +1161,7 @@ mod platform {
     static CLI_CACHE: Mutex<Option<(bool, std::time::Instant)>> = Mutex::new(None);
     const CLI_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(60);
     const CREATE_NO_WINDOW: u32 = 0x08000000;
+    const CREATE_NEW_CONSOLE: u32 = 0x00000010;
 
     /// 记录最后一次成功启动的 Gateway PID，避免误判旧进程为新进程
     static LAST_KNOWN_GATEWAY_PID: Mutex<Option<u32>> = Mutex::new(None);
@@ -1568,6 +1576,7 @@ mod platform {
             .output();
     }
 
+    #[allow(dead_code)]
     fn create_gateway_log_files() -> Result<(std::fs::File, std::fs::File), String> {
         let log_dir = crate::commands::openclaw_dir().join("logs");
         fs::create_dir_all(&log_dir).map_err(|e| format!("创建日志目录失败: {e}"))?;
@@ -1595,7 +1604,15 @@ mod platform {
 
     const GATEWAY_WINDOW_TITLE: &str = "OpenClaw Gateway";
 
-    /// 在后台隐藏启动 Gateway，避免守护重试时不断弹出终端窗口
+    fn quote_cmd_arg(value: &str) -> String {
+        if value.contains('\\') || value.contains('/') || value.contains(' ') {
+            format!("\"{}\"", value.replace('"', ""))
+        } else {
+            value.to_string()
+        }
+    }
+
+    /// 在 Windows 上打开一个可见终端启动 Gateway
     pub async fn start_service_impl(_label: &str) -> Result<(), String> {
         if !is_cli_installed() {
             return Err(
@@ -1604,35 +1621,37 @@ mod platform {
             );
         }
 
-        // Windows 重启后清理残留的僵尸 Gateway 进程（防止多进程堆积）
-        cleanup_zombie_gateway_processes();
-
-        // 端口已通 → 检查是不是我们的进程
         let (running, pid) = check_service_status(0, "");
         if running {
-            // 有 PID 说明就是我们的进程在跑，可以直接返回
             if pid.is_some() {
                 return Ok(());
             }
-            // 无 PID 但端口通 → 可能是其他进程占用，拒绝启动
             return Err(format!(
                 "端口 {} 被未知进程占用，请先关闭占用该端口的程序",
                 crate::commands::gateway_listen_port()
             ));
         }
 
-        let (stdout_log, stderr_log) = create_gateway_log_files()?;
+        cleanup_zombie_gateway_processes();
 
-        let mut cmd = crate::utils::openclaw_command();
-        cmd.arg("gateway")
-            .creation_flags(CREATE_NO_WINDOW)
-            .stdin(Stdio::null())
-            .stdout(stdout_log)
-            .stderr(stderr_log);
-
-        // 记录 spawn 前的已知 PID
         let before_pid = *LAST_KNOWN_GATEWAY_PID.lock().unwrap();
+        let cli = crate::utils::resolve_openclaw_cli_path().unwrap_or_else(|| "openclaw".into());
+        let openclaw_dir = crate::commands::openclaw_dir();
+        let config_path = openclaw_dir.join("openclaw.json");
+        let script = format!(
+            "title {GATEWAY_WINDOW_TITLE} && echo OpenClaw Gateway is running. Keep this window open. && echo Close this window to stop Gateway. && echo. && {} gateway",
+            quote_cmd_arg(&cli)
+        );
 
+        let mut cmd = StdCommand::new("cmd");
+        cmd.args(["/D", "/K", &script])
+            .creation_flags(CREATE_NEW_CONSOLE)
+            .env("PATH", crate::commands::enhanced_path())
+            .env("OPENCLAW_HOME", &openclaw_dir)
+            .env("OPENCLAW_STATE_DIR", &openclaw_dir)
+            .env("OPENCLAW_CONFIG_PATH", &config_path)
+            .current_dir(&openclaw_dir);
+        crate::commands::apply_proxy_env(&mut cmd);
         let child = cmd.spawn().map_err(|e| format!("启动 Gateway 失败: {e}"))?;
         let spawned_pid = child.id();
 
