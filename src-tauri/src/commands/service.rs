@@ -1604,12 +1604,29 @@ mod platform {
 
     const GATEWAY_WINDOW_TITLE: &str = "OpenClaw Gateway";
 
-    fn quote_cmd_arg(value: &str) -> String {
-        if value.contains('\\') || value.contains('/') || value.contains(' ') {
-            format!("\"{}\"", value.replace('"', ""))
-        } else {
-            value.to_string()
+    fn quote_batch_path(value: &str) -> String {
+        format!("\"{}\"", value.replace('"', ""))
+    }
+
+    fn gateway_terminal_command(cli: &str) -> String {
+        if cli.eq_ignore_ascii_case("openclaw") {
+            return "openclaw gateway".into();
         }
+        if cli.to_ascii_lowercase().ends_with(".js") {
+            return format!("node {} gateway", quote_batch_path(cli));
+        }
+        format!("{} gateway", quote_batch_path(cli))
+    }
+
+    fn write_gateway_terminal_runner(openclaw_dir: &Path, cli: &str) -> Result<PathBuf, String> {
+        fs::create_dir_all(openclaw_dir).map_err(|e| format!("创建 OpenClaw 目录失败: {e}"))?;
+        let runner_path = openclaw_dir.join("clawpanel-gateway.cmd");
+        let content = format!(
+            "@echo off\r\ntitle {GATEWAY_WINDOW_TITLE}\r\necho OpenClaw Gateway is running. Keep this window open.\r\necho Close this window to stop Gateway.\r\necho.\r\n{}\r\necho.\r\necho Gateway exited. You can close this window.\r\n",
+            gateway_terminal_command(cli)
+        );
+        fs::write(&runner_path, content).map_err(|e| format!("写入 Gateway 启动脚本失败: {e}"))?;
+        Ok(runner_path)
     }
 
     /// 在 Windows 上打开一个可见终端启动 Gateway
@@ -1638,13 +1655,11 @@ mod platform {
         let cli = crate::utils::resolve_openclaw_cli_path().unwrap_or_else(|| "openclaw".into());
         let openclaw_dir = crate::commands::openclaw_dir();
         let config_path = openclaw_dir.join("openclaw.json");
-        let script = format!(
-            "title {GATEWAY_WINDOW_TITLE} && echo OpenClaw Gateway is running. Keep this window open. && echo Close this window to stop Gateway. && echo. && {} gateway",
-            quote_cmd_arg(&cli)
-        );
+        let runner_path = write_gateway_terminal_runner(&openclaw_dir, &cli)?;
 
         let mut cmd = StdCommand::new("cmd");
-        cmd.args(["/D", "/K", &script])
+        cmd.args(["/D", "/K"])
+            .arg(&runner_path)
             .creation_flags(CREATE_NEW_CONSOLE)
             .env("PATH", crate::commands::enhanced_path())
             .env("OPENCLAW_HOME", &openclaw_dir)
