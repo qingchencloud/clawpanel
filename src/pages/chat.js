@@ -1862,7 +1862,10 @@ function handleChatEvent(payload) {
     if (c?.audios?.length) _currentAiAudios = c.audios
     if (c?.files?.length) _currentAiFiles = c.files
     if (c?.tools?.length) _currentAiTools = c.tools
-    if (c?.text && c.text.length > _currentAiText.length) {
+    // 增量 delta 协议下，当输出文本不是前缀扩展时（例如内容回滚或重排），
+    // 对端会带 replace=true，此时新文本可能比当前缓存短，必须无条件覆盖，否则会丢失最新内容。
+    const isReplace = payload.replace === true
+    if (c?.text && (isReplace || c.text.length > _currentAiText.length)) {
       showTyping(false)
       if (!_currentAiBubble) {
         _currentAiBubble = createStreamBubble()

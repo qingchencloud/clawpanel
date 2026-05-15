@@ -6288,7 +6288,8 @@ const handlers = {
       id: `connect-${idHex}-${rndHex}`,
       method: 'connect',
       params: {
-        minProtocol: 3, maxProtocol: 3,
+        // 协议握手范围声明：下限 3 用于继续兼容历史内核，上限 4 启用新版增量 delta 协议。
+        minProtocol: 3, maxProtocol: 4,
         client: { id: 'openclaw-control-ui', version: '1.0.0', platform, deviceFamily: 'desktop', mode: 'ui' },
         role: 'operator', scopes: SCOPES, caps: [],
         auth: { token: gatewayToken || '' },

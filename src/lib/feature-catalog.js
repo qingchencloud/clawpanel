@@ -189,8 +189,10 @@ export const KERNEL_FLOOR = {
  */
 export const KERNEL_TARGET = {
   openclaw: {
-    official: '2026.5.6',
-    chinese: '2026.5.6-zh.2',
+    // 内核协议在 5.12 升级到 v4（MIN_CLIENT_PROTOCOL_VERSION=4，新增增量 chat delta payloads），
+    // 面板通过 connect frame `[minProtocol=3, maxProtocol=4]` 同时兼容新旧内核
+    official: '2026.5.12',
+    chinese: '2026.5.12-zh.1',
   },
   hermes: {
     default: '0.13.x',

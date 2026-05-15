@@ -138,8 +138,9 @@ pub fn create_connect_frame(
         "id": format!("connect-{:08x}-{:04x}", signed_at as u32, rand::random::<u16>()),
         "method": "connect",
         "params": {
+            // 协议握手范围声明：下限 3 用于继续兼容历史内核，上限 4 启用新版增量 delta 协议。
             "minProtocol": 3,
-            "maxProtocol": 3,
+            "maxProtocol": 4,
             "client": {
                 "id": "openclaw-control-ui",
                 "version": env!("CARGO_PKG_VERSION"),
