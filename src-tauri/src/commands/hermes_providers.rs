@@ -695,7 +695,7 @@ const P_CUSTOM: HermesProvider = HermesProvider {
     auth_type: AUTH_API_KEY,
     base_url: "",
     base_url_env_var: "OPENAI_BASE_URL",
-    api_key_env_vars: &["CUSTOM_API_KEY", "OPENAI_API_KEY"],
+    api_key_env_vars: &["OPENAI_API_KEY", "CUSTOM_API_KEY"],
     transport: TRANSPORT_OPENAI_CHAT,
     models_probe: PROBE_OPENAI,
     models: &[],

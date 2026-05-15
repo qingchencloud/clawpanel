@@ -58,7 +58,7 @@ const HERMES_PROVIDER_REGISTRY = [
   hermesProvider('google-gemini-cli', 'Google Gemini (OAuth)', 'oauth_external', 'https://generativelanguage.googleapis.com/v1beta/openai', '', [], 'openai_chat', 'none', ['gemini-2.5-pro', 'gemini-2.5-flash'], false, 'hermes auth login google-gemini-cli'),
   hermesProvider('minimax-oauth', 'MiniMax (OAuth)', 'oauth_minimax', 'https://api.minimax.io/anthropic', '', [], 'anthropic_messages', 'none', ['MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed', 'MiniMax-M2.1', 'MiniMax-M2.1-highspeed', 'MiniMax-M2', 'MiniMax-M2-highspeed'], false, 'hermes auth login minimax-oauth'),
   hermesProvider('copilot-acp', 'GitHub Copilot ACP', 'external_process', 'http://127.0.0.1:0', 'COPILOT_ACP_BASE_URL', [], 'openai_chat', 'none', ['gpt-4o', 'gpt-4.1', 'claude-3.5-sonnet', 'claude-3.7-sonnet'], false, 'hermes auth login copilot-acp'),
-  hermesProvider('custom', 'Custom OpenAI-Compatible', 'api_key', '', 'OPENAI_BASE_URL', ['CUSTOM_API_KEY', 'OPENAI_API_KEY'], 'openai_chat', 'openai', [], true),
+  hermesProvider('custom', 'Custom OpenAI-Compatible', 'api_key', '', 'OPENAI_BASE_URL', ['OPENAI_API_KEY', 'CUSTOM_API_KEY'], 'openai_chat', 'openai', [], true),
 ]
 
 function hermesHome() {
@@ -217,6 +217,7 @@ function diagnoseHermesInstallError(text = '') {
 }
 
 let _hermesGwProcess = null
+let _hermesGwStarting = null
 
 const __dev_dirname = path.dirname(fileURLToPath(import.meta.url))
 const DEFAULT_OPENCLAW_DIR = path.join(homedir(), '.openclaw')
@@ -6956,7 +6957,7 @@ const handlers = {
     for (const d of ['cron','sessions','logs','memories','skills','pairing','hooks','image_cache','audio_cache']) {
       fs.mkdirSync(path.join(home, d), { recursive: true })
     }
-    const providerId = (provider || '').trim()
+    const providerId = _normalizeHermesProviderForBaseUrl(provider, baseUrl)
     const pcfg = HERMES_PROVIDER_REGISTRY.find(p => p.id === providerId)
     const modelStr = (model || pcfg?.models?.[0] || '').trim()
     if (!modelStr) throw new Error(`Provider '${providerId || 'custom'}' has no default model; please pass an explicit model name`)
@@ -6976,7 +6977,10 @@ const handlers = {
     const urlEnv = pcfg?.baseUrlEnvVar || ''
     const managedKeys = handlers._hermesManagedEnvKeys()
     const newPairs = [['GATEWAY_ALLOW_ALL_USERS', 'true'], ['API_SERVER_KEY', 'clawpanel-local']]
-    if (envKey && apiKey && apiKey.trim()) newPairs.push([envKey, apiKey.trim()])
+    if (envKey && apiKey && apiKey.trim()) {
+      newPairs.push([envKey, apiKey.trim()])
+      if (providerId === 'custom' && envKey !== 'CUSTOM_API_KEY') newPairs.push(['CUSTOM_API_KEY', apiKey.trim()])
+    }
     if (urlEnv && baseUrlValue) newPairs.push([urlEnv, baseUrlValue])
     const envPath = path.join(home, '.env')
     let envContent
@@ -6999,39 +7003,48 @@ const handlers = {
       try { this._hermesEnsureApiServerEnabled() } catch (e) {
         console.warn('[hermes guardian] patch failed:', e.message || e)
       }
+      try { _sanitizeHermesOpenrouterCustomMismatch() } catch (e) {
+        console.warn('[hermes guardian] provider/base_url sanitize failed:', e.message || e)
+      }
       // 检测是否已运行
       const alive = await _tcpProbe('127.0.0.1', port, 300)
       if (alive) return 'Gateway 已在运行'
-      // 启动
-      const home = hermesHome()
-      const envVars = { ...process.env, PATH: enhanced }
-      const envPath = path.join(home, '.env')
-      if (fs.existsSync(envPath)) {
-        for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
-          const t = line.trim()
-          if (!t || t.startsWith('#')) continue
-          const eq = t.indexOf('=')
-          if (eq > 0) envVars[t.slice(0, eq).trim()] = t.slice(eq + 1).trim()
+      if (_hermesGwStarting) return await _hermesGwStarting
+      _hermesGwStarting = (async () => {
+        const aliveAfterWait = await _tcpProbe('127.0.0.1', port, 500)
+        if (aliveAfterWait) return 'Gateway 已在运行'
+        // 启动
+        const home = hermesHome()
+        const envVars = { ...process.env, PATH: enhanced }
+        const envPath = path.join(home, '.env')
+        if (fs.existsSync(envPath)) {
+          for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+            const t = line.trim()
+            if (!t || t.startsWith('#')) continue
+            const eq = t.indexOf('=')
+            if (eq > 0) envVars[t.slice(0, eq).trim()] = t.slice(eq + 1).trim()
+          }
         }
-      }
-      const logPath = path.join(home, 'gateway-run.log')
-      const logFd = fs.openSync(logPath, 'a')
-      const child = spawn('hermes', ['gateway', 'run'], {
-        cwd: home, env: envVars, stdio: ['ignore', logFd, logFd],
-        detached: true, windowsHide: true,
-      })
-      child.unref()
-      _hermesGwProcess = child
-      // 等端口可达
-      for (let i = 0; i < 40; i++) {
-        await new Promise(r => setTimeout(r, 500))
-        if (await _tcpProbe('127.0.0.1', port, 500)) {
-          fs.closeSync(logFd)
-          return 'Gateway 已启动'
+        const logPath = path.join(home, 'gateway-run.log')
+        const logFd = fs.openSync(logPath, 'a')
+        const child = spawn('hermes', ['gateway', 'run'], {
+          cwd: home, env: envVars, stdio: ['ignore', logFd, logFd],
+          detached: true, windowsHide: true,
+        })
+        child.unref()
+        _hermesGwProcess = child
+        // 等端口可达
+        for (let i = 0; i < 40; i++) {
+          await new Promise(r => setTimeout(r, 500))
+          if (await _tcpProbe('127.0.0.1', port, 500)) {
+            fs.closeSync(logFd)
+            return 'Gateway 已启动'
+          }
         }
-      }
-      fs.closeSync(logFd)
-      throw new Error('Gateway 启动后端口未就绪')
+        fs.closeSync(logFd)
+        throw new Error('Gateway 启动后端口未就绪')
+      })().finally(() => { _hermesGwStarting = null })
+      return await _hermesGwStarting
     }
     if (action === 'stop') {
       if (_hermesGwProcess) { try { _hermesGwProcess.kill() } catch {} _hermesGwProcess = null }
@@ -7051,6 +7064,7 @@ const handlers = {
   async _hermesEnsureGatewayReady() {
     const customUrl = hermesGatewayCustomUrl()
     if (customUrl && !isLoopbackGatewayUrl(customUrl)) return
+    try { _sanitizeHermesOpenrouterCustomMismatch() } catch {}
     const port = hermesGatewayPort()
     if (await _tcpProbe('127.0.0.1', port, 300)) return
     await this.hermes_gateway_action({ action: 'start' })
@@ -7124,6 +7138,7 @@ const handlers = {
     const home = hermesHome()
     const configPath = path.join(home, 'config.yaml')
     const envPath = path.join(home, '.env')
+    try { _sanitizeHermesOpenrouterCustomMismatch() } catch {}
     let modelName = '', baseUrl = '', provider = '', apiKey = ''
     try {
       const content = fs.readFileSync(configPath, 'utf8')
@@ -8689,6 +8704,112 @@ function _mergeEnvFile(existing, managedKeys, newPairs) {
   let content = result.join('\n')
   if (!content.endsWith('\n')) content += '\n'
   return content
+}
+
+function _normalizeProviderUrl(raw) {
+  let out = String(raw || '').trim().replace(/\/+$/, '').toLowerCase()
+  for (const suffix of ['/chat/completions', '/completions', '/responses', '/messages', '/models']) {
+    if (out.endsWith(suffix)) {
+      out = out.slice(0, -suffix.length)
+      break
+    }
+  }
+  return out
+}
+
+function _normalizeHermesProviderForBaseUrl(provider, baseUrl) {
+  const pid = String(provider || '').trim()
+  if (pid === 'openrouter') {
+    const base = _normalizeProviderUrl(baseUrl)
+    const expected = _normalizeProviderUrl('https://openrouter.ai/api/v1')
+    if (base && base !== expected) return 'custom'
+  }
+  return pid
+}
+
+function _envHasValue(raw, key) {
+  return String(raw || '').split('\n').some(line => {
+    const t = line.trim()
+    if (!t || t.startsWith('#')) return false
+    const eq = t.indexOf('=')
+    return eq > 0 && t.slice(0, eq).trim() === key && t.slice(eq + 1).trim()
+  })
+}
+
+function _envValue(raw, key) {
+  for (const line of String(raw || '').split('\n')) {
+    const t = line.trim()
+    if (!t || t.startsWith('#')) continue
+    const eq = t.indexOf('=')
+    if (eq > 0 && t.slice(0, eq).trim() === key) {
+      const value = t.slice(eq + 1).trim()
+      if (value) return value
+    }
+  }
+  return ''
+}
+
+function _ensureCustomOpenAIKeyAlias() {
+  const envPath = path.join(hermesHome(), '.env')
+  if (!fs.existsSync(envPath)) return false
+  let raw = fs.readFileSync(envPath, 'utf8')
+  if (_envHasValue(raw, 'OPENAI_API_KEY')) return false
+  const customKey = _envValue(raw, 'CUSTOM_API_KEY')
+  if (!customKey) return false
+  if (!raw.endsWith('\n')) raw += '\n'
+  fs.writeFileSync(envPath, `${raw}OPENAI_API_KEY=${customKey}\n`)
+  return true
+}
+
+function _sanitizeHermesOpenrouterCustomMismatch() {
+  const home = hermesHome()
+  const configPath = path.join(home, 'config.yaml')
+  if (!fs.existsSync(configPath)) return false
+  const raw = fs.readFileSync(configPath, 'utf8')
+  let provider = ''
+  let baseUrl = ''
+  let inModel = false
+  for (const line of raw.split('\n')) {
+    const t = line.trim()
+    if (t.startsWith('model:')) { inModel = true; continue }
+    if (inModel) {
+      const indented = line.startsWith(' ') || line.startsWith('\t')
+      if (!indented && t && !t.startsWith('#')) break
+      if (t.startsWith('provider:')) provider = t.slice(9).trim().replace(/^['"]|['"]$/g, '')
+      else if (t.startsWith('base_url:')) baseUrl = t.slice(9).trim().replace(/^['"]|['"]$/g, '')
+    }
+  }
+  const base = _normalizeProviderUrl(baseUrl)
+  const expected = _normalizeProviderUrl('https://openrouter.ai/api/v1')
+  const usesCustomEndpoint = base && base !== expected
+  const aliasChanged = (!provider || provider === 'custom' || usesCustomEndpoint) ? _ensureCustomOpenAIKeyAlias() : false
+  if (provider !== 'openrouter') return aliasChanged
+  if (!base || base === expected) return aliasChanged
+  let envRaw = ''
+  try { envRaw = fs.readFileSync(path.join(home, '.env'), 'utf8') } catch {}
+  const hasOpenrouterKey = _envHasValue(envRaw, 'OPENROUTER_API_KEY')
+  const hasCustomKey = _envHasValue(envRaw, 'CUSTOM_API_KEY') || _envHasValue(envRaw, 'OPENAI_API_KEY')
+  if (hasOpenrouterKey && !hasCustomKey) return aliasChanged
+  const out = []
+  inModel = false
+  for (const line of raw.split('\n')) {
+    const t = line.trim()
+    if (t.startsWith('model:')) {
+      inModel = true
+      out.push(line)
+      continue
+    }
+    if (inModel) {
+      const indented = line.startsWith(' ') || line.startsWith('\t')
+      if (!indented && t && !t.startsWith('#')) inModel = false
+      else if (t.startsWith('provider:')) continue
+    }
+    out.push(line)
+  }
+  let fixed = out.join('\n')
+  if (!fixed.endsWith('\n')) fixed += '\n'
+  fs.writeFileSync(configPath, fixed)
+  return true
 }
 
 function _tcpProbe(host, port, timeoutMs) {

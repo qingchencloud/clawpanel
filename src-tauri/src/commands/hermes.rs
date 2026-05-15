@@ -28,8 +28,24 @@ static GW_PID: AtomicU32 = AtomicU32::new(0);
 static GW_GUARDIAN_ACTIVE: AtomicBool = AtomicBool::new(false);
 /// 通知 guardian 停止的 flag
 static GW_GUARDIAN_STOP: AtomicBool = AtomicBool::new(false);
+static GW_STARTING: AtomicBool = AtomicBool::new(false);
 /// 缓存 AppHandle 供 guardian 发送事件
 static GW_APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
+
+struct GatewayStartGuard;
+
+impl Drop for GatewayStartGuard {
+    fn drop(&mut self) {
+        GW_STARTING.store(false, Ordering::SeqCst);
+    }
+}
+
+fn try_gateway_start_guard() -> Option<GatewayStartGuard> {
+    GW_STARTING
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .ok()
+        .map(|_| GatewayStartGuard)
+}
 
 /// 获取 Gateway 的完整 URL（当前本地，未来可扩展为远程）
 fn hermes_gateway_custom_url() -> Option<String> {
@@ -84,6 +100,7 @@ async fn ensure_managed_gateway_ready(app: &tauri::AppHandle, gw_url: &str) -> R
             return Ok(());
         }
     }
+    let _ = sanitize_hermes_openrouter_custom_mismatch()?;
     if gateway_quick_health_check().await {
         start_guardian(app);
         emit_gateway_status(true);
@@ -297,6 +314,173 @@ async fn gateway_quick_health_check() -> bool {
             .unwrap_or(false),
         Err(_) => false,
     }
+}
+
+fn normalize_provider_url(raw: &str) -> String {
+    let mut out = raw.trim().trim_end_matches('/').to_ascii_lowercase();
+    for suffix in [
+        "/chat/completions",
+        "/completions",
+        "/responses",
+        "/messages",
+        "/models",
+    ] {
+        if out.ends_with(suffix) {
+            out.truncate(out.len() - suffix.len());
+            break;
+        }
+    }
+    out
+}
+
+fn normalize_hermes_provider_for_base_url(provider: &str, base_url: Option<&str>) -> String {
+    let pid = provider.trim();
+    if pid == "openrouter" {
+        if let Some(url) = base_url {
+            let base = normalize_provider_url(url);
+            let expected = normalize_provider_url("https://openrouter.ai/api/v1");
+            if !base.is_empty() && base != expected {
+                return "custom".into();
+            }
+        }
+    }
+    pid.to_string()
+}
+
+fn env_file_has_value(raw: &str, key: &str) -> bool {
+    raw.lines().any(|line| {
+        let t = line.trim();
+        if t.is_empty() || t.starts_with('#') {
+            return false;
+        }
+        t.split_once('=')
+            .map(|(k, v)| k.trim() == key && !v.trim().is_empty())
+            .unwrap_or(false)
+    })
+}
+
+fn env_file_value(raw: &str, key: &str) -> Option<String> {
+    raw.lines().find_map(|line| {
+        let t = line.trim();
+        if t.is_empty() || t.starts_with('#') {
+            return None;
+        }
+        t.split_once('=').and_then(|(k, v)| {
+            if k.trim() == key {
+                let value = v.trim();
+                if value.is_empty() {
+                    None
+                } else {
+                    Some(value.to_string())
+                }
+            } else {
+                None
+            }
+        })
+    })
+}
+
+fn ensure_custom_openai_key_alias() -> Result<bool, String> {
+    let env_path = hermes_home().join(".env");
+    if !env_path.exists() {
+        return Ok(false);
+    }
+    let raw = std::fs::read_to_string(&env_path).map_err(|e| format!("读取 .env 失败: {e}"))?;
+    if env_file_has_value(&raw, "OPENAI_API_KEY") {
+        return Ok(false);
+    }
+    let Some(custom_key) = env_file_value(&raw, "CUSTOM_API_KEY") else {
+        return Ok(false);
+    };
+    let mut fixed = raw;
+    if !fixed.ends_with('\n') {
+        fixed.push('\n');
+    }
+    fixed.push_str(&format!("OPENAI_API_KEY={custom_key}\n"));
+    std::fs::write(&env_path, fixed).map_err(|e| format!("写入 .env 失败: {e}"))?;
+    Ok(true)
+}
+
+fn sanitize_hermes_openrouter_custom_mismatch() -> Result<bool, String> {
+    let home = hermes_home();
+    let config_path = home.join("config.yaml");
+    if !config_path.exists() {
+        return Ok(false);
+    }
+
+    let raw =
+        std::fs::read_to_string(&config_path).map_err(|e| format!("读取 config.yaml 失败: {e}"))?;
+    let mut provider = String::new();
+    let mut base_url = String::new();
+    let mut in_model = false;
+
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("model:") {
+            in_model = true;
+            continue;
+        }
+        if in_model {
+            let indented = line.starts_with(' ') || line.starts_with('\t');
+            if !indented && !trimmed.is_empty() && !trimmed.starts_with('#') {
+                break;
+            }
+            if let Some(v) = trimmed.strip_prefix("provider:") {
+                provider = v.trim().trim_matches('"').trim_matches('\'').to_string();
+            } else if let Some(v) = trimmed.strip_prefix("base_url:") {
+                base_url = v.trim().trim_matches('"').trim_matches('\'').to_string();
+            }
+        }
+    }
+
+    let base = normalize_provider_url(&base_url);
+    let expected = normalize_provider_url("https://openrouter.ai/api/v1");
+    let uses_custom_endpoint = !base.is_empty() && base != expected;
+    let alias_changed = if provider.is_empty() || provider == "custom" || uses_custom_endpoint {
+        ensure_custom_openai_key_alias()?
+    } else {
+        false
+    };
+    if provider != "openrouter" {
+        return Ok(alias_changed);
+    }
+    if base.is_empty() || base == expected {
+        return Ok(alias_changed);
+    }
+
+    let env_raw = std::fs::read_to_string(home.join(".env")).unwrap_or_default();
+    let has_openrouter_key = env_file_has_value(&env_raw, "OPENROUTER_API_KEY");
+    let has_custom_key = env_file_has_value(&env_raw, "CUSTOM_API_KEY")
+        || env_file_has_value(&env_raw, "OPENAI_API_KEY");
+    if has_openrouter_key && !has_custom_key {
+        return Ok(alias_changed);
+    }
+
+    let mut out = Vec::new();
+    let mut in_model = false;
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("model:") {
+            in_model = true;
+            out.push(line.to_string());
+            continue;
+        }
+        if in_model {
+            let indented = line.starts_with(' ') || line.starts_with('\t');
+            if !indented && !trimmed.is_empty() && !trimmed.starts_with('#') {
+                in_model = false;
+            } else if trimmed.starts_with("provider:") {
+                continue;
+            }
+        }
+        out.push(line.to_string());
+    }
+    let mut fixed = out.join("\n");
+    if !fixed.ends_with('\n') {
+        fixed.push('\n');
+    }
+    std::fs::write(&config_path, fixed).map_err(|e| format!("写入 config.yaml 失败: {e}"))?;
+    Ok(true)
 }
 
 /// 重启 Gateway（kill 旧进程 → 启动新进程）
@@ -1698,6 +1882,7 @@ pub async fn configure_hermes(
     // config.yaml 的 model.provider 字段。
     use super::hermes_providers;
 
+    let provider = normalize_hermes_provider_for_base_url(&provider, base_url.as_deref());
     let pcfg = hermes_providers::get_provider(&provider);
 
     // 模型标识：优先使用调用方传入，否则用 provider 的首个已知模型；
@@ -1769,6 +1954,9 @@ platforms:
     if let Some(env) = key_env {
         if !api_key.trim().is_empty() {
             new_pairs.push((env.into(), api_key.trim().into()));
+            if provider == "custom" && env != "CUSTOM_API_KEY" {
+                new_pairs.push(("CUSTOM_API_KEY".into(), api_key.trim().into()));
+            }
         }
     } else if !api_key.trim().is_empty() {
         // OAuth provider 传了 api_key —— 记日志，不落盘
@@ -1952,6 +2140,7 @@ pub async fn hermes_read_config() -> Result<Value, String> {
     let home = hermes_home();
     let config_path = home.join("config.yaml");
     let env_path = home.join(".env");
+    let _ = sanitize_hermes_openrouter_custom_mismatch();
 
     // 读取 config.yaml
     let config_raw = std::fs::read_to_string(&config_path).unwrap_or_default();
@@ -2532,6 +2721,7 @@ pub async fn hermes_update_model(
     }
 
     std::fs::write(&config_path, new_content).map_err(|e| format!("写入 config.yaml 失败: {e}"))?;
+    let _ = sanitize_hermes_openrouter_custom_mismatch()?;
     Ok(format!("模型已切换为 {model_str}"))
 }
 
@@ -2551,6 +2741,30 @@ pub async fn hermes_gateway_action(
             // before every start. Auto-heal if missing (with a .bak backup).
             // See `ensure_api_server_enabled` for rationale.
             ensure_api_server_enabled(&app)?;
+            let _ = sanitize_hermes_openrouter_custom_mismatch()?;
+            if gateway_quick_health_check().await {
+                start_guardian(&app);
+                emit_gateway_status(true);
+                return Ok("Gateway 已在运行".into());
+            }
+            let _start_guard = if let Some(guard) = try_gateway_start_guard() {
+                guard
+            } else {
+                for _ in 0..40 {
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    if gateway_quick_health_check().await {
+                        start_guardian(&app);
+                        emit_gateway_status(true);
+                        return Ok("Gateway 已在运行".into());
+                    }
+                }
+                return Err("Gateway 正在启动中，请稍后重试".into());
+            };
+            if gateway_quick_health_check().await {
+                start_guardian(&app);
+                emit_gateway_status(true);
+                return Ok("Gateway 已在运行".into());
+            }
 
             #[cfg(target_os = "windows")]
             {
