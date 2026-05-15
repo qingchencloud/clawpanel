@@ -1372,6 +1372,18 @@ function resultArray(value, key) {
   return []
 }
 
+function normalizeOpenClawDir(value) {
+  if (typeof value === 'string') return { path: value, isCustom: false, configExists: null }
+  if (isObject(value)) {
+    return {
+      path: String(value.path || value.dir || value.openclawDir || ''),
+      isCustom: value.isCustom === true,
+      configExists: typeof value.configExists === 'boolean' ? value.configExists : null,
+    }
+  }
+  return { path: '', isCustom: false, configExists: null }
+}
+
 function safeEntries(value) {
   return Object.entries(isObject(value) ? value : {})
 }
@@ -1517,6 +1529,17 @@ function gatewayFromServices(services) {
   } : null
 }
 
+function suggestedPrimaryModel(providers, primaryModel) {
+  if (!providers.length) return ''
+  if (primaryModel) {
+    const exactProvider = providers.find(p => p.allModelIds.includes(primaryModel))
+    if (exactProvider) return `${exactProvider.key}/${primaryModel}`
+  }
+  const firstProvider = providers[0]
+  const firstModel = firstProvider.allModelIds[0] || firstProvider.models?.[0] || ''
+  return firstModel ? `${firstProvider.key}/${firstModel}` : firstProvider.key
+}
+
 function createOpenClawFindings(ctx, component = 'all') {
   const findings = []
   const want = (name) => component === 'all' || component === name
@@ -1535,7 +1558,10 @@ function createOpenClawFindings(ctx, component = 'all') {
   if (want('models')) {
     if (!providers.length) findings.push({ level: 'error', component: 'models', title: '没有配置模型服务商', evidence: 'models.providers 为空', suggestion: '在模型配置页添加至少一个 provider 和模型。' })
     if (!primary) findings.push({ level: 'warn', component: 'models', title: '未设置默认主模型', evidence: 'agents.defaults.model.primary 为空', suggestion: '在模型配置页选择一个主模型。' })
-    else if (!providerMap.has(primaryProvider)) findings.push({ level: 'error', component: 'models', title: '主模型引用了不存在的 provider', evidence: primary, suggestion: `添加 provider ${primaryProvider}，或重新选择主模型。` })
+    else if (!providerMap.has(primaryProvider)) {
+      const suggested = suggestedPrimaryModel(providers, primaryModel)
+      findings.push({ level: 'error', component: 'models', title: '主模型引用了不存在的 provider', evidence: primary, suggestion: suggested ? `当前 provider 只有 ${providers.map(p => p.key).join(', ')}；建议把主模型改为 ${suggested}，或重新添加 provider ${primaryProvider}。` : `添加 provider ${primaryProvider}，或重新选择主模型。` })
+    }
     else if (primaryModel && !providerMap.get(primaryProvider).allModelIds.includes(primaryModel)) findings.push({ level: 'warn', component: 'models', title: '主模型不在 provider 模型列表中', evidence: primary, suggestion: '确认模型 ID 是否拼写正确，或重新拉取模型列表。' })
     for (const p of providers) {
       if (p.apiKeyKind === 'none' && !/ollama/i.test(p.api || '') && !/:11434/.test(p.baseUrl)) findings.push({ level: 'warn', component: 'models', title: `Provider ${p.key} 未配置 API Key`, evidence: `${p.api} ${p.baseUrl}`, suggestion: '补充 apiKey，或使用 ${ENV_VAR} 引用 OpenClaw env。' })
@@ -1561,7 +1587,7 @@ function createOpenClawFindings(ctx, component = 'all') {
 function formatOpenClawContext(ctx) {
   const lines = []
   lines.push('## 当前 OpenClaw 实况（自动脱敏）')
-  lines.push(`- 配置目录: ${ctx.openclawDir || '未知'}`)
+  lines.push(`- 配置目录: ${ctx.openclawDir || '未知'}${ctx.openclawDirInfo?.isCustom ? '（自定义）' : ''}${ctx.openclawDirInfo?.configExists === false ? '（openclaw.json 不存在）' : ''}`)
   lines.push(`- OpenClaw 版本: ${ctx.version || '未知'}`)
   lines.push(`- Gateway: ${ctx.gateway ? `${ctx.gateway.running ? '运行中' : '未运行'}${ctx.gateway.pid ? ` (pid ${ctx.gateway.pid})` : ''}` : '未知'}`)
   lines.push(`- 主模型: ${ctx.primaryModel || '未设置'}`)
@@ -1604,9 +1630,11 @@ async function collectOpenClawContext({ refresh = false } = {}) {
     const config = pick(3, {}) || {}
     const envMap = new Map(safeEntries(config.env).map(([k, v]) => [k, v]))
     const providers = safeEntries(config.models?.providers).map(([key, provider]) => summarizeProvider(key, provider, envMap))
+    const openclawDirInfo = normalizeOpenClawDir(pick(0, ''))
     const ctx = {
       generatedAt: new Date().toISOString(),
-      openclawDir: pick(0, ''),
+      openclawDir: openclawDirInfo.path,
+      openclawDirInfo,
       version: pick(1, {})?.current || pick(1, {})?.version || '',
       gateway: gatewayFromServices(pick(2, [])),
       primaryModel: getPrimaryModel(config),
