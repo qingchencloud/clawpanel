@@ -123,6 +123,7 @@ let _dashboardInitialized = false
 let _dashboardVersionCache = null
 let _dashboardStatusSummaryCache = null
 let _dashboardInstanceId = ''
+let _dashboardLoadSeq = 0
 
 function syncDashboardInstanceScope() {
   const instanceId = getActiveInstance()?.id || 'local'
@@ -138,14 +139,73 @@ function versionInfoIncomplete(version) {
   return !version || !version.current || !version.source || version.source === 'unknown'
 }
 
+function collectConfigModels(config) {
+  const result = []
+  const providers = config?.models?.providers || {}
+  for (const [providerKey, provider] of Object.entries(providers)) {
+    for (const model of (provider?.models || [])) {
+      const id = typeof model === 'string' ? model : model?.id
+      if (id) result.push(`${providerKey}/${id}`)
+    }
+  }
+  return result
+}
+
+function defaultModelNeedsNormalization(config) {
+  const validModels = new Set(collectConfigModels(config))
+  const modelConfig = config?.agents?.defaults?.model || {}
+  const primary = modelConfig.primary || ''
+  const fallbacks = Array.isArray(modelConfig.fallbacks) ? modelConfig.fallbacks : []
+  if (!validModels.size) return !!primary || fallbacks.length > 0 || Object.keys(config?.agents?.defaults?.models || {}).length > 0
+  if (!validModels.has(primary)) return true
+  if (fallbacks.some(f => f === primary || !validModels.has(f))) return true
+  return Object.keys(config?.agents?.defaults?.models || {}).some(key => !validModels.has(key))
+}
+
+function normalizeDefaultModelConfig(config) {
+  const allModels = collectConfigModels(config)
+  const validModels = new Set(allModels)
+  if (!config.agents) config.agents = {}
+  if (!config.agents.defaults) config.agents.defaults = {}
+  if (!config.agents.defaults.model) config.agents.defaults.model = {}
+  const modelConfig = config.agents.defaults.model
+  if (!Array.isArray(modelConfig.fallbacks)) modelConfig.fallbacks = []
+  if (!allModels.length) {
+    modelConfig.primary = ''
+    modelConfig.fallbacks = []
+    config.agents.defaults.models = {}
+    return ''
+  }
+  if (!validModels.has(modelConfig.primary || '')) {
+    modelConfig.primary = modelConfig.fallbacks.find(f => validModels.has(f)) || allModels[0]
+  }
+  const seen = new Set([modelConfig.primary])
+  modelConfig.fallbacks = modelConfig.fallbacks
+    .filter(f => validModels.has(f))
+    .filter(f => {
+      if (seen.has(f)) return false
+      seen.add(f)
+      return true
+    })
+  const currentMap = config.agents.defaults.models && typeof config.agents.defaults.models === 'object' && !Array.isArray(config.agents.defaults.models) ? config.agents.defaults.models : {}
+  const nextMap = {}
+  nextMap[modelConfig.primary] = currentMap[modelConfig.primary] && typeof currentMap[modelConfig.primary] === 'object' && !Array.isArray(currentMap[modelConfig.primary]) ? currentMap[modelConfig.primary] : {}
+  for (const fallback of modelConfig.fallbacks) {
+    nextMap[fallback] = currentMap[fallback] && typeof currentMap[fallback] === 'object' && !Array.isArray(currentMap[fallback]) ? currentMap[fallback] : {}
+  }
+  config.agents.defaults.models = nextMap
+  return modelConfig.primary
+}
+
 async function loadDashboardData(page, fullRefresh = false) {
   // 并发保护：如果上一次加载仍在进行，跳过本次（fullRefresh 除外）
   if (_loadInFlight && !fullRefresh) return
+  const loadSeq = ++_dashboardLoadSeq
   _loadInFlight = true
-  try { await _loadDashboardDataInner(page, fullRefresh) } finally { _loadInFlight = false }
+  try { await _loadDashboardDataInner(page, fullRefresh, loadSeq) } finally { if (loadSeq === _dashboardLoadSeq) _loadInFlight = false }
 }
 
-async function _loadDashboardDataInner(page, fullRefresh) {
+async function _loadDashboardDataInner(page, fullRefresh, loadSeq) {
   syncDashboardInstanceScope()
   // 分波加载：关键数据先渲染，次要数据后填充，减少白屏等待
   // 轻量调用（读文件）每次都做；重量调用（spawn CLI/网络请求）只在首次或手动刷新时做
@@ -168,7 +228,7 @@ async function _loadDashboardDataInner(page, fullRefresh) {
   const [servicesRes, configRes, panelConfigRes] = await coreP
   const services = servicesRes.status === 'fulfilled' ? servicesRes.value : []
   let version = _dashboardVersionCache || {}
-  const config = configRes.status === 'fulfilled' ? configRes.value : null
+  let config = configRes.status === 'fulfilled' ? configRes.value : null
   const panelConfig = panelConfigRes.status === 'fulfilled' ? panelConfigRes.value : null
   const gw = services.find(s => s.label === 'ai.openclaw.gateway')
   let agents = []
@@ -189,6 +249,7 @@ async function _loadDashboardDataInner(page, fullRefresh) {
     if (!config.gateway?.mode) needsPatch = true
     if (config.mode) needsPatch = true
     if (!config.tools || config.tools.profile !== 'full') needsPatch = true
+    if (defaultModelNeedsNormalization(config)) needsPatch = true
     if (needsPatch) {
       try {
         const freshConfig = await api.readOpenclawConfig()
@@ -203,11 +264,19 @@ async function _loadDashboardDataInner(page, fullRefresh) {
           freshConfig.tools.sessions.visibility = 'all'
           patched = true
         }
-        if (patched) api.writeOpenclawConfig(freshConfig).catch(() => {})
+        if (defaultModelNeedsNormalization(freshConfig)) {
+          normalizeDefaultModelConfig(freshConfig)
+          patched = true
+        }
+        if (patched) {
+          config = freshConfig
+          api.writeOpenclawConfig(freshConfig).catch(() => {})
+        }
       } catch {}
     }
   }
 
+  if (loadSeq !== _dashboardLoadSeq || !page.isConnected) return
   renderStatCards(page, services, version, [], config, panelConfig)
   renderLogs(page, '')
   if (gw) {
@@ -229,7 +298,7 @@ async function _loadDashboardDataInner(page, fullRefresh) {
       })
     : Promise.resolve(_dashboardVersionCache || {})
   versionP.then(v => {
-    if (!page.isConnected) return
+    if (loadSeq !== _dashboardLoadSeq || !page.isConnected) return
     version = v || {}
     renderStatCards(page, services, version, agents, config, panelConfig)
   })
@@ -247,6 +316,7 @@ async function _loadDashboardDataInner(page, fullRefresh) {
 
   // 第二波：Agent、MCP、备份 → 更新卡片 + 渲染总览
   const [agentsRes, mcpRes, backupsRes, channelsRes] = await secondaryP
+  if (loadSeq !== _dashboardLoadSeq || !page.isConnected) return
   agents = agentsRes.status === 'fulfilled' ? agentsRes.value : []
   const mcpConfig = mcpRes.status === 'fulfilled' ? mcpRes.value : null
   const backups = backupsRes.status === 'fulfilled' ? backupsRes.value : []
@@ -269,6 +339,7 @@ async function _loadDashboardDataInner(page, fullRefresh) {
 
   // 第三波：日志（最低优先级）
   const logs = await logsP
+  if (loadSeq !== _dashboardLoadSeq || !page.isConnected) return
   renderLogs(page, logs)
 
   _dashboardInitialized = true

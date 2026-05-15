@@ -89,10 +89,13 @@ async function loadConfig(page, state) {
     const before = JSON.stringify(state.config?.models?.providers || {})
     normalizeProviderUrls(state.config)
     const after = JSON.stringify(state.config?.models?.providers || {})
-    if (before !== after) {
-      console.log('[models] 自动修复了服务商 baseUrl,正在保存...')
+    const oldPrimary = getCurrentPrimary(state.config)
+    const normalizedModel = normalizeDefaultModelSelection(state.config)
+    if (before !== after || normalizedModel.changed) {
+      console.log('[models] 自动修复了模型配置,正在保存...')
       await api.writeOpenclawConfig(state.config)
-      toast(t('models.autoFixUrl'), 'info')
+      if (oldPrimary !== normalizedModel.primary) toast(t('models.primaryAutoSwitch', { model: normalizedModel.primary || t('models.notConfigured') }), 'info')
+      else if (before !== after) toast(t('models.autoFixUrl'), 'info')
     }
     renderDefaultBar(page, state)
     renderProviders(page, state)
@@ -127,14 +130,18 @@ function getCurrentPrimary(config) {
   return config?.agents?.defaults?.model?.primary || ''
 }
 
-function ensureDefaultModelConfig(state) {
-  if (!state.config.agents) state.config.agents = {}
-  if (!state.config.agents.defaults) state.config.agents.defaults = {}
-  if (!state.config.agents.defaults.model) state.config.agents.defaults.model = {}
-  if (!Array.isArray(state.config.agents.defaults.model.fallbacks)) {
-    state.config.agents.defaults.model.fallbacks = []
+function ensureConfigDefaultModelConfig(config) {
+  if (!config.agents) config.agents = {}
+  if (!config.agents.defaults) config.agents.defaults = {}
+  if (!config.agents.defaults.model) config.agents.defaults.model = {}
+  if (!Array.isArray(config.agents.defaults.model.fallbacks)) {
+    config.agents.defaults.model.fallbacks = []
   }
-  return state.config.agents.defaults.model
+  return config.agents.defaults.model
+}
+
+function ensureDefaultModelConfig(state) {
+  return ensureConfigDefaultModelConfig(state.config)
 }
 
 function collectAllModels(config) {
@@ -147,6 +154,68 @@ function collectAllModels(config) {
     }
   }
   return result
+}
+
+function normalizeDefaultModelMap(config, validModels, primary, fallbacks) {
+  const defaults = config?.agents?.defaults
+  if (!defaults) return false
+  const current = defaults.models && typeof defaults.models === 'object' && !Array.isArray(defaults.models) ? defaults.models : {}
+  const next = {}
+  if (primary) next[primary] = current[primary] && typeof current[primary] === 'object' && !Array.isArray(current[primary]) ? current[primary] : {}
+  for (const f of fallbacks || []) {
+    if (validModels.has(f) && !next[f]) next[f] = current[f] && typeof current[f] === 'object' && !Array.isArray(current[f]) ? current[f] : {}
+  }
+  for (const [key, value] of Object.entries(current)) {
+    if (validModels.has(key) && !next[key]) next[key] = value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+  }
+  const changed = JSON.stringify(current) !== JSON.stringify(next)
+  defaults.models = next
+  return changed
+}
+
+function dedupeValidFallbacks(fallbacks, validModels, primary) {
+  const seen = new Set()
+  if (primary) seen.add(primary)
+  return (Array.isArray(fallbacks) ? fallbacks : [])
+    .filter(f => validModels.has(f))
+    .filter(f => {
+      if (seen.has(f)) return false
+      seen.add(f)
+      return true
+    })
+}
+
+function normalizeDefaultModelSelection(config) {
+  const allModels = collectAllModels(config)
+  const validModels = new Set(allModels.map(m => m.full))
+  const modelConfig = ensureConfigDefaultModelConfig(config)
+  let changed = false
+  if (!allModels.length) {
+    if (modelConfig.primary) {
+      modelConfig.primary = ''
+      changed = true
+    }
+    if (modelConfig.fallbacks.length) {
+      modelConfig.fallbacks = []
+      changed = true
+    }
+    changed = normalizeDefaultModelMap(config, validModels, '', []) || changed
+    return { changed, primary: '' }
+  }
+  let primary = modelConfig.primary || ''
+  if (!validModels.has(primary)) {
+    const fallbackPrimary = modelConfig.fallbacks.find(f => validModels.has(f))
+    primary = fallbackPrimary || allModels[0].full
+    modelConfig.primary = primary
+    changed = true
+  }
+  const nextFallbacks = dedupeValidFallbacks(modelConfig.fallbacks, validModels, primary)
+  if (JSON.stringify(nextFallbacks) !== JSON.stringify(modelConfig.fallbacks)) {
+    modelConfig.fallbacks = nextFallbacks
+    changed = true
+  }
+  changed = normalizeDefaultModelMap(config, validModels, primary, modelConfig.fallbacks) || changed
+  return { changed, primary }
 }
 
 function getApiTypeLabel(apiType) {
@@ -1050,22 +1119,9 @@ function rotateFallbackChain(state, oldPrimary, newPrimary) {
 // 应用默认模型:primary + 其余自动成为备选
 // 确保 primary 指向的模型仍然存在,不存在则自动切到第一个可用模型
 function ensureValidPrimary(state) {
-  const primary = getCurrentPrimary(state.config)
-  const allModels = collectAllModels(state.config)
-  if (allModels.length === 0) {
-    // 所有模型都没了,清空 primary
-    if (state.config.agents?.defaults?.model) {
-      state.config.agents.defaults.model.primary = ''
-    }
-    return
-  }
-  const exists = allModels.some(m => m.full === primary)
-  if (!exists) {
-    // primary 指向已删除的模型,自动切到第一个
-    const newPrimary = allModels[0].full
-    setPrimary(state, newPrimary)
-    toast(t('models.primaryAutoSwitch', { model: newPrimary }), 'info')
-  }
+  const current = getCurrentPrimary(state.config)
+  const normalized = normalizeDefaultModelSelection(state.config)
+  if (normalized.changed && current !== normalized.primary) toast(t('models.primaryAutoSwitch', { model: normalized.primary || t('models.notConfigured') }), 'info')
 }
 
 function applyDefaultModel(state) {
@@ -1089,6 +1145,7 @@ function applyDefaultModel(state) {
     for (const m of allModels) { if (m.full !== primary) modelsMap[m.full] = {} }
     defaults.models = modelsMap
   }
+  normalizeDefaultModelSelection(state.config)
 
   // 注意:不再强制同步到各 agent 的 model.primary
   // 子 Agent 的模型覆盖是 OpenClaw 正常功能(用户可通过对话为不同 Agent 设置不同模型)
