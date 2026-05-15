@@ -148,20 +148,36 @@ fn base_version(v: &str) -> String {
     base.to_string()
 }
 
+fn has_version_suffix(v: &str) -> bool {
+    v.contains('-')
+}
+
 /// 判断 CLI 报告的版本是否与推荐版匹配（考虑汉化版 -zh.x 后缀差异）
 fn versions_match(cli_version: &str, recommended: &str) -> bool {
     if cli_version == recommended {
         return true;
     }
     // CLI 报告 "2026.3.13"，推荐版 "2026.3.13-zh.1" → 基础版本相同即视为匹配
-    base_version(cli_version) == base_version(recommended)
+    if base_version(cli_version) != base_version(recommended) {
+        return false;
+    }
+    if has_version_suffix(cli_version) {
+        return false;
+    }
+    true
 }
 
 /// 判断推荐版是否真的比当前版本更新（忽略 -zh.x 后缀）
 fn recommended_is_newer(recommended: &str, current: &str) -> bool {
     let r = parse_version(&base_version(recommended));
     let c = parse_version(&base_version(current));
-    r > c
+    if r != c {
+        return r > c;
+    }
+    if has_version_suffix(recommended) && has_version_suffix(current) {
+        return parse_version(recommended) > parse_version(current);
+    }
+    false
 }
 
 fn load_version_policy() -> VersionPolicy {

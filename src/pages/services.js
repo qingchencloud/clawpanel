@@ -101,6 +101,7 @@ async function loadVersion(page) {
     const hasRecommended = !!info.recommended
     const aheadOfRecommended = !!info.current && hasRecommended && !!info.ahead_of_recommended
     const driftFromRecommended = !!info.current && hasRecommended && !info.is_recommended && !aheadOfRecommended
+    const canUpgradeLatest = !!info.latest_update_available && !!info.latest
     const isChinese = detectedSource === 'chinese'
     const sourceTag = isChinese ? t('services.chineseEdition') : t('services.officialEdition')
     const switchLabel = isChinese ? t('services.switchToOfficial') : t('services.switchToChinese')
@@ -118,8 +119,8 @@ async function loadVersion(page) {
               <span class="stat-card-label">${t('services.currentVersion')} · <span style="color:var(--accent)">${t('services.dockerDeploy')}</span></span>
             </div>
             <div class="stat-card-value">${ver}</div>
-            <div class="stat-card-meta">${info.latest_update_available ? t('services.latestUpstream', { version: info.latest }) + '（' + t('services.pullNewImage') + '）' : t('services.currentImageVer')}</div>
-            ${info.latest_update_available ? `<div style="margin-top:var(--space-sm)">
+            <div class="stat-card-meta">${canUpgradeLatest ? t('services.latestUpstream', { version: info.latest }) + '（' + t('services.pullNewImage') + '）' : t('services.currentImageVer')}</div>
+            ${canUpgradeLatest ? `<div style="margin-top:var(--space-sm)">
               <code style="font-size:var(--font-size-xs);background:var(--bg-tertiary);padding:4px 8px;border-radius:4px;user-select:all">${escapeHtml(`docker pull ${dockerImage}:latest`)}</code>
             </div>` : ''}
           </div>
@@ -137,10 +138,11 @@ async function loadVersion(page) {
               ${hasRecommended
                 ? (aheadOfRecommended ? t('services.aheadOfRecommended', { version: info.recommended }) : driftFromRecommended ? t('services.recommendedStable', { version: info.recommended }) : t('services.alignedRecommended', { version: info.recommended }))
                 : t('services.noRecommended')}
-              ${info.latest_update_available && info.latest ? ' · ' + t('services.latestUpstream', { version: info.latest }) : ''}
+              ${canUpgradeLatest ? ' · ' + t('services.latestUpstream', { version: info.latest }) : ''}
             </div>
             <div style="display:flex;gap:var(--space-sm);margin-top:var(--space-sm);flex-wrap:wrap">
               ${aheadOfRecommended ? `<button class="btn btn-primary btn-sm" data-action="upgrade">${t('services.rollbackToRecommended')}</button>` : driftFromRecommended ? `<button class="btn btn-primary btn-sm" data-action="upgrade">${t('services.switchToRecommended')}</button>` : ''}
+              ${canUpgradeLatest ? `<button class="btn btn-primary btn-sm" data-action="upgrade-latest" data-version="${escapeHtml(info.latest)}">${t('services.upgradeToLatest')}</button>` : ''}
               <button class="btn btn-secondary btn-sm" data-action="switch-source" data-source="${switchTarget}">${switchLabel}</button>
             </div>
             <div style="margin-top:8px;font-size:var(--font-size-xs);color:var(--text-tertiary);line-height:1.6">
@@ -594,6 +596,9 @@ function bindEvents(page) {
         case 'upgrade':
           await handleUpgrade(btn, page)
           break
+        case 'upgrade-latest':
+          await handleUpgradeLatest(btn, page)
+          break
         case 'switch-source':
           await handleSwitchSource(btn.dataset.source, page)
           break
@@ -976,6 +981,15 @@ async function handleUpgrade(btn, page) {
   const yes = await showConfirm(t('services.upgradeConfirm', { source: sourceLabel, version: recommended ? `（${recommended}）` : '' }))
   if (!yes) return
   await doUpgradeWithModal(detectedSource, page, recommended || null)
+}
+
+async function handleUpgradeLatest(btn, page) {
+  const sourceLabel = detectedSource === 'official' ? t('services.officialEdition') : t('services.chineseEdition')
+  const latest = btn.dataset.version || lastVersionInfo?.latest
+  if (!latest) return
+  const yes = await showConfirm(t('services.upgradeLatestConfirm', { source: sourceLabel, version: `（${latest}）` }))
+  if (!yes) return
+  await doUpgradeWithModal(detectedSource, page, latest)
 }
 
 async function handleSwitchSource(target, page) {
