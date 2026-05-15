@@ -66,6 +66,14 @@ export async function render() {
       cardsEl.innerHTML = `<div class="stat-card" style="grid-column:1/-1;text-align:center;color:var(--text-secondary)"><div>${t('common.loadFailed')}: ${escapeHtml(String(e?.message || e))}</div><button class="btn btn-sm btn-secondary" style="margin-top:8px" onclick="this.closest('.page')&&this.closest('.page').__retryLoad?.()">${t('dashboard.retry')}</button></div>`
     }
   })
+  setTimeout(() => {
+    const cardsEl = page.querySelector('#stat-cards')
+    if (cardsEl && cardsEl.querySelector('.loading-placeholder')) {
+      console.warn('[dashboard] first paint fallback: dashboard APIs are still pending')
+      renderStatCards(page, [], _dashboardVersionCache || {}, [], null, null)
+      renderLogs(page, '')
+    }
+  }, 1200)
   page.__retryLoad = () => loadDashboardData(page).catch(() => {})
 
   // 监听 Gateway 状态变化，节流刷新仪表盘（至少间隔 5 秒，防止状态抖动导致 UI 闪烁）
@@ -148,27 +156,12 @@ async function _loadDashboardDataInner(page, fullRefresh) {
   if (shouldFetchVersion && (fullRefresh || versionInfoIncomplete(_dashboardVersionCache))) {
     invalidate('get_version_info')
   }
-  const versionP = shouldFetchVersion
-    ? withTimeout(api.getVersionInfo(), 8000)
-      .then(v => {
-        if (v) _dashboardVersionCache = v
-        return _dashboardVersionCache || {}
-      })
-      .catch(() => _dashboardVersionCache || {})
-    : Promise.resolve(_dashboardVersionCache || {})
   // 每个请求独立超时：避免单个慢请求拖垮整体渲染
   const coreP = Promise.allSettled([
-    withTimeout(api.getServicesStatus(), 12000),
-    withTimeout(api.readOpenclawConfig(), 5000),
-    withTimeout(api.readPanelConfig(), 5000),
+    withTimeout(api.getServicesStatus(), 2500),
+    withTimeout(api.readOpenclawConfig(), 2000),
+    withTimeout(api.readPanelConfig(), 2000),
   ])
-  const secondaryP = Promise.allSettled([
-    withTimeout(api.listAgents(), 10000),
-    withTimeout(api.readMcpConfig(), 10000),
-    withTimeout(api.listBackups(), 10000),
-    withTimeout(api.listConfiguredPlatforms(), 10000).catch(() => []),
-  ])
-  const logsP = api.readLogTail('gateway', 20).catch(() => '')
 
   // 第一波：服务状态 + 配置 + 版本 → 立即渲染统计卡片
   const [servicesRes, configRes, panelConfigRes] = await coreP
@@ -178,16 +171,16 @@ async function _loadDashboardDataInner(page, fullRefresh) {
   const panelConfig = panelConfigRes.status === 'fulfilled' ? panelConfigRes.value : null
   const gw = services.find(s => s.label === 'ai.openclaw.gateway')
   let agents = []
-  versionP.then(v => {
-    if (!page.isConnected) return
-    version = v || {}
-    renderStatCards(page, services, version, agents, config, panelConfig)
-  })
   const shouldLoadStatusSummary = gw?.running === true
   if (!shouldLoadStatusSummary) {
     _dashboardStatusSummaryCache = null
   }
-  if (servicesRes.status === 'rejected') toast(t('dashboard.servicesLoadFail'), 'error')
+  if (servicesRes.status === 'rejected') {
+    console.warn('[dashboard] getServicesStatus slow/failed:', servicesRes.reason)
+    toast(t('dashboard.servicesLoadFail'), 'error')
+  }
+  if (configRes.status === 'rejected') console.warn('[dashboard] readOpenclawConfig slow/failed:', configRes.reason)
+  if (panelConfigRes.status === 'rejected') console.warn('[dashboard] readPanelConfig slow/failed:', panelConfigRes.reason)
 
   // 自愈：补全关键默认值（先重新读取最新配置再 patch，避免用缓存覆盖其他页面的写入）
   if (config) {
@@ -215,12 +208,41 @@ async function _loadDashboardDataInner(page, fullRefresh) {
   }
 
   renderStatCards(page, services, version, [], config, panelConfig)
+  renderLogs(page, '')
   if (gw) {
     maybeShowForeignGatewayBindingPrompt({
       service: gw,
       onRefresh: () => loadDashboardData(page, true),
     }).catch(() => {})
   }
+
+  const versionP = shouldFetchVersion
+    ? withTimeout(api.getVersionInfo(), 8000)
+      .then(v => {
+        if (v) _dashboardVersionCache = v
+        return _dashboardVersionCache || {}
+      })
+      .catch(e => {
+        console.warn('[dashboard] getVersionInfo slow/failed:', e)
+        return _dashboardVersionCache || {}
+      })
+    : Promise.resolve(_dashboardVersionCache || {})
+  versionP.then(v => {
+    if (!page.isConnected) return
+    version = v || {}
+    renderStatCards(page, services, version, agents, config, panelConfig)
+  })
+
+  const secondaryP = Promise.allSettled([
+    withTimeout(api.listAgents(), 5000),
+    withTimeout(api.readMcpConfig(), 5000),
+    withTimeout(api.listBackups(), 5000),
+    withTimeout(api.listConfiguredPlatforms(), 5000).catch(() => []),
+  ])
+  const logsP = withTimeout(api.readLogTail('gateway', 20), 5000).catch(e => {
+    console.warn('[dashboard] readLogTail slow/failed:', e)
+    return ''
+  })
 
   // 第二波：Agent、MCP、备份 → 更新卡片 + 渲染总览
   const [agentsRes, mcpRes, backupsRes, channelsRes] = await secondaryP
