@@ -758,15 +758,25 @@ function baseVersion(v) {
   return String(v || '').split('-')[0]
 }
 
+function hasVersionSuffix(v) {
+  return String(v || '').includes('-')
+}
+
 // 判断 CLI 版本是否与推荐版匹配（考虑汉化版 -zh.x 后缀差异）
 function versionsMatch(cliVer, recommended) {
   if (cliVer === recommended) return true
-  return baseVersion(cliVer) === baseVersion(recommended)
+  if (baseVersion(cliVer) !== baseVersion(recommended)) return false
+  return !hasVersionSuffix(cliVer)
 }
 
 // 判断推荐版是否真的比当前版本更新（忽略 -zh.x 后缀）
 function recommendedIsNewer(recommended, current) {
-  return versionGt(baseVersion(recommended), baseVersion(current))
+  const baseCmp = versionCompare(baseVersion(recommended), baseVersion(current))
+  if (baseCmp !== 0) return baseCmp > 0
+  if (hasVersionSuffix(recommended) && hasVersionSuffix(current)) {
+    return versionGt(recommended, current)
+  }
+  return false
 }
 
 function loadVersionPolicy() {
