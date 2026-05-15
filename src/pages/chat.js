@@ -2213,7 +2213,7 @@ function formatFileSize(bytes) {
 
 /** 创建流式 AI 气泡 */
 function createStreamBubble() {
-  if (!_messagesEl || !_typingEl) return null
+  if (!_messagesEl || !_messagesEl.isConnected || !_typingEl) return null
   showTyping(false)
   const wrap = document.createElement('div')
   wrap.className = 'msg msg-ai'
@@ -2221,8 +2221,7 @@ function createStreamBubble() {
   bubble.className = 'msg-bubble'
   bubble.innerHTML = '<span class="stream-cursor"></span>'
   wrap.appendChild(bubble)
-  _messagesEl.insertBefore(wrap, _typingEl)
-  scrollToBottom()
+  insertMessageNode(wrap)
   return bubble
 }
 
@@ -2572,6 +2571,7 @@ function extractContent(msg) {
 // ── DOM 操作 ──
 
 function appendUserMessage(text, attachments = [], msgTime) {
+  if (!_messagesEl || !_messagesEl.isConnected) return
   const wrap = document.createElement('div')
   wrap.className = 'msg msg-user'
   const bubble = document.createElement('div')
@@ -2628,11 +2628,11 @@ function appendUserMessage(text, attachments = [], msgTime) {
 
   wrap.appendChild(bubble)
   wrap.appendChild(meta)
-  _messagesEl.insertBefore(wrap, _typingEl)
-  scrollToBottom()
+  insertMessageNode(wrap)
 }
 
 function appendAiMessage(text, msgTime, images, videos, audios, files, tools) {
+  if (!_messagesEl || !_messagesEl.isConnected) return
   const wrap = document.createElement('div')
   wrap.className = 'msg msg-ai'
   const bubble = document.createElement('div')
@@ -2655,8 +2655,7 @@ function appendAiMessage(text, msgTime, images, videos, audios, files, tools) {
 
   wrap.appendChild(bubble)
   wrap.appendChild(meta)
-  _messagesEl.insertBefore(wrap, _typingEl)
-  scrollToBottom()
+  insertMessageNode(wrap)
 }
 
 /** 渲染图片到消息气泡（支持 Anthropic/OpenAI/直接格式） */
@@ -2854,10 +2853,17 @@ function showLightbox(src) {
 }
 
 function appendSystemMessage(text) {
+  if (!_messagesEl || !_messagesEl.isConnected) return
   const wrap = document.createElement('div')
   wrap.className = 'msg msg-system'
   wrap.textContent = text
-  _messagesEl.insertBefore(wrap, _typingEl)
+  insertMessageNode(wrap)
+}
+
+function insertMessageNode(wrap) {
+  if (!_messagesEl || !_messagesEl.isConnected) return
+  if (_typingEl && _typingEl.parentNode === _messagesEl) _messagesEl.insertBefore(wrap, _typingEl)
+  else _messagesEl.appendChild(wrap)
   scrollToBottom()
 }
 
@@ -2903,13 +2909,12 @@ function showTyping(show, hint) {
 
 function showCompactionHint(show) {
   let hint = _page?.querySelector('#compaction-hint')
-  if (show && !hint && _messagesEl) {
+  if (show && !hint && _messagesEl?.isConnected) {
     hint = document.createElement('div')
     hint.id = 'compaction-hint'
     hint.className = 'msg msg-system compaction-hint'
     hint.innerHTML = `🗜️ ${t('chat.compacting')}`
-    _messagesEl.insertBefore(hint, _typingEl)
-    scrollToBottom()
+    insertMessageNode(hint)
   } else if (!show && hint) {
     hint.remove()
   }
@@ -3386,14 +3391,13 @@ function normalizeHostedBaseUrl(raw, apiType) {
 }
 
 function appendHostedOutput(text) {
-  if (!text || !_messagesEl) return
+  if (!text || !_messagesEl || !_messagesEl.isConnected) return
   const hostedSessionKey = getHostedBoundSessionKey()
   if (hostedSessionKey && _sessionKey && hostedSessionKey !== _sessionKey) return
   const wrap = document.createElement('div')
   wrap.className = 'msg msg-system msg-hosted'
   wrap.textContent = `[${t('chat.hostedAgent')}] ${text}`
-  _messagesEl.insertBefore(wrap, _typingEl)
-  scrollToBottom()
+  insertMessageNode(wrap)
 }
 
 // ── 页面离开清理 ──

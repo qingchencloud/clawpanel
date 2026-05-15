@@ -157,25 +157,28 @@ function renderDefaultBar(page, state) {
   const bar = page.querySelector('#default-model-bar')
   const primary = getCurrentPrimary(state.config)
   const fallbacks = state.config?.agents?.defaults?.model?.fallbacks || []
+  const visibleFallbacks = fallbacks.slice(0, 8)
+  const overflowFallbackCount = Math.max(0, fallbacks.length - visibleFallbacks.length)
   const collapsed = !state.showFallbackEditor
   const chevron = collapsed ? '▸' : '▾'
 
   bar.innerHTML = `
     <div class="config-section" style="margin-bottom:var(--space-lg); transition: all 0.3s ease;">
-      <div class="config-section-title" id="system-model-title" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer; user-select:none;">
-        <div style="display:flex; align-items:center; gap:8px">
-          <span style="display:inline-block;width:16px;font-size:12px;color:var(--text-tertiary)">${chevron}</span>
+      <div class="config-section-title" id="system-model-title" style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; cursor:pointer; user-select:none;">
+        <div style="display:flex; align-items:flex-start; gap:8px; min-width:0; flex:1">
+          <span style="display:inline-block;width:16px;font-size:12px;color:var(--text-tertiary);flex-shrink:0">${chevron}</span>
           <span>${t('models.systemModelTitle')}</span>
-          <div style="display:flex; gap:8px; margin-left: 12px; align-items: baseline; flex: 1; min-width: 0; overflow: hidden;">
-            <span style="color:var(--success); font-family:var(--font-mono); font-size: 0.9em; font-weight: 500; white-space: nowrap;">${primary || t('models.notConfigured')}</span>
-            <span style="font-size: 11px; color: var(--text-tertiary); font-weight: normal; white-space: nowrap;">${t('models.nFallbacks', { count: fallbacks.length })}</span>
+          <div style="display:flex; gap:8px; margin-left:12px; align-items:baseline; flex-wrap:wrap; min-width:0">
+            <span style="color:var(--success); font-family:var(--font-mono); font-size:0.9em; font-weight:500; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(primary || '')}">${primary || t('models.notConfigured')}</span>
+            <span style="font-size:11px; color:var(--text-tertiary); font-weight:normal; white-space:nowrap;">${t('models.nFallbacks', { count: fallbacks.length })}</span>
           </div>
         </div>
       </div>
 
       ${collapsed && fallbacks.length > 0 ? `
-      <div style="margin-top: 12px; display: flex; flex-wrap: nowrap; overflow: hidden; gap: 6px; align-items: center; padding-left: 24px;">
-        ${fallbacks.map(f => `<span style="background: var(--bg-tertiary); border: 1px solid var(--border-color); padding: 2px 8px; border-radius: 12px; font-size: 11px; font-family: var(--font-mono); color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px;" title="${f}">${f}</span>`).join('<span style="color: var(--text-tertiary); font-size: 10px; flex-shrink: 0;">→</span>')}
+      <div style="margin-top:12px; display:flex; flex-wrap:wrap; gap:6px; align-items:center; padding-left:24px; max-height:56px; overflow:hidden;">
+        ${visibleFallbacks.map(f => `<span style="background:var(--bg-tertiary); border:1px solid var(--border-color); padding:2px 8px; border-radius:12px; font-size:11px; font-family:var(--font-mono); color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:220px;" title="${escapeHtml(f)}">${escapeHtml(f)}</span>`).join('<span style="color:var(--text-tertiary); font-size:10px; flex-shrink:0;">→</span>')}
+        ${overflowFallbackCount ? `<span style="background:var(--bg-tertiary); border:1px solid var(--border-color); padding:2px 8px; border-radius:12px; font-size:11px; color:var(--text-tertiary)">+${overflowFallbackCount}</span>` : ''}
       </div>
       ` : ''}
 
@@ -222,11 +225,11 @@ function renderFallbackWaterfall(state) {
 
   return `
     <div class="fallback-editor-panel" style="background: var(--bg-secondary); padding: 12px; border-radius: var(--radius-md);">
-      <div style="margin-bottom: 12px; font-size: 11px; color: var(--text-secondary); background: var(--bg-info-subtle); padding: 6px 10px; border-radius: 4px; border-left: 3px solid var(--primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+      <div style="margin-bottom: 12px; font-size: 11px; color: var(--text-secondary); background: var(--bg-info-subtle); padding: 6px 10px; border-radius: 4px; border-left: 3px solid var(--primary); line-height:1.6;">
         ${t('models.bestPracticeHint')}
       </div>
 
-      <div style="display: grid; grid-template-columns: 1fr 1.2fr; gap: 24px;">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
         <div style="background: var(--bg-tertiary); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--border-color);">
           <div style="font-size: var(--font-size-xs); font-weight: bold; margin-bottom: 8px; color: var(--text-tertiary);">${t('models.activeChainTitle')}</div>
           <div id="active-fallback-list" style="display: flex; flex-direction: column; gap: 4px; min-height: 50px;">
@@ -234,7 +237,7 @@ function renderFallbackWaterfall(state) {
               <div class="fallback-chain-item" data-id="${f}" style="display: flex; align-items: center; justify-content: space-between; background: var(--bg-primary); padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border-color);">
                 <div style="display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1;">
                   <span class="fallback-drag-handle" style="color:var(--text-tertiary);cursor:grab;user-select:none;font-size:14px;padding:2px; flex-shrink: 0;">⋮⋮</span>
-                  <span style="font-family: var(--font-mono); font-size: var(--font-size-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${i + 1}. ${f}</span>
+                  <span style="font-family: var(--font-mono); font-size: var(--font-size-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(f)}">${i + 1}. ${escapeHtml(f)}</span>
                 </div>
                 <div style="display: flex; gap: 4px; flex-shrink: 0;">
                   <button class="btn btn-xs btn-secondary btn-set-primary-from-fb" data-id="${f}" style="padding: 1px 4px; font-size: 10px;">${t('models.setAsPrimary')}</button>
@@ -263,7 +266,7 @@ function renderFallbackWaterfall(state) {
                     <div class="candidate-provider-list" style="display: ${collapsed ? 'none' : 'flex'}; flex-direction: column; gap: 4px; padding: 4px 0 4px 12px;">
                       ${mIds.map(mId => `
                         <div class="candidate-item" style="display: flex; align-items: center; justify-content: space-between; background: var(--bg-primary); padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border-color); opacity: 0.9;">
-                          <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${mId}</span>
+                          <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(mId)}">${escapeHtml(mId)}</span>
                           <button class="btn btn-xs btn-primary btn-add-fb" data-full="${pKey}/${mId}" style="padding: 1px 6px; font-size: 10px;">${t('models.add')}</button>
                         </div>
                       `).join('')}
@@ -509,9 +512,9 @@ function renderProviders(page, state) {
     const chevron = collapsed ? '▸' : '▾'
     return `
       <div class="config-section" data-provider="${key}">
-        <div class="config-section-title" style="display:flex;justify-content:space-between;align-items:center">
-          <span style="cursor:pointer;user-select:none" data-action="toggle-provider"><span style="display:inline-block;width:16px;font-size:12px;color:var(--text-tertiary)">${chevron}</span>${key} <span style="font-size:var(--font-size-xs);color:var(--text-tertiary);font-weight:400">${getApiTypeLabel(p.api)} · ${t('models.nModels', { count: models.length })}</span></span>
-          <div style="display:flex;gap:8px">
+        <div class="config-section-title" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+          <span style="cursor:pointer;user-select:none;min-width:0;overflow:hidden;text-overflow:ellipsis" data-action="toggle-provider"><span style="display:inline-block;width:16px;font-size:12px;color:var(--text-tertiary)">${chevron}</span>${key} <span style="font-size:var(--font-size-xs);color:var(--text-tertiary);font-weight:400">${getApiTypeLabel(p.api)} · ${t('models.nModels', { count: models.length })}</span></span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
             <button class="btn btn-sm btn-secondary" data-action="edit-provider">${t('models.editProvider')}</button>
             <button class="btn btn-sm btn-secondary" data-action="add-model">${t('models.addModel')}</button>
             <button class="btn btn-sm btn-secondary" data-action="fetch-models">${t('models.fetchList')}</button>
@@ -520,11 +523,11 @@ function renderProviders(page, state) {
         </div>
         <div class="provider-body" style="${collapsed ? 'display:none' : ''}">
         ${models.length >= 2 ? `
-        <div style="display:flex;gap:6px;margin-bottom:var(--space-sm);align-items:center">
+        <div style="display:flex;gap:6px;margin-bottom:var(--space-sm);align-items:center;flex-wrap:wrap">
           <button class="btn btn-sm btn-secondary" data-action="batch-test">${t('models.batchTest')}</button>
           <button class="btn btn-sm btn-secondary" data-action="select-all">${t('models.selectAll')}</button>
           <button class="btn btn-sm btn-danger" data-action="batch-delete">${t('models.batchDelete')}</button>
-          <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+          <div style="margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             <span style="font-size:var(--font-size-xs);color:var(--text-tertiary)">${t('models.sort')}</span>
             <select class="form-input" data-action="sort-models" style="padding:4px 8px;font-size:var(--font-size-xs);width:auto">
               <option value="default">${t('models.sortDefault')}</option>
@@ -580,19 +583,19 @@ function renderModelCards(providerKey, models, primary, search) {
     if (testTime) meta.push(testTime)
     return `
       <div class="model-card" data-model-id="${id}" data-full="${full}"
-           style="background:${bgColor};border:1px solid ${borderColor};padding:10px 14px;border-radius:var(--radius-md);margin-bottom:8px;display:flex;align-items:center;gap:10px">
+           style="background:${bgColor};border:1px solid ${borderColor};padding:10px 14px;border-radius:var(--radius-md);margin-bottom:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <span class="drag-handle" style="color:var(--text-tertiary);cursor:grab;user-select:none;font-size:16px;padding:4px;touch-action:none">⋮⋮</span>
         <input type="checkbox" class="model-checkbox" data-model-id="${id}" style="flex-shrink:0;cursor:pointer">
-        <div style="flex:1;min-width:0">
-          <div style="display:flex;align-items:center;gap:8px">
-            <span style="font-family:var(--font-mono);font-size:var(--font-size-sm)">${id}</span>
+        <div style="flex:1 1 260px;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0">
+            <span style="font-family:var(--font-mono);font-size:var(--font-size-sm);min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(id)}">${escapeHtml(id)}</span>
             ${isPrimary ? `<span style="font-size:var(--font-size-xs);background:var(--success);color:var(--text-inverse);padding:1px 6px;border-radius:var(--radius-sm)">${t('models.primaryModel')}</span>` : ''}
             ${m.reasoning ? `<span style="font-size:var(--font-size-xs);background:var(--accent-muted);color:var(--accent);padding:1px 6px;border-radius:var(--radius-sm)">${t('models.reasoning')}</span>` : ''}
             ${latencyTag}
           </div>
-          <div style="font-size:var(--font-size-xs);color:var(--text-tertiary);margin-top:2px">${meta.join(' · ') || ''}</div>
+          <div style="font-size:var(--font-size-xs);color:var(--text-tertiary);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(meta.join(' · '))}">${escapeHtml(meta.join(' · ')) || ''}</div>
         </div>
-        <div style="display:flex;gap:6px;flex-shrink:0">
+        <div style="display:flex;gap:6px;flex:0 1 auto;flex-wrap:wrap;justify-content:flex-end;margin-left:auto">
           <button class="btn btn-sm btn-secondary" data-action="test-model">${t('models.testBtn')}</button>
           ${!isPrimary ? `<button class="btn btn-sm btn-secondary" data-action="set-primary">${t('models.setPrimary')}</button>` : ''}
           <button class="btn btn-sm btn-secondary" data-action="edit-model">${t('models.editModel')}</button>

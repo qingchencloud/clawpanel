@@ -209,6 +209,24 @@ async function loadDockerManager(page) {
     const onlineNodes = overview.filter(node => node.online).length
     const totalContainers = overview.reduce((sum, node) => sum + (node.containers?.length || 0), 0)
     const runningContainers = overview.reduce((sum, node) => sum + (node.containers?.filter?.(ct => ct.state === 'running').length || 0), 0)
+    const onlyUnavailableLocal = overview.length === 1
+      && overview[0]?.id === 'local'
+      && !overview[0]?.online
+      && !(overview[0]?.containers || []).length
+    if (!overview.length || onlyUnavailableLocal) {
+      bar.innerHTML = `
+        <div class="stat-card" style="padding:16px">
+          <div class="stat-card-label">${t('services.dockerOptionalTitle')}</div>
+          <div class="stat-card-meta" style="line-height:1.7;margin-top:6px">${t('services.dockerOptionalDesc')}</div>
+          ${onlyUnavailableLocal ? `<div class="form-hint" style="margin-top:8px">${escapeHtml(overview[0]?.error || '')}</div>` : ''}
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+            <button class="btn btn-secondary btn-sm" data-action="docker-refresh">${t('services.dockerRefresh')}</button>
+            <button class="btn btn-primary btn-sm" data-action="docker-add-node">${t('services.dockerAddNode')}</button>
+          </div>
+        </div>
+      `
+      return
+    }
     bar.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:var(--space-sm);flex-wrap:wrap;margin-bottom:var(--space-md)">
         <div class="stat-card" style="padding:12px 16px;min-width:260px">

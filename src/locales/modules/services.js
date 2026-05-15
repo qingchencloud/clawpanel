@@ -73,6 +73,8 @@ export default {
   dockerManager: _('Docker 管理', 'Docker Manager', 'Docker 管理'),
   dockerManagerHint: _('管理当前 Web 后端可访问的 Docker 节点与 OpenClaw 容器。适合本机 socket，也支持填写远程 Docker API 节点。', 'Manage Docker nodes and OpenClaw containers reachable from the current Web backend. Works with the local socket and remote Docker API endpoints.', '管理目前 Web 後端可訪問的 Docker 節點與 OpenClaw 容器。適用於本機 socket，也支援遠端 Docker API 節點。'),
   dockerManagerUnavailable: _('当前环境没有可用的 Web 后端，Docker 管理暂不可用。现阶段桌面版打包形态还未接入 Rust docker_* 命令；如需现在使用，请运行 Web/serve 模式。', 'A Web backend is not available in the current environment, so Docker management is temporarily unavailable. The packaged desktop build does not yet provide Rust docker_* commands. Use Web/serve mode for now.', '目前環境沒有可用的 Web 後端，Docker 管理暫不可用。現階段桌面版打包形態尚未接入 Rust docker_* 命令；如需立即使用，請運行 Web/serve 模式。'),
+  dockerOptionalTitle: _('Docker 多实例管理未启用', 'Docker multi-instance management is not enabled', 'Docker 多實例管理未啟用'),
+  dockerOptionalDesc: _('这是可选能力。未安装或未启动 Docker 时无需处理；需要用 Docker 托管多个 OpenClaw 实例时，再添加本机或远程 Docker 节点即可。', 'This is optional. If Docker is not installed or running, no action is needed. Add a local or remote Docker node only when you want to host multiple OpenClaw instances with Docker.', '這是可選能力。未安裝或未啟動 Docker 時無需處理；需要用 Docker 託管多個 OpenClaw 實例時，再新增本機或遠端 Docker 節點即可。'),
   dockerManagerLoadFailed: _('加载 Docker 概览失败', 'Failed to load Docker overview', '載入 Docker 概覽失敗'),
   dockerRefresh: _('刷新 Docker', 'Refresh Docker', '重新整理 Docker'),
   dockerAddNode: _('添加节点', 'Add Node', '新增節點'),
