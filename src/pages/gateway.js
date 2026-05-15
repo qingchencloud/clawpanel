@@ -6,6 +6,7 @@ import { toast } from '../components/toast.js'
 import { humanizeError } from '../lib/humanize-error.js'
 import { tryShowEngagement } from '../components/engagement.js'
 import { t } from '../lib/i18n.js'
+import { termHelpHtml, attachTermTooltips } from '../lib/term-tooltip.js'
 
 // 兼容新版 SecretRef：token 可能是 string 或 { $env: "VAR" } / { $ref: "x/y" }
 function _tokenDisplayStr(token) {

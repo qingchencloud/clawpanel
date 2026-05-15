@@ -10,6 +10,7 @@ import { icon, statusIcon } from '../lib/icons.js'
 import { API_TYPES, PROVIDER_PRESETS, QTCOOL, MODEL_PRESETS, fetchQtcoolModels } from '../lib/model-presets.js'
 import { t } from '../lib/i18n.js'
 import { scheduleGatewayRestart, fireRestartNow, cancelPendingRestart, onRestartState } from '../lib/gateway-restart-queue.js'
+import { termHelpHtml, attachTermTooltips } from '../lib/term-tooltip.js'
 
 // HTML 转义，防止错误信息中的特殊字符破坏页面或被注入
 function escapeHtml(str) {
