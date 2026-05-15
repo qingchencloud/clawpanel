@@ -619,14 +619,14 @@ async function autoConnectWebSocket() {
     // TCP 端口就绪探测：等待 Gateway 端口可达后再发起 WS 连接（仅 Tauri 桌面端）
     if (isTauriRuntime()) {
       const probeStart = Date.now()
-      const probeTimeout = 20000
+      const probeTimeout = 3000
       let portReady = false
       while (Date.now() - probeStart < probeTimeout) {
         try {
           portReady = await api.probeGatewayPort()
           if (portReady) break
         } catch {}
-        await new Promise(r => setTimeout(r, 2000))
+        await new Promise(r => setTimeout(r, 300))
       }
       if (!portReady) {
         console.warn(`[main] Gateway 端口 ${port} 在 ${probeTimeout / 1000}s 内未就绪，仍尝试连接`)

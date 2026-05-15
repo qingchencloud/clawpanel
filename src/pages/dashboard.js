@@ -148,12 +148,18 @@ async function _loadDashboardDataInner(page, fullRefresh) {
   if (shouldFetchVersion && (fullRefresh || versionInfoIncomplete(_dashboardVersionCache))) {
     invalidate('get_version_info')
   }
+  const versionP = shouldFetchVersion
+    ? withTimeout(api.getVersionInfo(), 8000)
+      .then(v => {
+        if (v) _dashboardVersionCache = v
+        return _dashboardVersionCache || {}
+      })
+      .catch(() => _dashboardVersionCache || {})
+    : Promise.resolve(_dashboardVersionCache || {})
   // 每个请求独立超时：避免单个慢请求拖垮整体渲染
   const coreP = Promise.allSettled([
     withTimeout(api.getServicesStatus(), 12000),
     withTimeout(api.readOpenclawConfig(), 5000),
-    // 版本信息：首次加载或手动刷新时才查询（避免 ARM 设备上频繁查 npm registry）
-    shouldFetchVersion ? withTimeout(api.getVersionInfo(), 8000) : Promise.resolve(_dashboardVersionCache),
     withTimeout(api.readPanelConfig(), 5000),
   ])
   const secondaryP = Promise.allSettled([
@@ -165,20 +171,23 @@ async function _loadDashboardDataInner(page, fullRefresh) {
   const logsP = api.readLogTail('gateway', 20).catch(() => '')
 
   // 第一波：服务状态 + 配置 + 版本 → 立即渲染统计卡片
-  const [servicesRes, configRes, versionRes, panelConfigRes] = await coreP
+  const [servicesRes, configRes, panelConfigRes] = await coreP
   const services = servicesRes.status === 'fulfilled' ? servicesRes.value : []
-  const version = (versionRes.status === 'fulfilled' && versionRes.value)
-    ? (_dashboardVersionCache = versionRes.value)
-    : (_dashboardVersionCache || {})
+  let version = _dashboardVersionCache || {}
   const config = configRes.status === 'fulfilled' ? configRes.value : null
   const panelConfig = panelConfigRes.status === 'fulfilled' ? panelConfigRes.value : null
   const gw = services.find(s => s.label === 'ai.openclaw.gateway')
+  let agents = []
+  versionP.then(v => {
+    if (!page.isConnected) return
+    version = v || {}
+    renderStatCards(page, services, version, agents, config, panelConfig)
+  })
   const shouldLoadStatusSummary = gw?.running === true
   if (!shouldLoadStatusSummary) {
     _dashboardStatusSummaryCache = null
   }
   if (servicesRes.status === 'rejected') toast(t('dashboard.servicesLoadFail'), 'error')
-  if (versionRes.status === 'rejected') toast(t('dashboard.versionLoadFail'), 'error')
 
   // 自愈：补全关键默认值（先重新读取最新配置再 patch，避免用缓存覆盖其他页面的写入）
   if (config) {
@@ -215,7 +224,7 @@ async function _loadDashboardDataInner(page, fullRefresh) {
 
   // 第二波：Agent、MCP、备份 → 更新卡片 + 渲染总览
   const [agentsRes, mcpRes, backupsRes, channelsRes] = await secondaryP
-  const agents = agentsRes.status === 'fulfilled' ? agentsRes.value : []
+  agents = agentsRes.status === 'fulfilled' ? agentsRes.value : []
   const mcpConfig = mcpRes.status === 'fulfilled' ? mcpRes.value : null
   const backups = backupsRes.status === 'fulfilled' ? backupsRes.value : []
   const channels = channelsRes.status === 'fulfilled' ? (channelsRes.value || []) : []
