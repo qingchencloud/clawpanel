@@ -297,6 +297,7 @@ export const api = {
   testModel: (baseUrl, apiKey, modelId, apiType = null) => invoke('test_model', { baseUrl, apiKey, modelId, apiType }),
   testModelVerbose: (baseUrl, apiKey, modelId, apiType = null) => invoke('test_model_verbose', { baseUrl, apiKey, modelId, apiType }),
   listRemoteModels: (baseUrl, apiKey, apiType = null) => invoke('list_remote_models', { baseUrl, apiKey, apiType }),
+  scanModelClientConfigs: () => invoke('scan_model_client_configs'),
 
   // Agent 管理
   listAgents: () => cachedInvoke('list_agents'),

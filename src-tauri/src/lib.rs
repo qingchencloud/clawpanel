@@ -97,6 +97,7 @@ pub fn run() {
             config::test_model,
             config::test_model_verbose,
             config::list_remote_models,
+            config::scan_model_client_configs,
             config::list_openclaw_versions,
             config::upgrade_openclaw,
             config::uninstall_openclaw,

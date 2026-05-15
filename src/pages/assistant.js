@@ -14,6 +14,8 @@ import { QTCOOL, PROVIDER_PRESETS, API_TYPES as SHARED_API_TYPES, fetchQtcoolMod
 import { t } from '../lib/i18n.js'
 import { getActiveEngineId } from '../lib/engine-manager.js'
 import { enhanceModelCallError } from '../lib/model-error-diagnosis.js'
+import { getFieldSchema } from '../lib/config-schema.js'
+import { wsClient } from '../lib/ws-client.js'
 
 // ── 常量 ──
 const STORAGE_KEY = 'clawpanel-assistant'
@@ -324,6 +326,80 @@ const TOOL_DEFS = {
       },
     },
   ],
+  openclaw: [
+    {
+      type: 'function',
+      function: {
+        name: 'get_openclaw_context',
+        description: '获取当前 OpenClaw 实例的脱敏上下文快照，包括配置目录、版本、Gateway 状态、模型服务商、主模型、Agent、消息渠道和路由绑定。不会返回 API Key 明文。',
+        parameters: {
+          type: 'object',
+          properties: {
+            format: { type: 'string', enum: ['markdown', 'json'], description: '返回格式，默认 markdown' },
+            refresh: { type: 'boolean', description: '是否强制刷新缓存，默认 false' },
+          },
+          required: [],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'diagnose_openclaw',
+        description: '对当前 OpenClaw 配置和运行状态做结构化诊断。可诊断 all、gateway、models、channels、agents，并返回问题、证据和建议。只读，不会修改配置。',
+        parameters: {
+          type: 'object',
+          properties: {
+            component: { type: 'string', enum: ['all', 'gateway', 'models', 'channels', 'agents'], description: '诊断范围，默认 all' },
+            deep: { type: 'boolean', description: '是否附加 Gateway 连接诊断和最近日志摘要，默认 false' },
+          },
+          required: [],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_openclaw_schema_graph',
+        description: '获取 OpenClaw 配置 schema 知识图谱，说明关键字段、类型、关系、常见风险和当前实例中的配置事实。用于判断字段应该放在哪里、哪些字段互相关联、配置错误如何修复。只读。',
+        parameters: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: '可选，聚焦某个配置路径，如 gateway、models.providers、bindings、channels.feishu' },
+            format: { type: 'string', enum: ['markdown', 'json'], description: '返回格式，默认 markdown' },
+            includeLiveContext: { type: 'boolean', description: '是否附加当前实例的脱敏配置事实，默认 true' },
+          },
+          required: [],
+        },
+      },
+    },
+  ],
+  browser: [
+    {
+      type: 'function',
+      function: {
+        name: 'browser_action',
+        description: '使用本机 Playwright CLI 操作一个浏览器会话。支持打开网页、跳转、获取可交互快照、点击、填表、输入、按键、截图、读取 console 和网络请求。依赖可选外部命令 playwright-cli；未安装时会返回安装提示。浏览器操作可能访问外部网站或触发网页动作，执行前通常需要用户确认。',
+        parameters: {
+          type: 'object',
+          properties: {
+            action: { type: 'string', enum: ['open', 'goto', 'snapshot', 'click', 'fill', 'type', 'press', 'screenshot', 'console', 'requests', 'close'], description: '浏览器动作' },
+            url: { type: 'string', description: 'open/goto 使用的 URL' },
+            ref: { type: 'string', description: 'snapshot 返回的元素 ref、CSS 选择器或 Playwright locator，用于 click/fill/screenshot' },
+            text: { type: 'string', description: 'fill/type 使用的文本' },
+            key: { type: 'string', description: 'press 使用的按键，如 Enter、Escape、ArrowDown' },
+            filename: { type: 'string', description: 'snapshot/screenshot 输出文件名，可选' },
+            session: { type: 'string', description: 'Playwright CLI 会话名，默认 clawpanel-assistant' },
+            depth: { type: 'integer', description: 'snapshot 深度限制，可选' },
+            button: { type: 'string', enum: ['left', 'right', 'middle'], description: 'click 使用的鼠标按钮，默认 left' },
+            submit: { type: 'boolean', description: 'fill 后是否按 Enter 提交' },
+            browser: { type: 'string', enum: ['chromium', 'chrome', 'msedge', 'firefox', 'webkit'], description: 'open 时使用的浏览器，可选' },
+          },
+          required: ['action'],
+        },
+      },
+    },
+  ],
   interaction: [
     {
       type: 'function',
@@ -549,14 +625,14 @@ const BUILTIN_SKILLS = [
     prompt: `请帮我检查 OpenClaw 的配置文件。
 
 具体操作：
-1. 调用 get_system_info 获取系统信息，确定主目录和 OS 类型
-2. 用 list_directory 查看 ~/.openclaw/ 目录结构
-3. 用 read_file 读取 ~/.openclaw/openclaw.json
-4. 分析配置内容，检查：
+1. 先调用 get_openclaw_context 获取当前 OpenClaw 脱敏实况
+2. 再调用 diagnose_openclaw，component=models，deep=false
+3. 结合上下文快照分析配置内容，检查：
    - models.providers 服务商配置（baseUrl 格式、apiKey 是否存在）
    - gateway 配置（port 默认 18789、mode 必须在 gateway 对象内）
    - 常见配置错误（mode 放在顶层、缺少 gateway 对象、controlUi.allowedOrigins 未配置）
-5. 给出配置健康度评估和具体改进建议`,
+4. 给出配置健康度评估和具体改进建议
+5. 不要要求用户粘贴 API Key，也不要输出密钥明文`,
   },
   {
     id: 'diagnose-gateway',
@@ -567,12 +643,10 @@ const BUILTIN_SKILLS = [
     prompt: `请帮我诊断 OpenClaw Gateway 的运行状态。
 
 具体操作：
-1. 调用 get_system_info 获取 OS 类型和主目录
-2. 用 list_processes 工具检查 openclaw/gateway 进程是否在运行
-3. 用 check_port 工具检查端口 18789 是否在监听
-4. 用 read_file 读取 ~/.openclaw/logs/gateway.log（取最后 50 行）
-5. 分析日志中的 ERROR、WARN、fail 等关键词
-6. 给出诊断结论（进程状态 + 端口状态 + 日志分析）和修复建议`,
+1. 先调用 diagnose_openclaw，component=gateway，deep=true
+2. 如果 deep 诊断不足，再用 list_processes/check_port 做补充
+3. 分析 Gateway 服务状态、连接诊断和最近日志中的 ERROR、WARN、fail 等关键词
+4. 给出诊断结论（服务状态 + 端口状态 + 日志分析）和修复建议`,
   },
   {
     id: 'browse-dir',
@@ -636,12 +710,12 @@ const BUILTIN_SKILLS = [
     tools: ['terminal', 'fileOps'],
     prompt: `请帮我自动检测并修复 OpenClaw 的常见问题。
 
-先调用 get_system_info 获取系统信息，然后按以下步骤逐一检查：
-1. **配置检查**：用 read_file 读取 openclaw.json，检查是否有已知错误（mode 在顶层、缺少 gateway 对象等）
-2. **models.json 同步**：用 read_file 对比 openclaw.json 和 agents/main/agent/models.json 的 providers
-3. **Gateway 状态**：用 list_processes 检查 openclaw 进程，用 check_port 检查端口 18789
-4. **WebSocket 配置**：检查 gateway.controlUi.allowedOrigins 是否包含 "*"
-5. **Node.js 环境**：用 run_command 检查 node 和 npm 版本
+先调用 diagnose_openclaw，component=all，deep=true，然后按以下步骤逐一检查：
+1. **配置检查**：检查 openclaw.json 脱敏摘要，识别已知错误（mode 在顶层、缺少 gateway 对象等）
+2. **模型链路**：检查 provider、主模型、fallbacks、env 引用和模型 ID
+3. **Gateway 状态**：检查服务状态、连接诊断和端口 18789
+4. **消息渠道**：检查渠道、账号和 Agent 绑定风险
+5. **Node.js 环境**：必要时再用 run_command 检查 node 和 npm 版本
 
 对每个检查项给出通过/失败状态，并对发现的问题给出具体修复命令（但不要自动修改配置文件，等我确认）。`,
   },
@@ -876,6 +950,10 @@ function getEnabledTools() {
   const tc = _config.tools || {}
   const tools = [...TOOL_DEFS.system, ...TOOL_DEFS.process, ...TOOL_DEFS.interaction]
 
+  if (getActiveEngineId() !== 'hermes') tools.push(...TOOL_DEFS.openclaw)
+
+  if (tc.browser !== false) tools.push(...TOOL_DEFS.browser)
+
   // 终端工具：受设置开关控制（优先级高于模式）
   if (tc.terminal !== false) tools.push(...TOOL_DEFS.terminal)
 
@@ -1053,6 +1131,10 @@ function buildSystemPrompt() {
     prompt += '\n- **系统信息**: get_system_info — 获取 OS 类型、架构、主目录等。**在执行任何命令前必须先调用此工具**。'
     prompt += '\n- **进程/端口**: list_processes（按名称过滤）、check_port（检测端口占用）'
     prompt += '\n- **终端**: run_command — 执行 shell 命令'
+    if (getActiveEngineId() !== 'hermes') {
+      prompt += '\n- **OpenClaw 实况**: get_openclaw_context、diagnose_openclaw、get_openclaw_schema_graph — 读取当前实例和配置 schema 知识图谱。涉及 OpenClaw 配置字段位置/关系时优先调用。'
+    }
+    prompt += '\n- **浏览器**: browser_action — 使用 Playwright CLI 打开网页、获取快照、点击、填表、截图、查看 console/requests。网页写入动作会要求用户确认。'
     if (mode.readOnly) {
       prompt += '\n- **文件**: read_file、list_directory（只读，write_file 已禁用）'
     } else {
@@ -1109,6 +1191,23 @@ function buildSystemPrompt() {
     }
   }
 
+  return prompt
+}
+
+async function buildSystemPromptAsync() {
+  let prompt = buildSystemPrompt()
+  if (getActiveEngineId() !== 'hermes') {
+    try {
+      const ctx = await collectOpenClawContext()
+      if (ctx?.markdown) {
+        prompt += '\n\n## 当前机器 OpenClaw 实况'
+        prompt += '\n以下内容是 ClawPanel 自动读取的当前实例脱敏快照；回答模型、Gateway、Agent、消息渠道问题时必须优先参考它，而不是只依赖静态知识。'
+        prompt += '\n\n' + ctx.markdown
+      }
+    } catch (e) {
+      prompt += `\n\n## 当前机器 OpenClaw 实况\n- 自动读取失败: ${e?.message || e}`
+    }
+  }
   return prompt
 }
 
@@ -1252,6 +1351,587 @@ function renderSoulStats(soul) {
   }
   html += '</div>'
   return html
+}
+
+const OPENCLAW_CONTEXT_TTL = 15000
+let _openclawContextCache = null
+let _openclawContextLoadedAt = 0
+let _openclawContextPromise = null
+
+function isObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function asArray(value) {
+  return Array.isArray(value) ? value : []
+}
+
+function resultArray(value, key) {
+  if (Array.isArray(value)) return value
+  if (key && Array.isArray(value?.[key])) return value[key]
+  return []
+}
+
+function safeEntries(value) {
+  return Object.entries(isObject(value) ? value : {})
+}
+
+function modelId(model) {
+  return typeof model === 'string' ? model : (model?.id || model?.name || '')
+}
+
+function providerModels(provider) {
+  return asArray(provider?.models).map(modelId).filter(Boolean)
+}
+
+function envRefName(value) {
+  const text = String(value || '').trim()
+  return text.match(/^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/)?.[1] || text.match(/^\$([A-Za-z_][A-Za-z0-9_]*)$/)?.[1] || ''
+}
+
+function secretStatus(value, envMap) {
+  const text = String(value || '').trim()
+  if (!text) return { kind: 'none', label: '未配置' }
+  const envName = envRefName(text)
+  if (envName) {
+    return {
+      kind: envMap.has(envName) ? 'env-configured' : 'env-ref',
+      label: envMap.has(envName) ? `环境变量引用 ${envName}（已在 OpenClaw env 中配置）` : `环境变量引用 ${envName}（未在 OpenClaw env 中找到）`,
+      envName,
+      configuredInOpenclawEnv: envMap.has(envName),
+    }
+  }
+  return { kind: 'literal', label: '已配置明文/令牌（已脱敏）' }
+}
+
+function cleanUrl(url) {
+  try {
+    const u = new URL(String(url || ''))
+    u.username = ''
+    u.password = ''
+    u.search = ''
+    u.hash = ''
+    return u.toString().replace(/\/$/, '')
+  } catch {
+    return String(url || '').replace(/[?].*$/, '')
+  }
+}
+
+function redactSensitive(value, depth = 0) {
+  if (depth > 6) return '[Object]'
+  if (Array.isArray(value)) return value.slice(0, 30).map(v => redactSensitive(v, depth + 1))
+  if (!isObject(value)) return value
+  const out = {}
+  for (const [key, val] of Object.entries(value)) {
+    if (/(api[-_]?key|secret|token|password|credential|authorization|bearer|cookie|private)/i.test(key)) {
+      out[key] = val ? '[REDACTED]' : val
+    } else {
+      out[key] = redactSensitive(val, depth + 1)
+    }
+  }
+  return out
+}
+
+function getPrimaryModel(config) {
+  return config?.agents?.defaults?.model?.primary || config?.models?.primary || config?.model?.primary || ''
+}
+
+function summarizeProvider(key, provider, envMap) {
+  const models = providerModels(provider)
+  const secret = secretStatus(provider?.apiKey, envMap)
+  return {
+    key,
+    api: provider?.api || 'openai-completions',
+    baseUrl: cleanUrl(provider?.baseUrl || ''),
+    apiKeyStatus: secret.label,
+    apiKeyKind: secret.kind,
+    envName: secret.envName || '',
+    modelCount: models.length,
+    allModelIds: models,
+    models: models.slice(0, 12),
+    truncatedModels: Math.max(0, models.length - 12),
+  }
+}
+
+function summarizeAgents(agents, config) {
+  const list = resultArray(agents, 'agents')
+  if (list.length) {
+    return list.slice(0, 20).map(a => ({
+      id: a.id || a.name || 'unknown',
+      name: a.name || a.id || 'unknown',
+      model: a.model || a.primaryModel || a.config?.model || '',
+      workspace: a.workspace || a.workspacePath || '',
+      enabled: a.enabled !== false,
+    }))
+  }
+  const cfgAgents = asArray(config?.agents?.list)
+  return cfgAgents.slice(0, 20).map(a => ({
+    id: a.id || a.name || 'unknown',
+    name: a.name || a.id || 'unknown',
+    model: a.model || a.model?.primary || '',
+    workspace: a.workspace || '',
+    enabled: a.enabled !== false,
+  }))
+}
+
+function summarizeChannels(platforms, config) {
+  const list = resultArray(platforms, 'platforms')
+  if (list.length) {
+    return list.slice(0, 24).map(p => ({
+      id: p.id || p.platform || 'unknown',
+      enabled: p.enabled !== false,
+      accounts: asArray(p.accounts).map(a => a.accountId || a.id || 'default').slice(0, 8),
+      accountCount: asArray(p.accounts).length,
+    }))
+  }
+  return safeEntries(config?.channels).slice(0, 24).map(([id, value]) => ({
+    id,
+    enabled: value?.enabled !== false,
+    accounts: asArray(value?.accounts).map(a => a.accountId || a.id || 'default').slice(0, 8),
+    accountCount: asArray(value?.accounts).length,
+  }))
+}
+
+function summarizeBindings(bindings, config) {
+  const raw = resultArray(bindings, 'bindings')
+  const list = raw.length ? raw : asArray(config?.bindings)
+  return list.slice(0, 30).map(b => ({
+    agentId: b.agentId || 'main',
+    channel: b.match?.channel || b.channel || '',
+    accountId: b.match?.accountId || b.accountId || '',
+    peer: b.match?.peer || '',
+    guildId: b.match?.guildId || '',
+    teamId: b.match?.teamId || '',
+    roles: asArray(b.match?.roles).slice(0, 6),
+  }))
+}
+
+function gatewayFromServices(services) {
+  const list = asArray(services)
+  const item = list.find(s => /gateway/i.test(String(s.label || s.name || s.id || ''))) || list[0]
+  return item ? {
+    label: item.label || item.name || item.id || 'gateway',
+    running: item.running === true || item.status === 'running',
+    pid: item.pid || null,
+    status: item.status || '',
+  } : null
+}
+
+function createOpenClawFindings(ctx, component = 'all') {
+  const findings = []
+  const want = (name) => component === 'all' || component === name
+  const providers = ctx.providers || []
+  const providerMap = new Map(providers.map(p => [p.key, p]))
+  const primary = ctx.primaryModel || ''
+  const [primaryProvider, primaryModel] = primary.split('/')
+  if (want('gateway')) {
+    if (!ctx.gateway) findings.push({ level: 'warn', component: 'gateway', title: '无法读取 Gateway 服务状态', evidence: 'get_services_status 未返回可识别的 Gateway 项', suggestion: '在服务管理页或使用 openclaw gateway status --deep 进一步确认。' })
+    else if (!ctx.gateway.running) findings.push({ level: 'warn', component: 'gateway', title: 'Gateway 当前未运行', evidence: `${ctx.gateway.label}: ${ctx.gateway.status || 'not running'}`, suggestion: '可在服务管理页启动 Gateway，或先检查端口/日志定位启动失败原因。' })
+    const gw = ctx.configSummary?.gateway || {}
+    if (ctx.configSummary?.topLevelMode) findings.push({ level: 'error', component: 'gateway', title: '检测到顶层 mode 配置', evidence: `mode=${ctx.configSummary.topLevelMode}`, suggestion: 'mode 应放在 gateway.mode 下，顶层 mode 会触发 OpenClaw schema 错误。' })
+    const origins = gw.controlUi?.allowedOrigins
+    if (origins && Array.isArray(origins) && !origins.includes('*') && !origins.includes('http://localhost:*')) findings.push({ level: 'info', component: 'gateway', title: 'controlUi.allowedOrigins 较严格', evidence: origins.join(', '), suggestion: '如果浏览器/WebSocket 连接失败，可检查是否需要允许当前面板来源。' })
+  }
+  if (want('models')) {
+    if (!providers.length) findings.push({ level: 'error', component: 'models', title: '没有配置模型服务商', evidence: 'models.providers 为空', suggestion: '在模型配置页添加至少一个 provider 和模型。' })
+    if (!primary) findings.push({ level: 'warn', component: 'models', title: '未设置默认主模型', evidence: 'agents.defaults.model.primary 为空', suggestion: '在模型配置页选择一个主模型。' })
+    else if (!providerMap.has(primaryProvider)) findings.push({ level: 'error', component: 'models', title: '主模型引用了不存在的 provider', evidence: primary, suggestion: `添加 provider ${primaryProvider}，或重新选择主模型。` })
+    else if (primaryModel && !providerMap.get(primaryProvider).allModelIds.includes(primaryModel)) findings.push({ level: 'warn', component: 'models', title: '主模型不在 provider 模型列表中', evidence: primary, suggestion: '确认模型 ID 是否拼写正确，或重新拉取模型列表。' })
+    for (const p of providers) {
+      if (p.apiKeyKind === 'none' && !/ollama/i.test(p.api || '') && !/:11434/.test(p.baseUrl)) findings.push({ level: 'warn', component: 'models', title: `Provider ${p.key} 未配置 API Key`, evidence: `${p.api} ${p.baseUrl}`, suggestion: '补充 apiKey，或使用 ${ENV_VAR} 引用 OpenClaw env。' })
+      if (p.apiKeyKind === 'env-ref') findings.push({ level: 'warn', component: 'models', title: `Provider ${p.key} 引用了未记录的环境变量`, evidence: p.envName, suggestion: `在 OpenClaw env/.env 中补齐 ${p.envName}，或改成已有环境变量引用。` })
+      if (/chatgpt\.com\/backend-api\/codex/i.test(p.baseUrl)) findings.push({ level: 'info', component: 'models', title: `Provider ${p.key} 指向 ChatGPT/Codex OAuth 接口`, evidence: p.baseUrl, suggestion: '该接口通常依赖 OAuth 会话，不应当当作普通 API Key provider 导入。' })
+    }
+  }
+  if (want('agents')) {
+    if (!ctx.agents.length) findings.push({ level: 'warn', component: 'agents', title: '未读取到 Agent 列表', evidence: 'list_agents 为空', suggestion: '检查 agents.list 与 ~/.openclaw/agents 目录是否正常。' })
+  }
+  if (want('channels')) {
+    const agentIds = new Set(ctx.agents.map(a => a.id).concat(['main', 'default']))
+    const channelIds = new Set(ctx.channels.map(c => c.id))
+    for (const b of ctx.bindings) {
+      if (b.agentId && !agentIds.has(b.agentId)) findings.push({ level: 'warn', component: 'channels', title: '路由绑定引用未知 Agent', evidence: `${b.channel || '*'} -> ${b.agentId}`, suggestion: '在 Agent 管理或消息渠道绑定中修正该 binding。' })
+      if (b.channel && channelIds.size && !channelIds.has(b.channel)) findings.push({ level: 'info', component: 'channels', title: '路由绑定引用了未展示的渠道', evidence: b.channel, suggestion: '确认该渠道是否为插件渠道或历史配置残留。' })
+    }
+    if (ctx.channels.length && !ctx.bindings.length) findings.push({ level: 'info', component: 'channels', title: '已配置消息渠道但没有显式 Agent 绑定', evidence: `${ctx.channels.length} 个渠道`, suggestion: '未绑定时通常走默认 Agent；如需多 Agent 分流，请配置 bindings。' })
+  }
+  return findings
+}
+
+function formatOpenClawContext(ctx) {
+  const lines = []
+  lines.push('## 当前 OpenClaw 实况（自动脱敏）')
+  lines.push(`- 配置目录: ${ctx.openclawDir || '未知'}`)
+  lines.push(`- OpenClaw 版本: ${ctx.version || '未知'}`)
+  lines.push(`- Gateway: ${ctx.gateway ? `${ctx.gateway.running ? '运行中' : '未运行'}${ctx.gateway.pid ? ` (pid ${ctx.gateway.pid})` : ''}` : '未知'}`)
+  lines.push(`- 主模型: ${ctx.primaryModel || '未设置'}`)
+  lines.push(`- Provider: ${ctx.providers.length} 个`)
+  for (const p of ctx.providers.slice(0, 8)) {
+    lines.push(`  - ${p.key}: ${p.api}, ${p.modelCount} models, key=${p.apiKeyStatus}, base=${p.baseUrl || '-'}`)
+  }
+  if (ctx.providers.length > 8) lines.push(`  - ...还有 ${ctx.providers.length - 8} 个 provider`)
+  lines.push(`- Agent: ${ctx.agents.length} 个${ctx.agents.length ? ' — ' + ctx.agents.slice(0, 8).map(a => `${a.id}${a.model ? `(${a.model})` : ''}`).join(', ') : ''}`)
+  lines.push(`- 消息渠道: ${ctx.channels.length} 个${ctx.channels.length ? ' — ' + ctx.channels.slice(0, 8).map(c => `${c.id}${c.enabled ? '' : '(disabled)'}`).join(', ') : ''}`)
+  lines.push(`- 路由绑定: ${ctx.bindings.length} 条`)
+  if (ctx.findings.length) {
+    lines.push('### 自动发现的问题/风险')
+    for (const f of ctx.findings.slice(0, 10)) lines.push(`- [${f.level}] ${f.component}: ${f.title} — ${f.evidence}`)
+  } else {
+    lines.push('### 自动发现的问题/风险')
+    lines.push('- 未发现明显配置风险')
+  }
+  lines.push('注意：以上快照不会包含 API Key 明文。遇到模型、Gateway、渠道问题时，优先调用 get_openclaw_context 或 diagnose_openclaw 获取最新证据。')
+  return lines.join('\n')
+}
+
+async function collectOpenClawContext({ refresh = false } = {}) {
+  if (getActiveEngineId() === 'hermes') return null
+  const now = Date.now()
+  if (!refresh && _openclawContextCache && now - _openclawContextLoadedAt < OPENCLAW_CONTEXT_TTL) return _openclawContextCache
+  if (_openclawContextPromise && !refresh) return await _openclawContextPromise
+  _openclawContextPromise = (async () => {
+    const settled = await Promise.allSettled([
+      api.getOpenclawDir(),
+      api.getVersionInfo(),
+      api.getServicesStatus(),
+      api.readOpenclawConfig(),
+      api.listAgents(),
+      api.listConfiguredPlatforms(),
+      api.listAllBindings(),
+      api.getStatusSummary(),
+    ])
+    const pick = (idx, fallback) => settled[idx].status === 'fulfilled' ? settled[idx].value : fallback
+    const config = pick(3, {}) || {}
+    const envMap = new Map(safeEntries(config.env).map(([k, v]) => [k, v]))
+    const providers = safeEntries(config.models?.providers).map(([key, provider]) => summarizeProvider(key, provider, envMap))
+    const ctx = {
+      generatedAt: new Date().toISOString(),
+      openclawDir: pick(0, ''),
+      version: pick(1, {})?.current || pick(1, {})?.version || '',
+      gateway: gatewayFromServices(pick(2, [])),
+      primaryModel: getPrimaryModel(config),
+      providers,
+      agents: summarizeAgents(pick(4, []), config),
+      channels: summarizeChannels(pick(5, []), config),
+      bindings: summarizeBindings(pick(6, []), config),
+      statusSummary: pick(7, null),
+      configSummary: {
+        topLevelMode: config.mode || '',
+        gateway: redactSensitive(config.gateway || {}),
+        modelFallbacks: asArray(config.agents?.defaults?.model?.fallbacks).slice(0, 10),
+        envKeys: [...envMap.keys()].slice(0, 50),
+      },
+      readErrors: settled.map((r, idx) => r.status === 'rejected' ? `${idx}: ${r.reason?.message || r.reason}` : '').filter(Boolean),
+    }
+    ctx.findings = createOpenClawFindings(ctx, 'all')
+    ctx.markdown = formatOpenClawContext(ctx)
+    _openclawContextCache = ctx
+    _openclawContextLoadedAt = Date.now()
+    return ctx
+  })()
+  try {
+    return await _openclawContextPromise
+  } finally {
+    _openclawContextPromise = null
+  }
+}
+
+async function openClawContextTool(args = {}) {
+  const ctx = await collectOpenClawContext({ refresh: args.refresh === true })
+  if (!ctx) return '当前处于 Hermes Agent 引擎，OpenClaw 上下文工具未启用。'
+  if (args.format === 'json') {
+    const { markdown, ...rest } = ctx
+    rest.providers = rest.providers.map(({ allModelIds, ...p }) => p)
+    return JSON.stringify(rest, null, 2)
+  }
+  return ctx.markdown
+}
+
+async function diagnoseOpenClawTool(args = {}) {
+  const component = args.component || 'all'
+  const ctx = await collectOpenClawContext({ refresh: true })
+  if (!ctx) return '当前处于 Hermes Agent 引擎，OpenClaw 诊断工具未启用。'
+  const findings = createOpenClawFindings(ctx, component)
+  let output = `## OpenClaw 诊断：${component}\n\n`
+  output += ctx.markdown + '\n\n'
+  if (findings.length) {
+    output += '## 诊断结论\n'
+    output += findings.map(f => `- **${f.level.toUpperCase()} / ${f.component}** ${f.title}\n  - 证据: ${f.evidence}\n  - 建议: ${f.suggestion}`).join('\n')
+  } else {
+    output += '## 诊断结论\n- 未发现明显问题。\n'
+  }
+  if (args.deep === true && (component === 'all' || component === 'gateway')) {
+    try {
+      output += '\n\n## Gateway 连接深度诊断\n'
+      output += JSON.stringify(await api.diagnoseGatewayConnection(), null, 2)
+    } catch (e) {
+      output += `\n\n## Gateway 连接深度诊断\n读取失败: ${e?.message || e}`
+    }
+    try {
+      const tail = await api.readLogTail('gateway', 80)
+      if (tail?.trim()) output += `\n\n## Gateway 最近日志（尾部）\n\`\`\`\n${tail.trim().split('\n').slice(-80).join('\n')}\n\`\`\``
+    } catch {}
+  }
+  return output
+}
+
+const OPENCLAW_SCHEMA_GRAPH_SEEDS = [
+  { path: 'gateway', type: 'object', description: 'Gateway 服务配置根节点，所有 Gateway 运行模式、端口和控制台安全设置都应放在这里。', risks: ['不要把 mode 放到 openclaw.json 顶层。'] },
+  { path: 'gateway.mode', type: 'string', description: 'Gateway 运行模式。', risks: ['顶层 mode 会导致 schema 不匹配。'] },
+  { path: 'gateway.host', type: 'string', description: 'Gateway HTTP 监听地址。' },
+  { path: 'gateway.port', type: 'integer', description: 'Gateway HTTP 监听端口，常见默认值为 18789。', risks: ['端口被占用会导致 Gateway 启动失败。'] },
+  { path: 'gateway.controlUi', type: 'object', description: '浏览器控制台 / WebSocket 控制面相关配置。' },
+  { path: 'gateway.controlUi.allowedOrigins', type: 'array', description: '允许连接控制台的浏览器来源列表。', risks: ['过严会导致 Web 管理面板无法连接；过宽则需要配合鉴权。'] },
+  { path: 'models', type: 'object', description: '模型配置根节点。' },
+  { path: 'models.providers', type: 'object', description: '模型服务商字典，key 是 provider 名称。' },
+  { path: 'models.providers.*.api', type: 'string', description: '服务商 API 协议类型，例如 openai-completions、openai-responses、google-generative-ai、anthropic-messages、ollama。' },
+  { path: 'models.providers.*.baseUrl', type: 'string', description: '服务商 API 地址。', risks: ['OpenAI 兼容接口通常需要 /v1；Ollama 原生接口通常不需要 /v1。'] },
+  { path: 'models.providers.*.apiKey', type: 'string', description: '服务商密钥，推荐使用 ${ENV_VAR} 引用。', risks: ['不要在日志、截图或助手回复中暴露密钥明文。'] },
+  { path: 'models.providers.*.models', type: 'array', description: '该服务商可用模型 ID 列表。' },
+  { path: 'agents', type: 'object', description: 'Agent 全局配置。' },
+  { path: 'agents.defaults', type: 'object', description: '默认 Agent 配置。' },
+  { path: 'agents.defaults.model.primary', type: 'string', description: '默认主模型，通常格式为 provider/model-id。', risks: ['provider 必须存在于 models.providers；model-id 应存在于该 provider 的 models 列表中。'] },
+  { path: 'agents.defaults.model.fallbacks', type: 'array', description: '默认备用模型链。' },
+  { path: 'agents.list', type: 'array', description: '显式 Agent 列表；main Agent 可能是隐式存在的。' },
+  { path: 'agents.list[].id', type: 'string', description: 'Agent ID，用于 bindings.agentId 引用。' },
+  { path: 'agents.list[].workspace', type: 'string', description: 'Agent 工作目录。' },
+  { path: 'channels', type: 'object', description: '消息渠道配置根节点，例如 feishu、telegram、discord、qqbot、dingtalk。' },
+  { path: 'channels.*.enabled', type: 'boolean', description: '渠道是否启用。' },
+  { path: 'channels.*.accounts', type: 'object|array', description: '多账号配置容器；accountId 用于与 bindings.match.accountId 对齐。' },
+  { path: 'bindings', type: 'array', description: '消息路由绑定数组，用于把渠道事件分发给指定 Agent。' },
+  { path: 'bindings[].agentId', type: 'string', description: '目标 Agent ID。', risks: ['必须引用存在的 Agent；main/default 可作为默认目标。'] },
+  { path: 'bindings[].match.channel', type: 'string', description: '匹配的消息渠道。' },
+  { path: 'bindings[].match.accountId', type: 'string', description: '同一渠道多账号时的账号 ID。' },
+  { path: 'bindings[].match.peer', type: 'string', description: '最高优先级的会话/用户/群匹配字段。' },
+  { path: 'bindings[].match.guildId', type: 'string', description: 'Discord/群组类渠道的 guild 匹配字段。' },
+  { path: 'bindings[].match.teamId', type: 'string', description: '团队/租户匹配字段。' },
+  { path: 'bindings[].match.roles', type: 'array', description: '角色匹配字段。' },
+  { path: 'env', type: 'object', description: 'OpenClaw 环境变量映射，用于 provider apiKey 等字段的 ${ENV_VAR} 引用。' },
+]
+
+const OPENCLAW_SCHEMA_GRAPH_EDGES = [
+  { from: 'agents.defaults.model.primary', to: 'models.providers', relation: 'references provider/model-id' },
+  { from: 'agents.defaults.model.fallbacks', to: 'models.providers', relation: 'references provider/model-id' },
+  { from: 'models.providers.*.apiKey', to: 'env', relation: 'may reference ${ENV_VAR}' },
+  { from: 'bindings[].agentId', to: 'agents.list[].id', relation: 'routes message to agent' },
+  { from: 'bindings[].match.channel', to: 'channels', relation: 'matches channel config key' },
+  { from: 'bindings[].match.accountId', to: 'channels.*.accounts', relation: 'matches channel account' },
+  { from: 'gateway.controlUi.allowedOrigins', to: 'ClawPanel WebSocket origin', relation: 'allows browser control connection' },
+]
+
+const BROWSER_READ_ACTIONS = new Set(['open', 'goto', 'snapshot', 'screenshot', 'console', 'requests', 'close'])
+const BROWSER_WRITE_ACTIONS = new Set(['click', 'fill', 'type', 'press'])
+
+function filterSchemaGraphSeeds(path) {
+  const focus = String(path || '').trim()
+  if (!focus) return OPENCLAW_SCHEMA_GRAPH_SEEDS
+  return OPENCLAW_SCHEMA_GRAPH_SEEDS.filter(seed => {
+    return seed.path === focus || seed.path.startsWith(focus + '.') || focus.startsWith(seed.path + '.') || seed.path.includes(focus)
+  })
+}
+
+function schemaConstraints(schema) {
+  return schema?.schema || schema || {}
+}
+
+function schemaTypeOf(schema, fallback) {
+  const c = schemaConstraints(schema)
+  const type = c.type || fallback || ''
+  return Array.isArray(type) ? type.join('|') : String(type || '')
+}
+
+function schemaRequiredOf(schema) {
+  const c = schemaConstraints(schema)
+  return c.required === true || (Array.isArray(c.required) && c.required.length > 0)
+}
+
+function schemaEnumOf(schema) {
+  const c = schemaConstraints(schema)
+  return Array.isArray(c.enum) ? c.enum : []
+}
+
+function canLookupSchemaPath(path) {
+  return !/[*[\]]/.test(path)
+}
+
+function schemaLiveFact(seed, ctx) {
+  if (!ctx) return ''
+  const path = seed.path
+  if (path === 'gateway') return ctx.gateway ? `${ctx.gateway.running ? '运行中' : '未运行'}${ctx.gateway.pid ? ` pid=${ctx.gateway.pid}` : ''}` : '未读取到 Gateway 状态'
+  if (path === 'gateway.mode') return ctx.configSummary?.gateway?.mode || ctx.configSummary?.topLevelMode || ''
+  if (path === 'gateway.port') return ctx.configSummary?.gateway?.port ? String(ctx.configSummary.gateway.port) : ''
+  if (path === 'gateway.controlUi.allowedOrigins') return asArray(ctx.configSummary?.gateway?.controlUi?.allowedOrigins).join(', ')
+  if (path === 'models.providers') return `${ctx.providers.length} 个 provider`
+  if (path.startsWith('models.providers.*')) return ctx.providers.slice(0, 6).map(p => p.key).join(', ')
+  if (path === 'agents.defaults.model.primary') return ctx.primaryModel || ''
+  if (path === 'agents.defaults.model.fallbacks') return asArray(ctx.configSummary?.modelFallbacks).join(', ')
+  if (path === 'agents.list') return `${ctx.agents.length} 个 Agent`
+  if (path === 'channels') return `${ctx.channels.length} 个渠道`
+  if (path.startsWith('channels.*')) return ctx.channels.slice(0, 8).map(c => c.id).join(', ')
+  if (path === 'bindings') return `${ctx.bindings.length} 条绑定`
+  if (path.startsWith('bindings[]')) return ctx.bindings.slice(0, 6).map(b => `${b.channel || '*'}${b.accountId ? '/' + b.accountId : ''}->${b.agentId}`).join(', ')
+  if (path === 'env') return `${asArray(ctx.configSummary?.envKeys).length} 个 env key`
+  return ''
+}
+
+async function collectOpenClawSchemaGraph(args = {}) {
+  const includeLiveContext = args.includeLiveContext !== false
+  const ctx = includeLiveContext ? await collectOpenClawContext().catch(() => null) : null
+  const seeds = filterSchemaGraphSeeds(args.path)
+  const nodes = await Promise.all(seeds.map(async seed => {
+    const remoteSchema = wsClient.connected && wsClient.gatewayReady && canLookupSchemaPath(seed.path) ? await getFieldSchema(seed.path).catch(() => null) : null
+    return {
+      path: seed.path,
+      type: schemaTypeOf(remoteSchema, seed.type),
+      description: seed.description,
+      required: schemaRequiredOf(remoteSchema),
+      enum: schemaEnumOf(remoteSchema),
+      risks: seed.risks || [],
+      live: schemaLiveFact(seed, ctx),
+      source: remoteSchema ? 'gateway.schema.lookup' : 'fallback',
+    }
+  }))
+  const nodePaths = new Set(nodes.map(n => n.path))
+  const edges = OPENCLAW_SCHEMA_GRAPH_EDGES.filter(e => {
+    if (!args.path) return true
+    return nodePaths.has(e.from) || nodePaths.has(e.to) || e.from.startsWith(args.path + '.') || e.to.startsWith(args.path + '.')
+  })
+  return {
+    generatedAt: new Date().toISOString(),
+    focus: args.path || '',
+    source: nodes.some(n => n.source === 'gateway.schema.lookup') ? 'gateway.schema.lookup + fallback' : 'fallback',
+    nodes,
+    edges,
+    liveContext: ctx ? {
+      primaryModel: ctx.primaryModel,
+      providers: ctx.providers.map(({ allModelIds, ...p }) => p),
+      agents: ctx.agents,
+      channels: ctx.channels,
+      bindings: ctx.bindings,
+      findings: ctx.findings,
+    } : null,
+  }
+}
+
+function formatOpenClawSchemaGraph(graph) {
+  const lines = []
+  lines.push('## OpenClaw Schema 知识图谱')
+  lines.push(`- 数据源: ${graph.source}`)
+  if (graph.focus) lines.push(`- 聚焦路径: ${graph.focus}`)
+  lines.push(`- 节点数: ${graph.nodes.length}`)
+  lines.push('')
+  lines.push('### 关键字段')
+  for (const node of graph.nodes.slice(0, 40)) {
+    const meta = [`type=${node.type || 'unknown'}`]
+    if (node.required) meta.push('required')
+    if (node.enum?.length) meta.push(`enum=${node.enum.join('|')}`)
+    if (node.live) meta.push(`当前=${node.live}`)
+    lines.push(`- \`${node.path}\` (${meta.join(', ')}) — ${node.description}`)
+    for (const risk of node.risks || []) lines.push(`  - 风险: ${risk}`)
+  }
+  if (graph.edges.length) {
+    lines.push('')
+    lines.push('### 字段关系')
+    for (const edge of graph.edges) lines.push(`- \`${edge.from}\` → \`${edge.to}\`: ${edge.relation}`)
+  }
+  if (graph.liveContext?.findings?.length) {
+    lines.push('')
+    lines.push('### 当前实例相关风险')
+    for (const f of graph.liveContext.findings.slice(0, 8)) lines.push(`- [${f.level}] ${f.component}: ${f.title} — ${f.evidence}`)
+  }
+  lines.push('')
+  lines.push('使用建议：回答 OpenClaw 配置问题时，先确认字段路径，再结合当前实例事实给出修复建议；不要输出 API Key 明文。')
+  return lines.join('\n')
+}
+
+async function openClawSchemaGraphTool(args = {}) {
+  const graph = await collectOpenClawSchemaGraph(args)
+  if (args.format === 'json') return JSON.stringify(graph, null, 2)
+  return formatOpenClawSchemaGraph(graph)
+}
+
+function shellArg(value) {
+  const s = String(value ?? '').replace(/[\r\n]/g, ' ')
+  if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(s)) return s
+  return `"${s.replace(/(["\\$`])/g, '\\$1').replace(/%/g, '%%')}"`
+}
+
+function safeBrowserSessionName(value) {
+  const raw = String(value || 'clawpanel-assistant').trim()
+  return raw.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 60) || 'clawpanel-assistant'
+}
+
+function safeBrowserFilename(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  return raw.replace(/[<>:"|?*\r\n\\/]+/g, '_').slice(0, 120)
+}
+
+function validateBrowserUrl(url, required) {
+  const text = String(url || '').trim()
+  if (!text && !required) return ''
+  if (!text) throw new Error('缺少 URL')
+  const u = new URL(text)
+  if (!['http:', 'https:'].includes(u.protocol)) throw new Error('browser_action 只允许 http/https URL')
+  return u.toString()
+}
+
+function browserCliMissing(output) {
+  return /not recognized|command not found|not found|could not determine executable|could not be found|ENOENT/i.test(String(output || ''))
+}
+
+function buildBrowserCliArgs(args) {
+  const action = String(args.action || '').trim()
+  if (!BROWSER_READ_ACTIONS.has(action) && !BROWSER_WRITE_ACTIONS.has(action)) throw new Error(`不支持的浏览器动作: ${action}`)
+  if (MODES[currentMode()]?.readOnly && BROWSER_WRITE_ACTIONS.has(action)) throw new Error('规划模式只允许浏览器只读动作，请切换到执行模式后再点击、填表或按键。')
+  const parts = [`-s=${safeBrowserSessionName(args.session)}`, action]
+  if (action === 'open') {
+    if (args.browser) parts.push(`--browser=${String(args.browser).trim()}`)
+    const url = validateBrowserUrl(args.url, false)
+    if (url) parts.push(url)
+  } else if (action === 'goto') {
+    parts.push(validateBrowserUrl(args.url, true))
+  } else if (action === 'snapshot') {
+    if (args.ref) parts.push(String(args.ref))
+    if (Number.isInteger(args.depth) && args.depth > 0) parts.push(`--depth=${Math.min(args.depth, 8)}`)
+    const filename = safeBrowserFilename(args.filename)
+    if (filename) parts.push(`--filename=${filename}`)
+  } else if (action === 'click') {
+    if (!args.ref) throw new Error('click 需要 ref')
+    parts.push(String(args.ref))
+    if (args.button) parts.push(String(args.button))
+  } else if (action === 'fill') {
+    if (!args.ref) throw new Error('fill 需要 ref')
+    parts.push(String(args.ref), String(args.text || ''))
+    if (args.submit === true) parts.push('--submit')
+  } else if (action === 'type') {
+    if (!args.text) throw new Error('type 需要 text')
+    parts.push(String(args.text))
+  } else if (action === 'press') {
+    if (!args.key) throw new Error('press 需要 key')
+    parts.push(String(args.key))
+  } else if (action === 'screenshot') {
+    if (args.ref) parts.push(String(args.ref))
+    const filename = safeBrowserFilename(args.filename)
+    if (filename) parts.push(`--filename=${filename}`)
+  }
+  return parts
+}
+
+async function runPlaywrightCli(parts) {
+  const cmd = ['playwright-cli', ...parts.map(shellArg)].join(' ')
+  let output = await api.assistantExec(cmd)
+  if (!browserCliMissing(output)) return output
+  const npxCmd = ['npx', '--no-install', 'playwright-cli', ...parts.map(shellArg)].join(' ')
+  output = await api.assistantExec(npxCmd)
+  if (!browserCliMissing(output)) return output
+  return `未检测到 Playwright CLI。\n\n可安装后重试：\n\`\`\`\nnpm install -g @playwright/cli@latest\n\`\`\`\n\n原始输出：\n${output}`
+}
+
+async function browserActionTool(args = {}) {
+  const parts = buildBrowserCliArgs(args)
+  const output = await runPlaywrightCli(parts)
+  return `## Browser Action: ${args.action}\n\n${output}`
 }
 
 // ── 状态 ──
@@ -1824,7 +2504,7 @@ async function _callAIOnce(messages, onChunk) {
 
   const base = cleanBaseUrl(_config.baseUrl, apiType)
   _abortController = new AbortController()
-  const allMessages = [{ role: 'system', content: buildSystemPrompt() }, ...messages]
+  const allMessages = [{ role: 'system', content: await buildSystemPromptAsync() }, ...messages]
 
   // 总超时保护
   let _timedOut = false
@@ -2223,6 +2903,14 @@ async function executeTool(name, args) {
       return await api.assistantListProcesses(args.filter)
     case 'check_port':
       return await api.assistantCheckPort(args.port)
+    case 'get_openclaw_context':
+      return await openClawContextTool(args)
+    case 'diagnose_openclaw':
+      return await diagnoseOpenClawTool(args)
+    case 'get_openclaw_schema_graph':
+      return await openClawSchemaGraphTool(args)
+    case 'browser_action':
+      return await browserActionTool(args)
     case 'ask_user':
       return await showAskUserCard(args)
     case 'web_search':
@@ -2362,6 +3050,8 @@ async function confirmToolCall(tc, critical = false) {
   } else if (name === 'write_file') {
     const preview = (args.content || '').slice(0, 200)
     desc = `${t('assistant.confirmWriteFile')}:\n${args.path}\n\n${t('assistant.confirmPreview')}:\n${preview}${(args.content || '').length > 200 ? '\n...(' + t('assistant.confirmTruncated') + ')' : ''}`
+  } else if (name === 'browser_action') {
+    desc = `浏览器动作: ${args.action || ''}\nURL: ${args.url || '-'}\n目标: ${args.ref || '-'}\n会话: ${args.session || 'clawpanel-assistant'}`
   }
 
   const prefix = critical
@@ -2398,9 +3088,13 @@ async function executeToolWithSafety(toolName, args, tcForConfirm) {
   let result = '', approved = true
   const mode = MODES[currentMode()]
   const isCritical = toolName === 'run_command' && isCriticalCommand(args.command)
+  const isBrowserWrite = toolName === 'browser_action' && BROWSER_WRITE_ACTIONS.has(String(args.action || ''))
   if (isCritical) {
     approved = await confirmToolCall(tcForConfirm || { function: { name: toolName, arguments: JSON.stringify(args) } }, true)
     if (!approved) result = t('assistant.toolRejectedDanger')
+  } else if (isBrowserWrite) {
+    approved = await confirmToolCall(tcForConfirm || { function: { name: toolName, arguments: JSON.stringify(args) } })
+    if (!approved) result = t('assistant.toolRejected')
   } else if (mode.confirmDanger && DANGEROUS_TOOLS.has(toolName)) {
     approved = await confirmToolCall(tcForConfirm || { function: { name: toolName, arguments: JSON.stringify(args) } })
     if (!approved) result = t('assistant.toolRejected')
@@ -2421,7 +3115,7 @@ async function callAIWithTools(messages, onStatus, onToolProgress, onChunk) {
 
   const base = cleanBaseUrl(_config.baseUrl, apiType)
   const tools = getEnabledTools()
-  let currentMessages = [{ role: 'system', content: buildSystemPrompt() }, ...messages]
+  let currentMessages = [{ role: 'system', content: await buildSystemPromptAsync() }, ...messages]
   const toolHistory = []
 
   const autoRounds = _config.autoRounds ?? 8  // 0 = 无限制
@@ -2727,19 +3421,31 @@ function renderSessionList() {
   }).join('') || '<div class="ast-empty">' + t('assistant.noSessions') + '</div>'
 }
 
+function argsStrFromObject(args, keys) {
+  return keys.map(key => {
+    const value = args?.[key]
+    if (value === undefined || value === null || value === '') return ''
+    return `${key}=${String(value)}`
+  }).filter(Boolean).join(' ')
+}
+
 function renderToolBlocks(toolHistory) {
   if (!toolHistory || toolHistory.length === 0) return ''
   return toolHistory.map(tc => {
     // ask_user 工具不显示在工具块中（它有自己的交互卡片）
     if (tc.name === 'ask_user') return ''
 
-    const tcIcon = { run_command: icon('terminal', 14), write_file: icon('edit', 14), read_file: icon('file', 14), list_directory: icon('folder', 14), get_system_info: icon('monitor', 14), list_processes: icon('list', 14), check_port: icon('plug', 14), skills_list: icon('box', 14), skills_info: icon('box', 14), skills_check: icon('box', 14), skills_install_dep: icon('download', 14), skillhub_search: icon('search', 14), skillhub_install: icon('download', 14) }[tc.name] || icon('wrench', 14)
-    const label = { run_command: t('assistant.toolRunCmd'), read_file: t('assistant.toolReadFile'), write_file: t('assistant.toolWriteFile'), list_directory: t('assistant.toolListDir'), get_system_info: t('assistant.toolSysInfo'), list_processes: t('assistant.toolProcessList'), check_port: t('assistant.toolCheckPort'), skills_list: t('assistant.toolSkillsList'), skills_info: t('assistant.toolSkillInfo'), skills_check: t('assistant.toolSkillsCheck'), skills_install_dep: t('assistant.toolInstallDep'), skillhub_search: t('assistant.toolSkillHubSearch'), skillhub_install: t('assistant.toolSkillHubInstall') }[tc.name] || tc.name
+    const tcIcon = { run_command: icon('terminal', 14), write_file: icon('edit', 14), read_file: icon('file', 14), list_directory: icon('folder', 14), get_system_info: icon('monitor', 14), list_processes: icon('list', 14), check_port: icon('plug', 14), get_openclaw_context: icon('info', 14), diagnose_openclaw: icon('shield', 14), get_openclaw_schema_graph: icon('hash', 14), browser_action: icon('globe', 14), skills_list: icon('box', 14), skills_info: icon('box', 14), skills_check: icon('box', 14), skills_install_dep: icon('download', 14), skillhub_search: icon('search', 14), skillhub_install: icon('download', 14) }[tc.name] || icon('wrench', 14)
+    const label = { run_command: t('assistant.toolRunCmd'), read_file: t('assistant.toolReadFile'), write_file: t('assistant.toolWriteFile'), list_directory: t('assistant.toolListDir'), get_system_info: t('assistant.toolSysInfo'), list_processes: t('assistant.toolProcessList'), check_port: t('assistant.toolCheckPort'), get_openclaw_context: '读取 OpenClaw 实况', diagnose_openclaw: '诊断 OpenClaw', get_openclaw_schema_graph: 'OpenClaw Schema 图谱', browser_action: '浏览器操作', skills_list: t('assistant.toolSkillsList'), skills_info: t('assistant.toolSkillInfo'), skills_check: t('assistant.toolSkillsCheck'), skills_install_dep: t('assistant.toolInstallDep'), skillhub_search: t('assistant.toolSkillHubSearch'), skillhub_install: t('assistant.toolSkillHubInstall') }[tc.name] || tc.name
     const argsStr = tc.name === 'run_command' ? escHtml(tc.args.command || '')
       : tc.name === 'read_file' ? escHtml(tc.args.path || '')
       : tc.name === 'write_file' ? escHtml(tc.args.path || '')
       : tc.name === 'list_directory' ? escHtml(tc.args.path || '')
       : tc.name === 'get_system_info' ? ''
+      : tc.name === 'get_openclaw_context' ? escHtml(argsStrFromObject(tc.args, ['format', 'refresh']))
+      : tc.name === 'diagnose_openclaw' ? escHtml(argsStrFromObject(tc.args, ['component', 'deep']))
+      : tc.name === 'get_openclaw_schema_graph' ? escHtml(argsStrFromObject(tc.args, ['path', 'format', 'includeLiveContext']))
+      : tc.name === 'browser_action' ? escHtml(argsStrFromObject(tc.args, ['action', 'url', 'ref', 'session']))
       : tc.name === 'list_processes' ? escHtml(tc.args.filter || t('assistant.toolFilterAll'))
       : tc.name === 'check_port' ? escHtml(String(tc.args.port || ''))
       : tc.name === 'skills_info' ? escHtml(tc.args.name || '')

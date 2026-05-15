@@ -3264,7 +3264,7 @@ const ALWAYS_LOCAL = new Set([
   'docker_cluster_overview',
   'auth_check', 'auth_login', 'auth_logout',
   'read_panel_config', 'write_panel_config',
-  'get_deploy_mode',
+  'get_deploy_mode', 'scan_model_client_configs',
   'assistant_exec', 'assistant_read_file', 'assistant_write_file',
   'assistant_list_dir', 'assistant_system_info', 'assistant_list_processes',
   'assistant_check_port', 'assistant_web_search', 'assistant_fetch_url',
@@ -3347,6 +3347,198 @@ function resolveModelApiKey(apiKey) {
   if (values[key]) return values[key]
   if (process.env[key]) return process.env[key]
   throw new Error(`API Key 引用了环境变量 ${key}，但未在 openclaw.json env、~/.openclaw/.env 或当前进程环境中找到`)
+}
+
+function _homePath(...parts) {
+  return path.join(homedir(), ...parts)
+}
+
+function _stripConfigValue(raw) {
+  let out = ''
+  let quote = ''
+  for (const ch of String(raw || '').trim()) {
+    if (ch === '"' || ch === "'") {
+      quote = quote === ch ? '' : (!quote ? ch : quote)
+      out += ch
+      continue
+    }
+    if (ch === '#' && !quote) break
+    out += ch
+  }
+  let value = out.trim().replace(/,+$/, '').trim()
+  if (value.length >= 2) {
+    const first = value[0]
+    const last = value[value.length - 1]
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) value = value.slice(1, -1)
+  }
+  return value
+}
+
+function _parseSimpleConfigBlocks(raw) {
+  const blocks = { '': {} }
+  let current = ''
+  for (const line of String(raw || '').split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      current = trimmed.slice(1, -1).trim()
+      if (!blocks[current]) blocks[current] = {}
+      continue
+    }
+    const eq = trimmed.indexOf('=')
+    if (eq < 0) continue
+    blocks[current][trimmed.slice(0, eq).trim()] = _stripConfigValue(trimmed.slice(eq + 1))
+  }
+  return blocks
+}
+
+function _firstEnvRef(keys) {
+  for (const key of keys) {
+    if (process.env[key] && String(process.env[key]).trim()) return [`\${${key}}`, 'found']
+  }
+  return keys.length ? [`\${${keys[0]}}`, 'missing'] : ['', 'none']
+}
+
+function _findJsonString(value, keys, depth = 0) {
+  if (!value || depth > 5) return ''
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = _findJsonString(item, keys, depth + 1)
+      if (found) return found
+    }
+    return ''
+  }
+  if (typeof value === 'object') {
+    for (const key of keys) {
+      const v = value[key]
+      if (typeof v === 'string' && v.trim()) return v.trim()
+    }
+    for (const item of Object.values(value)) {
+      const found = _findJsonString(item, keys, depth + 1)
+      if (found) return found
+    }
+  }
+  return ''
+}
+
+function _pushClientCandidate(out, data) {
+  out.push({
+    id: data.id,
+    source: data.source,
+    sourcePath: data.sourcePath || '',
+    providerKey: data.providerKey,
+    displayName: data.displayName,
+    baseUrl: data.baseUrl || '',
+    api: data.api || 'openai-completions',
+    apiKey: data.apiKey || '',
+    apiKeyStatus: data.apiKeyStatus || 'none',
+    models: Array.isArray(data.models) ? data.models.filter(Boolean) : [],
+    importable: data.importable !== false,
+    authHint: data.authHint || '',
+    warning: data.warning || '',
+  })
+}
+
+function _scanJsonClientFile(out, data) {
+  const filePath = _homePath(...data.parts)
+  if (!fs.existsSync(filePath)) return
+  let model = data.defaultModel
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'))
+    model = _findJsonString(parsed, ['model', 'defaultModel', 'modelName']) || model
+  } catch {}
+  const [apiKey, apiKeyStatus] = _firstEnvRef(data.envKeys)
+  _pushClientCandidate(out, {
+    ...data,
+    sourcePath: filePath,
+    apiKey,
+    apiKeyStatus,
+    models: [model],
+    warning: apiKeyStatus === 'missing' ? '未在当前进程环境中检测到对应 API Key 环境变量，导入后需要在 OpenClaw env 或 .env 中补齐。' : '',
+  })
+}
+
+function scanModelClientConfigs() {
+  const candidates = []
+  const codexPath = _homePath('.codex', 'config.toml')
+  if (fs.existsSync(codexPath)) {
+    try {
+      const blocks = _parseSimpleConfigBlocks(fs.readFileSync(codexPath, 'utf8'))
+      const root = blocks[''] || {}
+      const providerId = root.model_provider || 'openai'
+      const section = blocks[`model_providers.${providerId}`] || {}
+      const model = root.model || 'gpt-5.1-codex-mini'
+      const baseUrl = section.base_url || (providerId.includes('codex') ? 'https://chatgpt.com/backend-api/codex' : 'https://api.openai.com/v1')
+      const explicitEnvKey = isValidEnvKey(section.env_key) ? section.env_key : ''
+      const envKey = explicitEnvKey || (providerId === 'openai' ? 'OPENAI_API_KEY' : '')
+      const isExternalCodex = providerId.includes('codex') || baseUrl.includes('chatgpt.com/backend-api/codex')
+      const api = isExternalCodex ? 'openai-codex-responses' : (String(section.wire_api || '').includes('responses') ? 'openai-responses' : 'openai-completions')
+      const apiKeyStatus = envKey ? (process.env[envKey] && String(process.env[envKey]).trim() ? 'found' : 'missing') : 'none'
+      const warning = isExternalCodex
+        ? 'ChatGPT/Codex OAuth 令牌不会导入到 OpenClaw。请优先使用 Hermes 的 openai-codex 登录。'
+        : (apiKeyStatus === 'none'
+          ? 'Codex 配置没有声明可安全引用的 env_key，无法自动导入 API Key。请在 Codex 配置中添加 env_key，或在 OpenClaw 中手动配置服务商密钥。'
+          : (apiKeyStatus === 'missing' ? '未在当前进程环境中检测到 Codex 配置引用的 API Key 环境变量，导入后需要在 OpenClaw env 或 .env 中补齐。' : ''))
+      _pushClientCandidate(candidates, {
+        id: 'codex-cli',
+        source: 'Codex CLI',
+        sourcePath: codexPath,
+        providerKey: providerId === 'openai' ? 'codex-openai' : `codex-${providerId}`,
+        displayName: `Codex CLI / ${providerId}`,
+        baseUrl,
+        api,
+        apiKey: envKey ? `\${${envKey}}` : '',
+        apiKeyStatus,
+        models: [model],
+        importable: !isExternalCodex && apiKeyStatus !== 'none',
+        authHint: isExternalCodex ? 'hermes auth login openai-codex' : '',
+        warning,
+      })
+    } catch {}
+  }
+  _scanJsonClientFile(candidates, {
+    id: 'claude-code',
+    source: 'Claude Code',
+    parts: ['.claude', 'settings.json'],
+    providerKey: 'anthropic',
+    displayName: 'Anthropic / Claude Code',
+    baseUrl: 'https://api.anthropic.com/v1',
+    api: 'anthropic-messages',
+    envKeys: ['ANTHROPIC_API_KEY', 'ANTHROPIC_TOKEN'],
+    defaultModel: 'claude-sonnet-4-5-20250514',
+  })
+  _scanJsonClientFile(candidates, {
+    id: 'gemini-cli',
+    source: 'Gemini CLI',
+    parts: ['.gemini', 'settings.json'],
+    providerKey: 'google',
+    displayName: 'Google Gemini CLI',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    api: 'google-generative-ai',
+    envKeys: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'],
+    defaultModel: 'gemini-2.5-pro',
+  })
+  for (const item of [
+    ['OPENAI_API_KEY', 'openai-env', 'OpenAI 环境变量', process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1', 'openai-completions', process.env.OPENAI_MODEL || 'gpt-4o'],
+    ['ANTHROPIC_API_KEY', 'anthropic-env', 'Anthropic 环境变量', 'https://api.anthropic.com/v1', 'anthropic-messages', process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5-20250514'],
+    ['GEMINI_API_KEY', 'gemini-env', 'Gemini 环境变量', 'https://generativelanguage.googleapis.com/v1beta', 'google-generative-ai', process.env.GEMINI_MODEL || 'gemini-2.5-pro'],
+  ]) {
+    const [envKey, providerKey, displayName, baseUrl, api, model] = item
+    if (!process.env[envKey] || !String(process.env[envKey]).trim()) continue
+    _pushClientCandidate(candidates, {
+      id: providerKey,
+      source: 'Environment',
+      sourcePath: envKey,
+      providerKey,
+      displayName,
+      baseUrl,
+      api,
+      apiKey: `\${${envKey}}`,
+      apiKeyStatus: 'found',
+      models: [model],
+    })
+  }
+  return { candidates }
 }
 
 // 从 SSE 流文本中累积 OpenAI 风格的 delta.content / delta.reasoning_content
@@ -5932,6 +6124,10 @@ const handlers = {
 
   export_memory_zip({ category, agent_id, agentId }) {
     throw new Error('ZIP 导出仅在 Tauri 桌面应用中可用')
+  },
+
+  scan_model_client_configs() {
+    return scanModelClientConfigs()
   },
 
   // 备份管理

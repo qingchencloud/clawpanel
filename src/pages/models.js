@@ -29,6 +29,7 @@ export async function render() {
     </div>
     <div class="config-actions">
       <button class="btn btn-primary btn-sm" id="btn-add-provider">${t('models.addProvider')}</button>
+      <button class="btn btn-secondary btn-sm" id="btn-import-client">${t('models.importClientConfigs')}</button>
       <button class="btn btn-secondary btn-sm" id="btn-undo" disabled>${t('models.undo')}</button>
     </div>
     <div class="form-hint" style="margin-bottom:var(--space-md)">
@@ -1097,6 +1098,7 @@ function applyDefaultModel(state) {
 // 顶部按钮事件
 function bindTopActions(page, state) {
   page.querySelector('#btn-add-provider').onclick = () => addProvider(page, state)
+  page.querySelector('#btn-import-client').onclick = () => importClientConfigs(page, state)
   page.querySelector('#btn-undo').onclick = () => undo(page, state)
 
   // 晴辰云:获取模型列表 → 弹窗让用户选择要添加的模型
@@ -1211,6 +1213,121 @@ function bindTopActions(page, state) {
       updateUndoBtn(page, state)
       autoSave(state)
     }
+  }
+}
+
+function uniqueProviderKey(providers, desired) {
+  const base = (desired || 'imported').replace(/[^a-zA-Z0-9_-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'imported'
+  if (!providers[base]) return base
+  let i = 2
+  while (providers[`${base}-${i}`]) i++
+  return `${base}-${i}`
+}
+
+function candidateModels(candidate) {
+  const ids = Array.isArray(candidate.models) ? candidate.models.filter(Boolean) : []
+  return [...new Set(ids)].map(id => ({ id, name: id }))
+}
+
+async function importClientConfigs(page, state) {
+  if (!state.config) { toast(t('models.configNotReady'), 'warning'); return }
+  const btn = page.querySelector('#btn-import-client')
+  const oldText = btn?.textContent
+  if (btn) { btn.disabled = true; btn.textContent = t('models.importScanning') }
+  let candidates = []
+  try {
+    const result = await api.scanModelClientConfigs()
+    candidates = Array.isArray(result?.candidates) ? result.candidates : []
+  } catch (e) {
+    toast(`${t('models.importScanFailed')}: ${humanizeError(e)}`, 'error')
+    return
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = oldText || t('models.importClientConfigs') }
+  }
+  if (!candidates.length) {
+    toast(t('models.importNoneFound'), 'info')
+    return
+  }
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.innerHTML = `
+    <div class="modal" style="max-height:85vh;overflow-y:auto;max-width:760px">
+      <div class="modal-title">${t('models.importClientTitle')}</div>
+      <div class="form-hint" style="margin-bottom:12px;line-height:1.7">${t('models.importClientHint')}</div>
+      <div style="display:flex;flex-direction:column;gap:8px;max-height:52vh;overflow:auto;padding-right:4px">
+        ${candidates.map((c, idx) => {
+          const models = candidateModels(c)
+          const status = c.apiKeyStatus === 'found' ? t('models.importKeyFound') : (c.apiKeyStatus === 'missing' ? t('models.importKeyMissing') : t('models.importKeyNone'))
+          const disabled = !c.importable || !models.length
+          const checked = !disabled && c.apiKeyStatus !== 'missing'
+          return `
+            <label style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--border-color);border-radius:var(--radius-md);background:var(--bg-tertiary);opacity:${disabled ? '0.65' : '1'}">
+              <input type="checkbox" data-index="${idx}" ${disabled ? 'disabled' : ''} ${checked ? 'checked' : ''} style="margin-top:4px;accent-color:var(--primary)">
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+                  <strong style="color:var(--text-primary)">${escapeHtml(c.displayName || c.providerKey || c.source)}</strong>
+                  <span style="font-size:11px;color:var(--text-tertiary)">${escapeHtml(c.source || '')}</span>
+                </div>
+                <div style="font-size:12px;color:var(--text-secondary);line-height:1.7;margin-top:4px">
+                  ${t('models.providerName')}: <code>${escapeHtml(c.providerKey || '')}</code>
+                  · ${t('models.apiType')}: <code>${escapeHtml(getApiTypeLabel(c.api))}</code>
+                  · ${t('models.apiKey')}: <code>${escapeHtml(c.apiKey || '-')}</code> <span style="color:${c.apiKeyStatus === 'found' ? 'var(--success)' : 'var(--warning, #d97706)'}">${status}</span>
+                </div>
+                <div style="font-size:12px;color:var(--text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(c.baseUrl || '')}">${escapeHtml(c.baseUrl || '')}</div>
+                <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">
+                  ${models.map(m => `<span style="font-size:11px;font-family:var(--font-mono);background:var(--bg-primary);border:1px solid var(--border-color);border-radius:12px;padding:2px 7px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(m.id)}">${escapeHtml(m.id)}</span>`).join('')}
+                </div>
+                ${c.warning ? `<div class="form-hint" style="margin-top:6px;color:var(--warning, #d97706)">${escapeHtml(c.warning)}</div>` : ''}
+                ${c.authHint ? `<div class="form-hint" style="margin-top:6px">${t('models.importAuthHint')}: <code>${escapeHtml(c.authHint)}</code></div>` : ''}
+                ${!models.length ? `<div class="form-hint" style="margin-top:6px;color:var(--warning, #d97706)">${t('models.importNoModels')}</div>` : ''}
+              </div>
+            </label>
+          `
+        }).join('')}
+      </div>
+      <div class="modal-actions" style="margin-top:16px">
+        <button class="btn btn-primary" data-action="import">${t('models.importSelected')}</button>
+        <button class="btn btn-secondary" data-action="cancel">${t('common.cancel')}</button>
+      </div>
+    </div>
+  `
+  document.body.appendChild(overlay)
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
+  overlay.querySelector('[data-action="cancel"]').onclick = () => overlay.remove()
+  overlay.querySelector('[data-action="import"]').onclick = () => {
+    const selected = [...overlay.querySelectorAll('input[type="checkbox"]:checked')]
+      .map(input => candidates[Number(input.dataset.index)])
+      .filter(Boolean)
+    if (!selected.length) { toast(t('models.importNoneSelected'), 'warning'); return }
+    pushUndo(state)
+    if (!state.config.models) state.config.models = { mode: 'replace', providers: {} }
+    if (!state.config.models.providers) state.config.models.providers = {}
+    const providers = state.config.models.providers
+    let imported = 0
+    let firstFull = ''
+    for (const candidate of selected) {
+      const models = candidateModels(candidate)
+      if (!models.length) continue
+      const key = uniqueProviderKey(providers, candidate.providerKey || candidate.id)
+      providers[key] = {
+        baseUrl: candidate.baseUrl || '',
+        apiKey: candidate.apiKey || '',
+        api: candidate.api || 'openai-completions',
+        models,
+      }
+      if (!firstFull && candidate.apiKeyStatus !== 'missing') firstFull = `${key}/${models[0].id}`
+      imported++
+    }
+    if (!imported) { toast(t('models.importNoImportable'), 'warning'); return }
+    if (!getCurrentPrimary(state.config) && firstFull) {
+      ensureDefaultModelConfig(state).primary = firstFull
+    }
+    overlay.remove()
+    renderProviders(page, state)
+    renderDefaultBar(page, state)
+    updateUndoBtn(page, state)
+    autoSave(state)
+    toast(t('models.importDone', { count: imported }), 'success')
   }
 }
 

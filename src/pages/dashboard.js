@@ -10,6 +10,7 @@ import { navigate } from '../router.js'
 import { t } from '../lib/i18n.js'
 import { wsClient } from '../lib/ws-client.js'
 import { attachCliConflictBanner } from '../components/cli-conflict-banner.js'
+import { icon } from '../lib/icons.js'
 
 let _unsubGw = null
 let _loadInFlight = false
@@ -40,7 +41,7 @@ export async function render() {
       <button class="btn btn-secondary" id="btn-restart-gw">${t('dashboard.restartGw')}</button>
       <button class="btn btn-secondary" id="btn-check-update">${t('dashboard.checkUpdate')}</button>
       <button class="btn btn-secondary" id="btn-create-backup">${t('dashboard.createBackup')}</button>
-      <button class="btn btn-ghost" id="btn-open-glossary">📖 ${t('glossary.title')}</button>
+      <button class="btn btn-ghost" id="btn-open-glossary">${icon('scroll', 16)} ${t('glossary.title')}</button>
     </div>
     <div class="config-section">
       <div class="config-section-title">${t('dashboard.recentLogs')}</div>
@@ -557,18 +558,18 @@ function renderWsStatus() {
     </div>`
 }
 
-const CHANNEL_ICONS = { qqbot: '🐧', qq: '🐧', feishu: '🪶', dingtalk: '📌', telegram: '✈️', discord: '🎮', slack: '💬', weixin: '💚', wechat: '💚', webchat: '🌐', whatsapp: '📱', line: '🟢', teams: '👥', matrix: '🔗' }
+const CHANNEL_ICONS = { qqbot: 'message-square', qq: 'message-circle', feishu: 'message-square', dingtalk: 'message-square', telegram: 'send', discord: 'hash', slack: 'hash', weixin: 'message-circle', wechat: 'message-circle', webchat: 'globe', whatsapp: 'phone', line: 'message-circle', teams: 'users', msteams: 'users', matrix: 'globe' }
 
 function renderChannelsOverview(channels) {
   if (!channels || channels.length === 0) return ''
   const items = channels.map(ch => {
-    const icon = CHANNEL_ICONS[ch.platform] || '📡'
+    const channelIcon = icon(CHANNEL_ICONS[ch.platform] || 'radio', 14)
     const enabled = ch.enabled !== false
     const dot = enabled ? 'var(--success)' : 'var(--text-tertiary)'
     const name = ch.name || ch.platform || ch.id || ''
     return `<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:20px;background:var(--bg-secondary);font-size:var(--font-size-xs);white-space:nowrap">
       <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${dot}"></span>
-      ${icon} ${escapeHtml(name)}
+      ${channelIcon} ${escapeHtml(name)}
     </span>`
   })
   return `
