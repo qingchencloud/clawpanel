@@ -441,27 +441,21 @@ fn sanitize_hermes_openrouter_custom_mismatch() -> Result<bool, String> {
     } else {
         false
     };
-    if provider != "openrouter" {
+    if !uses_custom_endpoint {
         return Ok(alias_changed);
     }
-    if base.is_empty() || base == expected {
-        return Ok(alias_changed);
-    }
-
-    let env_raw = std::fs::read_to_string(home.join(".env")).unwrap_or_default();
-    let has_openrouter_key = env_file_has_value(&env_raw, "OPENROUTER_API_KEY");
-    let has_custom_key = env_file_has_value(&env_raw, "CUSTOM_API_KEY")
-        || env_file_has_value(&env_raw, "OPENAI_API_KEY");
-    if has_openrouter_key && !has_custom_key {
+    if provider == "custom" {
         return Ok(alias_changed);
     }
 
     let mut out = Vec::new();
     let mut in_model = false;
+    let mut provider_written = false;
     for line in raw.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with("model:") {
             in_model = true;
+            provider_written = false;
             out.push(line.to_string());
             continue;
         }
@@ -469,11 +463,20 @@ fn sanitize_hermes_openrouter_custom_mismatch() -> Result<bool, String> {
             let indented = line.starts_with(' ') || line.starts_with('\t');
             if !indented && !trimmed.is_empty() && !trimmed.starts_with('#') {
                 in_model = false;
+                if !provider_written {
+                    out.push("  provider: custom".to_string());
+                    provider_written = true;
+                }
             } else if trimmed.starts_with("provider:") {
+                out.push("  provider: custom".to_string());
+                provider_written = true;
                 continue;
             }
         }
         out.push(line.to_string());
+    }
+    if in_model && !provider_written {
+        out.push("  provider: custom".to_string());
     }
     let mut fixed = out.join("\n");
     if !fixed.ends_with('\n') {
@@ -1653,7 +1656,22 @@ async fn install_via_uv_tool(
 
     let mut cmd = tokio::process::Command::new(uv_path);
     cmd.args([
-        "tool", "install", "--force", &pkg, "--python", "3.11", "--with", "croniter",
+        "tool",
+        "install",
+        "--force",
+        &pkg,
+        "--python",
+        "3.11",
+        "--with",
+        "croniter",
+        "--with",
+        "httpx",
+        "--with",
+        "openai",
+        "--with",
+        "aiohttp",
+        "--with",
+        "websockets",
     ]);
 
     // 配置 PyPI 镜像（extras 的依赖仍从 PyPI 下载）
@@ -1678,7 +1696,7 @@ async fn install_via_uv_tool(
 
     let _ = app.emit(
         "hermes-install-log",
-        "uv tool install hermes-agent --python 3.11",
+        "uv tool install hermes-agent --python 3.11 --with croniter --with httpx --with openai --with aiohttp --with websockets",
     );
 
     let child = cmd.spawn().map_err(|e| format!("启动安装进程失败: {e}"))?;
@@ -1904,8 +1922,8 @@ pub async fn configure_hermes(
         _ => String::new(),
     };
     // Provider 字段用于稳定选择凭证来源。
-    // `custom` 不写 provider 行，让 Hermes Agent 从 base_url 自动推断。
-    let provider_line = if provider == "custom" || provider.is_empty() {
+    // `custom` 也需要显式写入，避免自定义端点被默认路由接管。
+    let provider_line = if provider.is_empty() {
         String::new()
     } else {
         format!("  provider: {provider}\n")
@@ -2026,7 +2044,7 @@ fn merge_hermes_config_yaml(
                 // base_url_line 已包含 "  base_url: xxx\n" 格式
                 result.push(base_url_line.trim_end().to_string());
             }
-            // provider_line 仅在非空时写入（Hermes 不需要 provider 字段）
+            // provider_line 仅在非空时写入，确保模型路由稳定。
             if !provider_line.is_empty() {
                 result.push(provider_line.trim_end().to_string());
             }

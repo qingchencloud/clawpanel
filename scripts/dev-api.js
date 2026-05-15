@@ -6931,7 +6931,7 @@ const handlers = {
       : 'hermes-agent @ git+https://github.com/NousResearch/hermes-agent.git'
     const installArgs = method === 'uv-pip'
       ? ['pip', 'install', pkg]
-      : ['tool', 'install', '--force', pkg, '--python', '3.11', '--with', 'croniter']
+      : ['tool', 'install', '--force', pkg, '--python', '3.11', '--with', 'croniter', '--with', 'httpx', '--with', 'openai', '--with', 'aiohttp', '--with', 'websockets']
     const result = spawnSync(uv, installArgs, {
       env: { ...process.env, PATH: hermesEnhancedPath(), GIT_TERMINAL_PROMPT: '0', ...gitMirrorEnv() },
       timeout: 600000,
@@ -6963,7 +6963,7 @@ const handlers = {
     if (!modelStr) throw new Error(`Provider '${providerId || 'custom'}' has no default model; please pass an explicit model name`)
     const baseUrlValue = baseUrl && baseUrl.trim() ? baseUrl.trim() : ''
     const baseUrlLine = baseUrlValue ? `  base_url: ${baseUrlValue}\n` : ''
-    const providerLine = providerId && providerId !== 'custom' ? `  provider: ${providerId}\n` : ''
+    const providerLine = providerId ? `  provider: ${providerId}\n` : ''
     const configPath = path.join(home, 'config.yaml')
     let configContent
     if (fs.existsSync(configPath)) {
@@ -8783,29 +8783,37 @@ function _sanitizeHermesOpenrouterCustomMismatch() {
   const expected = _normalizeProviderUrl('https://openrouter.ai/api/v1')
   const usesCustomEndpoint = base && base !== expected
   const aliasChanged = (!provider || provider === 'custom' || usesCustomEndpoint) ? _ensureCustomOpenAIKeyAlias() : false
-  if (provider !== 'openrouter') return aliasChanged
-  if (!base || base === expected) return aliasChanged
-  let envRaw = ''
-  try { envRaw = fs.readFileSync(path.join(home, '.env'), 'utf8') } catch {}
-  const hasOpenrouterKey = _envHasValue(envRaw, 'OPENROUTER_API_KEY')
-  const hasCustomKey = _envHasValue(envRaw, 'CUSTOM_API_KEY') || _envHasValue(envRaw, 'OPENAI_API_KEY')
-  if (hasOpenrouterKey && !hasCustomKey) return aliasChanged
+  if (!usesCustomEndpoint) return aliasChanged
+  if (provider === 'custom') return aliasChanged
   const out = []
   inModel = false
+  let providerWritten = false
   for (const line of raw.split('\n')) {
     const t = line.trim()
     if (t.startsWith('model:')) {
       inModel = true
+      providerWritten = false
       out.push(line)
       continue
     }
     if (inModel) {
       const indented = line.startsWith(' ') || line.startsWith('\t')
-      if (!indented && t && !t.startsWith('#')) inModel = false
-      else if (t.startsWith('provider:')) continue
+      if (!indented && t && !t.startsWith('#')) {
+        inModel = false
+        if (!providerWritten) {
+          out.push('  provider: custom')
+          providerWritten = true
+        }
+      }
+      else if (t.startsWith('provider:')) {
+        out.push('  provider: custom')
+        providerWritten = true
+        continue
+      }
     }
     out.push(line)
   }
+  if (inModel && !providerWritten) out.push('  provider: custom')
   let fixed = out.join('\n')
   if (!fixed.endsWith('\n')) fixed += '\n'
   fs.writeFileSync(configPath, fixed)
