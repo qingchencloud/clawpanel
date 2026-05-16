@@ -1,9 +1,9 @@
 {
-  "version": "0.16.0",
+  "version": "0.15.3",
   "minAppVersion": "0.15.3",
-  "hash": "sha256:1a07d10710e52149c82a32915bc80b2209605253bfc869c99d6661b062d68e55",
-  "url": "https://github.com/qingchencloud/clawpanel/releases/download/v0.16.0/web-0.16.0.zip",
-  "size": 2594709,
-  "changelog": "",
-  "releasedAt": "2026-05-16T07:23:48Z"
+  "hash": "sha256:3a2329cc46d04f478b38fbd9aca94fed9d100ab7481070e76b971d66a437b6a3",
+  "url": "https://github.com/qingchencloud/clawpanel/releases/download/v0.15.3/web-0.15.3.zip",
+  "size": 2489161,
+  "changelog": "OpenClaw 推荐内核升至 2026.5.12（握手协议 v4）、模型页支持导入 Codex/Claude Code/Gemini CLI 配置；Hermes 新增 Profiles、多 Gateway、群聊、文件管理、Kanban、OAuth、会话导出、lazy_deps 等；助手按引擎切换排障知识；多项 Windows Gateway 与 UX 修复。详见 CHANGELOG.md。",
+  "releasedAt": "2026-05-13T09:06:27Z"
 }
