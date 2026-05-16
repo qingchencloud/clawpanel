@@ -9,8 +9,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { parseVersion, versionGte, buildSnapshot } from '../src/lib/kernel.js'
-import { FEATURE_CATALOG, KERNEL_FLOOR } from '../src/lib/feature-catalog.js'
+import { parseVersion, versionGte, buildSnapshot, recommendedIsNewer } from '../src/lib/kernel.js'
+import { FEATURE_CATALOG, KERNEL_FLOOR, KERNEL_TARGET } from '../src/lib/feature-catalog.js'
 
 // ============================================================================
 // parseVersion
@@ -160,12 +160,30 @@ test('buildSnapshot edge case: version slightly below 5.6 feature requirement', 
 })
 
 test('buildSnapshot.isLatest works against KERNEL_TARGET', () => {
-  const at_target = buildSnapshot('openclaw', '2026.5.6')
-  const above_target = buildSnapshot('openclaw', '2026.6.0')
-  const below_target = buildSnapshot('openclaw', '2026.5.5')
-  assert.equal(at_target.isLatest, true)
-  assert.equal(above_target.isLatest, true)
-  assert.equal(below_target.isLatest, false)
+  const officialT = KERNEL_TARGET.openclaw.official
+  const atOfficial = buildSnapshot('openclaw', officialT)
+  const aboveOfficial = buildSnapshot('openclaw', '2026.6.0')
+  const belowOfficial = buildSnapshot('openclaw', '2026.5.5')
+  assert.equal(atOfficial.isLatest, true)
+  assert.equal(aboveOfficial.isLatest, true)
+  assert.equal(belowOfficial.isLatest, false)
+
+  const chin = KERNEL_TARGET.openclaw.chinese
+  if (chin && /-zh\.\d+/.test(chin)) {
+    assert.equal(buildSnapshot('openclaw', chin).isLatest, true)
+    const m = chin.match(/-zh\.(\d+)$/)
+    if (m && Number(m[1]) > 1) {
+      const prevZh = chin.replace(/-zh\.\d+$/, `-zh.${Number(m[1]) - 1}`)
+      assert.equal(buildSnapshot('openclaw', prevZh).isLatest, false)
+    }
+  }
+})
+
+test('recommendedIsNewer matches suffix patch ordering', () => {
+  assert.equal(recommendedIsNewer('2026.5.12-zh.2', '2026.5.12-zh.1'), true)
+  assert.equal(recommendedIsNewer('2026.5.12-zh.1', '2026.5.12-zh.2'), false)
+  assert.equal(recommendedIsNewer('2026.5.12-zh.2', '2026.5.12-zh.2'), false)
+  assert.equal(recommendedIsNewer('2026.5.13', '2026.5.12-zh.9'), true)
 })
 
 // ============================================================================
