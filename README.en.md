@@ -80,8 +80,8 @@ A community of passionate AI Agent developers and enthusiasts — join us!
 - **🤖 Hermes Agent Chat** — Built-in Hermes Agent chat interface with tool call visualization, file system access toggle, SSE streaming output
 - **🖼️ Image Recognition** — Paste screenshots or drag images, AI auto-analyzes, multimodal conversations
 - **Dashboard** — System overview, real-time service monitoring, quick actions
-- **Service Management** — OpenClaw / Hermes Gateway start/stop, version detection & one-click upgrade, config backup & restore
-- **Model Configuration** — Multi-provider management, model CRUD, batch connectivity tests, latency detection, drag-to-reorder, auto-save + undo
+- **Service Management** — OpenClaw / Hermes Gateway start/stop, version detection & one-click upgrade, config backup & restore; Web-only Docker multi-instance panel; handshake Proto v3/v4 badge (v0.16+)
+- **Model Configuration** — Multi-provider management, model CRUD, batch connectivity tests, latency detection, drag-to-reorder, auto-save + undo; import from Codex / Claude Code / Gemini CLI (v0.16+)
 - **Gateway Configuration** — Port, access scope (localhost/LAN), auth Token, Tailscale networking
 - **Messaging Channels** — Unified Telegram, Discord, Feishu, DingTalk, QQ management, multi-Agent binding per platform
 - **Communication & Automation** — Message settings, broadcast strategies, slash commands, Webhooks, execution approval

@@ -160,10 +160,12 @@ test('buildSnapshot edge case: version slightly below 5.6 feature requirement', 
 })
 
 test('buildSnapshot.isLatest works against KERNEL_TARGET', () => {
-  const at_target = buildSnapshot('openclaw', '2026.5.6')
+  const at_target = buildSnapshot('openclaw', '2026.5.12')
+  const at_target_zh = buildSnapshot('openclaw', '2026.5.12-zh.2')
   const above_target = buildSnapshot('openclaw', '2026.6.0')
-  const below_target = buildSnapshot('openclaw', '2026.5.5')
+  const below_target = buildSnapshot('openclaw', '2026.5.11')
   assert.equal(at_target.isLatest, true)
+  assert.equal(at_target_zh.isLatest, true)
   assert.equal(above_target.isLatest, true)
   assert.equal(below_target.isLatest, false)
 })

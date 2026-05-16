@@ -85,6 +85,10 @@ jobs:
         working-directory: src-tauri
         run: cargo clippy --all-targets -- -D warnings
 
+      # 前端单元测试
+      - name: 前端单元测试
+        run: node --test tests/*.test.js
+
       # 前端构建验证
       - name: 前端构建验证
         run: npm run build

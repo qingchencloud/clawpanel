@@ -9,30 +9,77 @@
 
 ## [0.16.0] - 2026-05-16
 
+> 自 v0.15.3 起累计合入约 50+ 提交。本节补全此前更新日志未写明的功能与修复摘要。
+
 ### 新功能 (Features)
 
-- **Gateway 握手协议版本可见化** — 服务页与聊天调试页新增 `Proto v4` 徽标，显示当前 WebSocket 握手协议版本（v3 / v4），鼠标悬停说明这与设备签名 payload v3 schema 不是同一个版本号
+#### OpenClaw
+
+- **OpenClaw 2026.5.12 + 握手协议 v4** — 连接帧 `maxProtocol` 扩展到 4，兼容 5.12+ 内核增量 chat delta（含 `replace` 语义）；推荐目标升至 `2026.5.12` / `2026.5.12-zh.2`
+- **Gateway 握手协议版本可见化** — 服务页与聊天调试页新增 `Proto v3/v4` 徽标；悬停说明与设备签名 payload 的 `v3|` 前缀无关
+- **系统推送通知 (`push.web.*`)** — 面板关闭后仍可收到 Gateway 推送的系统通知（需浏览器/系统权限）
+- **`config.schema` 写入校验** — 通过 RPC 校验配置写入，降低误改坏 `openclaw.json` 的风险
+- **导入客户端模型配置** — 扫描本机 Codex、Claude Code、Gemini CLI 与环境变量，向导式导入服务商/模型（不读取或复制 OAuth Token；OAuth 项仅作引导）
+
+#### Hermes Agent
+
+- **Profiles 管理** — 多工作区 Profile 的创建/切换/重命名，Dashboard API 通用代理
+- **多 Gateway 看板** — 同时运行多个 profile 的 Gateway 实例
+- **群聊** — 多 Agent 并行响应同一会话消息
+- **文件管理器** — 在 `~/.hermes` 子树内浏览与编辑文件
+- **Kanban 看板** — 任务看板视图
+- **OAuth 登录** — 支持 PKCE / device_code / external 三种流程
+- **多模态聊天** — 附件、拖拽与粘贴图片（base64）
+- **Sessions 导出** — 经 Dashboard `/api/sessions/{id}/messages` 导出会话
+- **流式恢复** — 断线/刷新后恢复进行中的流式输出
+- **TTS + Dashboard Token** — 朗读与 Dashboard session token 自动注入
+- **lazy_deps 预处理** — 安装 IM 相关可选依赖，避免首启 Gateway 长时间卡顿后崩溃
+- **`hermes_read_config_full`** — 解析 Gateway 全量配置字段，解锁 14+ 高价值配置项
+- **Approval Flow + Stop 真中断** — 工具审批流与可中断的运行
+- **`/v1/capabilities` 暴露** — `hermes_capabilities` Tauri/Web 命令
+- **就绪横幅** — Hermes 未安装或 Gateway 未启动时聊天页展示引导
+- **安装网络诊断 + Git 镜像** — 安装失败时给出网络诊断与可选镜像
+- **Hermes 消息渠道页（占位）** — `/h/channels` 路由已注册，UI 为 Phase 2「即将推出」，侧栏入口暂未开放
+
+#### 面板与多引擎
+
+- **Monolith 引擎选择屏** — 首次启动全屏对角线布局，可选 OpenClaw / Hermes / 双引擎 / 心甜宣传入口 / 稍后配置
+- **心甜 Claw 引擎入口** — 产品宣传落地页（非本地 Gateway 引擎）
+- **术语表 (`/glossary`)** — 侧边栏入口，解释 Gateway、Profile、渠道等术语
 
 ### 改进 (Improvements)
 
-- **晴辰助手识别 Hermes Agent 引擎** — 助手 system prompt 按当前活跃引擎分发，Hermes 模式下覆盖 Gateway 8642 / Dashboard 9119 双进程、Profile 多工作区、lazy_deps 按需依赖、`~/.hermes` 路径与 Top-5 排障清单，不再向用户混入 `openclaw` CLI 命令
-- **Hermes Profile 管理自动拉起 Dashboard** — 进入 Profile 页自动 probe + 启动 9119 Dashboard，不再向用户暴露「连接被拒 (10061)」原始网络错误
-- **隐藏桌面端无意义的 Docker 管理入口** — 服务页 Docker 多实例管理仅对 Web 部署模式有意义，桌面 Tauri 模式下不再渲染该面板，去除「未启用 / ENOENT」噪音；Web 模式保留全部功能
-- **Fallback 模型链 Clear All 按钮** — 模型配置页支持一键清空整条 Fallback 链
-- **页面 Header 横向排版** — Hermes Profile / 可选依赖 / 文件管理器 / 多 Gateway / 群聊 / 看板 / OAuth 等页面的标题与右侧按钮统一左右对齐，按钮不再挤在描述行下方
-- **目录结构优化** — 调整代码组织，提升可维护性
+- **小白 UX 全面改造** — `humanizeError`、致命操作 `showConfirm`、空状态、Toast 行动按钮、配置页 ⓘ 术语提示
+- **晴辰助手按引擎分发** — Hermes 模式下 system prompt 覆盖双进程、Profile、lazy_deps、`~/.hermes` 路径与排障清单，不再混入 `openclaw` CLI
+- **Hermes Profile 页自动拉起 Dashboard** — 进入即 probe/启动 9119，避免裸 `10061` 网络错误
+- **Hermes 视觉统一** — emoji 换 SVG 图标；多页 header 标题与操作按钮横向对齐
+- **Hermes 侧边栏补全** — 群聊、文件管理等入口与图标
+- **隐藏桌面端 Docker 管理** — 仅 Web 部署保留多实例 Docker 面板
+- **模型 Fallback「清空全部」** — 一键清空整条备选链
+- **仪表盘启动性能** — 减少骨架屏死锁、加快首屏渲染
+- **目录结构优化** — 代码组织调整，便于维护
+- **Qwen Cloud 命名** — Hermes Provider「阿里通义」与上游「Qwen Cloud」对齐
 
 ### 修复 (Fixes)
 
-- **Windows Gateway 终端窗口可见** — 改用 `cmd /c start` 创建独立控制台，绕开 Rust `Stdio::inherit` 让 `CREATE_NEW_CONSOLE` 失效的 Win32 行为；停止流程改用 netstat PID 跟踪，杀进程更精确
-- **可选依赖管理保留 Rust 端原始安装提示** — 加载失败时显示「Hermes venv 未找到，请先安装 Hermes」等可操作提示，不再被 humanize-error 的通用模板「请确认目标资源是否仍存在」遮盖；同时修掉之前的 `[object Object]` 显示问题
-- **Fallback 链不再被自动塞满** — `applyDefaultModel` 不再把所有非主模型自动写入 `fallbacks`，避免一次保存膨胀到 17+ 项导致候选池清空和 Add 按钮看似无反应；空 fallback 链是合法配置
-- **CI 三平台恢复绿灯** — `commands/config.rs` 中 `push_client_candidate` / `scan_json_client_file` 加 `#[allow(clippy::too_many_arguments)]` 局部豁免，解除自 `e1eda2d` 起的 lint debt
+- **Windows Gateway 终端可见** — `cmd /c start` 独立控制台；停止时用 netstat 跟踪 PID
+- **Fallback 链不再自动塞满** — 避免一次保存膨胀到 17+ 项；空链合法
+- **无效主模型规范化** — 修复配置中指向不存在模型时的异常表现
+- **批量模型测试误触发 Gateway 重启** — 批量连通性测试不再错误排队重启
+- **Hermes Gateway 路由与依赖** — 修复消息发送依赖、Provider 路由与启动稳定性；优先 `/v1/runs` 复用 `session_id`
+- **Web 模式事件订阅** — 统一 Tauri 事件 helper，消除 `transformCallback` 噪音
+- **v3 握手失败提示** — 旧内核不支持握手时给出更友好文案
+- **助手 OpenClaw 上下文路径** — 规范化助手读取的配置路径
+- **可选依赖页安装提示** — 保留 Rust 原始错误文案，修复 `[object Object]` 显示
+- **复查修复** — 双 listener、重复 stub、定时器泄漏、漏网中文、chat 语法隐患等
+- **用户报告关键 Bug** — 一次性修复 5 项高优先级问题；会话列表增加区分度避免误判为 mock
+- **CI 三平台恢复绿灯** — `scan_json_client_file` 等 clippy 局部豁免
 
 ### 测试与验证 (Testing)
 
 - **发布前检查** — npm 前端构建、Rust fmt / check / clippy 三平台 CI 全绿（run 25955001087）
-- **Playwright 回归** — 验证 Docker 管理桌面端隐藏 / Web 模式保留、lazy-deps 显示安装提示、Hermes 三页 header 横向布局、握手协议徽标渲染等核心改动
+- **前端单元测试** — `node --test tests/*.test.js` 45/45 通过（含 `KERNEL_TARGET` 2026.5.12 断言）
+- **Playwright 回归（发布流程内）** — Docker 桌面隐藏/Web 保留、lazy-deps 提示、Hermes header 布局、协议徽标等（用例在内部回归流程，未入库）
 
 ## [0.15.3] - 2026-05-13
 
