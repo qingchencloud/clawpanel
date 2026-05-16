@@ -10,7 +10,7 @@
 import { t } from '../../../lib/i18n.js'
 import { api } from '../../../lib/tauri-api.js'
 import { toast } from '../../../components/toast.js'
-import { humanizeError, humanizeErrorText } from '../../../lib/humanize-error.js'
+import { humanizeError } from '../../../lib/humanize-error.js'
 import { svgIcon } from '../lib/svg-icons.js'
 
 // feature 分类配置（决定分组顺序 + 图标 + 文案）
@@ -72,9 +72,17 @@ async function loadAndRender(page) {
   try {
     featuresResp = await api.hermesLazyDepsFeatures()
   } catch (e) {
-    // humanizeError 返回 { message, hint, raw } 对象，String(obj) 会变成 "[object Object]"。
-    // 这里用 humanizeErrorText 直接拿格式化后的字符串。
-    content.innerHTML = `<div style="color:var(--error);padding:20px">${escapeHtml(humanizeErrorText(e, t('hermesLazyDeps.loadFailed')))}</div>`
+    // 这里 Rust 端通常会给非常具体的中文提示（如「Hermes venv 未找到（~/.hermes-venv 不存在）。请先安装 Hermes。」），
+    // 但 humanize-error 看到「未找到」三个字会把它归类为 notFound 并用通用模板「请确认目标资源是否仍存在」替代——
+    // 反而把真正可操作的安装提示遮住了。这里优先展示 raw（原始消息），让用户看到「请先安装 Hermes」。
+    const h = humanizeError(e, t('hermesLazyDeps.loadFailed'))
+    const detail = h.raw || h.hint || ''
+    content.innerHTML = `
+      <div style="color:var(--error);padding:20px;line-height:1.6">
+        <div style="font-weight:500">${escapeHtml(h.message)}</div>
+        ${detail ? `<div style="margin-top:6px;font-size:12px;opacity:0.85;white-space:pre-wrap">${escapeHtml(detail)}</div>` : ''}
+      </div>
+    `
     return
   }
 

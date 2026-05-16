@@ -5400,6 +5400,9 @@ fn find_json_string(value: &Value, keys: &[&str], depth: usize) -> Option<String
     None
 }
 
+// 客户端配置导入需要把所有渲染必需的字段一次性塞进 Value，分组成 struct 反而会
+// 让调用站全部要先建一个临时结构体，可读性更差。这里显式 allow，仅作用于这个函数。
+#[allow(clippy::too_many_arguments)]
 fn push_client_candidate(
     out: &mut Vec<Value>,
     id: &str,
@@ -5433,6 +5436,7 @@ fn push_client_candidate(
     }));
 }
 
+#[allow(clippy::too_many_arguments)]
 fn scan_json_client_file(
     out: &mut Vec<Value>,
     id: &str,
