@@ -7,6 +7,33 @@
 
 ## [未发布]
 
+## [0.16.0] - 2026-05-16
+
+### 新功能 (Features)
+
+- **Gateway 握手协议版本可见化** — 服务页与聊天调试页新增 `Proto v4` 徽标，显示当前 WebSocket 握手协议版本（v3 / v4），鼠标悬停说明这与设备签名 payload v3 schema 不是同一个版本号
+
+### 改进 (Improvements)
+
+- **晴辰助手识别 Hermes Agent 引擎** — 助手 system prompt 按当前活跃引擎分发，Hermes 模式下覆盖 Gateway 8642 / Dashboard 9119 双进程、Profile 多工作区、lazy_deps 按需依赖、`~/.hermes` 路径与 Top-5 排障清单，不再向用户混入 `openclaw` CLI 命令
+- **Hermes Profile 管理自动拉起 Dashboard** — 进入 Profile 页自动 probe + 启动 9119 Dashboard，不再向用户暴露「连接被拒 (10061)」原始网络错误
+- **隐藏桌面端无意义的 Docker 管理入口** — 服务页 Docker 多实例管理仅对 Web 部署模式有意义，桌面 Tauri 模式下不再渲染该面板，去除「未启用 / ENOENT」噪音；Web 模式保留全部功能
+- **Fallback 模型链 Clear All 按钮** — 模型配置页支持一键清空整条 Fallback 链
+- **页面 Header 横向排版** — Hermes Profile / 可选依赖 / 文件管理器 / 多 Gateway / 群聊 / 看板 / OAuth 等页面的标题与右侧按钮统一左右对齐，按钮不再挤在描述行下方
+- **目录结构优化** — 调整代码组织，提升可维护性
+
+### 修复 (Fixes)
+
+- **Windows Gateway 终端窗口可见** — 改用 `cmd /c start` 创建独立控制台，绕开 Rust `Stdio::inherit` 让 `CREATE_NEW_CONSOLE` 失效的 Win32 行为；停止流程改用 netstat PID 跟踪，杀进程更精确
+- **可选依赖管理保留 Rust 端原始安装提示** — 加载失败时显示「Hermes venv 未找到，请先安装 Hermes」等可操作提示，不再被 humanize-error 的通用模板「请确认目标资源是否仍存在」遮盖；同时修掉之前的 `[object Object]` 显示问题
+- **Fallback 链不再被自动塞满** — `applyDefaultModel` 不再把所有非主模型自动写入 `fallbacks`，避免一次保存膨胀到 17+ 项导致候选池清空和 Add 按钮看似无反应；空 fallback 链是合法配置
+- **CI 三平台恢复绿灯** — `commands/config.rs` 中 `push_client_candidate` / `scan_json_client_file` 加 `#[allow(clippy::too_many_arguments)]` 局部豁免，解除自 `e1eda2d` 起的 lint debt
+
+### 测试与验证 (Testing)
+
+- **发布前检查** — npm 前端构建、Rust fmt / check / clippy 三平台 CI 全绿（run 25955001087）
+- **Playwright 回归** — 验证 Docker 管理桌面端隐藏 / Web 模式保留、lazy-deps 显示安装提示、Hermes 三页 header 横向布局、握手协议徽标渲染等核心改动
+
 ## [0.15.3] - 2026-05-13
 
 ### 修复 (Fixes)
