@@ -114,6 +114,15 @@ export function render() {
     loading = true
     error = ''
     draw()
+    // 9119 Dashboard 是独立进程，profile/* API 只由它提供。
+    // 先 probe + 自动启动，避免用户看到「网络连接失败」这种无头错误。
+    // 启动失败也不在这里中断，下面 hermesDashboardApi 抛出的连接错误会由 humanizeError 显示。
+    try {
+      const probe = await api.hermesDashboardProbe()
+      if (!probe?.running) {
+        await api.hermesDashboardStart().catch(() => {})
+      }
+    } catch { /* probe 失败也继续尝试调用 */ }
     try {
       const resp = await api.hermesDashboardApi('GET', '/api/profiles')
       const list = Array.isArray(resp) ? resp : (resp?.profiles || [])

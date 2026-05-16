@@ -10,7 +10,7 @@
 import { t } from '../../../lib/i18n.js'
 import { api } from '../../../lib/tauri-api.js'
 import { toast } from '../../../components/toast.js'
-import { humanizeError } from '../../../lib/humanize-error.js'
+import { humanizeError, humanizeErrorText } from '../../../lib/humanize-error.js'
 import { svgIcon } from '../lib/svg-icons.js'
 
 // feature 分类配置（决定分组顺序 + 图标 + 文案）
@@ -72,7 +72,9 @@ async function loadAndRender(page) {
   try {
     featuresResp = await api.hermesLazyDepsFeatures()
   } catch (e) {
-    content.innerHTML = `<div style="color:var(--error);padding:20px">${escapeHtml(humanizeError(e, t('hermesLazyDeps.loadFailed')))}</div>`
+    // humanizeError 返回 { message, hint, raw } 对象，String(obj) 会变成 "[object Object]"。
+    // 这里用 humanizeErrorText 直接拿格式化后的字符串。
+    content.innerHTML = `<div style="color:var(--error);padding:20px">${escapeHtml(humanizeErrorText(e, t('hermesLazyDeps.loadFailed')))}</div>`
     return
   }
 

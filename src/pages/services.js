@@ -2,7 +2,7 @@
  * 服务管理页面
  * 服务启停 + 更新检测 + 配置备份管理
  */
-import { api } from '../lib/tauri-api.js'
+import { api, isTauriRuntime } from '../lib/tauri-api.js'
 import { toast } from '../components/toast.js'
 import { humanizeError } from '../lib/humanize-error.js'
 import { showConfirm, showModal, showUpgradeModal } from '../components/modal.js'
@@ -34,11 +34,12 @@ export async function render() {
     </div>
     <div id="version-bar"><div class="stat-card loading-placeholder" style="height:80px;margin-bottom:var(--space-lg)"></div></div>
     <div id="services-list"><div class="stat-card loading-placeholder" style="height:64px"></div></div>
+    ${isTauriRuntime() ? '' : `
     <div class="config-section" id="docker-manager-section">
       <div class="config-section-title">${t('services.dockerManager')}</div>
       <div class="form-hint" style="margin-bottom:var(--space-sm)">${t('services.dockerManagerHint')}</div>
       <div id="docker-manager-bar"><div class="stat-card loading-placeholder" style="height:96px"></div></div>
-    </div>
+    </div>`}
     <div class="config-section" id="config-editor-section" style="display:none">
       <div class="config-section-title">${t('services.configEditor')}</div>
       <div class="form-hint" style="margin-bottom:var(--space-sm)">${t('services.configEditorHint')}</div>
@@ -194,6 +195,9 @@ async function hasDockerManagerBackend() {
 }
 
 async function loadDockerManager(page) {
+  // Docker 多实例管理仅在 Web 部署模式（serve.js / dev-api）下有意义。
+  // 桌面 Tauri 用户不需要管理多个 OpenClaw 容器，整段 UI 已在 render() 里跳过渲染。
+  if (isTauriRuntime()) return
   const bar = page.querySelector('#docker-manager-bar')
   if (!bar) return
   const backendReady = await hasDockerManagerBackend()

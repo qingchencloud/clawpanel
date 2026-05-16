@@ -539,7 +539,8 @@
   margin-bottom: var(--space-xl);
 }
 
-.page-header:has(.page-actions) {
+.page-header:has(.page-actions),
+.page-header:has(.config-actions) {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -849,7 +850,8 @@
   .page-title {
     font-size: var(--font-size-xl);
   }
-  .page-header:has(.page-actions) {
+  .page-header:has(.page-actions),
+  .page-header:has(.config-actions) {
     flex-direction: column;
     gap: var(--space-sm);
   }
