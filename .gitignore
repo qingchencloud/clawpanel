@@ -5,6 +5,7 @@ pnpm-lock.yaml
 yarn.lock
 
 .cursor
+.windsurf
 docs/issue-solutions.md
 # 构建产物
 dist/
@@ -47,6 +48,7 @@ AGENTS.md
 BLOCKING_ISSUES_REPORT.md
 __clawapp-chat-ref.js
 LOBSTER-LEGION-ARCHIVE.md
+docs/hermes-ui-refactor-plan.md
 
 # 大文件（宣传视频·原始版本）
 docs/promo-video.mp4
