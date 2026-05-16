@@ -26,7 +26,7 @@ const _listeners = []
  * @property {string|null} target    当前推荐目标版本
  * @property {string}  floor         硬地板版本
  * @property {boolean} aboveFloor    是否 >= floor
- * @property {boolean} isLatest      是否 >= target
+ * @property {boolean} isLatest      是否已达推荐目标（含 -zh.N 等后缀小版本，与后端 recommended 语义一致）
  * @property {Set<string>} features  当前启用的特性 id 集合
  * @property {string}  versionLabel  人类可读的版本显示，例如 "2026.5.6 汉化"
  * @property {number|null} protocol  握手协商出的 Gateway WS 协议版本 (3 或 4)，未握手为 null
@@ -58,6 +58,54 @@ export function versionGte(a, b) {
     if (pa[i] < pb[i]) return false
   }
   return true
+}
+
+/** 与 Rust `base_version` 一致：在首个 `-` 处截断 */
+function baseVersionStr(v) {
+  const s = String(v || '')
+  const i = s.indexOf('-')
+  return i === -1 ? s : s.slice(0, i)
+}
+
+function hasVersionSuffix(v) {
+  return String(v || '').includes('-')
+}
+
+/** 提取字符串中所有数字段，对齐 Rust `parse_version` 对整串的拆分 */
+function allNumericParts(ver) {
+  return String(ver || '')
+    .split(/[^\d]+/)
+    .filter(Boolean)
+    .map(n => parseInt(n, 10))
+    .filter(n => !Number.isNaN(n))
+}
+
+function compareLex(a, b) {
+  if (!a?.length || !b?.length) return 0
+  const len = Math.max(a.length, b.length)
+  for (let i = 0; i < len; i++) {
+    const ai = a[i] || 0
+    const bi = b[i] || 0
+    if (ai < bi) return -1
+    if (ai > bi) return 1
+  }
+  return 0
+}
+
+/**
+ * 与 `src-tauri/src/commands/config.rs` 中 `recommended_is_newer` 对齐：
+ * 在基础 x.y.z 相同的情况下，继续比较 `-zh.N` / `-nightly.N` 等后缀中的数字序。
+ */
+export function recommendedIsNewer(recommended, current) {
+  const r = parseVersion(baseVersionStr(recommended))
+  const c = parseVersion(baseVersionStr(current))
+  if (!r || !c) return false
+  const baseCmp = compareLex(r, c)
+  if (baseCmp !== 0) return baseCmp > 0
+  if (hasVersionSuffix(recommended) && hasVersionSuffix(current)) {
+    return compareLex(allNumericParts(recommended), allNumericParts(current)) > 0
+  }
+  return false
 }
 
 /**
@@ -100,7 +148,7 @@ export function buildSnapshot(engineId, version) {
     target,
     floor,
     aboveFloor: !!version && versionGte(version, floor),
-    isLatest: !!version && !!target && versionGte(version, target),
+    isLatest: !!version && !!target && !recommendedIsNewer(target, version),
     features,
     versionLabel: version
       ? `${versionBase}${variant === 'chinese' ? ' 汉化' : ''}`
