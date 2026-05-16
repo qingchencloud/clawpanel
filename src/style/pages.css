@@ -218,6 +218,21 @@
   font-size: var(--font-size-md);
 }
 
+.service-name .proto-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border-radius: 4px;
+  background: var(--accent-muted);
+  color: var(--accent);
+  border: 1px solid var(--accent-muted);
+  vertical-align: middle;
+  cursor: help;
+}
+
 .service-desc {
   font-size: var(--font-size-xs);
   color: var(--text-tertiary);

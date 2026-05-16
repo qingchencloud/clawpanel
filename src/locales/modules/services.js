@@ -202,4 +202,7 @@ export default {
   cleanupConfirmUninstallConfig: _('确定要卸载所有 OpenClaw 并删除配置目录吗？\n⚠️ 这将删除所有配置、Agent 数据和会话记录，无法恢复！', 'Uninstall all OpenClaw AND delete config directory?\n⚠️ This will delete all config, agent data, and session history permanently!', '確定要卸載所有 OpenClaw 並刪除設定目錄嗎？\n⚠️ 這將刪除所有設定、Agent 資料和會話記錄，無法恢復！'),
   cleanupUninstalling: _('正在卸载，请稍候...', 'Uninstalling, please wait...', '正在卸載，請稍候...'),
   cleanupUninstallFailed: _('卸载失败', 'Uninstall failed', '卸載失敗'),
+  // 协议版本徽章 (Gateway 卡片 + 诊断页)
+  protocolBadge: _('协议 v{proto}', 'Proto v{proto}', '協議 v{proto}'),
+  protocolBadgeTitle: _('当前 Gateway 与 ClawPanel 协商出的 WebSocket 握手协议版本 (与设备签名 payload 的 v3 格式无关)', 'WebSocket handshake protocol version negotiated with Gateway (independent of the device signature payload v3 format)', '當前 Gateway 與 ClawPanel 協商出的 WebSocket 握手協議版本 (與設備簽名 payload 的 v3 格式無關)'),
 }

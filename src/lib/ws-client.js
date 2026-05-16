@@ -128,6 +128,34 @@ export class WsClient {
   get hello() { return this._hello }
   get sessionKey() { return this._sessionKey }
   get serverVersion() { return this._serverVersion }
+  /**
+   * 当前 Gateway 与 ClawPanel 协商出的握手协议版本 (3 或 4)。
+   *
+   * 注意:这里的 "协议版本" 指 Gateway WebSocket 握手帧协议 (kernel ws frame protocol),
+   * 不要与设备签名 payload 的前缀 `v3|deviceId|...` 混淆,后者是 device-signature
+   * payload 字符串格式版本,两者完全独立。
+   *
+   * 取值优先级:
+   *   1. hello payload 中显式回传的 protocol / protocolVersion / negotiatedProtocol 字段
+   *   2. 按 serverVersion 推断:OpenClaw 内核 >= 2026.5.12 → v4,否则 v3
+   *      (ClawPanel 客户端永远声明 minProtocol=3, maxProtocol=4,所以协商只会是 3 或 4)
+   *
+   * 未握手时返回 null。
+   */
+  get negotiatedProtocol() {
+    if (!this._hello) return null
+    const explicit = this._hello.protocol ?? this._hello.protocolVersion ?? this._hello.negotiatedProtocol
+    if (Number.isFinite(explicit)) return explicit
+    const ver = this._serverVersion
+    if (!ver) return null
+    const base = String(ver).replace(/-.*$/, '')
+    const parts = base.split('.').map(n => Number(n))
+    if (parts.length >= 3 && parts.every(Number.isFinite)) {
+      const [y, mo, d] = parts
+      if (y > 2026 || (y === 2026 && (mo > 5 || (mo === 5 && d >= 12)))) return 4
+    }
+    return 3
+  }
   get reconnectState() { return this._reconnectState }
   get reconnectAttempts() { return this._reconnectAttempts }
   get lastConnectedAt() { return this._lastConnectedAt }
@@ -145,6 +173,7 @@ export class WsClient {
       reconnectAttempts: this._reconnectAttempts,
       reconnectState: this._reconnectState,
       serverVersion: this._serverVersion,
+      negotiatedProtocol: this.negotiatedProtocol,
       missedHeartbeats: this._missedHeartbeats,
       pendingReconnect: this._pendingReconnect,
     }

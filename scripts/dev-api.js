@@ -6484,6 +6484,10 @@ const handlers = {
     const signedAt = Date.now()
     const platform = process.platform === 'darwin' ? 'macos' : process.platform
     const scopesStr = SCOPES.join(',')
+    // 设备签名 payload 字符串格式：以 `v3|` 开头标识 payload schema 版本（device signature payload format = v3）。
+    // 注意：这里的 `v3` 是 **设备签名 payload 字符串的 schema 版本**，与下面 `minProtocol/maxProtocol` 协商的
+    // **Gateway WebSocket 握手帧协议版本**（v3 / v4）是两套独立的版本号。即使在 v4 握手协议下，
+    // 签名 payload 仍以 `v3|` 开头，两者互不影响。详见 src/lib/feature-catalog.js KERNEL_TARGET 注释。
     const payloadStr = `v3|${deviceId}|openclaw-control-ui|ui|operator|${scopesStr}|${signedAt}|${gatewayToken || ''}|${nonce || ''}|${platform}|desktop`
     const signature = crypto.sign(null, Buffer.from(payloadStr), privateKey)
     const sigB64 = Buffer.from(signature).toString('base64url')

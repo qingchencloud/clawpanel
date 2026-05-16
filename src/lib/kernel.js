@@ -29,6 +29,7 @@ const _listeners = []
  * @property {boolean} isLatest      是否 >= target
  * @property {Set<string>} features  当前启用的特性 id 集合
  * @property {string}  versionLabel  人类可读的版本显示，例如 "2026.5.6 汉化"
+ * @property {number|null} protocol  握手协商出的 Gateway WS 协议版本 (3 或 4)，未握手为 null
  */
 
 /**
@@ -104,6 +105,7 @@ export function buildSnapshot(engineId, version) {
     versionLabel: version
       ? `${versionBase}${variant === 'chinese' ? ' 汉化' : ''}`
       : '',
+    protocol: wsClient.negotiatedProtocol,
   }
 }
 
@@ -186,6 +188,7 @@ function refresh() {
     || _snapshot.engine !== next.engine
     || _snapshot.version !== next.version
     || _snapshot.features.size !== next.features.size
+    || _snapshot.protocol !== next.protocol
   _snapshot = next
   if (changed) {
     _listeners.forEach(fn => {

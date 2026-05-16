@@ -115,7 +115,12 @@ pub fn create_connect_frame(
     let scopes_str = SCOPES.join(",");
     // v3 格式：v3|deviceId|clientId|clientMode|role|scopes|signedAt|token|nonce|platform|deviceFamily
     // 使用 openclaw-control-ui + ui 模式，使 Gateway 识别为 Control UI 客户端，
-    // 本地连接时触发静默自动配对（shouldAllowSilentLocalPairing = true）
+    // 本地连接时触发静默自动配对（shouldAllowSilentLocalPairing = true）。
+    //
+    // ⚠️ 注意：这里的 `v3|` 前缀是 **device signature payload 字符串的 schema 版本**，
+    // 与下面 `params.minProtocol/maxProtocol` 协商的 **Gateway WebSocket 握手帧协议版本**
+    // （v3 / v4）是两套独立的版本号。即使在 v4 握手协议下，签名 payload 仍以 `v3|` 开头。
+    // 详见 src/lib/feature-catalog.js KERNEL_TARGET 注释。
     let payload_str = format!(
         "v3|{device_id}|openclaw-control-ui|ui|operator|{scopes_str}|{signed_at}|{auth_secret}|{nonce}|{platform}|{device_family}"
     );

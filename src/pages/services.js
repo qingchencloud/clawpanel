@@ -11,6 +11,7 @@ import { isForeignGatewayError, isForeignGatewayService, maybeShowForeignGateway
 import { diagnoseInstallError } from '../lib/error-diagnosis.js'
 import { icon, statusIcon } from '../lib/icons.js'
 import { t } from '../lib/i18n.js'
+import { wsClient } from '../lib/ws-client.js'
 
 // HTML 转义，防止 XSS
 function escapeHtml(str) {
@@ -476,13 +477,16 @@ function renderServices(container, services) {
     const cliMissing = gw.cli_installed === false
     const foreignGateway = !cliMissing && isForeignGatewayService(gw)
     const foreignPidText = gw.pid ? ` (PID: ${gw.pid})` : ''
+    // 协议版本徽章（仅在 Gateway 跑起来并完成 WS 握手时显示）
+    const proto = wsClient.gatewayReady ? wsClient.negotiatedProtocol : null
+    const protoBadge = proto ? `<span class="proto-badge" title="${t('services.protocolBadgeTitle', { proto })}">${t('services.protocolBadge', { proto })}</span>` : ''
 
     html += `
     <div class="service-card" data-label="${gw.label}">
       <div class="service-info">
         <span class="status-dot ${cliMissing ? 'stopped' : foreignGateway ? 'warning' : gw.running ? 'running' : 'stopped'}"></span>
         <div>
-          <div class="service-name">${gw.label}</div>
+          <div class="service-name">${gw.label}${protoBadge}</div>
           <div class="service-desc">${cliMissing
             ? t('services.cliNotInstalled')
             : foreignGateway

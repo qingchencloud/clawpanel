@@ -212,7 +212,11 @@ async function runScan(page) {
 
     // 5. WebSocket 连接
     const wsOk = wsClient.connected && wsClient.gatewayReady
-    items.push({ label: 'WebSocket', ok: wsOk, detail: wsOk ? (wsClient.serverVersion ? `Gateway ${wsClient.serverVersion}` : t('chatDebug.connected')) : t('chatDebug.scanWsDown') })
+    const proto = wsOk ? wsClient.negotiatedProtocol : null
+    const wsDetail = wsOk
+      ? `${wsClient.serverVersion ? `Gateway ${wsClient.serverVersion}` : t('chatDebug.connected')}${proto ? ` · ${t('services.protocolBadge', { proto })}` : ''}`
+      : t('chatDebug.scanWsDown')
+    items.push({ label: 'WebSocket', ok: wsOk, detail: wsDetail })
     if (!wsOk && gwRunning) fixable = true
 
     // 6. Token 配置
