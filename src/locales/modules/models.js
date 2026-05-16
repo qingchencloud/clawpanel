@@ -191,4 +191,7 @@ export default {
   setAsPrimary: _('设为主用', 'Set as Primary', '設為主用'),
   remove: _('移除', 'Remove', '移除'),
   add: _('加入', 'Add', '加入'),
+  addAll: _('全部加入', 'Add All', '全部加入'),
+  clearAll: _('清空全部', 'Clear All', '清空全部'),
+  confirmClearAll: _('确定清空所有备选模型？主模型不会被影响。', 'Clear all fallback models? Primary model is not affected.', '確定清空所有備選模型？主模型不會被影響。'),
 }

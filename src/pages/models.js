@@ -301,7 +301,10 @@ function renderFallbackWaterfall(state) {
 
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
         <div style="background: var(--bg-tertiary); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--border-color);">
-          <div style="font-size: var(--font-size-xs); font-weight: bold; margin-bottom: 8px; color: var(--text-tertiary);">${t('models.activeChainTitle')}</div>
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 8px;">
+            <div style="font-size: var(--font-size-xs); font-weight: bold; color: var(--text-tertiary);">${t('models.activeChainTitle')}</div>
+            ${currentFallbacks.length > 0 ? `<button class="btn btn-xs btn-secondary btn-clear-all-fb" style="padding:1px 6px; font-size:10px;">${t('models.clearAll')}</button>` : ''}
+          </div>
           <div id="active-fallback-list" style="display: flex; flex-direction: column; gap: 4px; min-height: 50px;">
             ${currentFallbacks.map((f, i) => `
               <div class="fallback-chain-item" data-id="${f}" style="display: flex; align-items: center; justify-content: space-between; background: var(--bg-primary); padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border-color);">
@@ -397,6 +400,22 @@ function bindWaterfallActions(page, state) {
       autoSave(state)
     }
   })
+
+  // 清空全部备选
+  const clearAllBtn = container.querySelector('.btn-clear-all-fb')
+  if (clearAllBtn) {
+    clearAllBtn.onclick = async () => {
+      const yes = await showConfirm(t('models.confirmClearAll'))
+      if (!yes) return
+      const modelConfig = ensureDefaultModelConfig(state)
+      if (!modelConfig.fallbacks.length) return
+      pushUndo(state)
+      modelConfig.fallbacks = []
+      renderDefaultBar(page, state)
+      updateUndoBtn(page, state)
+      autoSave(state)
+    }
+  }
 
   // 折叠候选服务商
   container.querySelectorAll('.candidate-provider-header').forEach(header => {
@@ -1131,20 +1150,13 @@ function applyDefaultModel(state) {
   const defaults = state.config.agents.defaults
   if (!defaults.model) defaults.model = {}
   defaults.model.primary = primary
+  if (!Array.isArray(defaults.model.fallbacks)) defaults.model.fallbacks = []
+  if (!defaults.models || typeof defaults.models !== 'object' || Array.isArray(defaults.models)) defaults.models = {}
 
-  // fallbacks / models 仅在为空时初始化(首次安装友好),不再每次保存都覆盖
-  // 避免用户精心维护的精简 fallback 链被重写,且随模型增多不断膨胀 (fixes #190)
-  if (!defaults.model.fallbacks || defaults.model.fallbacks.length === 0) {
-    const allModels = collectAllModels(state.config)
-    defaults.model.fallbacks = allModels.filter(m => m.full !== primary).map(m => m.full)
-  }
-  if (!defaults.models || Object.keys(defaults.models).length === 0) {
-    const allModels = collectAllModels(state.config)
-    const modelsMap = {}
-    modelsMap[primary] = {}
-    for (const m of allModels) { if (m.full !== primary) modelsMap[m.full] = {} }
-    defaults.models = modelsMap
-  }
+  // 注意:不再在 fallbacks/models 为空时自动塞入"全部可用模型"。
+  // 旧逻辑会导致用户清空备选链或新增主模型后,一次保存就把所有候选自动加进 fallbacks/models,
+  // 用户点"加入"时模型已经全部在备选链里 → 候选池空 → "加入"按钮显示"无可用候选模型",
+  // 看起来就像"加入按钮没效果"。空备选链是合法状态:此时 Gateway 主模型失败直接报错,不做隐式 fallback。
   normalizeDefaultModelSelection(state.config)
 
   // 注意:不再强制同步到各 agent 的 model.primary
