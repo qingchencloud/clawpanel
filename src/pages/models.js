@@ -1308,7 +1308,7 @@ async function importClientConfigs(page, state) {
     const result = await api.scanModelClientConfigs()
     candidates = Array.isArray(result?.candidates) ? result.candidates : []
   } catch (e) {
-    toast(`${t('models.importScanFailed')}: ${humanizeError(e)}`, 'error')
+    toast(humanizeError(e, t('models.importScanFailed')), 'error')
     return
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = oldText || t('models.importClientConfigs') }
