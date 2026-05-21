@@ -660,7 +660,7 @@ export class WsClient {
     this._authRetryCount = 0
     this._hello = payload || null
     this._snapshot = payload?.snapshot || null
-    this._serverVersion = payload?.serverVersion || null
+    this._serverVersion = payload?.serverVersion || payload?.server?.version || null
     // 新连接 → 清空 method 降级缓存（可能换了 Gateway 版本）
     this.resetCompatCache()
     const defaults = this._snapshot?.sessionDefaults

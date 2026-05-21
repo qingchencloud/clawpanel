@@ -2,7 +2,7 @@
  * 内核版本与特性门控
  *
  * 此模块是 ClawPanel 多内核版本兼容的核心：
- * - 连接 Gateway 成功后，从 hello.serverVersion 构造 kernel snapshot
+ * - 连接 Gateway 成功后，从 hello.server.version / hello.serverVersion 构造 kernel snapshot
  * - 页面通过 hasFeature(id) 同步查询特性可用性
  * - 低于硬地板时通过 onKernelChange 触发 floor blocker
  *
