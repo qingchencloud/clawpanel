@@ -2707,6 +2707,22 @@ function putHermesCsv(form, source, key) {
   if (value) form[toCamelCaseKey(key)] = value
 }
 
+function hermesEnvValue(envValues, key) {
+  const value = envValues && Object.hasOwn(envValues, key) ? envValues[key] : undefined
+  return typeof value === 'string' && value.trim() ? value.trim() : ''
+}
+
+function readHermesEnvValues() {
+  const envPath = path.join(hermesHome(), '.env')
+  const values = {}
+  if (!fs.existsSync(envPath)) return values
+  for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+    const parsed = parseDotenvLine(line)
+    if (parsed && values[parsed[0]] === undefined) values[parsed[0]] = parsed[1]
+  }
+  return values
+}
+
 function normalizeHermesDmPolicy(raw) {
   const value = String(raw || '').trim().toLowerCase()
   if (value === 'pairing') return 'pair'
@@ -2732,24 +2748,30 @@ function readHermesPlatform(config, platform) {
   return { entry, extra }
 }
 
-export function buildHermesChannelConfigValues(config = {}) {
+export function buildHermesChannelConfigValues(config = {}, envValues = {}) {
   const values = {}
   for (const platform of HERMES_CHANNEL_PLATFORMS) {
     const { entry, extra } = readHermesPlatform(config, platform)
     const form = { enabled: entry.enabled === true }
     if (platform === 'telegram') {
-      form.botToken = typeof entry.token === 'string' ? entry.token : ''
+      form.botToken = hermesEnvValue(envValues, 'TELEGRAM_BOT_TOKEN') || (typeof entry.token === 'string' ? entry.token : '')
     } else if (platform === 'discord') {
-      form.token = typeof entry.token === 'string' ? entry.token : ''
+      form.token = hermesEnvValue(envValues, 'DISCORD_BOT_TOKEN') || (typeof entry.token === 'string' ? entry.token : '')
     } else if (platform === 'slack') {
-      form.botToken = typeof entry.token === 'string' ? entry.token : ''
+      form.botToken = hermesEnvValue(envValues, 'SLACK_BOT_TOKEN') || (typeof entry.token === 'string' ? entry.token : '')
       putHermesString(form, extra, 'app_token')
+      form.appToken = hermesEnvValue(envValues, 'SLACK_APP_TOKEN') || form.appToken || ''
       putHermesString(form, extra, 'signing_secret')
       putHermesString(form, extra, 'webhook_path')
     } else if (platform === 'feishu') {
       for (const key of ['app_id', 'app_secret', 'domain', 'connection_mode', 'webhook_path', 'reaction_notifications']) {
         putHermesString(form, extra, key)
       }
+      form.appId = hermesEnvValue(envValues, 'FEISHU_APP_ID') || form.appId || ''
+      form.appSecret = hermesEnvValue(envValues, 'FEISHU_APP_SECRET') || form.appSecret || ''
+      form.domain = hermesEnvValue(envValues, 'FEISHU_DOMAIN') || form.domain || ''
+      form.connectionMode = hermesEnvValue(envValues, 'FEISHU_CONNECTION_MODE') || form.connectionMode || ''
+      form.webhookPath = hermesEnvValue(envValues, 'FEISHU_WEBHOOK_PATH') || form.webhookPath || ''
       for (const key of ['typing_indicator', 'resolve_sender_names']) {
         putHermesBool(form, extra, key)
       }
@@ -2768,6 +2790,14 @@ function setHermesExtra(entry, key, value) {
   if (!entry.extra || typeof entry.extra !== 'object' || Array.isArray(entry.extra)) entry.extra = {}
   if (value === undefined || value === null || value === '') return
   entry.extra[key] = value
+}
+
+function deleteHermesEntryKey(entry, key) {
+  if (entry && typeof entry === 'object') delete entry[key]
+}
+
+function deleteHermesExtraKey(entry, key) {
+  if (entry?.extra && typeof entry.extra === 'object' && !Array.isArray(entry.extra)) delete entry.extra[key]
 }
 
 function normalizeHermesChannelForm(platform, form = {}) {
@@ -2806,17 +2836,17 @@ export function mergeHermesChannelConfig(config = {}, platform, form = {}) {
   const normalized = normalizeHermesChannelForm(normalizedPlatform, form)
   entry.enabled = normalized.enabled
   if (normalizedPlatform === 'telegram') {
-    if (typeof normalized.botToken === 'string') entry.token = normalized.botToken.trim()
+    deleteHermesEntryKey(entry, 'token')
   } else if (normalizedPlatform === 'discord') {
-    if (typeof normalized.token === 'string') entry.token = normalized.token.trim()
+    deleteHermesEntryKey(entry, 'token')
   } else if (normalizedPlatform === 'slack') {
-    if (typeof normalized.botToken === 'string') entry.token = normalized.botToken.trim()
-    setHermesExtra(entry, 'app_token', String(normalized.appToken || '').trim())
-    setHermesExtra(entry, 'signing_secret', String(normalized.signingSecret || '').trim())
+    deleteHermesEntryKey(entry, 'token')
+    deleteHermesExtraKey(entry, 'app_token')
+    deleteHermesExtraKey(entry, 'signing_secret')
     setHermesExtra(entry, 'webhook_path', String(normalized.webhookPath || '').trim())
   } else if (normalizedPlatform === 'feishu') {
-    setHermesExtra(entry, 'app_id', String(normalized.appId || '').trim())
-    setHermesExtra(entry, 'app_secret', String(normalized.appSecret || '').trim())
+    deleteHermesExtraKey(entry, 'app_id')
+    deleteHermesExtraKey(entry, 'app_secret')
     setHermesExtra(entry, 'domain', normalized.domain)
     setHermesExtra(entry, 'connection_mode', normalized.connectionMode)
     setHermesExtra(entry, 'webhook_path', normalized.webhookPath)
@@ -8055,10 +8085,11 @@ const handlers = {
 
   hermes_channel_config_read() {
     const { configPath, exists, config } = readHermesConfigYamlObject()
+    const envValues = readHermesEnvValues()
     return {
       exists,
       configPath,
-      values: buildHermesChannelConfigValues(config),
+      values: buildHermesChannelConfigValues(config, envValues),
     }
   },
 
@@ -8069,10 +8100,11 @@ const handlers = {
     const next = mergeHermesChannelConfig(config, normalizedPlatform, form || {})
     writeHermesConfigYamlObject(configPath, next)
     writeHermesEnvValues(buildHermesChannelEnvUpdates(normalizedPlatform, form || {}))
+    const envValues = { ...readHermesEnvValues(), ...buildHermesChannelEnvUpdates(normalizedPlatform, form || {}) }
     return {
       ok: true,
       configPath,
-      values: buildHermesChannelConfigValues(next)[normalizedPlatform],
+      values: buildHermesChannelConfigValues(next, envValues)[normalizedPlatform],
     }
   },
 

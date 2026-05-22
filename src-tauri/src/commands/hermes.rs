@@ -2242,7 +2242,47 @@ fn insert_json_csv_if_present(
     }
 }
 
-fn build_hermes_channel_config_values(config: &serde_yaml::Value) -> Value {
+fn hermes_env_value(
+    env_values: &std::collections::HashMap<String, String>,
+    key: &str,
+) -> Option<String> {
+    env_values
+        .get(key)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn read_hermes_channel_env_values() -> std::collections::HashMap<String, String> {
+    let env_path = hermes_home().join(".env");
+    let raw = std::fs::read_to_string(&env_path).unwrap_or_default();
+    let mut values = std::collections::HashMap::new();
+    for (key, value, _) in parse_env_file_lines(&raw) {
+        values.entry(key).or_insert(value);
+    }
+    values
+}
+
+fn json_form_string(form: &serde_json::Map<String, Value>, key: &str) -> Option<String> {
+    form.get(key)
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string())
+}
+
+fn put_json_string_from_env(
+    form: &mut serde_json::Map<String, Value>,
+    env_values: &std::collections::HashMap<String, String>,
+    env_key: &str,
+    json_key: &str,
+) {
+    if let Some(value) = hermes_env_value(env_values, env_key) {
+        form.insert(json_key.to_string(), Value::String(value));
+    }
+}
+
+fn build_hermes_channel_config_values(
+    config: &serde_yaml::Value,
+    env_values: &std::collections::HashMap<String, String>,
+) -> Value {
     let mut values = serde_json::Map::new();
     let root = config.as_mapping();
     let platforms = root.and_then(|map| yaml_get_mapping(map, "platforms"));
@@ -2263,23 +2303,27 @@ fn build_hermes_channel_config_values(config: &serde_yaml::Value) -> Value {
 
         match platform {
             "telegram" => {
-                form.insert(
-                    "botToken".to_string(),
-                    Value::String(yaml_string_field(&entry, "token").unwrap_or_default()),
-                );
+                let token = hermes_env_value(env_values, "TELEGRAM_BOT_TOKEN")
+                    .or_else(|| yaml_string_field(&entry, "token"))
+                    .unwrap_or_default();
+                form.insert("botToken".to_string(), Value::String(token));
             }
             "discord" => {
-                form.insert(
-                    "token".to_string(),
-                    Value::String(yaml_string_field(&entry, "token").unwrap_or_default()),
-                );
+                let token = hermes_env_value(env_values, "DISCORD_BOT_TOKEN")
+                    .or_else(|| yaml_string_field(&entry, "token"))
+                    .unwrap_or_default();
+                form.insert("token".to_string(), Value::String(token));
             }
             "slack" => {
-                form.insert(
-                    "botToken".to_string(),
-                    Value::String(yaml_string_field(&entry, "token").unwrap_or_default()),
-                );
+                let bot_token = hermes_env_value(env_values, "SLACK_BOT_TOKEN")
+                    .or_else(|| yaml_string_field(&entry, "token"))
+                    .unwrap_or_default();
+                form.insert("botToken".to_string(), Value::String(bot_token));
                 insert_json_string_if_present(&mut form, &extra, "app_token", "appToken");
+                let app_token = hermes_env_value(env_values, "SLACK_APP_TOKEN")
+                    .or_else(|| json_form_string(&form, "appToken"))
+                    .unwrap_or_default();
+                form.insert("appToken".to_string(), Value::String(app_token));
                 insert_json_string_if_present(&mut form, &extra, "signing_secret", "signingSecret");
                 insert_json_string_if_present(&mut form, &extra, "webhook_path", "webhookPath");
             }
@@ -2299,6 +2343,21 @@ fn build_hermes_channel_config_values(config: &serde_yaml::Value) -> Value {
                     &extra,
                     "reaction_notifications",
                     "reactionNotifications",
+                );
+                put_json_string_from_env(&mut form, env_values, "FEISHU_APP_ID", "appId");
+                put_json_string_from_env(&mut form, env_values, "FEISHU_APP_SECRET", "appSecret");
+                put_json_string_from_env(&mut form, env_values, "FEISHU_DOMAIN", "domain");
+                put_json_string_from_env(
+                    &mut form,
+                    env_values,
+                    "FEISHU_CONNECTION_MODE",
+                    "connectionMode",
+                );
+                put_json_string_from_env(
+                    &mut form,
+                    env_values,
+                    "FEISHU_WEBHOOK_PATH",
+                    "webhookPath",
                 );
                 insert_json_bool_if_present(
                     &mut form,
@@ -2357,15 +2416,6 @@ fn yaml_child_object<'a>(
         .ok_or_else(|| format!("{key} 必须是对象"))
 }
 
-fn set_yaml_string_if_present(entry: &mut serde_yaml::Mapping, key: &str, value: Option<String>) {
-    if let Some(value) = value {
-        entry.insert(
-            yaml_key(key),
-            serde_yaml::Value::String(value.trim().to_string()),
-        );
-    }
-}
-
 fn set_extra_string_if_present(entry: &mut serde_yaml::Mapping, key: &str, value: Option<String>) {
     if let Some(value) = value
         .map(|v| v.trim().to_string())
@@ -2374,6 +2424,19 @@ fn set_extra_string_if_present(entry: &mut serde_yaml::Mapping, key: &str, value
         if let Ok(extra) = yaml_child_object(entry, "extra") {
             extra.insert(yaml_key(key), serde_yaml::Value::String(value));
         }
+    }
+}
+
+fn delete_yaml_key(entry: &mut serde_yaml::Mapping, key: &str) {
+    entry.remove(yaml_key(key));
+}
+
+fn delete_extra_key(entry: &mut serde_yaml::Mapping, key: &str) {
+    if let Some(extra) = entry
+        .get_mut(yaml_key("extra"))
+        .and_then(|value| value.as_mapping_mut())
+    {
+        extra.remove(yaml_key(key));
     }
 }
 
@@ -2488,16 +2551,12 @@ fn merge_hermes_channel_config(
     );
 
     match platform {
-        "telegram" => set_yaml_string_if_present(entry, "token", form_string(form, "botToken")),
-        "discord" => set_yaml_string_if_present(entry, "token", form_string(form, "token")),
+        "telegram" => delete_yaml_key(entry, "token"),
+        "discord" => delete_yaml_key(entry, "token"),
         "slack" => {
-            set_yaml_string_if_present(entry, "token", form_string(form, "botToken"));
-            set_extra_string_if_present(entry, "app_token", form_string(form, "appToken"));
-            set_extra_string_if_present(
-                entry,
-                "signing_secret",
-                form_string(form, "signingSecret"),
-            );
+            delete_yaml_key(entry, "token");
+            delete_extra_key(entry, "app_token");
+            delete_extra_key(entry, "signing_secret");
             set_extra_string_if_present(
                 entry,
                 "webhook_path",
@@ -2505,8 +2564,8 @@ fn merge_hermes_channel_config(
             );
         }
         "feishu" => {
-            set_extra_string_if_present(entry, "app_id", form_string(form, "appId"));
-            set_extra_string_if_present(entry, "app_secret", form_string(form, "appSecret"));
+            delete_extra_key(entry, "app_id");
+            delete_extra_key(entry, "app_secret");
             set_extra_string_if_present(
                 entry,
                 "domain",
@@ -2757,10 +2816,11 @@ fn write_hermes_channel_env(platform: &str, form: &Value) -> Result<(), String> 
 pub fn hermes_channel_config_read() -> Result<Value, String> {
     let (config_path, exists, config) = read_hermes_channel_yaml_config()?;
     ensure_yaml_object(&mut config.clone())?;
+    let env_values = read_hermes_channel_env_values();
     Ok(serde_json::json!({
         "exists": exists,
         "configPath": config_path.to_string_lossy(),
-        "values": build_hermes_channel_config_values(&config),
+        "values": build_hermes_channel_config_values(&config, &env_values),
     }))
 }
 
@@ -2772,7 +2832,11 @@ pub fn hermes_channel_config_save(platform: String, form: Value) -> Result<Value
     merge_hermes_channel_config(&mut config, platform, &form)?;
     write_hermes_yaml_config(&config_path, &config)?;
     write_hermes_channel_env(platform, &form)?;
-    let values = build_hermes_channel_config_values(&config);
+    let mut env_values = read_hermes_channel_env_values();
+    for (key, value) in build_hermes_channel_env_updates(platform, &form) {
+        env_values.insert(key, value);
+    }
+    let values = build_hermes_channel_config_values(&config, &env_values);
     Ok(serde_json::json!({
         "ok": true,
         "configPath": config_path.to_string_lossy(),
@@ -7644,6 +7708,7 @@ mod hermes_channel_tests {
         merge_hermes_channel_config,
     };
     use serde_json::json;
+    use std::collections::HashMap;
 
     #[test]
     fn merge_telegram_channel_keeps_unknown_extra_fields() {
@@ -7676,14 +7741,67 @@ platforms:
         )
         .unwrap();
 
-        let values = build_hermes_channel_config_values(&config);
+        let values = build_hermes_channel_config_values(&config, &HashMap::new());
         assert_eq!(values["telegram"]["enabled"], true);
-        assert_eq!(values["telegram"]["botToken"], "123:token");
+        assert_eq!(values["telegram"]["botToken"], "");
         assert_eq!(values["telegram"]["allowFrom"], "1001, 1002");
+        assert_eq!(
+            config["platforms"]["telegram"]["token"],
+            serde_yaml::Value::Null
+        );
         assert_eq!(
             config["platforms"]["telegram"]["extra"]["unknown_option"].as_str(),
             Some("keep-me")
         );
+        let env = build_hermes_channel_env_updates(
+            "telegram",
+            &json!({
+                "botToken": "123:token",
+                "allowFrom": "1001, 1002",
+                "requireMention": true,
+            }),
+        );
+        assert!(env.contains(&("TELEGRAM_BOT_TOKEN".to_string(), "123:token".to_string())));
+    }
+
+    #[test]
+    fn build_channel_values_prefers_runtime_env_credentials() {
+        let config: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+platforms:
+  telegram:
+    enabled: true
+    token: yaml-token
+    extra:
+      allow_from: ["1001"]
+  feishu:
+    enabled: true
+    extra:
+      app_id: yaml-app-id
+      app_secret: yaml-secret
+      domain: lark
+      connection_mode: webhook
+"#,
+        )
+        .unwrap();
+        let mut env = HashMap::new();
+        env.insert("TELEGRAM_BOT_TOKEN".to_string(), "env-token".to_string());
+        env.insert("FEISHU_APP_ID".to_string(), "env-app-id".to_string());
+        env.insert("FEISHU_APP_SECRET".to_string(), "env-secret".to_string());
+        env.insert("FEISHU_DOMAIN".to_string(), "feishu".to_string());
+        env.insert(
+            "FEISHU_CONNECTION_MODE".to_string(),
+            "websocket".to_string(),
+        );
+
+        let values = build_hermes_channel_config_values(&config, &env);
+
+        assert_eq!(values["telegram"]["botToken"], "env-token");
+        assert_eq!(values["telegram"]["allowFrom"], "1001");
+        assert_eq!(values["feishu"]["appId"], "env-app-id");
+        assert_eq!(values["feishu"]["appSecret"], "env-secret");
+        assert_eq!(values["feishu"]["domain"], "feishu");
+        assert_eq!(values["feishu"]["connectionMode"], "websocket");
     }
 
     #[test]
@@ -7707,6 +7825,14 @@ platforms:
         )
         .unwrap();
 
+        assert_eq!(
+            config["platforms"]["feishu"]["extra"]["app_id"],
+            serde_yaml::Value::Null
+        );
+        assert_eq!(
+            config["platforms"]["feishu"]["extra"]["app_secret"],
+            serde_yaml::Value::Null
+        );
         assert_eq!(
             config["platforms"]["feishu"]["extra"]["domain"].as_str(),
             Some("feishu")
@@ -7744,5 +7870,57 @@ platforms:
             "FEISHU_WEBHOOK_PATH".to_string(),
             "/feishu/webhook".to_string()
         )));
+    }
+
+    #[test]
+    fn merge_channel_config_removes_yaml_secrets() {
+        let mut config: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+platforms:
+  slack:
+    enabled: true
+    token: old-bot-token
+    extra:
+      app_token: old-app-token
+      signing_secret: old-signing-secret
+      webhook_path: /old/events
+      unknown_option: keep-me
+"#,
+        )
+        .unwrap();
+
+        merge_hermes_channel_config(
+            &mut config,
+            "slack",
+            &json!({
+                "enabled": true,
+                "botToken": "xoxb-new",
+                "appToken": "xapp-new",
+                "signingSecret": "new-signing-secret",
+                "webhookPath": "/slack/events",
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(
+            config["platforms"]["slack"]["token"],
+            serde_yaml::Value::Null
+        );
+        assert_eq!(
+            config["platforms"]["slack"]["extra"]["app_token"],
+            serde_yaml::Value::Null
+        );
+        assert_eq!(
+            config["platforms"]["slack"]["extra"]["signing_secret"],
+            serde_yaml::Value::Null
+        );
+        assert_eq!(
+            config["platforms"]["slack"]["extra"]["webhook_path"].as_str(),
+            Some("/slack/events")
+        );
+        assert_eq!(
+            config["platforms"]["slack"]["extra"]["unknown_option"].as_str(),
+            Some("keep-me")
+        );
     }
 }

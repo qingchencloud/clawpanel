@@ -31,6 +31,42 @@ test('Hermes 渠道读取会从 platforms 平台配置生成稳定表单值', ()
   assert.equal(values.telegram.requireMention, true)
 })
 
+test('Hermes 渠道读取会按运行时优先级合并 .env 凭证', () => {
+  const values = buildHermesChannelConfigValues({
+    platforms: {
+      telegram: {
+        enabled: true,
+        token: 'yaml-token',
+        extra: {
+          allow_from: ['1001'],
+        },
+      },
+      feishu: {
+        enabled: true,
+        extra: {
+          app_id: 'yaml-app-id',
+          app_secret: 'yaml-secret',
+          domain: 'lark',
+          connection_mode: 'webhook',
+        },
+      },
+    },
+  }, {
+    TELEGRAM_BOT_TOKEN: 'env-token',
+    FEISHU_APP_ID: 'env-app-id',
+    FEISHU_APP_SECRET: 'env-secret',
+    FEISHU_DOMAIN: 'feishu',
+    FEISHU_CONNECTION_MODE: 'websocket',
+  })
+
+  assert.equal(values.telegram.botToken, 'env-token')
+  assert.equal(values.telegram.allowFrom, '1001')
+  assert.equal(values.feishu.appId, 'env-app-id')
+  assert.equal(values.feishu.appSecret, 'env-secret')
+  assert.equal(values.feishu.domain, 'feishu')
+  assert.equal(values.feishu.connectionMode, 'websocket')
+})
+
 test('Hermes 渠道保存会写入 Hermes 最新 platforms 配置并保留无关配置', () => {
   const next = mergeHermesChannelConfig({
     model: { provider: 'anthropic', default: 'claude-sonnet-4-6' },
@@ -54,7 +90,7 @@ test('Hermes 渠道保存会写入 Hermes 最新 platforms 配置并保留无关
 
   assert.deepEqual(next.model, { provider: 'anthropic', default: 'claude-sonnet-4-6' })
   assert.equal(next.platforms.telegram.enabled, true)
-  assert.equal(next.platforms.telegram.token, '123:token')
+  assert.equal(next.platforms.telegram.token, undefined)
   assert.equal(next.platforms.telegram.extra.dm_policy, 'pair')
   assert.equal(next.platforms.telegram.extra.group_policy, 'allowlist')
   assert.deepEqual(next.platforms.telegram.extra.allow_from, ['1001', '1002'])
@@ -76,8 +112,8 @@ test('Hermes 飞书保存会补齐可运行默认项并使用 Hermes snake_case 
   })
 
   assert.equal(next.platforms.feishu.enabled, true)
-  assert.equal(next.platforms.feishu.extra.app_id, 'cli_xxx')
-  assert.equal(next.platforms.feishu.extra.app_secret, 'secret')
+  assert.equal(next.platforms.feishu.extra.app_id, undefined)
+  assert.equal(next.platforms.feishu.extra.app_secret, undefined)
   assert.equal(next.platforms.feishu.extra.domain, 'feishu')
   assert.equal(next.platforms.feishu.extra.connection_mode, 'websocket')
   assert.equal(next.platforms.feishu.extra.webhook_path, '/feishu/webhook')
@@ -116,4 +152,33 @@ test('Hermes 渠道保存会生成运行时仍会读取的环境变量', () => {
   assert.equal(feishuEnv.FEISHU_WEBHOOK_PATH, '/feishu/webhook')
   assert.equal(feishuEnv.FEISHU_GROUP_POLICY, 'allowlist')
   assert.equal(feishuEnv.FEISHU_REACTIONS, 'false')
+})
+
+test('Hermes 渠道保存会从 YAML 清理旧凭证，避免覆盖 .env 运行时值', () => {
+  const next = mergeHermesChannelConfig({
+    platforms: {
+      slack: {
+        enabled: true,
+        token: 'old-bot-token',
+        extra: {
+          app_token: 'old-app-token',
+          signing_secret: 'old-signing-secret',
+          webhook_path: '/old/events',
+          unknown_option: 'keep-me',
+        },
+      },
+    },
+  }, 'slack', {
+    enabled: true,
+    botToken: 'xoxb-new',
+    appToken: 'xapp-new',
+    signingSecret: 'new-signing-secret',
+    webhookPath: '/slack/events',
+  })
+
+  assert.equal(next.platforms.slack.token, undefined)
+  assert.equal(next.platforms.slack.extra.app_token, undefined)
+  assert.equal(next.platforms.slack.extra.signing_secret, undefined)
+  assert.equal(next.platforms.slack.extra.webhook_path, '/slack/events')
+  assert.equal(next.platforms.slack.extra.unknown_option, 'keep-me')
 })

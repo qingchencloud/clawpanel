@@ -147,12 +147,12 @@ export default {
   isGatewayForeign() { return false },
 
   onStateChange(fn) {
-    _stateListeners.push(fn)
-    return () => { _stateListeners = _stateListeners.filter(cb => cb !== fn) }
+    _listeners.push(fn)
+    return () => { _listeners = _listeners.filter(cb => cb !== fn) }
   },
   onReadyChange(fn) {
-    _readyListeners.push(fn)
-    return () => { _readyListeners = _readyListeners.filter(cb => cb !== fn) }
+    _listeners.push(fn)
+    return () => { _listeners = _listeners.filter(cb => cb !== fn) }
   },
 
   isFeatureAvailable() { return true },

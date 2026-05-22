@@ -193,7 +193,7 @@ export function render() {
       <section class="hm-channel-summary" aria-label="${esc(t('engine.hermesChannelSummary'))}">
         <div class="hm-channel-stat"><span>${esc(t('engine.hermesChannelEnabledCount'))}</span><strong>${enabledCount}</strong></div>
         <div class="hm-channel-stat"><span>${esc(t('engine.hermesChannelConfiguredCount'))}</span><strong>${configuredCount}</strong></div>
-        <div class="hm-channel-stat"><span>${esc(t('engine.hermesChannelRuntimeWrite'))}</span><strong>YAML + .env</strong></div>
+        <div class="hm-channel-stat"><span>${esc(t('engine.hermesChannelRuntimeWrite'))}</span><strong>${esc(t('engine.hermesChannelRuntimeWriteValue'))}</strong></div>
       </section>
 
       ${(error || success) ? `
