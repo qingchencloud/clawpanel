@@ -448,14 +448,13 @@ fn build_enhanced_path() -> String {
     #[cfg(target_os = "macos")]
     {
         // 版本管理器路径优先于系统路径，确保 nvm/volta/fnm 管理的 Node.js 版本被优先检测到
+        // 注：/usr/local/bin 和 /opt/homebrew/bin 在收集完版本管理器路径后再插入（见下方）
         let mut extra: Vec<String> = vec![
             format!("{}/.nvm/current/bin", home.display()),
             format!("{}/.volta/bin", home.display()),
             format!("{}/.nodenv/shims", home.display()),
             format!("{}/n/bin", home.display()),
             format!("{}/.npm-global/bin", home.display()),
-            "/usr/local/bin".into(),
-            "/opt/homebrew/bin".into(),
         ];
         for configured in openclaw_search_paths() {
             let dir = if configured.is_file() {
@@ -477,8 +476,10 @@ fn build_enhanced_path() -> String {
         for sa_dir in config::all_standalone_dirs() {
             extra.push(sa_dir.to_string_lossy().into_owned());
         }
-        // 扫描 nvm 实际安装的版本目录（兼容无 current 符号链接的情况）
+        // 扫描 nvm/fnm 实际安装的版本目录，先收集到独立 Vec，后续插入系统路径之前
         // 按版本号倒序排列，确保最新版优先（修复 #143：v20 排在 v24 前面）
+        // 修复 #294：避免被硬编码系统路径 /usr/local/bin 等遮蔽
+        let mut version_manager_paths: Vec<String> = Vec::new();
         let nvm_versions = home.join(".nvm/versions/node");
         if nvm_versions.is_dir() {
             if let Ok(entries) = std::fs::read_dir(&nvm_versions) {
@@ -488,7 +489,7 @@ fn build_enhanced_path() -> String {
                     .collect();
                 dirs.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
                 for entry in dirs {
-                    extra.push(entry.path().join("bin").to_string_lossy().to_string());
+                    version_manager_paths.push(entry.path().join("bin").to_string_lossy().to_string());
                 }
             }
         }
@@ -506,7 +507,7 @@ fn build_enhanced_path() -> String {
                     .collect();
                 dirs.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
                 for entry in dirs {
-                    extra.push(
+                    version_manager_paths.push(
                         entry
                             .path()
                             .join("installation/bin")
@@ -516,6 +517,10 @@ fn build_enhanced_path() -> String {
                 }
             }
         }
+        // 将 nvm/fnm 扫描结果插入到系统路径之前，确保版本管理器管理的 Node.js 优先被检测到
+        extra.extend(version_manager_paths);
+        extra.push("/usr/local/bin".into());
+        extra.push("/opt/homebrew/bin".into());
         let mut parts: Vec<&str> = vec![];
         if let Some(ref cp) = custom_path {
             parts.push(cp.as_str());
@@ -530,6 +535,7 @@ fn build_enhanced_path() -> String {
     #[cfg(target_os = "linux")]
     {
         // 版本管理器路径优先于系统路径，确保 nvm/volta/fnm 管理的 Node.js 版本被优先检测到
+        // 注：/usr/local/bin、/usr/bin、/snap/bin 在收集完版本管理器路径后再插入（见下方）
         let mut extra: Vec<String> = vec![
             format!("{}/.nvm/current/bin", home.display()),
             format!("{}/.volta/bin", home.display()),
@@ -537,9 +543,6 @@ fn build_enhanced_path() -> String {
             format!("{}/n/bin", home.display()),
             format!("{}/.npm-global/bin", home.display()),
             format!("{}/.local/bin", home.display()),
-            "/usr/local/bin".into(),
-            "/usr/bin".into(),
-            "/snap/bin".into(),
         ];
         for configured in openclaw_search_paths() {
             let dir = if configured.is_file() {
@@ -563,6 +566,8 @@ fn build_enhanced_path() -> String {
         }
         // NVM_DIR 环境变量（用户可能自定义了 nvm 安装目录）
         // 按版本号倒序排列，确保最新版优先（修复 #143：v20 排在 v24 前面）
+        // 修复 #294：先收集到 version_manager_paths，后续插入系统路径之前
+        let mut version_manager_paths: Vec<String> = Vec::new();
         let nvm_dir = std::env::var("NVM_DIR")
             .ok()
             .map(std::path::PathBuf::from)
@@ -576,7 +581,7 @@ fn build_enhanced_path() -> String {
                     .collect();
                 dirs.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
                 for entry in dirs {
-                    extra.push(entry.path().join("bin").to_string_lossy().to_string());
+                    version_manager_paths.push(entry.path().join("bin").to_string_lossy().to_string());
                 }
             }
         }
@@ -594,7 +599,7 @@ fn build_enhanced_path() -> String {
                     .collect();
                 dirs.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
                 for entry in dirs {
-                    extra.push(
+                    version_manager_paths.push(
                         entry
                             .path()
                             .join("installation/bin")
@@ -604,6 +609,11 @@ fn build_enhanced_path() -> String {
                 }
             }
         }
+        // 将 nvm/fnm 扫描结果插入到系统路径之前，确保版本管理器管理的 Node.js 优先被检测到
+        extra.extend(version_manager_paths);
+        extra.push("/usr/local/bin".into());
+        extra.push("/usr/bin".into());
+        extra.push("/snap/bin".into());
         // nodesource / 手动安装的 Node.js 可能在 /usr/local/lib/nodejs/ 下
         let nodejs_lib = std::path::Path::new("/usr/local/lib/nodejs");
         if nodejs_lib.is_dir() {
