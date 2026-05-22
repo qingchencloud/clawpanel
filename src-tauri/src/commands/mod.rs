@@ -489,7 +489,8 @@ fn build_enhanced_path() -> String {
                     .collect();
                 dirs.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
                 for entry in dirs {
-                    version_manager_paths.push(entry.path().join("bin").to_string_lossy().to_string());
+                    version_manager_paths
+                        .push(entry.path().join("bin").to_string_lossy().to_string());
                 }
             }
         }
@@ -581,7 +582,8 @@ fn build_enhanced_path() -> String {
                     .collect();
                 dirs.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
                 for entry in dirs {
-                    version_manager_paths.push(entry.path().join("bin").to_string_lossy().to_string());
+                    version_manager_paths
+                        .push(entry.path().join("bin").to_string_lossy().to_string());
                 }
             }
         }
