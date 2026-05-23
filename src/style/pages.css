@@ -1035,6 +1035,15 @@
   gap: var(--space-xs);
   flex-wrap: wrap;
 }
+.platform-card-actions .btn,
+.account-actions .btn {
+  min-height: 36px;
+  justify-content: center;
+}
+.platform-card-actions .btn-danger,
+.account-actions .btn-danger {
+  min-width: 44px;
+}
 
 .channel-runtime-notice {
   display: flex;
@@ -1166,7 +1175,10 @@
     padding: var(--space-md);
   }
   .platform-card-actions .btn {
-    min-height: 36px;
+    min-height: 44px;
+  }
+  .account-actions .btn {
+    min-height: 40px;
   }
   .account-actions {
     width: 100%;

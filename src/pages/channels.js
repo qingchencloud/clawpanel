@@ -1200,7 +1200,7 @@ function renderConfigured(page, state) {
                   ${renderRuntimeAccountInfo(runtimeSummary, acc.accountId || '')}
                   <span class="account-actions">
                     <button class="btn btn-xs btn-secondary" data-action="edit-account" data-account-id="${escapeAttr(acc.accountId || '')}">${icon('edit', 12)} ${t('channels.editAccount')}</button>
-                    <button class="btn btn-xs btn-danger" data-action="remove-account" data-account-id="${escapeAttr(acc.accountId || '')}">${icon('trash', 12)}</button>
+                    <button class="btn btn-xs btn-danger" data-action="remove-account" data-account-id="${escapeAttr(acc.accountId || '')}" aria-label="${escapeAttr(t('channels.remove'))}" title="${escapeAttr(t('channels.remove'))}">${icon('trash', 12)}</button>
                   </span>
                 </div>
               `
@@ -1222,7 +1222,7 @@ function renderConfigured(page, state) {
                   ${supportsMulti ? `<button class="btn btn-sm btn-secondary" data-action="add-account">${icon('plus', 14)} ${t('channels.addAccount')}</button>` : ''}
                   ${reg ? `<button class="btn btn-sm btn-secondary" data-action="edit">${icon('edit', 14)} ${t('channels.editDefault')}</button>` : `<span class="form-hint" style="align-self:center">${t('channels.noGuide')}</span>`}
                   <button class="btn btn-sm btn-secondary" data-action="toggle">${p.enabled ? icon('pause', 14) + ' ' + t('channels.disable') : icon('play', 14) + ' ' + t('channels.enable')}</button>
-                  <button class="btn btn-sm btn-danger" data-action="remove">${icon('trash', 14)}</button>
+                  <button class="btn btn-sm btn-danger" data-action="remove" aria-label="${escapeAttr(t('channels.removePlatformBtn'))}" title="${escapeAttr(t('channels.removePlatformBtn'))}">${icon('trash', 14)}</button>
                 </div>
               </div>
             `
@@ -1249,7 +1249,7 @@ function renderConfigured(page, state) {
                 ${supportsMulti ? `<button class="btn btn-sm btn-secondary" data-action="add-account">${icon('plus', 14)} ${t('channels.addAccount')}</button>` : ''}
                 ${reg ? `<button class="btn btn-sm btn-secondary" data-action="edit">${icon('edit', 14)} ${t('channels.editAccount')}</button>` : `<span class="form-hint" style="align-self:center">${t('channels.noGuide')}</span>`}
                 <button class="btn btn-sm btn-secondary" data-action="toggle">${p.enabled ? icon('pause', 14) + ' ' + t('channels.disable') : icon('play', 14) + ' ' + t('channels.enable')}</button>
-                <button class="btn btn-sm btn-danger" data-action="remove">${icon('trash', 14)}</button>
+                <button class="btn btn-sm btn-danger" data-action="remove" aria-label="${escapeAttr(t('channels.removePlatformBtn'))}" title="${escapeAttr(t('channels.removePlatformBtn'))}">${icon('trash', 14)}</button>
               </div>
             </div>
           `
