@@ -3322,6 +3322,7 @@ function normalizeHermesPlatform(platform) {
 
 const HERMES_SESSION_RESET_MODES = new Set(['both', 'idle', 'daily', 'none'])
 const HERMES_STREAMING_TRANSPORTS = new Set(['auto', 'draft', 'edit', 'off'])
+const HERMES_CODE_EXECUTION_MODES = new Set(['project', 'strict'])
 const HERMES_DISPLAY_TOOL_PROGRESS_VALUES = new Set(['off', 'new', 'all', 'verbose'])
 const HERMES_DISPLAY_STREAMING_VALUES = new Set(['inherit', 'true', 'false'])
 
@@ -3380,6 +3381,13 @@ function normalizeHermesStreamingTransport(value, strict = false) {
   if (HERMES_STREAMING_TRANSPORTS.has(transport)) return transport
   if (strict) throw new Error('streaming.transport 必须是 auto、draft、edit 或 off')
   return 'edit'
+}
+
+function normalizeHermesCodeExecutionMode(value, strict = false) {
+  const mode = String(value ?? '').trim().toLowerCase() || 'project'
+  if (HERMES_CODE_EXECUTION_MODES.has(mode)) return mode
+  if (strict) throw new Error('code_execution.mode 必须是 project 或 strict')
+  return 'project'
 }
 
 function normalizeHermesDisplayToolProgress(value, strict = false, key = 'display.tool_progress') {
@@ -3582,6 +3590,53 @@ export function mergeHermesStreamingConfig(config = {}, form = {}) {
   streaming.cursor = Object.hasOwn(form, 'cursor') ? String(form.cursor ?? '') : currentValues.cursor
   streaming.fresh_final_after_seconds = parseHermesFloat(Object.hasOwn(form, 'freshFinalAfterSeconds') ? form.freshFinalAfterSeconds : currentValues.freshFinalAfterSeconds, 'streaming.fresh_final_after_seconds', 60, 0, 86400, true)
   next.streaming = streaming
+  return next
+}
+
+export function buildHermesExecutionLimitsConfigValues(config = {}) {
+  const root = config && typeof config === 'object' && !Array.isArray(config) ? config : {}
+  const codeExecution = root.code_execution && typeof root.code_execution === 'object' && !Array.isArray(root.code_execution)
+    ? root.code_execution
+    : {}
+  const delegation = root.delegation && typeof root.delegation === 'object' && !Array.isArray(root.delegation)
+    ? root.delegation
+    : {}
+  return {
+    codeExecutionMode: normalizeHermesCodeExecutionMode(codeExecution.mode, false),
+    codeExecutionTimeout: parseHermesInteger(codeExecution.timeout, 'code_execution.timeout', 300, 1, 86400, false),
+    codeExecutionMaxToolCalls: parseHermesInteger(codeExecution.max_tool_calls, 'code_execution.max_tool_calls', 50, 1, 10000, false),
+    delegationMaxIterations: parseHermesInteger(delegation.max_iterations, 'delegation.max_iterations', 50, 1, 1000, false),
+    delegationChildTimeoutSeconds: parseHermesInteger(delegation.child_timeout_seconds, 'delegation.child_timeout_seconds', 600, 30, 86400, false),
+    delegationMaxConcurrentChildren: parseHermesInteger(delegation.max_concurrent_children, 'delegation.max_concurrent_children', 3, 1, 100, false),
+    delegationMaxSpawnDepth: parseHermesInteger(delegation.max_spawn_depth, 'delegation.max_spawn_depth', 1, 1, 3, false),
+    delegationOrchestratorEnabled: readHermesBool(delegation.orchestrator_enabled, true),
+    delegationSubagentAutoApprove: readHermesBool(delegation.subagent_auto_approve, false),
+    delegationInheritMcpToolsets: readHermesBool(delegation.inherit_mcp_toolsets, true),
+  }
+}
+
+export function mergeHermesExecutionLimitsConfig(config = {}, form = {}) {
+  const next = mergeConfigsPreservingFields({}, config && typeof config === 'object' && !Array.isArray(config) ? config : {})
+  const currentValues = buildHermesExecutionLimitsConfigValues(next)
+  const codeExecution = next.code_execution && typeof next.code_execution === 'object' && !Array.isArray(next.code_execution)
+    ? mergeConfigsPreservingFields(next.code_execution, {})
+    : {}
+  const delegation = next.delegation && typeof next.delegation === 'object' && !Array.isArray(next.delegation)
+    ? mergeConfigsPreservingFields(next.delegation, {})
+    : {}
+
+  codeExecution.mode = normalizeHermesCodeExecutionMode(Object.hasOwn(form, 'codeExecutionMode') ? form.codeExecutionMode : currentValues.codeExecutionMode, true)
+  codeExecution.timeout = parseHermesInteger(Object.hasOwn(form, 'codeExecutionTimeout') ? form.codeExecutionTimeout : currentValues.codeExecutionTimeout, 'code_execution.timeout', 300, 1, 86400, true)
+  codeExecution.max_tool_calls = parseHermesInteger(Object.hasOwn(form, 'codeExecutionMaxToolCalls') ? form.codeExecutionMaxToolCalls : currentValues.codeExecutionMaxToolCalls, 'code_execution.max_tool_calls', 50, 1, 10000, true)
+  delegation.max_iterations = parseHermesInteger(Object.hasOwn(form, 'delegationMaxIterations') ? form.delegationMaxIterations : currentValues.delegationMaxIterations, 'delegation.max_iterations', 50, 1, 1000, true)
+  delegation.child_timeout_seconds = parseHermesInteger(Object.hasOwn(form, 'delegationChildTimeoutSeconds') ? form.delegationChildTimeoutSeconds : currentValues.delegationChildTimeoutSeconds, 'delegation.child_timeout_seconds', 600, 30, 86400, true)
+  delegation.max_concurrent_children = parseHermesInteger(Object.hasOwn(form, 'delegationMaxConcurrentChildren') ? form.delegationMaxConcurrentChildren : currentValues.delegationMaxConcurrentChildren, 'delegation.max_concurrent_children', 3, 1, 100, true)
+  delegation.max_spawn_depth = parseHermesInteger(Object.hasOwn(form, 'delegationMaxSpawnDepth') ? form.delegationMaxSpawnDepth : currentValues.delegationMaxSpawnDepth, 'delegation.max_spawn_depth', 1, 1, 3, true)
+  delegation.orchestrator_enabled = formHermesBool(form, 'delegationOrchestratorEnabled', currentValues.delegationOrchestratorEnabled)
+  delegation.subagent_auto_approve = formHermesBool(form, 'delegationSubagentAutoApprove', currentValues.delegationSubagentAutoApprove)
+  delegation.inherit_mcp_toolsets = formHermesBool(form, 'delegationInheritMcpToolsets', currentValues.delegationInheritMcpToolsets)
+  next.code_execution = codeExecution
+  next.delegation = delegation
   return next
 }
 
@@ -9952,6 +10007,27 @@ const handlers = {
       configPath,
       backup,
       values: buildHermesStreamingConfigValues(next),
+    }
+  },
+
+  hermes_execution_limits_config_read() {
+    const { configPath, exists, config } = readHermesConfigYamlObject()
+    return {
+      exists,
+      configPath,
+      values: buildHermesExecutionLimitsConfigValues(config),
+    }
+  },
+
+  hermes_execution_limits_config_save({ form } = {}) {
+    const { configPath, config } = readHermesConfigYamlObject()
+    const next = mergeHermesExecutionLimitsConfig(config, form || {})
+    const backup = writeHermesConfigYamlObject(configPath, next)
+    return {
+      ok: true,
+      configPath,
+      backup,
+      values: buildHermesExecutionLimitsConfigValues(next),
     }
   },
 

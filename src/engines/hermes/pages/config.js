@@ -51,8 +51,22 @@ const STREAMING_DEFAULTS = {
   freshFinalAfterSeconds: 60,
 }
 
+const EXECUTION_LIMITS_DEFAULTS = {
+  codeExecutionMode: 'project',
+  codeExecutionTimeout: 300,
+  codeExecutionMaxToolCalls: 50,
+  delegationMaxIterations: 50,
+  delegationChildTimeoutSeconds: 600,
+  delegationMaxConcurrentChildren: 3,
+  delegationMaxSpawnDepth: 1,
+  delegationOrchestratorEnabled: true,
+  delegationSubagentAutoApprove: false,
+  delegationInheritMcpToolsets: true,
+}
+
 const SESSION_RESET_MODES = ['both', 'idle', 'daily', 'none']
 const STREAMING_TRANSPORTS = ['edit', 'auto', 'draft', 'off']
+const CODE_EXECUTION_MODES = ['project', 'strict']
 
 export function render() {
   const el = document.createElement('div')
@@ -64,24 +78,28 @@ export function render() {
   let toolGuardrailsValues = { ...TOOL_GUARDRAILS_DEFAULTS }
   let memoryValues = { ...MEMORY_DEFAULTS }
   let streamingValues = { ...STREAMING_DEFAULTS }
+  let executionLimitsValues = { ...EXECUTION_LIMITS_DEFAULTS }
   let loading = true
   let runtimeLoading = true
   let compressionLoading = true
   let toolGuardrailsLoading = true
   let memoryLoading = true
   let streamingLoading = true
+  let executionLimitsLoading = true
   let saving = false
   let runtimeSaving = false
   let compressionSaving = false
   let toolGuardrailsSaving = false
   let memorySaving = false
   let streamingSaving = false
+  let executionLimitsSaving = false
   let error = null
   let runtimeError = null
   let compressionError = null
   let toolGuardrailsError = null
   let memoryError = null
   let streamingError = null
+  let executionLimitsError = null
 
   function esc(value) {
     return String(value ?? '')
@@ -92,7 +110,7 @@ export function render() {
   }
 
   function isBusy() {
-    return loading || runtimeLoading || compressionLoading || toolGuardrailsLoading || memoryLoading || streamingLoading || saving || runtimeSaving || compressionSaving || toolGuardrailsSaving || memorySaving || streamingSaving
+    return loading || runtimeLoading || compressionLoading || toolGuardrailsLoading || memoryLoading || streamingLoading || executionLimitsLoading || saving || runtimeSaving || compressionSaving || toolGuardrailsSaving || memorySaving || streamingSaving || executionLimitsSaving
   }
 
   function option(labelKey, value, selected) {
@@ -109,7 +127,7 @@ export function render() {
   }
 
   function renderRuntimePanel() {
-    const disabled = loading || saving || runtimeLoading || runtimeSaving || compressionSaving || toolGuardrailsSaving || memorySaving || streamingSaving
+    const disabled = loading || saving || runtimeLoading || runtimeSaving || compressionSaving || toolGuardrailsSaving || memorySaving || streamingSaving || executionLimitsSaving
     return `
       <div class="hm-panel hm-config-runtime-panel">
         <div class="hm-panel-header">
@@ -157,7 +175,7 @@ export function render() {
   }
 
   function renderCompressionPanel() {
-    const disabled = loading || saving || compressionLoading || compressionSaving || runtimeSaving || toolGuardrailsSaving || memorySaving || streamingSaving
+    const disabled = loading || saving || compressionLoading || compressionSaving || runtimeSaving || toolGuardrailsSaving || memorySaving || streamingSaving || executionLimitsSaving
     return `
       <div class="hm-panel hm-config-runtime-panel hm-config-compression-panel">
         <div class="hm-panel-header">
@@ -207,7 +225,7 @@ export function render() {
   }
 
   function renderToolGuardrailsPanel() {
-    const disabled = loading || saving || toolGuardrailsLoading || toolGuardrailsSaving || runtimeSaving || compressionSaving || memorySaving || streamingSaving
+    const disabled = loading || saving || toolGuardrailsLoading || toolGuardrailsSaving || runtimeSaving || compressionSaving || memorySaving || streamingSaving || executionLimitsSaving
     return `
       <div class="hm-panel hm-config-runtime-panel hm-config-guardrails-panel">
         <div class="hm-panel-header">
@@ -269,7 +287,7 @@ export function render() {
   }
 
   function renderMemoryPanel() {
-    const disabled = loading || saving || memoryLoading || memorySaving || runtimeSaving || compressionSaving || toolGuardrailsSaving || streamingSaving
+    const disabled = loading || saving || memoryLoading || memorySaving || runtimeSaving || compressionSaving || toolGuardrailsSaving || streamingSaving || executionLimitsSaving
     return `
       <div class="hm-panel hm-config-runtime-panel hm-config-memory-panel">
         <div class="hm-panel-header">
@@ -315,7 +333,7 @@ export function render() {
   }
 
   function renderStreamingPanel() {
-    const disabled = loading || saving || streamingLoading || streamingSaving || runtimeSaving || compressionSaving || toolGuardrailsSaving || memorySaving
+    const disabled = loading || saving || streamingLoading || streamingSaving || runtimeSaving || compressionSaving || toolGuardrailsSaving || memorySaving || executionLimitsSaving
     return `
       <div class="hm-panel hm-config-runtime-panel hm-config-streaming-panel">
         <div class="hm-panel-header">
@@ -366,6 +384,78 @@ export function render() {
     `
   }
 
+  function renderExecutionLimitsPanel() {
+    const disabled = loading || saving || executionLimitsLoading || executionLimitsSaving || runtimeSaving || compressionSaving || toolGuardrailsSaving || memorySaving || streamingSaving
+    return `
+      <div class="hm-panel hm-config-runtime-panel hm-config-execution-limits-panel">
+        <div class="hm-panel-header">
+          <div>
+            <div class="hm-panel-title">${t('engine.hermesExecutionLimitsTitle')}</div>
+            <div class="hm-channel-panel-desc">${t('engine.hermesExecutionLimitsDesc')}</div>
+          </div>
+          <div class="hm-panel-actions">
+            <span class="hm-muted">${executionLimitsSaving ? t('engine.hermesConfigStatusSaving') : executionLimitsLoading ? t('engine.hermesConfigStatusLoading') : t('engine.hermesExecutionLimitsStatusReady')}</span>
+            <button class="hm-btn hm-btn--cta hm-btn--sm" id="hm-execution-limits-save" ${disabled ? 'disabled' : ''}>${t('engine.hermesExecutionLimitsSave')}</button>
+          </div>
+        </div>
+        <div class="hm-panel-body">
+          ${renderError(executionLimitsError)}
+          <div class="hm-config-subtitle">${t('engine.hermesExecutionLimitsCodeTitle')}</div>
+          <div class="hm-config-runtime-grid hm-config-execution-grid">
+            <label class="hm-field">
+              <span class="hm-field-label">${t('engine.hermesExecutionLimitsCodeMode')}</span>
+              <select id="hm-code-execution-mode" class="hm-input" ${disabled ? 'disabled' : ''}>
+                ${CODE_EXECUTION_MODES.map(mode => option(`engine.hermesExecutionLimitsCodeMode_${mode}`, mode, executionLimitsValues.codeExecutionMode)).join('')}
+              </select>
+            </label>
+            <label class="hm-field">
+              <span class="hm-field-label">${t('engine.hermesExecutionLimitsCodeTimeout')}</span>
+              <input id="hm-code-execution-timeout" class="hm-input" type="number" inputmode="numeric" min="1" max="86400" step="1" value="${esc(executionLimitsValues.codeExecutionTimeout)}" ${disabled ? 'disabled' : ''}>
+            </label>
+            <label class="hm-field">
+              <span class="hm-field-label">${t('engine.hermesExecutionLimitsCodeMaxToolCalls')}</span>
+              <input id="hm-code-execution-max-tool-calls" class="hm-input" type="number" inputmode="numeric" min="1" max="10000" step="1" value="${esc(executionLimitsValues.codeExecutionMaxToolCalls)}" ${disabled ? 'disabled' : ''}>
+            </label>
+          </div>
+          <div class="hm-config-subtitle">${t('engine.hermesExecutionLimitsDelegationTitle')}</div>
+          <div class="hm-config-runtime-grid hm-config-delegation-grid">
+            <label class="hm-field">
+              <span class="hm-field-label">${t('engine.hermesExecutionLimitsDelegationMaxIterations')}</span>
+              <input id="hm-delegation-max-iterations" class="hm-input" type="number" inputmode="numeric" min="1" max="1000" step="1" value="${esc(executionLimitsValues.delegationMaxIterations)}" ${disabled ? 'disabled' : ''}>
+            </label>
+            <label class="hm-field">
+              <span class="hm-field-label">${t('engine.hermesExecutionLimitsDelegationChildTimeout')}</span>
+              <input id="hm-delegation-child-timeout-seconds" class="hm-input" type="number" inputmode="numeric" min="30" max="86400" step="1" value="${esc(executionLimitsValues.delegationChildTimeoutSeconds)}" ${disabled ? 'disabled' : ''}>
+            </label>
+            <label class="hm-field">
+              <span class="hm-field-label">${t('engine.hermesExecutionLimitsDelegationMaxConcurrent')}</span>
+              <input id="hm-delegation-max-concurrent-children" class="hm-input" type="number" inputmode="numeric" min="1" max="100" step="1" value="${esc(executionLimitsValues.delegationMaxConcurrentChildren)}" ${disabled ? 'disabled' : ''}>
+            </label>
+            <label class="hm-field">
+              <span class="hm-field-label">${t('engine.hermesExecutionLimitsDelegationMaxSpawnDepth')}</span>
+              <input id="hm-delegation-max-spawn-depth" class="hm-input" type="number" inputmode="numeric" min="1" max="3" step="1" value="${esc(executionLimitsValues.delegationMaxSpawnDepth)}" ${disabled ? 'disabled' : ''}>
+            </label>
+          </div>
+          <div class="hm-config-check-grid">
+            <label class="hm-channel-check">
+              <input id="hm-delegation-orchestrator-enabled" type="checkbox" ${executionLimitsValues.delegationOrchestratorEnabled ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
+              <span>${t('engine.hermesExecutionLimitsDelegationOrchestratorEnabled')}</span>
+            </label>
+            <label class="hm-channel-check">
+              <input id="hm-delegation-inherit-mcp-toolsets" type="checkbox" ${executionLimitsValues.delegationInheritMcpToolsets ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
+              <span>${t('engine.hermesExecutionLimitsDelegationInheritMcp')}</span>
+            </label>
+            <label class="hm-channel-check hm-channel-check--danger">
+              <input id="hm-delegation-subagent-auto-approve" type="checkbox" ${executionLimitsValues.delegationSubagentAutoApprove ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
+              <span>${t('engine.hermesExecutionLimitsDelegationAutoApprove')}</span>
+            </label>
+          </div>
+          <div class="hm-channel-footnote">${t('engine.hermesExecutionLimitsFootnote')}</div>
+        </div>
+      </div>
+    `
+  }
+
   function draw() {
     el.innerHTML = `
       <div class="hm-hero">
@@ -382,6 +472,7 @@ export function render() {
 
       ${renderRuntimePanel()}
       ${renderStreamingPanel()}
+      ${renderExecutionLimitsPanel()}
       ${renderCompressionPanel()}
       ${renderToolGuardrailsPanel()}
       ${renderMemoryPanel()}
@@ -409,6 +500,7 @@ export function render() {
     el.querySelector('#hm-tool-guardrails-save')?.addEventListener('click', saveToolGuardrails)
     el.querySelector('#hm-memory-save')?.addEventListener('click', saveMemory)
     el.querySelector('#hm-streaming-save')?.addEventListener('click', saveStreaming)
+    el.querySelector('#hm-execution-limits-save')?.addEventListener('click', saveExecutionLimits)
   }
 
   async function loadRaw() {
@@ -441,6 +533,11 @@ export function render() {
     streamingValues = { ...STREAMING_DEFAULTS, ...(data?.values || {}) }
   }
 
+  async function loadExecutionLimits() {
+    const data = await api.hermesExecutionLimitsConfigRead()
+    executionLimitsValues = { ...EXECUTION_LIMITS_DEFAULTS, ...(data?.values || {}) }
+  }
+
   async function load() {
     loading = true
     runtimeLoading = true
@@ -448,12 +545,14 @@ export function render() {
     toolGuardrailsLoading = true
     memoryLoading = true
     streamingLoading = true
+    executionLimitsLoading = true
     error = null
     runtimeError = null
     compressionError = null
     toolGuardrailsError = null
     memoryError = null
     streamingError = null
+    executionLimitsError = null
     draw()
     try {
       await loadRaw()
@@ -492,6 +591,14 @@ export function render() {
       streamingError = humanizeError(err, t('engine.hermesStreamingConfigLoadFailed') || 'Load streaming config failed')
     } finally {
       streamingLoading = false
+      draw()
+    }
+    try {
+      await loadExecutionLimits()
+    } catch (err) {
+      executionLimitsError = humanizeError(err, t('engine.hermesExecutionLimitsLoadFailed') || 'Load execution limit config failed')
+    } finally {
+      executionLimitsLoading = false
       draw()
     }
     try {
@@ -537,6 +644,9 @@ export function render() {
       } catch {}
       try {
         await loadStreaming()
+      } catch {}
+      try {
+        await loadExecutionLimits()
       } catch {}
     } catch (err) {
       error = humanizeError(err, t('engine.hermesConfigSaveFailed') || 'Save failed')
@@ -693,6 +803,40 @@ export function render() {
       toast(streamingError, 'error')
     } finally {
       streamingSaving = false
+      draw()
+    }
+  }
+
+  async function saveExecutionLimits() {
+    const form = {
+      codeExecutionMode: el.querySelector('#hm-code-execution-mode')?.value || 'project',
+      codeExecutionTimeout: el.querySelector('#hm-code-execution-timeout')?.value || '300',
+      codeExecutionMaxToolCalls: el.querySelector('#hm-code-execution-max-tool-calls')?.value || '50',
+      delegationMaxIterations: el.querySelector('#hm-delegation-max-iterations')?.value || '50',
+      delegationChildTimeoutSeconds: el.querySelector('#hm-delegation-child-timeout-seconds')?.value || '600',
+      delegationMaxConcurrentChildren: el.querySelector('#hm-delegation-max-concurrent-children')?.value || '3',
+      delegationMaxSpawnDepth: el.querySelector('#hm-delegation-max-spawn-depth')?.value || '1',
+      delegationOrchestratorEnabled: !!el.querySelector('#hm-delegation-orchestrator-enabled')?.checked,
+      delegationSubagentAutoApprove: !!el.querySelector('#hm-delegation-subagent-auto-approve')?.checked,
+      delegationInheritMcpToolsets: !!el.querySelector('#hm-delegation-inherit-mcp-toolsets')?.checked,
+    }
+    executionLimitsSaving = true
+    executionLimitsError = null
+    draw()
+    try {
+      const result = await api.hermesExecutionLimitsConfigSave(form)
+      executionLimitsValues = { ...EXECUTION_LIMITS_DEFAULTS, ...(result?.values || form) }
+      await refreshRawAfterStructuredSave()
+      const backup = result?.backup || ''
+      toast({
+        message: t('engine.hermesExecutionLimitsSaveSuccess'),
+        hint: backup ? t('engine.hermesConfigBackupHint', { path: backup }) : '',
+      }, 'success')
+    } catch (err) {
+      executionLimitsError = humanizeError(err, t('engine.hermesExecutionLimitsSaveFailed') || 'Save execution limit config failed')
+      toast(executionLimitsError, 'error')
+    } finally {
+      executionLimitsSaving = false
       draw()
     }
   }

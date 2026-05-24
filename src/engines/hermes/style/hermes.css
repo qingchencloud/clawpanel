@@ -6769,6 +6769,14 @@ body[data-active-engine="hermes"][data-theme="dark"] {
   grid-template-columns: repeat(5, minmax(140px, 1fr));
   margin-top: 18px;
 }
+[data-engine="hermes"] .hm-config-execution-grid {
+  grid-template-columns: minmax(180px, 1.2fr) repeat(2, minmax(150px, 1fr));
+  margin-top: 12px;
+}
+[data-engine="hermes"] .hm-config-delegation-grid {
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  margin-top: 12px;
+}
 [data-engine="hermes"] .hm-config-subtitle {
   margin-top: 20px;
   color: var(--hm-text-secondary);
@@ -6833,6 +6841,9 @@ body[data-active-engine="hermes"][data-theme="dark"] {
   height: 18px;
   accent-color: var(--hm-accent);
   flex: 0 0 auto;
+}
+[data-engine="hermes"] .hm-channel-check--danger span {
+  color: var(--hm-warning, #a16207);
 }
 [data-engine="hermes"] .hm-channel-section {
   display: grid;
@@ -6910,6 +6921,8 @@ body[data-active-engine="hermes"][data-theme="dark"] {
   [data-engine="hermes"] .hm-config-guardrails-grid,
   [data-engine="hermes"] .hm-config-memory-grid,
   [data-engine="hermes"] .hm-config-streaming-grid,
+  [data-engine="hermes"] .hm-config-execution-grid,
+  [data-engine="hermes"] .hm-config-delegation-grid,
   [data-engine="hermes"] .hm-config-check-grid {
     grid-template-columns: 1fr;
   }

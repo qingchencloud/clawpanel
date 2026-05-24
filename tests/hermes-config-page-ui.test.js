@@ -52,12 +52,35 @@ test('Hermes 配置页会暴露网关流式结构化配置字段', () => {
   }
 })
 
+test('Hermes 配置页会暴露执行与委派限制结构化配置字段', () => {
+  for (const id of [
+    'hm-execution-limits-save',
+    'hm-code-execution-mode',
+    'hm-code-execution-timeout',
+    'hm-code-execution-max-tool-calls',
+    'hm-delegation-max-iterations',
+    'hm-delegation-child-timeout-seconds',
+    'hm-delegation-max-concurrent-children',
+    'hm-delegation-max-spawn-depth',
+    'hm-delegation-orchestrator-enabled',
+    'hm-delegation-subagent-auto-approve',
+    'hm-delegation-inherit-mcp-toolsets',
+  ]) {
+    assert.match(source, new RegExp(`id="${id}"`), `缺少 ${id}`)
+  }
+})
+
 test('Hermes 配置页数值输入会保留 0 值显示', () => {
   assert.doesNotMatch(source, /String\(value \|\| ''\)/, 'esc(value) 不能把合法 0 渲染为空字符串')
 })
 
 test('Hermes 配置页新增结构化配置不会暴露翻译 key', () => {
-  const keys = new Set(extractEngineKeys().filter(key => key.includes('ToolGuardrails') || key.includes('MemoryConfig') || key.includes('StreamingConfig')))
+  const keys = new Set(extractEngineKeys().filter(key => (
+    key.includes('ToolGuardrails') ||
+    key.includes('MemoryConfig') ||
+    key.includes('StreamingConfig') ||
+    key.includes('ExecutionLimits')
+  )))
 
   assert.ok(keys.size > 0, '应能提取新增结构化配置用到的 engine 翻译 key')
   for (const key of keys) {

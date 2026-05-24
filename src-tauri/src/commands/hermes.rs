@@ -3672,6 +3672,26 @@ fn normalize_hermes_streaming_transport(
     }
 }
 
+fn normalize_hermes_code_execution_mode(
+    value: Option<String>,
+    strict: bool,
+) -> Result<String, String> {
+    let mode = value.unwrap_or_default().trim().to_ascii_lowercase();
+    let mode = if mode.is_empty() {
+        "project".to_string()
+    } else {
+        mode
+    };
+    if matches!(mode.as_str(), "project" | "strict") {
+        return Ok(mode);
+    }
+    if strict {
+        Err("code_execution.mode 必须是 project 或 strict".to_string())
+    } else {
+        Ok("project".to_string())
+    }
+}
+
 fn hermes_streaming_config_source(config: &serde_yaml::Value) -> Option<&serde_yaml::Mapping> {
     let root = config.as_mapping()?;
     if let Some(streaming) = yaml_get_mapping(root, "streaming") {
@@ -3791,6 +3811,212 @@ fn merge_hermes_streaming_config(
     streaming.insert(
         yaml_key("fresh_final_after_seconds"),
         serde_yaml::Value::Number(fresh_final_after_seconds.into()),
+    );
+    Ok(())
+}
+
+fn build_hermes_execution_limits_config_values(config: &serde_yaml::Value) -> Value {
+    let root = config.as_mapping();
+    let code_execution = root.and_then(|map| yaml_get_mapping(map, "code_execution"));
+    let delegation = root.and_then(|map| yaml_get_mapping(map, "delegation"));
+    let code_execution_mode = normalize_hermes_code_execution_mode(
+        code_execution.and_then(|map| yaml_string_field(map, "mode")),
+        false,
+    )
+    .unwrap_or_else(|_| "project".to_string());
+    let code_execution_timeout = code_execution
+        .map(|map| bounded_hermes_i64(yaml_i64_field(map, "timeout"), 300, 1, 86400))
+        .unwrap_or(300);
+    let code_execution_max_tool_calls = code_execution
+        .map(|map| bounded_hermes_i64(yaml_i64_field(map, "max_tool_calls"), 50, 1, 10000))
+        .unwrap_or(50);
+    let delegation_max_iterations = delegation
+        .map(|map| bounded_hermes_i64(yaml_i64_field(map, "max_iterations"), 50, 1, 1000))
+        .unwrap_or(50);
+    let delegation_child_timeout_seconds = delegation
+        .map(|map| bounded_hermes_i64(yaml_i64_field(map, "child_timeout_seconds"), 600, 30, 86400))
+        .unwrap_or(600);
+    let delegation_max_concurrent_children = delegation
+        .map(|map| bounded_hermes_i64(yaml_i64_field(map, "max_concurrent_children"), 3, 1, 100))
+        .unwrap_or(3);
+    let delegation_max_spawn_depth = delegation
+        .map(|map| bounded_hermes_i64(yaml_i64_field(map, "max_spawn_depth"), 1, 1, 3))
+        .unwrap_or(1);
+    let delegation_orchestrator_enabled = delegation
+        .and_then(|map| yaml_bool_field(map, "orchestrator_enabled"))
+        .unwrap_or(true);
+    let delegation_subagent_auto_approve = delegation
+        .and_then(|map| yaml_bool_field(map, "subagent_auto_approve"))
+        .unwrap_or(false);
+    let delegation_inherit_mcp_toolsets = delegation
+        .and_then(|map| yaml_bool_field(map, "inherit_mcp_toolsets"))
+        .unwrap_or(true);
+
+    serde_json::json!({
+        "codeExecutionMode": code_execution_mode,
+        "codeExecutionTimeout": code_execution_timeout,
+        "codeExecutionMaxToolCalls": code_execution_max_tool_calls,
+        "delegationMaxIterations": delegation_max_iterations,
+        "delegationChildTimeoutSeconds": delegation_child_timeout_seconds,
+        "delegationMaxConcurrentChildren": delegation_max_concurrent_children,
+        "delegationMaxSpawnDepth": delegation_max_spawn_depth,
+        "delegationOrchestratorEnabled": delegation_orchestrator_enabled,
+        "delegationSubagentAutoApprove": delegation_subagent_auto_approve,
+        "delegationInheritMcpToolsets": delegation_inherit_mcp_toolsets,
+    })
+}
+
+fn merge_hermes_execution_limits_config(
+    config: &mut serde_yaml::Value,
+    form: &Value,
+) -> Result<(), String> {
+    let current = build_hermes_execution_limits_config_values(config);
+    let code_execution_mode = normalize_hermes_code_execution_mode(
+        if form.get("codeExecutionMode").is_some() {
+            form_string(form, "codeExecutionMode")
+        } else {
+            current["codeExecutionMode"]
+                .as_str()
+                .map(ToString::to_string)
+        },
+        true,
+    )?;
+    let code_execution_timeout = validate_hermes_i64(
+        if form.get("codeExecutionTimeout").is_some() {
+            form_i64(form, "codeExecutionTimeout")
+        } else {
+            Some(current["codeExecutionTimeout"].as_i64().unwrap_or(300))
+        },
+        "code_execution.timeout",
+        300,
+        1,
+        86400,
+    )?;
+    let code_execution_max_tool_calls = validate_hermes_i64(
+        if form.get("codeExecutionMaxToolCalls").is_some() {
+            form_i64(form, "codeExecutionMaxToolCalls")
+        } else {
+            Some(current["codeExecutionMaxToolCalls"].as_i64().unwrap_or(50))
+        },
+        "code_execution.max_tool_calls",
+        50,
+        1,
+        10000,
+    )?;
+    let delegation_max_iterations = validate_hermes_i64(
+        if form.get("delegationMaxIterations").is_some() {
+            form_i64(form, "delegationMaxIterations")
+        } else {
+            Some(current["delegationMaxIterations"].as_i64().unwrap_or(50))
+        },
+        "delegation.max_iterations",
+        50,
+        1,
+        1000,
+    )?;
+    let delegation_child_timeout_seconds = validate_hermes_i64(
+        if form.get("delegationChildTimeoutSeconds").is_some() {
+            form_i64(form, "delegationChildTimeoutSeconds")
+        } else {
+            Some(
+                current["delegationChildTimeoutSeconds"]
+                    .as_i64()
+                    .unwrap_or(600),
+            )
+        },
+        "delegation.child_timeout_seconds",
+        600,
+        30,
+        86400,
+    )?;
+    let delegation_max_concurrent_children = validate_hermes_i64(
+        if form.get("delegationMaxConcurrentChildren").is_some() {
+            form_i64(form, "delegationMaxConcurrentChildren")
+        } else {
+            Some(
+                current["delegationMaxConcurrentChildren"]
+                    .as_i64()
+                    .unwrap_or(3),
+            )
+        },
+        "delegation.max_concurrent_children",
+        3,
+        1,
+        100,
+    )?;
+    let delegation_max_spawn_depth = validate_hermes_i64(
+        if form.get("delegationMaxSpawnDepth").is_some() {
+            form_i64(form, "delegationMaxSpawnDepth")
+        } else {
+            Some(current["delegationMaxSpawnDepth"].as_i64().unwrap_or(1))
+        },
+        "delegation.max_spawn_depth",
+        1,
+        1,
+        3,
+    )?;
+    let delegation_orchestrator_enabled = form_bool(form, "delegationOrchestratorEnabled")
+        .unwrap_or_else(|| {
+            current["delegationOrchestratorEnabled"]
+                .as_bool()
+                .unwrap_or(true)
+        });
+    let delegation_subagent_auto_approve = form_bool(form, "delegationSubagentAutoApprove")
+        .unwrap_or_else(|| {
+            current["delegationSubagentAutoApprove"]
+                .as_bool()
+                .unwrap_or(false)
+        });
+    let delegation_inherit_mcp_toolsets = form_bool(form, "delegationInheritMcpToolsets")
+        .unwrap_or_else(|| {
+            current["delegationInheritMcpToolsets"]
+                .as_bool()
+                .unwrap_or(true)
+        });
+
+    let root = ensure_yaml_object(config)?;
+    let code_execution = yaml_child_object(root, "code_execution")?;
+    code_execution.insert(
+        yaml_key("mode"),
+        serde_yaml::Value::String(code_execution_mode),
+    );
+    code_execution.insert(
+        yaml_key("timeout"),
+        serde_yaml::Value::Number(code_execution_timeout.into()),
+    );
+    code_execution.insert(
+        yaml_key("max_tool_calls"),
+        serde_yaml::Value::Number(code_execution_max_tool_calls.into()),
+    );
+
+    let delegation = yaml_child_object(root, "delegation")?;
+    delegation.insert(
+        yaml_key("max_iterations"),
+        serde_yaml::Value::Number(delegation_max_iterations.into()),
+    );
+    delegation.insert(
+        yaml_key("child_timeout_seconds"),
+        serde_yaml::Value::Number(delegation_child_timeout_seconds.into()),
+    );
+    delegation.insert(
+        yaml_key("max_concurrent_children"),
+        serde_yaml::Value::Number(delegation_max_concurrent_children.into()),
+    );
+    delegation.insert(
+        yaml_key("max_spawn_depth"),
+        serde_yaml::Value::Number(delegation_max_spawn_depth.into()),
+    );
+    delegation.insert(
+        yaml_key("orchestrator_enabled"),
+        serde_yaml::Value::Bool(delegation_orchestrator_enabled),
+    );
+    delegation.insert(
+        yaml_key("subagent_auto_approve"),
+        serde_yaml::Value::Bool(delegation_subagent_auto_approve),
+    );
+    delegation.insert(
+        yaml_key("inherit_mcp_toolsets"),
+        serde_yaml::Value::Bool(delegation_inherit_mcp_toolsets),
     );
     Ok(())
 }
@@ -4699,6 +4925,30 @@ pub fn hermes_streaming_config_save(form: Value) -> Result<Value, String> {
         "configPath": config_path.to_string_lossy(),
         "backup": backup,
         "values": build_hermes_streaming_config_values(&config),
+    }))
+}
+
+#[tauri::command]
+pub fn hermes_execution_limits_config_read() -> Result<Value, String> {
+    let (config_path, exists, config) = read_hermes_channel_yaml_config()?;
+    ensure_yaml_object(&mut config.clone())?;
+    Ok(serde_json::json!({
+        "exists": exists,
+        "configPath": config_path.to_string_lossy(),
+        "values": build_hermes_execution_limits_config_values(&config),
+    }))
+}
+
+#[tauri::command]
+pub fn hermes_execution_limits_config_save(form: Value) -> Result<Value, String> {
+    let (config_path, _exists, mut config) = read_hermes_channel_yaml_config()?;
+    merge_hermes_execution_limits_config(&mut config, &form)?;
+    let backup = write_hermes_yaml_config(&config_path, &config)?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "configPath": config_path.to_string_lossy(),
+        "backup": backup,
+        "values": build_hermes_execution_limits_config_values(&config),
     }))
 }
 
@@ -10019,6 +10269,178 @@ display:
             merge_hermes_streaming_config(&mut config, &json!({ "freshFinalAfterSeconds": -1 }))
                 .unwrap_err();
         assert!(err.contains("streaming.fresh_final_after_seconds"));
+    }
+}
+
+#[cfg(test)]
+mod hermes_execution_limits_config_tests {
+    use super::{
+        build_hermes_execution_limits_config_values, merge_hermes_execution_limits_config,
+    };
+    use serde_json::json;
+
+    #[test]
+    fn execution_limits_values_have_upstream_defaults() {
+        let config: serde_yaml::Value = serde_yaml::from_str("{}").unwrap();
+        let values = build_hermes_execution_limits_config_values(&config);
+        assert_eq!(values["codeExecutionMode"], "project");
+        assert_eq!(values["codeExecutionTimeout"], 300);
+        assert_eq!(values["codeExecutionMaxToolCalls"], 50);
+        assert_eq!(values["delegationMaxIterations"], 50);
+        assert_eq!(values["delegationChildTimeoutSeconds"], 600);
+        assert_eq!(values["delegationMaxConcurrentChildren"], 3);
+        assert_eq!(values["delegationMaxSpawnDepth"], 1);
+        assert_eq!(values["delegationOrchestratorEnabled"], true);
+        assert_eq!(values["delegationSubagentAutoApprove"], false);
+        assert_eq!(values["delegationInheritMcpToolsets"], true);
+    }
+
+    #[test]
+    fn execution_limits_values_read_yaml_fields() {
+        let config: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+code_execution:
+  mode: strict
+  timeout: 120
+  max_tool_calls: 12
+delegation:
+  max_iterations: 30
+  child_timeout_seconds: 900
+  max_concurrent_children: 5
+  max_spawn_depth: 2
+  orchestrator_enabled: false
+  subagent_auto_approve: true
+  inherit_mcp_toolsets: false
+"#,
+        )
+        .unwrap();
+        let values = build_hermes_execution_limits_config_values(&config);
+        assert_eq!(values["codeExecutionMode"], "strict");
+        assert_eq!(values["codeExecutionTimeout"], 120);
+        assert_eq!(values["codeExecutionMaxToolCalls"], 12);
+        assert_eq!(values["delegationMaxIterations"], 30);
+        assert_eq!(values["delegationChildTimeoutSeconds"], 900);
+        assert_eq!(values["delegationMaxConcurrentChildren"], 5);
+        assert_eq!(values["delegationMaxSpawnDepth"], 2);
+        assert_eq!(values["delegationOrchestratorEnabled"], false);
+        assert_eq!(values["delegationSubagentAutoApprove"], true);
+        assert_eq!(values["delegationInheritMcpToolsets"], false);
+    }
+
+    #[test]
+    fn merge_execution_limits_config_preserves_unknown_fields() {
+        let mut config: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+model:
+  provider: anthropic
+code_execution:
+  mode: project
+  custom_flag: keep-code
+delegation:
+  model: child-model
+  provider: openrouter
+  custom_flag: keep-delegation
+streaming:
+  enabled: true
+"#,
+        )
+        .unwrap();
+
+        merge_hermes_execution_limits_config(
+            &mut config,
+            &json!({
+                "codeExecutionMode": "strict",
+                "codeExecutionTimeout": "180",
+                "codeExecutionMaxToolCalls": "25",
+                "delegationMaxIterations": "40",
+                "delegationChildTimeoutSeconds": "1200",
+                "delegationMaxConcurrentChildren": "4",
+                "delegationMaxSpawnDepth": "2",
+                "delegationOrchestratorEnabled": false,
+                "delegationSubagentAutoApprove": true,
+                "delegationInheritMcpToolsets": false,
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(config["model"]["provider"].as_str(), Some("anthropic"));
+        assert_eq!(config["streaming"]["enabled"].as_bool(), Some(true));
+        assert_eq!(config["code_execution"]["mode"].as_str(), Some("strict"));
+        assert_eq!(config["code_execution"]["timeout"].as_i64(), Some(180));
+        assert_eq!(
+            config["code_execution"]["max_tool_calls"].as_i64(),
+            Some(25)
+        );
+        assert_eq!(
+            config["code_execution"]["custom_flag"].as_str(),
+            Some("keep-code")
+        );
+        assert_eq!(config["delegation"]["max_iterations"].as_i64(), Some(40));
+        assert_eq!(
+            config["delegation"]["child_timeout_seconds"].as_i64(),
+            Some(1200)
+        );
+        assert_eq!(
+            config["delegation"]["max_concurrent_children"].as_i64(),
+            Some(4)
+        );
+        assert_eq!(config["delegation"]["max_spawn_depth"].as_i64(), Some(2));
+        assert_eq!(
+            config["delegation"]["orchestrator_enabled"].as_bool(),
+            Some(false)
+        );
+        assert_eq!(
+            config["delegation"]["subagent_auto_approve"].as_bool(),
+            Some(true)
+        );
+        assert_eq!(
+            config["delegation"]["inherit_mcp_toolsets"].as_bool(),
+            Some(false)
+        );
+        assert_eq!(config["delegation"]["model"].as_str(), Some("child-model"));
+        assert_eq!(
+            config["delegation"]["provider"].as_str(),
+            Some("openrouter")
+        );
+        assert_eq!(
+            config["delegation"]["custom_flag"].as_str(),
+            Some("keep-delegation")
+        );
+    }
+
+    #[test]
+    fn merge_execution_limits_config_rejects_invalid_values() {
+        let mut config = serde_yaml::Value::Mapping(serde_yaml::Mapping::new());
+        let err = merge_hermes_execution_limits_config(
+            &mut config,
+            &json!({ "codeExecutionMode": "unsafe" }),
+        )
+        .unwrap_err();
+        assert!(err.contains("code_execution.mode"));
+        let err = merge_hermes_execution_limits_config(
+            &mut config,
+            &json!({ "codeExecutionTimeout": 0 }),
+        )
+        .unwrap_err();
+        assert!(err.contains("code_execution.timeout"));
+        let err = merge_hermes_execution_limits_config(
+            &mut config,
+            &json!({ "delegationMaxConcurrentChildren": 0 }),
+        )
+        .unwrap_err();
+        assert!(err.contains("delegation.max_concurrent_children"));
+        let err = merge_hermes_execution_limits_config(
+            &mut config,
+            &json!({ "delegationMaxSpawnDepth": 4 }),
+        )
+        .unwrap_err();
+        assert!(err.contains("delegation.max_spawn_depth"));
+        let err = merge_hermes_execution_limits_config(
+            &mut config,
+            &json!({ "delegationChildTimeoutSeconds": 29 }),
+        )
+        .unwrap_err();
+        assert!(err.contains("delegation.child_timeout_seconds"));
     }
 }
 
