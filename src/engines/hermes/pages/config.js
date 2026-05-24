@@ -88,6 +88,8 @@ const DISPLAY_DEFAULTS = {
   displayFileMutationVerifier: true,
   displayLanguage: 'en',
   displayResumeDisplay: 'full',
+  displayBusyInputMode: 'interrupt',
+  displayBackgroundProcessNotifications: 'all',
 }
 
 const HUMAN_DELAY_DEFAULTS = {
@@ -191,6 +193,8 @@ const IMAGE_INPUT_MODES = ['auto', 'native', 'text']
 const DISPLAY_TOOL_PROGRESS_VALUES = ['off', 'new', 'all', 'verbose']
 const DISPLAY_LANGUAGE_VALUES = ['en', 'zh', 'zh-hant', 'ja', 'de', 'es', 'fr', 'tr', 'uk', 'af', 'ko', 'it', 'ga', 'pt', 'ru', 'hu']
 const DISPLAY_RESUME_VALUES = ['full', 'minimal']
+const DISPLAY_BUSY_INPUT_MODES = ['interrupt', 'queue', 'steer']
+const DISPLAY_BACKGROUND_PROCESS_NOTIFICATIONS = ['off', 'result', 'error', 'all']
 const HUMAN_DELAY_MODES = ['off', 'natural', 'custom']
 const APPROVAL_MODES = ['manual', 'smart', 'off']
 const APPROVAL_CRON_MODES = ['deny', 'approve']
@@ -779,6 +783,18 @@ export function render() {
               <span class="hm-field-label">${t('engine.hermesDisplayConfigResumeDisplay')}</span>
               <select id="hm-display-resume-display" class="hm-input" ${disabled ? 'disabled' : ''}>
                 ${DISPLAY_RESUME_VALUES.map(mode => option(`engine.hermesDisplayConfigResumeDisplay_${mode}`, mode, displayValues.displayResumeDisplay)).join('')}
+              </select>
+            </label>
+            <label class="hm-field">
+              <span class="hm-field-label">${t('engine.hermesDisplayConfigBusyInputMode')}</span>
+              <select id="hm-display-busy-input-mode" class="hm-input" ${disabled ? 'disabled' : ''}>
+                ${DISPLAY_BUSY_INPUT_MODES.map(mode => option(`engine.hermesDisplayConfigBusyInputMode_${mode}`, mode, displayValues.displayBusyInputMode)).join('')}
+              </select>
+            </label>
+            <label class="hm-field">
+              <span class="hm-field-label">${t('engine.hermesDisplayConfigBackgroundProcessNotifications')}</span>
+              <select id="hm-display-background-process-notifications" class="hm-input" ${disabled ? 'disabled' : ''}>
+                ${DISPLAY_BACKGROUND_PROCESS_NOTIFICATIONS.map(mode => option(`engine.hermesDisplayConfigBackgroundProcessNotifications_${mode}`, mode, displayValues.displayBackgroundProcessNotifications)).join('')}
               </select>
             </label>
             <label class="hm-field">
@@ -2159,6 +2175,8 @@ export function render() {
       displayFileMutationVerifier: !!el.querySelector('#hm-display-file-mutation-verifier')?.checked,
       displayLanguage: el.querySelector('#hm-display-language')?.value || 'en',
       displayResumeDisplay: el.querySelector('#hm-display-resume-display')?.value || 'full',
+      displayBusyInputMode: el.querySelector('#hm-display-busy-input-mode')?.value || 'interrupt',
+      displayBackgroundProcessNotifications: el.querySelector('#hm-display-background-process-notifications')?.value || 'all',
     }
     displaySaving = true
     displayError = null

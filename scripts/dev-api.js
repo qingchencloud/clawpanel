@@ -3332,6 +3332,8 @@ const HERMES_AGENT_IMAGE_INPUT_MODES = new Set(['auto', 'native', 'text'])
 const HERMES_DISPLAY_TOOL_PROGRESS_VALUES = new Set(['off', 'new', 'all', 'verbose'])
 const HERMES_DISPLAY_STREAMING_VALUES = new Set(['inherit', 'true', 'false'])
 const HERMES_DISPLAY_RESUME_VALUES = new Set(['full', 'minimal'])
+const HERMES_DISPLAY_BUSY_INPUT_MODES = new Set(['interrupt', 'queue', 'steer'])
+const HERMES_DISPLAY_BACKGROUND_PROCESS_NOTIFICATIONS = new Set(['off', 'result', 'error', 'all'])
 const HERMES_DISPLAY_LANGUAGE_VALUES = new Set(['en', 'zh', 'zh-hant', 'ja', 'de', 'es', 'fr', 'tr', 'uk', 'af', 'ko', 'it', 'ga', 'pt', 'ru', 'hu'])
 const HERMES_RUNTIME_FOOTER_FIELDS = new Set(['model', 'context_pct', 'cwd', 'duration', 'tokens', 'cost'])
 
@@ -3463,6 +3465,20 @@ function normalizeHermesDisplayResume(value, strict = false) {
   return 'full'
 }
 
+function normalizeHermesDisplayBusyInputMode(value, strict = false) {
+  const mode = String(value ?? '').trim().toLowerCase() || 'interrupt'
+  if (HERMES_DISPLAY_BUSY_INPUT_MODES.has(mode)) return mode
+  if (strict) throw new Error('display.busy_input_mode 必须是 interrupt、queue 或 steer')
+  return 'interrupt'
+}
+
+function normalizeHermesDisplayBackgroundProcessNotifications(value, strict = false) {
+  const mode = String(value ?? '').trim().toLowerCase() || 'all'
+  if (HERMES_DISPLAY_BACKGROUND_PROCESS_NOTIFICATIONS.has(mode)) return mode
+  if (strict) throw new Error('display.background_process_notifications 必须是 off、result、error 或 all')
+  return 'all'
+}
+
 function normalizeHermesDisplayLanguage(value, strict = false) {
   const language = String(value ?? '').trim().toLowerCase() || 'en'
   if (HERMES_DISPLAY_LANGUAGE_VALUES.has(language)) return language
@@ -3514,6 +3530,8 @@ export function buildHermesDisplayConfigValues(config = {}) {
     displayFileMutationVerifier: readHermesBool(display.file_mutation_verifier, true),
     displayLanguage: normalizeHermesDisplayLanguage(display.language, false),
     displayResumeDisplay: normalizeHermesDisplayResume(display.resume_display, false),
+    displayBusyInputMode: normalizeHermesDisplayBusyInputMode(display.busy_input_mode, false),
+    displayBackgroundProcessNotifications: normalizeHermesDisplayBackgroundProcessNotifications(display.background_process_notifications, false),
   }
 }
 
@@ -3536,6 +3554,8 @@ export function mergeHermesDisplayConfig(config = {}, form = {}) {
   display.file_mutation_verifier = formHermesBool(form, 'displayFileMutationVerifier', currentValues.displayFileMutationVerifier)
   display.language = normalizeHermesDisplayLanguage(Object.hasOwn(form, 'displayLanguage') ? form.displayLanguage : currentValues.displayLanguage, true)
   display.resume_display = normalizeHermesDisplayResume(Object.hasOwn(form, 'displayResumeDisplay') ? form.displayResumeDisplay : currentValues.displayResumeDisplay, true)
+  display.busy_input_mode = normalizeHermesDisplayBusyInputMode(Object.hasOwn(form, 'displayBusyInputMode') ? form.displayBusyInputMode : currentValues.displayBusyInputMode, true)
+  display.background_process_notifications = normalizeHermesDisplayBackgroundProcessNotifications(Object.hasOwn(form, 'displayBackgroundProcessNotifications') ? form.displayBackgroundProcessNotifications : currentValues.displayBackgroundProcessNotifications, true)
   next.display = display
   return next
 }

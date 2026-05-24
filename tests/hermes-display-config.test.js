@@ -18,6 +18,8 @@ test('Hermes 显示配置读取会提供上游默认值', () => {
     displayFileMutationVerifier: true,
     displayLanguage: 'en',
     displayResumeDisplay: 'full',
+    displayBusyInputMode: 'interrupt',
+    displayBackgroundProcessNotifications: 'all',
   })
 })
 
@@ -34,6 +36,8 @@ test('Hermes 显示配置读取会规范化已有字段', () => {
       file_mutation_verifier: false,
       language: 'ZH',
       resume_display: 'minimal',
+      busy_input_mode: 'QUEUE',
+      background_process_notifications: 'ERROR',
     },
   })
 
@@ -45,6 +49,8 @@ test('Hermes 显示配置读取会规范化已有字段', () => {
   assert.equal(values.displayFileMutationVerifier, false)
   assert.equal(values.displayLanguage, 'zh')
   assert.equal(values.displayResumeDisplay, 'minimal')
+  assert.equal(values.displayBusyInputMode, 'queue')
+  assert.equal(values.displayBackgroundProcessNotifications, 'error')
 })
 
 test('Hermes 显示配置保存会保留未知 YAML 并写入 display', () => {
@@ -70,6 +76,8 @@ test('Hermes 显示配置保存会保留未知 YAML 并写入 display', () => {
     displayFileMutationVerifier: true,
     displayLanguage: 'zh-hant',
     displayResumeDisplay: 'minimal',
+    displayBusyInputMode: 'steer',
+    displayBackgroundProcessNotifications: 'result',
   })
 
   assert.deepEqual(next.model, { provider: 'anthropic' })
@@ -85,6 +93,8 @@ test('Hermes 显示配置保存会保留未知 YAML 并写入 display', () => {
   assert.equal(next.display.file_mutation_verifier, true)
   assert.equal(next.display.language, 'zh-hant')
   assert.equal(next.display.resume_display, 'minimal')
+  assert.equal(next.display.busy_input_mode, 'steer')
+  assert.equal(next.display.background_process_notifications, 'result')
 })
 
 test('Hermes 显示配置保存会拒绝非法枚举和页脚字段', () => {
@@ -103,5 +113,13 @@ test('Hermes 显示配置保存会拒绝非法枚举和页脚字段', () => {
   assert.throws(
     () => mergeHermesDisplayConfig({}, { displayRuntimeFooterFields: 'model\npassword' }),
     /display\.runtime_footer\.fields/,
+  )
+  assert.throws(
+    () => mergeHermesDisplayConfig({}, { displayBusyInputMode: 'replace' }),
+    /display\.busy_input_mode/,
+  )
+  assert.throws(
+    () => mergeHermesDisplayConfig({}, { displayBackgroundProcessNotifications: 'silent' }),
+    /display\.background_process_notifications/,
   )
 })

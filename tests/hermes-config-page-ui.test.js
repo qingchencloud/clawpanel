@@ -127,6 +127,8 @@ test('Hermes 配置页会暴露全局显示与可靠性结构化配置字段', (
     'hm-display-file-mutation-verifier',
     'hm-display-language',
     'hm-display-resume-display',
+    'hm-display-busy-input-mode',
+    'hm-display-background-process-notifications',
   ]) {
     assert.match(source, new RegExp(`id="${id}"`), `缺少 ${id}`)
   }

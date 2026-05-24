@@ -4232,6 +4232,9 @@ const HERMES_DISPLAY_LANGUAGE_VALUES: &[&str] = &[
     "hu",
 ];
 
+const HERMES_DISPLAY_BUSY_INPUT_MODES: &[&str] = &["interrupt", "queue", "steer"];
+const HERMES_DISPLAY_BACKGROUND_PROCESS_NOTIFICATIONS: &[&str] = &["off", "result", "error", "all"];
+
 const HERMES_RUNTIME_FOOTER_FIELDS: &[&str] =
     &["model", "context_pct", "cwd", "duration", "tokens", "cost"];
 
@@ -4267,6 +4270,44 @@ fn normalize_hermes_display_resume(value: Option<String>, strict: bool) -> Resul
         Err("display.resume_display 必须是 full 或 minimal".to_string())
     } else {
         Ok("full".to_string())
+    }
+}
+
+fn normalize_hermes_display_busy_input_mode(
+    value: Option<String>,
+    strict: bool,
+) -> Result<String, String> {
+    let mode = value.unwrap_or_default().trim().to_ascii_lowercase();
+    let mode = if mode.is_empty() {
+        "interrupt".to_string()
+    } else {
+        mode
+    };
+    if HERMES_DISPLAY_BUSY_INPUT_MODES.contains(&mode.as_str()) {
+        Ok(mode)
+    } else if strict {
+        Err("display.busy_input_mode 必须是 interrupt、queue 或 steer".to_string())
+    } else {
+        Ok("interrupt".to_string())
+    }
+}
+
+fn normalize_hermes_display_background_process_notifications(
+    value: Option<String>,
+    strict: bool,
+) -> Result<String, String> {
+    let mode = value.unwrap_or_default().trim().to_ascii_lowercase();
+    let mode = if mode.is_empty() {
+        "all".to_string()
+    } else {
+        mode
+    };
+    if HERMES_DISPLAY_BACKGROUND_PROCESS_NOTIFICATIONS.contains(&mode.as_str()) {
+        Ok(mode)
+    } else if strict {
+        Err("display.background_process_notifications 必须是 off、result、error 或 all".to_string())
+    } else {
+        Ok("all".to_string())
     }
 }
 
@@ -4382,6 +4423,14 @@ fn build_hermes_display_config_values(config: &serde_yaml::Value) -> Value {
             display.and_then(|map| yaml_string_field(map, "resume_display")),
             false,
         ).unwrap_or_else(|_| "full".to_string()),
+        "displayBusyInputMode": normalize_hermes_display_busy_input_mode(
+            display.and_then(|map| yaml_string_field(map, "busy_input_mode")),
+            false,
+        ).unwrap_or_else(|_| "interrupt".to_string()),
+        "displayBackgroundProcessNotifications": normalize_hermes_display_background_process_notifications(
+            display.and_then(|map| yaml_string_field(map, "background_process_notifications")),
+            false,
+        ).unwrap_or_else(|_| "all".to_string()),
     })
 }
 
@@ -4455,6 +4504,28 @@ fn merge_hermes_display_config(config: &mut serde_yaml::Value, form: &Value) -> 
         serde_yaml::Value::String(normalize_hermes_display_resume(
             form_string(form, "displayResumeDisplay").or_else(|| {
                 current["displayResumeDisplay"]
+                    .as_str()
+                    .map(ToString::to_string)
+            }),
+            true,
+        )?),
+    );
+    display.insert(
+        yaml_key("busy_input_mode"),
+        serde_yaml::Value::String(normalize_hermes_display_busy_input_mode(
+            form_string(form, "displayBusyInputMode").or_else(|| {
+                current["displayBusyInputMode"]
+                    .as_str()
+                    .map(ToString::to_string)
+            }),
+            true,
+        )?),
+    );
+    display.insert(
+        yaml_key("background_process_notifications"),
+        serde_yaml::Value::String(normalize_hermes_display_background_process_notifications(
+            form_string(form, "displayBackgroundProcessNotifications").or_else(|| {
+                current["displayBackgroundProcessNotifications"]
                     .as_str()
                     .map(ToString::to_string)
             }),
@@ -14213,6 +14284,8 @@ mod hermes_display_config_tests {
         assert_eq!(values["displayFileMutationVerifier"], true);
         assert_eq!(values["displayLanguage"], "en");
         assert_eq!(values["displayResumeDisplay"], "full");
+        assert_eq!(values["displayBusyInputMode"], "interrupt");
+        assert_eq!(values["displayBackgroundProcessNotifications"], "all");
     }
 
     #[test]
@@ -14232,6 +14305,8 @@ display:
   file_mutation_verifier: false
   language: ZH
   resume_display: minimal
+  busy_input_mode: QUEUE
+  background_process_notifications: ERROR
 "#,
         )
         .unwrap();
@@ -14247,6 +14322,8 @@ display:
         assert_eq!(values["displayFileMutationVerifier"], false);
         assert_eq!(values["displayLanguage"], "zh");
         assert_eq!(values["displayResumeDisplay"], "minimal");
+        assert_eq!(values["displayBusyInputMode"], "queue");
+        assert_eq!(values["displayBackgroundProcessNotifications"], "error");
     }
 
     #[test]
@@ -14280,6 +14357,8 @@ memory:
                 "displayFileMutationVerifier": true,
                 "displayLanguage": "zh-hant",
                 "displayResumeDisplay": "minimal",
+                "displayBusyInputMode": "steer",
+                "displayBackgroundProcessNotifications": "result",
             }),
         )
         .unwrap();
@@ -14326,6 +14405,11 @@ memory:
             config["display"]["resume_display"].as_str(),
             Some("minimal")
         );
+        assert_eq!(config["display"]["busy_input_mode"].as_str(), Some("steer"));
+        assert_eq!(
+            config["display"]["background_process_notifications"].as_str(),
+            Some("result")
+        );
     }
 
     #[test]
@@ -14353,6 +14437,18 @@ memory:
         )
         .unwrap_err();
         assert!(err.contains("display.runtime_footer.fields"));
+
+        let err =
+            merge_hermes_display_config(&mut config, &json!({ "displayBusyInputMode": "replace" }))
+                .unwrap_err();
+        assert!(err.contains("display.busy_input_mode"));
+
+        let err = merge_hermes_display_config(
+            &mut config,
+            &json!({ "displayBackgroundProcessNotifications": "silent" }),
+        )
+        .unwrap_err();
+        assert!(err.contains("display.background_process_notifications"));
     }
 }
 
