@@ -3984,6 +3984,92 @@ fn merge_hermes_security_config(
     Ok(())
 }
 
+fn normalize_hermes_human_delay_mode(
+    value: Option<String>,
+    strict: bool,
+) -> Result<String, String> {
+    let mode = value.unwrap_or_default().trim().to_ascii_lowercase();
+    let mode = if mode.is_empty() {
+        "off".to_string()
+    } else {
+        mode
+    };
+    if matches!(mode.as_str(), "off" | "natural" | "custom") {
+        return Ok(mode);
+    }
+    if strict {
+        Err("human_delay.mode 必须是 off、natural 或 custom".to_string())
+    } else {
+        Ok("off".to_string())
+    }
+}
+
+fn build_hermes_human_delay_config_values(config: &serde_yaml::Value) -> Value {
+    let root = config.as_mapping();
+    let human_delay = root.and_then(|map| yaml_get_mapping(map, "human_delay"));
+    let mode = human_delay
+        .and_then(|map| yaml_string_field(map, "mode"))
+        .and_then(|value| normalize_hermes_human_delay_mode(Some(value), false).ok())
+        .unwrap_or_else(|| "off".to_string());
+    let min_ms = human_delay
+        .map(|map| bounded_hermes_i64(yaml_i64_field(map, "min_ms"), 800, 0, 60000))
+        .unwrap_or(800);
+    let max_ms = human_delay
+        .map(|map| bounded_hermes_i64(yaml_i64_field(map, "max_ms"), 2500, 0, 60000))
+        .unwrap_or(2500)
+        .max(min_ms);
+
+    serde_json::json!({
+        "humanDelayMode": mode,
+        "humanDelayMinMs": min_ms,
+        "humanDelayMaxMs": max_ms,
+    })
+}
+
+fn merge_hermes_human_delay_config(
+    config: &mut serde_yaml::Value,
+    form: &Value,
+) -> Result<(), String> {
+    let current = build_hermes_human_delay_config_values(config);
+    let mode = normalize_hermes_human_delay_mode(
+        form_string(form, "humanDelayMode")
+            .or_else(|| current["humanDelayMode"].as_str().map(ToString::to_string)),
+        true,
+    )?;
+    let min_ms = validate_hermes_i64(
+        if form.get("humanDelayMinMs").is_some() {
+            form_i64(form, "humanDelayMinMs")
+        } else {
+            Some(current["humanDelayMinMs"].as_i64().unwrap_or(800))
+        },
+        "human_delay.min_ms",
+        800,
+        0,
+        60000,
+    )?;
+    let max_ms = validate_hermes_i64(
+        if form.get("humanDelayMaxMs").is_some() {
+            form_i64(form, "humanDelayMaxMs")
+        } else {
+            Some(current["humanDelayMaxMs"].as_i64().unwrap_or(2500))
+        },
+        "human_delay.max_ms",
+        2500,
+        0,
+        60000,
+    )?;
+    if max_ms < min_ms {
+        return Err("human_delay.max_ms 不能小于 min_ms".to_string());
+    }
+
+    let root = ensure_yaml_object(config)?;
+    let human_delay = yaml_child_object(root, "human_delay")?;
+    human_delay.insert(yaml_key("mode"), serde_yaml::Value::String(mode));
+    human_delay.insert(yaml_key("min_ms"), serde_yaml::Value::Number(min_ms.into()));
+    human_delay.insert(yaml_key("max_ms"), serde_yaml::Value::Number(max_ms.into()));
+    Ok(())
+}
+
 fn normalize_hermes_streaming_transport(
     value: Option<String>,
     strict: bool,
@@ -5547,6 +5633,30 @@ pub fn hermes_security_config_save(form: Value) -> Result<Value, String> {
         "configPath": config_path.to_string_lossy(),
         "backup": backup,
         "values": build_hermes_security_config_values(&config),
+    }))
+}
+
+#[tauri::command]
+pub fn hermes_human_delay_config_read() -> Result<Value, String> {
+    let (config_path, exists, config) = read_hermes_channel_yaml_config()?;
+    ensure_yaml_object(&mut config.clone())?;
+    Ok(serde_json::json!({
+        "exists": exists,
+        "configPath": config_path.to_string_lossy(),
+        "values": build_hermes_human_delay_config_values(&config),
+    }))
+}
+
+#[tauri::command]
+pub fn hermes_human_delay_config_save(form: Value) -> Result<Value, String> {
+    let (config_path, _exists, mut config) = read_hermes_channel_yaml_config()?;
+    merge_hermes_human_delay_config(&mut config, &form)?;
+    let backup = write_hermes_yaml_config(&config_path, &config)?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "configPath": config_path.to_string_lossy(),
+        "backup": backup,
+        "values": build_hermes_human_delay_config_values(&config),
     }))
 }
 
@@ -11640,6 +11750,97 @@ memory:
         )
         .unwrap_err();
         assert!(err.contains("unauthorized_dm_behavior"));
+    }
+}
+
+#[cfg(test)]
+mod hermes_human_delay_config_tests {
+    use super::{build_hermes_human_delay_config_values, merge_hermes_human_delay_config};
+    use serde_json::json;
+
+    #[test]
+    fn human_delay_values_have_upstream_defaults() {
+        let config: serde_yaml::Value = serde_yaml::from_str("{}").unwrap();
+        let values = build_hermes_human_delay_config_values(&config);
+        assert_eq!(values["humanDelayMode"], "off");
+        assert_eq!(values["humanDelayMinMs"], 800);
+        assert_eq!(values["humanDelayMaxMs"], 2500);
+    }
+
+    #[test]
+    fn human_delay_values_normalize_existing_fields() {
+        let config: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+human_delay:
+  mode: CUSTOM
+  min_ms: 1200
+  max_ms: 3600
+"#,
+        )
+        .unwrap();
+        let values = build_hermes_human_delay_config_values(&config);
+        assert_eq!(values["humanDelayMode"], "custom");
+        assert_eq!(values["humanDelayMinMs"], 1200);
+        assert_eq!(values["humanDelayMaxMs"], 3600);
+    }
+
+    #[test]
+    fn merge_human_delay_config_preserves_unknown_fields() {
+        let mut config: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+model:
+  provider: anthropic
+human_delay:
+  mode: off
+  custom_flag: keep-delay
+streaming:
+  enabled: true
+memory:
+  memory_enabled: true
+"#,
+        )
+        .unwrap();
+
+        merge_hermes_human_delay_config(
+            &mut config,
+            &json!({
+                "humanDelayMode": "custom",
+                "humanDelayMinMs": "900",
+                "humanDelayMaxMs": "2400",
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(config["model"]["provider"].as_str(), Some("anthropic"));
+        assert_eq!(config["streaming"]["enabled"].as_bool(), Some(true));
+        assert_eq!(config["memory"]["memory_enabled"].as_bool(), Some(true));
+        assert_eq!(
+            config["human_delay"]["custom_flag"].as_str(),
+            Some("keep-delay")
+        );
+        assert_eq!(config["human_delay"]["mode"].as_str(), Some("custom"));
+        assert_eq!(config["human_delay"]["min_ms"].as_i64(), Some(900));
+        assert_eq!(config["human_delay"]["max_ms"].as_i64(), Some(2400));
+    }
+
+    #[test]
+    fn merge_human_delay_config_rejects_invalid_values() {
+        let mut config = serde_yaml::Value::Mapping(serde_yaml::Mapping::new());
+        let err =
+            merge_hermes_human_delay_config(&mut config, &json!({ "humanDelayMode": "slow" }))
+                .unwrap_err();
+        assert!(err.contains("human_delay.mode"));
+
+        let err = merge_hermes_human_delay_config(
+            &mut config,
+            &json!({
+                "humanDelayMode": "custom",
+                "humanDelayMinMs": 3000,
+                "humanDelayMaxMs": 1000,
+            }),
+        )
+        .unwrap_err();
+        assert!(err.contains("human_delay.max_ms"));
     }
 }
 

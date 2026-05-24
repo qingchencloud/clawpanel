@@ -273,6 +273,8 @@ pub fn run() {
             hermes::hermes_unauthorized_dm_config_save,
             hermes::hermes_security_config_read,
             hermes::hermes_security_config_save,
+            hermes::hermes_human_delay_config_read,
+            hermes::hermes_human_delay_config_save,
             hermes::hermes_streaming_config_read,
             hermes::hermes_streaming_config_save,
             hermes::hermes_execution_limits_config_read,

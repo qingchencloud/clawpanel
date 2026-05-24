@@ -3731,6 +3731,44 @@ export function mergeHermesSecurityConfig(config = {}, form = {}) {
   return next
 }
 
+function normalizeHermesHumanDelayMode(value, strict = false) {
+  const mode = String(value ?? '').trim().toLowerCase() || 'off'
+  if (['off', 'natural', 'custom'].includes(mode)) return mode
+  if (strict) throw new Error('human_delay.mode 必须是 off、natural 或 custom')
+  return 'off'
+}
+
+export function buildHermesHumanDelayConfigValues(config = {}) {
+  const root = config && typeof config === 'object' && !Array.isArray(config) ? config : {}
+  const humanDelay = root.human_delay && typeof root.human_delay === 'object' && !Array.isArray(root.human_delay)
+    ? root.human_delay
+    : {}
+  const minMs = parseHermesInteger(humanDelay.min_ms, 'human_delay.min_ms', 800, 0, 60000, false)
+  const maxMs = parseHermesInteger(humanDelay.max_ms, 'human_delay.max_ms', 2500, 0, 60000, false)
+  return {
+    humanDelayMode: normalizeHermesHumanDelayMode(humanDelay.mode, false),
+    humanDelayMinMs: minMs,
+    humanDelayMaxMs: Math.max(maxMs, minMs),
+  }
+}
+
+export function mergeHermesHumanDelayConfig(config = {}, form = {}) {
+  const next = mergeConfigsPreservingFields({}, config && typeof config === 'object' && !Array.isArray(config) ? config : {})
+  const currentValues = buildHermesHumanDelayConfigValues(next)
+  const humanDelay = next.human_delay && typeof next.human_delay === 'object' && !Array.isArray(next.human_delay)
+    ? mergeConfigsPreservingFields(next.human_delay, {})
+    : {}
+  const mode = normalizeHermesHumanDelayMode(Object.hasOwn(form, 'humanDelayMode') ? form.humanDelayMode : currentValues.humanDelayMode, true)
+  const minMs = parseHermesInteger(Object.hasOwn(form, 'humanDelayMinMs') ? form.humanDelayMinMs : currentValues.humanDelayMinMs, 'human_delay.min_ms', 800, 0, 60000, true)
+  const maxMs = parseHermesInteger(Object.hasOwn(form, 'humanDelayMaxMs') ? form.humanDelayMaxMs : currentValues.humanDelayMaxMs, 'human_delay.max_ms', 2500, 0, 60000, true)
+  if (maxMs < minMs) throw new Error('human_delay.max_ms 不能小于 min_ms')
+  humanDelay.mode = mode
+  humanDelay.min_ms = minMs
+  humanDelay.max_ms = maxMs
+  next.human_delay = humanDelay
+  return next
+}
+
 export function buildHermesStreamingConfigValues(config = {}) {
   const root = config && typeof config === 'object' && !Array.isArray(config) ? config : {}
   const streaming = hermesStreamingConfigSource(root)
@@ -10276,6 +10314,27 @@ const handlers = {
       configPath,
       backup,
       values: buildHermesSecurityConfigValues(next),
+    }
+  },
+
+  hermes_human_delay_config_read() {
+    const { configPath, exists, config } = readHermesConfigYamlObject()
+    return {
+      exists,
+      configPath,
+      values: buildHermesHumanDelayConfigValues(config),
+    }
+  },
+
+  hermes_human_delay_config_save({ form } = {}) {
+    const { configPath, config } = readHermesConfigYamlObject()
+    const next = mergeHermesHumanDelayConfig(config, form || {})
+    const backup = writeHermesConfigYamlObject(configPath, next)
+    return {
+      ok: true,
+      configPath,
+      backup,
+      values: buildHermesHumanDelayConfigValues(next),
     }
   },
 

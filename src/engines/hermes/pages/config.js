@@ -63,6 +63,12 @@ const SECURITY_DEFAULTS = {
   tirithFailOpen: true,
 }
 
+const HUMAN_DELAY_DEFAULTS = {
+  humanDelayMode: 'off',
+  humanDelayMinMs: 800,
+  humanDelayMaxMs: 2500,
+}
+
 const STREAMING_DEFAULTS = {
   enabled: false,
   transport: 'edit',
@@ -103,6 +109,7 @@ const STREAMING_TRANSPORTS = ['edit', 'auto', 'draft', 'off']
 const CODE_EXECUTION_MODES = ['project', 'strict']
 const TERMINAL_BACKENDS = ['local', 'ssh', 'docker', 'singularity', 'modal', 'daytona', 'vercel_sandbox']
 const UNAUTHORIZED_DM_BEHAVIORS = ['pair', 'ignore']
+const HUMAN_DELAY_MODES = ['off', 'natural', 'custom']
 
 export function render() {
   const el = document.createElement('div')
@@ -117,6 +124,7 @@ export function render() {
   let quickCommandsValues = { ...QUICK_COMMANDS_DEFAULTS }
   let unauthorizedDmValues = { ...UNAUTHORIZED_DM_DEFAULTS }
   let securityValues = { ...SECURITY_DEFAULTS }
+  let humanDelayValues = { ...HUMAN_DELAY_DEFAULTS }
   let streamingValues = { ...STREAMING_DEFAULTS }
   let executionLimitsValues = { ...EXECUTION_LIMITS_DEFAULTS }
   let terminalValues = { ...TERMINAL_DEFAULTS }
@@ -129,6 +137,7 @@ export function render() {
   let quickCommandsLoading = true
   let unauthorizedDmLoading = true
   let securityLoading = true
+  let humanDelayLoading = true
   let streamingLoading = true
   let executionLimitsLoading = true
   let terminalLoading = true
@@ -141,6 +150,7 @@ export function render() {
   let quickCommandsSaving = false
   let unauthorizedDmSaving = false
   let securitySaving = false
+  let humanDelaySaving = false
   let streamingSaving = false
   let executionLimitsSaving = false
   let terminalSaving = false
@@ -153,6 +163,7 @@ export function render() {
   let quickCommandsError = null
   let unauthorizedDmError = null
   let securityError = null
+  let humanDelayError = null
   let streamingError = null
   let executionLimitsError = null
   let terminalError = null
@@ -166,7 +177,7 @@ export function render() {
   }
 
   function isBusy() {
-    return loading || runtimeLoading || compressionLoading || toolGuardrailsLoading || memoryLoading || skillsLoading || quickCommandsLoading || unauthorizedDmLoading || securityLoading || streamingLoading || executionLimitsLoading || terminalLoading || saving || runtimeSaving || compressionSaving || toolGuardrailsSaving || memorySaving || skillsSaving || quickCommandsSaving || unauthorizedDmSaving || securitySaving || streamingSaving || executionLimitsSaving || terminalSaving
+    return loading || runtimeLoading || compressionLoading || toolGuardrailsLoading || memoryLoading || skillsLoading || quickCommandsLoading || unauthorizedDmLoading || securityLoading || humanDelayLoading || streamingLoading || executionLimitsLoading || terminalLoading || saving || runtimeSaving || compressionSaving || toolGuardrailsSaving || memorySaving || skillsSaving || quickCommandsSaving || unauthorizedDmSaving || securitySaving || humanDelaySaving || streamingSaving || executionLimitsSaving || terminalSaving
   }
 
   function option(labelKey, value, selected) {
@@ -522,6 +533,44 @@ export function render() {
     `
   }
 
+  function renderHumanDelayConfigPanel() {
+    const disabled = loading || saving || humanDelayLoading || humanDelaySaving || runtimeSaving || compressionSaving || toolGuardrailsSaving || memorySaving || skillsSaving || quickCommandsSaving || unauthorizedDmSaving || securitySaving || streamingSaving || executionLimitsSaving || terminalSaving
+    return `
+      <div class="hm-panel hm-config-runtime-panel hm-config-human-delay-panel">
+        <div class="hm-panel-header">
+          <div>
+            <div class="hm-panel-title">${t('engine.hermesHumanDelayConfigTitle')}</div>
+            <div class="hm-channel-panel-desc">${t('engine.hermesHumanDelayConfigDesc')}</div>
+          </div>
+          <div class="hm-panel-actions">
+            <span class="hm-muted">${humanDelaySaving ? t('engine.hermesConfigStatusSaving') : humanDelayLoading ? t('engine.hermesConfigStatusLoading') : t('engine.hermesHumanDelayConfigStatusReady')}</span>
+            <button class="hm-btn hm-btn--cta hm-btn--sm" id="hm-human-delay-save" ${disabled ? 'disabled' : ''}>${t('engine.hermesHumanDelayConfigSave')}</button>
+          </div>
+        </div>
+        <div class="hm-panel-body">
+          ${renderError(humanDelayError)}
+          <div class="hm-config-runtime-grid hm-config-human-delay-grid">
+            <label class="hm-field">
+              <span class="hm-field-label">${t('engine.hermesHumanDelayConfigMode')}</span>
+              <select id="hm-human-delay-mode" class="hm-input" ${disabled ? 'disabled' : ''}>
+                ${HUMAN_DELAY_MODES.map(mode => option(`engine.hermesHumanDelayConfigMode_${mode}`, mode, humanDelayValues.humanDelayMode)).join('')}
+              </select>
+            </label>
+            <label class="hm-field">
+              <span class="hm-field-label">${t('engine.hermesHumanDelayConfigMinMs')}</span>
+              <input id="hm-human-delay-min-ms" class="hm-input" type="number" inputmode="numeric" min="0" max="60000" step="100" value="${esc(humanDelayValues.humanDelayMinMs)}" ${disabled ? 'disabled' : ''}>
+            </label>
+            <label class="hm-field">
+              <span class="hm-field-label">${t('engine.hermesHumanDelayConfigMaxMs')}</span>
+              <input id="hm-human-delay-max-ms" class="hm-input" type="number" inputmode="numeric" min="0" max="60000" step="100" value="${esc(humanDelayValues.humanDelayMaxMs)}" ${disabled ? 'disabled' : ''}>
+            </label>
+          </div>
+          <div class="hm-channel-footnote">${t('engine.hermesHumanDelayConfigFootnote')}</div>
+        </div>
+      </div>
+    `
+  }
+
   function renderStreamingPanel() {
     const disabled = loading || saving || streamingLoading || streamingSaving || runtimeSaving || compressionSaving || toolGuardrailsSaving || memorySaving || skillsSaving || quickCommandsSaving || unauthorizedDmSaving || securitySaving || executionLimitsSaving || terminalSaving
     return `
@@ -742,6 +791,7 @@ export function render() {
       ${renderQuickCommandsConfigPanel()}
       ${renderUnauthorizedDmConfigPanel()}
       ${renderSecurityConfigPanel()}
+      ${renderHumanDelayConfigPanel()}
 
       <div class="hm-panel">
         <div class="hm-panel-header">
@@ -769,6 +819,7 @@ export function render() {
     el.querySelector('#hm-quick-commands-save')?.addEventListener('click', saveQuickCommandsConfig)
     el.querySelector('#hm-unauthorized-dm-save')?.addEventListener('click', saveUnauthorizedDmConfig)
     el.querySelector('#hm-security-save')?.addEventListener('click', saveSecurityConfig)
+    el.querySelector('#hm-human-delay-save')?.addEventListener('click', saveHumanDelayConfig)
     el.querySelector('#hm-streaming-save')?.addEventListener('click', saveStreaming)
     el.querySelector('#hm-execution-limits-save')?.addEventListener('click', saveExecutionLimits)
     el.querySelector('#hm-terminal-save')?.addEventListener('click', saveTerminal)
@@ -819,6 +870,11 @@ export function render() {
     securityValues = { ...SECURITY_DEFAULTS, ...(data?.values || {}) }
   }
 
+  async function loadHumanDelayConfig() {
+    const data = await api.hermesHumanDelayConfigRead()
+    humanDelayValues = { ...HUMAN_DELAY_DEFAULTS, ...(data?.values || {}) }
+  }
+
   async function loadStreaming() {
     const data = await api.hermesStreamingConfigRead()
     streamingValues = { ...STREAMING_DEFAULTS, ...(data?.values || {}) }
@@ -844,6 +900,7 @@ export function render() {
     quickCommandsLoading = true
     unauthorizedDmLoading = true
     securityLoading = true
+    humanDelayLoading = true
     streamingLoading = true
     executionLimitsLoading = true
     terminalLoading = true
@@ -856,6 +913,7 @@ export function render() {
     quickCommandsError = null
     unauthorizedDmError = null
     securityError = null
+    humanDelayError = null
     streamingError = null
     executionLimitsError = null
     terminalError = null
@@ -955,6 +1013,14 @@ export function render() {
       securityLoading = false
       draw()
     }
+    try {
+      await loadHumanDelayConfig()
+    } catch (err) {
+      humanDelayError = humanizeError(err, t('engine.hermesHumanDelayConfigLoadFailed') || 'Load human delay config failed')
+    } finally {
+      humanDelayLoading = false
+      draw()
+    }
   }
 
   async function refreshRawAfterStructuredSave() {
@@ -999,6 +1065,9 @@ export function render() {
       } catch {}
       try {
         await loadSecurityConfig()
+      } catch {}
+      try {
+        await loadHumanDelayConfig()
       } catch {}
       try {
         await loadStreaming()
@@ -1239,6 +1308,33 @@ export function render() {
       toast(securityError, 'error')
     } finally {
       securitySaving = false
+      draw()
+    }
+  }
+
+  async function saveHumanDelayConfig() {
+    const form = {
+      humanDelayMode: el.querySelector('#hm-human-delay-mode')?.value || 'off',
+      humanDelayMinMs: el.querySelector('#hm-human-delay-min-ms')?.value || '800',
+      humanDelayMaxMs: el.querySelector('#hm-human-delay-max-ms')?.value || '2500',
+    }
+    humanDelaySaving = true
+    humanDelayError = null
+    draw()
+    try {
+      const result = await api.hermesHumanDelayConfigSave(form)
+      humanDelayValues = { ...HUMAN_DELAY_DEFAULTS, ...(result?.values || form) }
+      await refreshRawAfterStructuredSave()
+      const backup = result?.backup || ''
+      toast({
+        message: t('engine.hermesHumanDelayConfigSaveSuccess'),
+        hint: backup ? t('engine.hermesConfigBackupHint', { path: backup }) : '',
+      }, 'success')
+    } catch (err) {
+      humanDelayError = humanizeError(err, t('engine.hermesHumanDelayConfigSaveFailed') || 'Save human delay config failed')
+      toast(humanDelayError, 'error')
+    } finally {
+      humanDelaySaving = false
       draw()
     }
   }
