@@ -287,6 +287,8 @@ pub fn run() {
             hermes::hermes_execution_limits_config_save,
             hermes::hermes_io_safety_config_read,
             hermes::hermes_io_safety_config_save,
+            hermes::hermes_checkpoints_config_read,
+            hermes::hermes_checkpoints_config_save,
             hermes::hermes_privacy_config_read,
             hermes::hermes_privacy_config_save,
             hermes::hermes_browser_config_read,

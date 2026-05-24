@@ -4907,6 +4907,150 @@ fn merge_hermes_io_safety_config(
     Ok(())
 }
 
+fn build_hermes_checkpoints_config_values(config: &serde_yaml::Value) -> Value {
+    let root = config.as_mapping();
+    let checkpoints = root.and_then(|map| yaml_get_mapping(map, "checkpoints"));
+    let checkpoints_enabled = checkpoints
+        .and_then(|map| yaml_bool_field(map, "enabled"))
+        .unwrap_or(false);
+    let checkpoint_max_snapshots = checkpoints
+        .map(|map| bounded_hermes_i64(yaml_i64_field(map, "max_snapshots"), 20, 1, 10000))
+        .unwrap_or(20);
+    let checkpoint_max_total_size_mb = checkpoints
+        .map(|map| bounded_hermes_i64(yaml_i64_field(map, "max_total_size_mb"), 500, 0, 10485760))
+        .unwrap_or(500);
+    let checkpoint_max_file_size_mb = checkpoints
+        .map(|map| bounded_hermes_i64(yaml_i64_field(map, "max_file_size_mb"), 10, 0, 1048576))
+        .unwrap_or(10);
+    let checkpoint_auto_prune = checkpoints
+        .and_then(|map| yaml_bool_field(map, "auto_prune"))
+        .unwrap_or(true);
+    let checkpoint_retention_days = checkpoints
+        .map(|map| bounded_hermes_i64(yaml_i64_field(map, "retention_days"), 7, 1, 3650))
+        .unwrap_or(7);
+    let checkpoint_delete_orphans = checkpoints
+        .and_then(|map| yaml_bool_field(map, "delete_orphans"))
+        .unwrap_or(true);
+    let checkpoint_min_interval_hours = checkpoints
+        .map(|map| bounded_hermes_i64(yaml_i64_field(map, "min_interval_hours"), 24, 0, 8760))
+        .unwrap_or(24);
+
+    serde_json::json!({
+        "checkpointsEnabled": checkpoints_enabled,
+        "checkpointMaxSnapshots": checkpoint_max_snapshots,
+        "checkpointMaxTotalSizeMb": checkpoint_max_total_size_mb,
+        "checkpointMaxFileSizeMb": checkpoint_max_file_size_mb,
+        "checkpointAutoPrune": checkpoint_auto_prune,
+        "checkpointRetentionDays": checkpoint_retention_days,
+        "checkpointDeleteOrphans": checkpoint_delete_orphans,
+        "checkpointMinIntervalHours": checkpoint_min_interval_hours,
+    })
+}
+
+fn merge_hermes_checkpoints_config(
+    config: &mut serde_yaml::Value,
+    form: &Value,
+) -> Result<(), String> {
+    let current = build_hermes_checkpoints_config_values(config);
+    let checkpoints_enabled = form_bool(form, "checkpointsEnabled")
+        .unwrap_or_else(|| current["checkpointsEnabled"].as_bool().unwrap_or(false));
+    let checkpoint_max_snapshots = validate_hermes_i64(
+        if form.get("checkpointMaxSnapshots").is_some() {
+            form_i64(form, "checkpointMaxSnapshots")
+        } else {
+            Some(current["checkpointMaxSnapshots"].as_i64().unwrap_or(20))
+        },
+        "checkpoints.max_snapshots",
+        20,
+        1,
+        10000,
+    )?;
+    let checkpoint_max_total_size_mb = validate_hermes_i64(
+        if form.get("checkpointMaxTotalSizeMb").is_some() {
+            form_i64(form, "checkpointMaxTotalSizeMb")
+        } else {
+            Some(current["checkpointMaxTotalSizeMb"].as_i64().unwrap_or(500))
+        },
+        "checkpoints.max_total_size_mb",
+        500,
+        0,
+        10485760,
+    )?;
+    let checkpoint_max_file_size_mb = validate_hermes_i64(
+        if form.get("checkpointMaxFileSizeMb").is_some() {
+            form_i64(form, "checkpointMaxFileSizeMb")
+        } else {
+            Some(current["checkpointMaxFileSizeMb"].as_i64().unwrap_or(10))
+        },
+        "checkpoints.max_file_size_mb",
+        10,
+        0,
+        1048576,
+    )?;
+    let checkpoint_auto_prune = form_bool(form, "checkpointAutoPrune")
+        .unwrap_or_else(|| current["checkpointAutoPrune"].as_bool().unwrap_or(true));
+    let checkpoint_retention_days = validate_hermes_i64(
+        if form.get("checkpointRetentionDays").is_some() {
+            form_i64(form, "checkpointRetentionDays")
+        } else {
+            Some(current["checkpointRetentionDays"].as_i64().unwrap_or(7))
+        },
+        "checkpoints.retention_days",
+        7,
+        1,
+        3650,
+    )?;
+    let checkpoint_delete_orphans = form_bool(form, "checkpointDeleteOrphans")
+        .unwrap_or_else(|| current["checkpointDeleteOrphans"].as_bool().unwrap_or(true));
+    let checkpoint_min_interval_hours = validate_hermes_i64(
+        if form.get("checkpointMinIntervalHours").is_some() {
+            form_i64(form, "checkpointMinIntervalHours")
+        } else {
+            Some(current["checkpointMinIntervalHours"].as_i64().unwrap_or(24))
+        },
+        "checkpoints.min_interval_hours",
+        24,
+        0,
+        8760,
+    )?;
+
+    let root = ensure_yaml_object(config)?;
+    let checkpoints = yaml_child_object(root, "checkpoints")?;
+    checkpoints.insert(
+        yaml_key("enabled"),
+        serde_yaml::Value::Bool(checkpoints_enabled),
+    );
+    checkpoints.insert(
+        yaml_key("max_snapshots"),
+        serde_yaml::Value::Number(checkpoint_max_snapshots.into()),
+    );
+    checkpoints.insert(
+        yaml_key("max_total_size_mb"),
+        serde_yaml::Value::Number(checkpoint_max_total_size_mb.into()),
+    );
+    checkpoints.insert(
+        yaml_key("max_file_size_mb"),
+        serde_yaml::Value::Number(checkpoint_max_file_size_mb.into()),
+    );
+    checkpoints.insert(
+        yaml_key("auto_prune"),
+        serde_yaml::Value::Bool(checkpoint_auto_prune),
+    );
+    checkpoints.insert(
+        yaml_key("retention_days"),
+        serde_yaml::Value::Number(checkpoint_retention_days.into()),
+    );
+    checkpoints.insert(
+        yaml_key("delete_orphans"),
+        serde_yaml::Value::Bool(checkpoint_delete_orphans),
+    );
+    checkpoints.insert(
+        yaml_key("min_interval_hours"),
+        serde_yaml::Value::Number(checkpoint_min_interval_hours.into()),
+    );
+    Ok(())
+}
+
 fn build_hermes_privacy_config_values(config: &serde_yaml::Value) -> Value {
     let root = config.as_mapping();
     let privacy = root.and_then(|map| yaml_get_mapping(map, "privacy"));
@@ -6504,6 +6648,30 @@ pub fn hermes_io_safety_config_save(form: Value) -> Result<Value, String> {
         "configPath": config_path.to_string_lossy(),
         "backup": backup,
         "values": build_hermes_io_safety_config_values(&config),
+    }))
+}
+
+#[tauri::command]
+pub fn hermes_checkpoints_config_read() -> Result<Value, String> {
+    let (config_path, exists, config) = read_hermes_channel_yaml_config()?;
+    ensure_yaml_object(&mut config.clone())?;
+    Ok(serde_json::json!({
+        "exists": exists,
+        "configPath": config_path.to_string_lossy(),
+        "values": build_hermes_checkpoints_config_values(&config),
+    }))
+}
+
+#[tauri::command]
+pub fn hermes_checkpoints_config_save(form: Value) -> Result<Value, String> {
+    let (config_path, _exists, mut config) = read_hermes_channel_yaml_config()?;
+    merge_hermes_checkpoints_config(&mut config, &form)?;
+    let backup = write_hermes_yaml_config(&config_path, &config)?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "configPath": config_path.to_string_lossy(),
+        "backup": backup,
+        "values": build_hermes_checkpoints_config_values(&config),
     }))
 }
 
@@ -12323,6 +12491,134 @@ streaming:
         let err = merge_hermes_browser_config(&mut config, &json!({ "browserCommandTimeout": 4 }))
             .unwrap_err();
         assert!(err.contains("browser.command_timeout"));
+    }
+}
+
+#[cfg(test)]
+mod hermes_checkpoints_config_tests {
+    use super::{build_hermes_checkpoints_config_values, merge_hermes_checkpoints_config};
+    use serde_json::json;
+
+    #[test]
+    fn checkpoints_values_have_upstream_defaults() {
+        let config: serde_yaml::Value = serde_yaml::from_str("{}").unwrap();
+        let values = build_hermes_checkpoints_config_values(&config);
+        assert_eq!(values["checkpointsEnabled"], false);
+        assert_eq!(values["checkpointMaxSnapshots"], 20);
+        assert_eq!(values["checkpointMaxTotalSizeMb"], 500);
+        assert_eq!(values["checkpointMaxFileSizeMb"], 10);
+        assert_eq!(values["checkpointAutoPrune"], true);
+        assert_eq!(values["checkpointRetentionDays"], 7);
+        assert_eq!(values["checkpointDeleteOrphans"], true);
+        assert_eq!(values["checkpointMinIntervalHours"], 24);
+    }
+
+    #[test]
+    fn checkpoints_values_read_yaml_fields() {
+        let config: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+checkpoints:
+  enabled: true
+  max_snapshots: 12
+  max_total_size_mb: 900
+  max_file_size_mb: 25
+  auto_prune: false
+  retention_days: 14
+  delete_orphans: false
+  min_interval_hours: 6
+"#,
+        )
+        .unwrap();
+        let values = build_hermes_checkpoints_config_values(&config);
+        assert_eq!(values["checkpointsEnabled"], true);
+        assert_eq!(values["checkpointMaxSnapshots"], 12);
+        assert_eq!(values["checkpointMaxTotalSizeMb"], 900);
+        assert_eq!(values["checkpointMaxFileSizeMb"], 25);
+        assert_eq!(values["checkpointAutoPrune"], false);
+        assert_eq!(values["checkpointRetentionDays"], 14);
+        assert_eq!(values["checkpointDeleteOrphans"], false);
+        assert_eq!(values["checkpointMinIntervalHours"], 6);
+    }
+
+    #[test]
+    fn merge_checkpoints_config_preserves_unknown_fields() {
+        let mut config: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+model:
+  provider: anthropic
+checkpoints:
+  enabled: true
+  custom_flag: keep-checkpoints
+streaming:
+  enabled: true
+"#,
+        )
+        .unwrap();
+
+        merge_hermes_checkpoints_config(
+            &mut config,
+            &json!({
+                "checkpointsEnabled": false,
+                "checkpointMaxSnapshots": "30",
+                "checkpointMaxTotalSizeMb": "0",
+                "checkpointMaxFileSizeMb": "0",
+                "checkpointAutoPrune": true,
+                "checkpointRetentionDays": "21",
+                "checkpointDeleteOrphans": true,
+                "checkpointMinIntervalHours": "12",
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(config["model"]["provider"].as_str(), Some("anthropic"));
+        assert_eq!(config["streaming"]["enabled"].as_bool(), Some(true));
+        assert_eq!(config["checkpoints"]["enabled"].as_bool(), Some(false));
+        assert_eq!(config["checkpoints"]["max_snapshots"].as_i64(), Some(30));
+        assert_eq!(config["checkpoints"]["max_total_size_mb"].as_i64(), Some(0));
+        assert_eq!(config["checkpoints"]["max_file_size_mb"].as_i64(), Some(0));
+        assert_eq!(config["checkpoints"]["auto_prune"].as_bool(), Some(true));
+        assert_eq!(config["checkpoints"]["retention_days"].as_i64(), Some(21));
+        assert_eq!(
+            config["checkpoints"]["delete_orphans"].as_bool(),
+            Some(true)
+        );
+        assert_eq!(
+            config["checkpoints"]["min_interval_hours"].as_i64(),
+            Some(12)
+        );
+        assert_eq!(
+            config["checkpoints"]["custom_flag"].as_str(),
+            Some("keep-checkpoints")
+        );
+    }
+
+    #[test]
+    fn merge_checkpoints_config_rejects_invalid_values() {
+        let mut config = serde_yaml::Value::Mapping(serde_yaml::Mapping::new());
+        let err =
+            merge_hermes_checkpoints_config(&mut config, &json!({ "checkpointMaxSnapshots": 0 }))
+                .unwrap_err();
+        assert!(err.contains("checkpoints.max_snapshots"));
+        let err = merge_hermes_checkpoints_config(
+            &mut config,
+            &json!({ "checkpointMaxTotalSizeMb": -1 }),
+        )
+        .unwrap_err();
+        assert!(err.contains("checkpoints.max_total_size_mb"));
+        let err =
+            merge_hermes_checkpoints_config(&mut config, &json!({ "checkpointMaxFileSizeMb": -1 }))
+                .unwrap_err();
+        assert!(err.contains("checkpoints.max_file_size_mb"));
+        let err =
+            merge_hermes_checkpoints_config(&mut config, &json!({ "checkpointRetentionDays": 0 }))
+                .unwrap_err();
+        assert!(err.contains("checkpoints.retention_days"));
+        let err = merge_hermes_checkpoints_config(
+            &mut config,
+            &json!({ "checkpointMinIntervalHours": -1 }),
+        )
+        .unwrap_err();
+        assert!(err.contains("checkpoints.min_interval_hours"));
     }
 }
 

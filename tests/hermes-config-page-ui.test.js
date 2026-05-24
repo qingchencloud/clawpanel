@@ -176,6 +176,22 @@ test('Hermes 配置页会暴露输入输出保护结构化配置字段', () => {
   }
 })
 
+test('Hermes 配置页会暴露文件快照回滚结构化配置字段', () => {
+  for (const id of [
+    'hm-checkpoints-save',
+    'hm-checkpoints-enabled',
+    'hm-checkpoints-max-snapshots',
+    'hm-checkpoints-max-total-size-mb',
+    'hm-checkpoints-max-file-size-mb',
+    'hm-checkpoints-auto-prune',
+    'hm-checkpoints-retention-days',
+    'hm-checkpoints-delete-orphans',
+    'hm-checkpoints-min-interval-hours',
+  ]) {
+    assert.match(source, new RegExp(`id="${id}"`), `缺少 ${id}`)
+  }
+})
+
 test('Hermes 配置页会暴露隐私脱敏结构化配置字段', () => {
   for (const id of [
     'hm-privacy-save',
@@ -235,7 +251,8 @@ test('Hermes 配置页新增结构化配置不会暴露翻译 key', () => {
     key.includes('ExecutionLimits') ||
     key.includes('PrivacyConfig') ||
     key.includes('BrowserConfig') ||
-    key.includes('TerminalConfig')
+    key.includes('TerminalConfig') ||
+    key.includes('CheckpointsConfig')
   )))
 
   assert.ok(keys.size > 0, '应能提取新增结构化配置用到的 engine 翻译 key')

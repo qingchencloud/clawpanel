@@ -4014,6 +4014,42 @@ export function mergeHermesIoSafetyConfig(config = {}, form = {}) {
   return next
 }
 
+export function buildHermesCheckpointsConfigValues(config = {}) {
+  const root = config && typeof config === 'object' && !Array.isArray(config) ? config : {}
+  const checkpoints = root.checkpoints && typeof root.checkpoints === 'object' && !Array.isArray(root.checkpoints)
+    ? root.checkpoints
+    : {}
+  return {
+    checkpointsEnabled: readHermesBool(checkpoints.enabled, false),
+    checkpointMaxSnapshots: parseHermesInteger(checkpoints.max_snapshots, 'checkpoints.max_snapshots', 20, 1, 10000, false),
+    checkpointMaxTotalSizeMb: parseHermesInteger(checkpoints.max_total_size_mb, 'checkpoints.max_total_size_mb', 500, 0, 10485760, false),
+    checkpointMaxFileSizeMb: parseHermesInteger(checkpoints.max_file_size_mb, 'checkpoints.max_file_size_mb', 10, 0, 1048576, false),
+    checkpointAutoPrune: readHermesBool(checkpoints.auto_prune, true),
+    checkpointRetentionDays: parseHermesInteger(checkpoints.retention_days, 'checkpoints.retention_days', 7, 1, 3650, false),
+    checkpointDeleteOrphans: readHermesBool(checkpoints.delete_orphans, true),
+    checkpointMinIntervalHours: parseHermesInteger(checkpoints.min_interval_hours, 'checkpoints.min_interval_hours', 24, 0, 8760, false),
+  }
+}
+
+export function mergeHermesCheckpointsConfig(config = {}, form = {}) {
+  const next = mergeConfigsPreservingFields({}, config && typeof config === 'object' && !Array.isArray(config) ? config : {})
+  const currentValues = buildHermesCheckpointsConfigValues(next)
+  const checkpoints = next.checkpoints && typeof next.checkpoints === 'object' && !Array.isArray(next.checkpoints)
+    ? mergeConfigsPreservingFields(next.checkpoints, {})
+    : {}
+
+  checkpoints.enabled = formHermesBool(form, 'checkpointsEnabled', currentValues.checkpointsEnabled)
+  checkpoints.max_snapshots = parseHermesInteger(Object.hasOwn(form, 'checkpointMaxSnapshots') ? form.checkpointMaxSnapshots : currentValues.checkpointMaxSnapshots, 'checkpoints.max_snapshots', 20, 1, 10000, true)
+  checkpoints.max_total_size_mb = parseHermesInteger(Object.hasOwn(form, 'checkpointMaxTotalSizeMb') ? form.checkpointMaxTotalSizeMb : currentValues.checkpointMaxTotalSizeMb, 'checkpoints.max_total_size_mb', 500, 0, 10485760, true)
+  checkpoints.max_file_size_mb = parseHermesInteger(Object.hasOwn(form, 'checkpointMaxFileSizeMb') ? form.checkpointMaxFileSizeMb : currentValues.checkpointMaxFileSizeMb, 'checkpoints.max_file_size_mb', 10, 0, 1048576, true)
+  checkpoints.auto_prune = formHermesBool(form, 'checkpointAutoPrune', currentValues.checkpointAutoPrune)
+  checkpoints.retention_days = parseHermesInteger(Object.hasOwn(form, 'checkpointRetentionDays') ? form.checkpointRetentionDays : currentValues.checkpointRetentionDays, 'checkpoints.retention_days', 7, 1, 3650, true)
+  checkpoints.delete_orphans = formHermesBool(form, 'checkpointDeleteOrphans', currentValues.checkpointDeleteOrphans)
+  checkpoints.min_interval_hours = parseHermesInteger(Object.hasOwn(form, 'checkpointMinIntervalHours') ? form.checkpointMinIntervalHours : currentValues.checkpointMinIntervalHours, 'checkpoints.min_interval_hours', 24, 0, 8760, true)
+  next.checkpoints = checkpoints
+  return next
+}
+
 export function buildHermesPrivacyConfigValues(config = {}) {
   const root = config && typeof config === 'object' && !Array.isArray(config) ? config : {}
   const privacy = root.privacy && typeof root.privacy === 'object' && !Array.isArray(root.privacy)
@@ -10703,6 +10739,27 @@ const handlers = {
       configPath,
       backup,
       values: buildHermesIoSafetyConfigValues(next),
+    }
+  },
+
+  hermes_checkpoints_config_read() {
+    const { configPath, exists, config } = readHermesConfigYamlObject()
+    return {
+      exists,
+      configPath,
+      values: buildHermesCheckpointsConfigValues(config),
+    }
+  },
+
+  hermes_checkpoints_config_save({ form } = {}) {
+    const { configPath, config } = readHermesConfigYamlObject()
+    const next = mergeHermesCheckpointsConfig(config, form || {})
+    const backup = writeHermesConfigYamlObject(configPath, next)
+    return {
+      ok: true,
+      configPath,
+      backup,
+      values: buildHermesCheckpointsConfigValues(next),
     }
   },
 
