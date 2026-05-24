@@ -333,8 +333,19 @@ fn normalize_provider_url(raw: &str) -> String {
     out
 }
 
+fn is_openai_codex_endpoint(base_url: &str) -> bool {
+    normalize_provider_url(base_url)
+        == normalize_provider_url("https://chatgpt.com/backend-api/codex")
+}
+
 fn normalize_hermes_provider_for_base_url(provider: &str, base_url: Option<&str>) -> String {
     let pid = provider.trim();
+    if pid.eq_ignore_ascii_case("openai-codex") {
+        return "openai-codex".into();
+    }
+    if base_url.map(is_openai_codex_endpoint).unwrap_or(false) {
+        return "openai-codex".into();
+    }
     if pid == "openrouter" {
         if let Some(url) = base_url {
             let base = normalize_provider_url(url);
@@ -347,6 +358,110 @@ fn normalize_hermes_provider_for_base_url(provider: &str, base_url: Option<&str>
     pid.to_string()
 }
 
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
+struct HermesModelFields {
+    model: String,
+    provider: String,
+    base_url: String,
+}
+
+fn yaml_value_to_string(value: &serde_yaml::Value) -> String {
+    match value {
+        serde_yaml::Value::String(s) => s.trim().to_string(),
+        serde_yaml::Value::Number(n) => n.to_string(),
+        serde_yaml::Value::Bool(b) => b.to_string(),
+        _ => String::new(),
+    }
+}
+
+fn yaml_mapping_string(mapping: &serde_yaml::Mapping, key: &str) -> String {
+    let key = serde_yaml::Value::String(key.to_string());
+    mapping
+        .get(&key)
+        .map(yaml_value_to_string)
+        .unwrap_or_default()
+}
+
+fn read_hermes_model_fields(raw: &str) -> HermesModelFields {
+    let Ok(value) = serde_yaml::from_str::<serde_yaml::Value>(raw) else {
+        return HermesModelFields::default();
+    };
+    let Some(root) = value.as_mapping() else {
+        return HermesModelFields::default();
+    };
+    let model_key = serde_yaml::Value::String("model".to_string());
+    let Some(model_value) = root.get(&model_key) else {
+        return HermesModelFields::default();
+    };
+
+    match model_value {
+        serde_yaml::Value::String(s) => HermesModelFields {
+            model: s.trim().to_string(),
+            ..Default::default()
+        },
+        serde_yaml::Value::Mapping(model_map) => HermesModelFields {
+            model: yaml_mapping_string(model_map, "default"),
+            provider: yaml_mapping_string(model_map, "provider"),
+            base_url: yaml_mapping_string(model_map, "base_url"),
+        },
+        _ => HermesModelFields::default(),
+    }
+}
+fn rewrite_hermes_model_provider(raw: &str, provider: &str) -> String {
+    let mut out = Vec::new();
+    let mut in_model = false;
+    let mut provider_written = false;
+    let mut model_indent = 0usize;
+
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        let indent = line.len() - line.trim_start_matches(|c| c == ' ' || c == '\t').len();
+
+        if !in_model && indent == 0 && trimmed.starts_with("model:") {
+            in_model = true;
+            provider_written = false;
+            model_indent = indent;
+            out.push(line.to_string());
+            continue;
+        }
+
+        if in_model {
+            if indent <= model_indent && !trimmed.is_empty() && !trimmed.starts_with('#') {
+                if !provider_written {
+                    out.push(format!(
+                        "{}provider: {provider}",
+                        " ".repeat(model_indent + 2)
+                    ));
+                    provider_written = true;
+                }
+                in_model = false;
+            } else if indent > model_indent && trimmed.starts_with("provider:") {
+                let prefix: String = line
+                    .chars()
+                    .take_while(|c| *c == ' ' || *c == '\t')
+                    .collect();
+                out.push(format!("{prefix}provider: {provider}"));
+                provider_written = true;
+                continue;
+            }
+        }
+
+        out.push(line.to_string());
+    }
+
+    if in_model && !provider_written {
+        out.push(format!(
+            "{}provider: {provider}",
+            " ".repeat(model_indent + 2)
+        ));
+    }
+
+    let mut fixed = out.join("\n");
+    if !fixed.ends_with('\n') {
+        fixed.push('\n');
+    }
+    fixed
+}
 fn env_file_has_value(raw: &str, key: &str) -> bool {
     raw.lines().any(|line| {
         let t = line.trim();
@@ -410,82 +525,41 @@ fn sanitize_hermes_openrouter_custom_mismatch() -> Result<bool, String> {
 
     let raw =
         std::fs::read_to_string(&config_path).map_err(|e| format!("读取 config.yaml 失败: {e}"))?;
-    let mut provider = String::new();
-    let mut base_url = String::new();
-    let mut in_model = false;
 
-    for line in raw.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("model:") {
-            in_model = true;
-            continue;
-        }
-        if in_model {
-            let indented = line.starts_with(' ') || line.starts_with('\t');
-            if !indented && !trimmed.is_empty() && !trimmed.starts_with('#') {
-                break;
-            }
-            if let Some(v) = trimmed.strip_prefix("provider:") {
-                provider = v.trim().trim_matches('"').trim_matches('\'').to_string();
-            } else if let Some(v) = trimmed.strip_prefix("base_url:") {
-                base_url = v.trim().trim_matches('"').trim_matches('\'').to_string();
-            }
-        }
+    let fields = read_hermes_model_fields(&raw);
+    let provider = fields.provider;
+    let base_url = fields.base_url;
+
+    if provider.eq_ignore_ascii_case("openai-codex") {
+        return Ok(false);
+    }
+
+    if is_openai_codex_endpoint(&base_url) {
+        let fixed = rewrite_hermes_model_provider(&raw, "openai-codex");
+        std::fs::write(&config_path, fixed).map_err(|e| format!("写入 config.yaml 失败: {e}"))?;
+        return Ok(true);
     }
 
     let base = normalize_provider_url(&base_url);
     let expected = normalize_provider_url("https://openrouter.ai/api/v1");
     let uses_custom_endpoint = !base.is_empty() && base != expected;
-    let alias_changed = if provider.is_empty() || provider == "custom" || uses_custom_endpoint {
-        ensure_custom_openai_key_alias()?
-    } else {
-        false
-    };
+    let alias_changed =
+        if provider.is_empty() || provider.eq_ignore_ascii_case("custom") || uses_custom_endpoint {
+            ensure_custom_openai_key_alias()?
+        } else {
+            false
+        };
     if !uses_custom_endpoint {
         return Ok(alias_changed);
     }
-    if provider == "custom" {
+    if provider.eq_ignore_ascii_case("custom") {
         return Ok(alias_changed);
     }
 
-    let mut out = Vec::new();
-    let mut in_model = false;
-    let mut provider_written = false;
-    for line in raw.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("model:") {
-            in_model = true;
-            provider_written = false;
-            out.push(line.to_string());
-            continue;
-        }
-        if in_model {
-            let indented = line.starts_with(' ') || line.starts_with('\t');
-            if !indented && !trimmed.is_empty() && !trimmed.starts_with('#') {
-                in_model = false;
-                if !provider_written {
-                    out.push("  provider: custom".to_string());
-                    provider_written = true;
-                }
-            } else if trimmed.starts_with("provider:") {
-                out.push("  provider: custom".to_string());
-                provider_written = true;
-                continue;
-            }
-        }
-        out.push(line.to_string());
-    }
-    if in_model && !provider_written {
-        out.push("  provider: custom".to_string());
-    }
-    let mut fixed = out.join("\n");
-    if !fixed.ends_with('\n') {
-        fixed.push('\n');
-    }
+    let fixed = rewrite_hermes_model_provider(&raw, "custom");
     std::fs::write(&config_path, fixed).map_err(|e| format!("写入 config.yaml 失败: {e}"))?;
     Ok(true)
 }
-
 /// 重启 Gateway（kill 旧进程 → 启动新进程）
 async fn do_restart_gateway() -> Result<(), String> {
     // 1. 杀掉旧进程
@@ -989,38 +1063,17 @@ pub fn check_hermes() -> Result<Value, String> {
 
     // 4. 读取 model 配置（支持 string 和 dict 两种格式）
     if let Ok(content) = std::fs::read_to_string(&config_path) {
-        let mut found = false;
-        let mut in_model_block = false;
-        for line in content.lines() {
-            let trimmed = line.trim();
-            if let Some(rest) = trimmed.strip_prefix("model:") {
-                let val = rest.trim().trim_matches('"').trim_matches('\'').to_string();
-                if !val.is_empty() {
-                    // model: some_string 格式
-                    result.insert("model".into(), Value::String(val));
-                    found = true;
-                    break;
-                }
-                // model: (空) 后面是 dict 块
-                in_model_block = true;
-                continue;
-            }
-            if in_model_block {
-                if !line.starts_with(' ') && !line.starts_with('\t') && !trimmed.is_empty() {
-                    break; // dict 块结束
-                }
-                if let Some(rest) = trimmed.strip_prefix("default:") {
-                    let val = rest.trim().trim_matches('"').trim_matches('\'').to_string();
-                    if !val.is_empty() {
-                        result.insert("model".into(), Value::String(val));
-                        found = true;
-                    }
-                }
-            }
+        let fields = read_hermes_model_fields(&content);
+        if !fields.model.is_empty() {
+            result.insert("model".into(), Value::String(fields.model));
         }
-        let _ = found; // suppress unused warning
+        if !fields.provider.is_empty() {
+            result.insert("provider".into(), Value::String(fields.provider));
+        }
+        if !fields.base_url.is_empty() {
+            result.insert("base_url".into(), Value::String(fields.base_url));
+        }
     }
-
     // 5. Gateway 运行检测（非阻塞，快速超时）— 使用动态 URL 支持远程目标
     let gw_url = hermes_gateway_url();
     let gateway_port = hermes_gateway_port();
@@ -2162,54 +2215,10 @@ pub async fn hermes_read_config() -> Result<Value, String> {
 
     // 读取 config.yaml
     let config_raw = std::fs::read_to_string(&config_path).unwrap_or_default();
-    let mut model_name = String::new();
-    let mut base_url_from_yaml = String::new();
-    let mut provider_from_yaml = String::new();
-    let mut in_model = false;
-    for line in config_raw.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("model:") {
-            in_model = true;
-            // `model: "xxx"` 单行格式
-            if let Some(v) = trimmed
-                .strip_prefix("model:")
-                .map(|s| s.trim().trim_matches('"'))
-            {
-                if !v.is_empty() && !v.contains(':') {
-                    model_name = v.to_string();
-                }
-            }
-            continue;
-        }
-        if in_model {
-            if trimmed.starts_with("default:") {
-                model_name = trimmed
-                    .strip_prefix("default:")
-                    .unwrap()
-                    .trim()
-                    .trim_matches('"')
-                    .to_string();
-            } else if trimmed.starts_with("base_url:") {
-                base_url_from_yaml = trimmed
-                    .strip_prefix("base_url:")
-                    .unwrap()
-                    .trim()
-                    .trim_matches('"')
-                    .to_string();
-            } else if trimmed.starts_with("provider:") {
-                provider_from_yaml = trimmed
-                    .strip_prefix("provider:")
-                    .unwrap()
-                    .trim()
-                    .trim_matches('"')
-                    .to_string();
-            } else if !trimmed.is_empty() && !trimmed.starts_with('#') && !trimmed.starts_with('-')
-            {
-                in_model = false;
-            }
-        }
-    }
-
+    let fields = read_hermes_model_fields(&config_raw);
+    let model_name = fields.model;
+    let base_url_from_yaml = fields.base_url;
+    let provider_from_yaml = fields.provider;
     // 读取 .env 到 key→value map
     let env_raw = std::fs::read_to_string(&env_path).unwrap_or_default();
     let env_map: std::collections::HashMap<String, String> = env_raw
@@ -6905,7 +6914,10 @@ pub async fn hermes_fs_write(path: String, content: String) -> Result<Value, Str
 
 #[cfg(test)]
 mod guardian_tests {
-    use super::{config_has_api_server_enabled, patch_yaml_ensure_api_server};
+    use super::{
+        config_has_api_server_enabled, normalize_hermes_provider_for_base_url,
+        patch_yaml_ensure_api_server, read_hermes_model_fields,
+    };
 
     #[test]
     fn detects_enabled_variants() {
@@ -7000,6 +7012,34 @@ platforms:
         assert!(
             !patched.contains("enabled: false"),
             "disabled marker should have been removed"
+        );
+    }
+
+    #[test]
+    fn top_level_model_ignores_custom_provider_models() {
+        let yaml = r#"
+model:
+  default: gpt-5.5
+  provider: openai-codex
+  base_url: https://chatgpt.com/backend-api/codex
+custom_providers:
+  siliconflow:
+    base_url: https://api.siliconflow.cn/v1
+    models:
+      - name: DeepSeek-V4-Flash
+        model: DeepSeek-V4-Flash
+"#;
+
+        let fields = read_hermes_model_fields(yaml);
+        assert_eq!(fields.model, "gpt-5.5");
+        assert_eq!(fields.provider, "openai-codex");
+        assert_eq!(fields.base_url, "https://chatgpt.com/backend-api/codex");
+        assert_eq!(
+            normalize_hermes_provider_for_base_url(
+                "openrouter",
+                Some("https://chatgpt.com/backend-api/codex"),
+            ),
+            "openai-codex"
         );
     }
 }

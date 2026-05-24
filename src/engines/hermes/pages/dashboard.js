@@ -153,11 +153,13 @@ export function render() {
     const gwRunning = info?.gatewayRunning
     const port = info?.gatewayPort || 8642
     const version = info?.version || '-'
-    const modelName = formModel || hermesConfig?.model || health?.model || info?.model || ''
+    const modelName = hermesConfig?.model || health?.model || info?.model || formModel || ''
     const displayModel = modelName || t('engine.dashNoModel')
+    const displayBaseUrl = hermesConfig?.base_url || info?.base_url || info?.baseUrl || formBaseUrl || ''
 
     // 服务商高亮匹配
-    const activePreset = inferProviderByBaseUrl(hermesProviders, formBaseUrl)
+    const activePreset = inferProviderByBaseUrl(hermesProviders, displayBaseUrl)
+    const providerName = hermesConfig?.provider || info?.provider || activePreset?.id || '—'
 
     // 模型下拉 HTML（data-dense）
     const dropdownHtml = showDropdown && models.length
@@ -198,7 +200,7 @@ export function render() {
         <div class="hm-kpi" data-tone="accent">
           <div class="hm-kpi-label">${t('engine.dashModel')}</div>
           <div class="hm-kpi-value" style="font-size:13px;word-break:break-all">${esc(displayModel)}</div>
-          <div class="hm-kpi-foot">${t('engine.dashProvider')} <code class="hm-code" style="padding:0 5px;font-size:10px">${esc(hermesConfig?.provider || activePreset?.id || '—')}</code></div>
+          <div class="hm-kpi-foot">${t('engine.dashProvider')} <code class="hm-code" style="padding:0 5px;font-size:10px">${esc(providerName)}</code></div>
         </div>
         <div class="hm-kpi">
           <div class="hm-kpi-label">${t('engine.dashVersion')}</div>
