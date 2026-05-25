@@ -160,6 +160,20 @@ test('Hermes 配置页会暴露 OpenRouter 响应缓存结构化配置字段', (
   }
 })
 
+test('Hermes 配置页会暴露 OpenRouter Provider Routing 结构化配置字段', () => {
+  for (const id of [
+    'hm-provider-routing-save',
+    'hm-provider-routing-sort',
+    'hm-provider-routing-only',
+    'hm-provider-routing-ignore',
+    'hm-provider-routing-order',
+    'hm-provider-routing-require-parameters',
+    'hm-provider-routing-data-collection',
+  ]) {
+    assert.match(source, new RegExp(`id="${id}"`), `缺少 ${id}`)
+  }
+})
+
 test('Hermes 配置页会暴露辅助模型结构化配置字段', () => {
   for (const id of [
     'hm-auxiliary-save',
@@ -345,6 +359,7 @@ test('Hermes 配置页新增结构化配置不会暴露翻译 key', () => {
     key.includes('DisplayConfig') ||
     key.includes('PromptCachingConfig') ||
     key.includes('OpenrouterCacheConfig') ||
+    key.includes('ProviderRoutingConfig') ||
     key.includes('AuxiliaryConfig') ||
     key.includes('StreamingConfig') ||
     key.includes('ExecutionLimits') ||

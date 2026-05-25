@@ -2168,6 +2168,8 @@ const HERMES_CHANNEL_PLATFORMS: [&str; 10] = [
 const HERMES_DISPLAY_TOOL_PROGRESS_VALUES: [&str; 4] = ["off", "new", "all", "verbose"];
 const HERMES_DISPLAY_STREAMING_VALUES: [&str; 3] = ["inherit", "true", "false"];
 const HERMES_PROMPT_CACHE_TTLS: [&str; 2] = ["5m", "1h"];
+const HERMES_PROVIDER_ROUTING_SORTS: [&str; 3] = ["price", "throughput", "latency"];
+const HERMES_PROVIDER_ROUTING_DATA_COLLECTION: [&str; 2] = ["allow", "deny"];
 const HERMES_AUXILIARY_PROVIDERS: [&str; 7] = [
     "auto",
     "openrouter",
@@ -2275,6 +2277,67 @@ fn normalize_hermes_prompt_cache_ttl(
     } else {
         Ok("5m".to_string())
     }
+}
+
+fn normalize_hermes_provider_routing_sort(
+    value: Option<String>,
+    strict: bool,
+) -> Result<String, String> {
+    let sort = value.unwrap_or_default().trim().to_ascii_lowercase();
+    let sort = if sort.is_empty() {
+        "price".to_string()
+    } else {
+        sort
+    };
+    if HERMES_PROVIDER_ROUTING_SORTS.contains(&sort.as_str()) {
+        Ok(sort)
+    } else if strict {
+        Err("provider_routing.sort 必须是 price、throughput 或 latency".to_string())
+    } else {
+        Ok("price".to_string())
+    }
+}
+
+fn normalize_hermes_provider_routing_data_collection(
+    value: Option<String>,
+    strict: bool,
+) -> Result<String, String> {
+    let data_collection = value.unwrap_or_default().trim().to_ascii_lowercase();
+    let data_collection = if data_collection.is_empty() {
+        "allow".to_string()
+    } else {
+        data_collection
+    };
+    if HERMES_PROVIDER_ROUTING_DATA_COLLECTION.contains(&data_collection.as_str()) {
+        Ok(data_collection)
+    } else if strict {
+        Err("provider_routing.data_collection 必须是 allow 或 deny".to_string())
+    } else {
+        Ok("allow".to_string())
+    }
+}
+
+fn normalize_hermes_provider_routing_list(
+    raw: Option<String>,
+    key: &str,
+) -> Result<Vec<String>, String> {
+    let mut values = Vec::new();
+    for item in normalize_hermes_multiline_list(raw) {
+        let provider = item.trim().to_ascii_lowercase();
+        if provider.is_empty() {
+            continue;
+        }
+        if !provider
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.' | '-'))
+        {
+            return Err(format!("{key} 只能包含 provider slug，每行一个"));
+        }
+        if !values.contains(&provider) {
+            values.push(provider);
+        }
+    }
+    Ok(values)
 }
 
 fn normalize_hermes_auxiliary_provider(
@@ -3565,6 +3628,127 @@ fn merge_hermes_openrouter_cache_config(
         yaml_key("response_cache_ttl"),
         serde_yaml::Value::Number(response_cache_ttl.into()),
     );
+    Ok(())
+}
+
+fn provider_routing_list_from_yaml(
+    map: Option<&serde_yaml::Mapping>,
+    key: &str,
+) -> Result<Vec<String>, String> {
+    let raw = map
+        .map(|map| yaml_string_sequence_field(map, key).join("\n"))
+        .unwrap_or_default();
+    normalize_hermes_provider_routing_list(Some(raw), &format!("provider_routing.{key}"))
+}
+
+fn build_hermes_provider_routing_config_values(config: &serde_yaml::Value) -> Value {
+    let root = config.as_mapping();
+    let provider_routing = root.and_then(|map| yaml_get_mapping(map, "provider_routing"));
+    let sort = normalize_hermes_provider_routing_sort(
+        provider_routing.and_then(|map| yaml_string_field(map, "sort")),
+        false,
+    )
+    .unwrap_or_else(|_| "price".to_string());
+    let data_collection = normalize_hermes_provider_routing_data_collection(
+        provider_routing.and_then(|map| yaml_string_field(map, "data_collection")),
+        false,
+    )
+    .unwrap_or_else(|_| "allow".to_string());
+    let only = provider_routing_list_from_yaml(provider_routing, "only").unwrap_or_default();
+    let ignore = provider_routing_list_from_yaml(provider_routing, "ignore").unwrap_or_default();
+    let order = provider_routing_list_from_yaml(provider_routing, "order").unwrap_or_default();
+
+    serde_json::json!({
+        "providerRoutingSort": sort,
+        "providerRoutingOnly": only.join("\n"),
+        "providerRoutingIgnore": ignore.join("\n"),
+        "providerRoutingOrder": order.join("\n"),
+        "providerRoutingRequireParameters": provider_routing.and_then(|map| yaml_bool_field(map, "require_parameters")).unwrap_or(false),
+        "providerRoutingDataCollection": data_collection,
+    })
+}
+
+fn merge_hermes_provider_routing_config(
+    config: &mut serde_yaml::Value,
+    form: &Value,
+) -> Result<(), String> {
+    let current = build_hermes_provider_routing_config_values(config);
+    let sort = normalize_hermes_provider_routing_sort(
+        if form.get("providerRoutingSort").is_some() {
+            form_string(form, "providerRoutingSort")
+        } else {
+            current["providerRoutingSort"]
+                .as_str()
+                .map(ToString::to_string)
+        },
+        true,
+    )?;
+    let data_collection = normalize_hermes_provider_routing_data_collection(
+        if form.get("providerRoutingDataCollection").is_some() {
+            form_string(form, "providerRoutingDataCollection")
+        } else {
+            current["providerRoutingDataCollection"]
+                .as_str()
+                .map(ToString::to_string)
+        },
+        true,
+    )?;
+    let require_parameters =
+        form_bool(form, "providerRoutingRequireParameters").unwrap_or_else(|| {
+            current["providerRoutingRequireParameters"]
+                .as_bool()
+                .unwrap_or(false)
+        });
+
+    let only = normalize_hermes_provider_routing_list(
+        form_string(form, "providerRoutingOnly").or_else(|| {
+            current["providerRoutingOnly"]
+                .as_str()
+                .map(ToString::to_string)
+        }),
+        "provider_routing.only",
+    )?;
+    let ignore = normalize_hermes_provider_routing_list(
+        form_string(form, "providerRoutingIgnore").or_else(|| {
+            current["providerRoutingIgnore"]
+                .as_str()
+                .map(ToString::to_string)
+        }),
+        "provider_routing.ignore",
+    )?;
+    let order = normalize_hermes_provider_routing_list(
+        form_string(form, "providerRoutingOrder").or_else(|| {
+            current["providerRoutingOrder"]
+                .as_str()
+                .map(ToString::to_string)
+        }),
+        "provider_routing.order",
+    )?;
+
+    let root = ensure_yaml_object(config)?;
+    let provider_routing = yaml_child_object(root, "provider_routing")?;
+    provider_routing.insert(yaml_key("sort"), serde_yaml::Value::String(sort));
+    provider_routing.insert(
+        yaml_key("require_parameters"),
+        serde_yaml::Value::Bool(require_parameters),
+    );
+    provider_routing.insert(
+        yaml_key("data_collection"),
+        serde_yaml::Value::String(data_collection),
+    );
+
+    for (key, values) in [("only", only), ("ignore", ignore), ("order", order)] {
+        if values.is_empty() {
+            provider_routing.remove(yaml_key(key));
+        } else {
+            provider_routing.insert(
+                yaml_key(key),
+                serde_yaml::Value::Sequence(
+                    values.into_iter().map(serde_yaml::Value::String).collect(),
+                ),
+            );
+        }
+    }
     Ok(())
 }
 
@@ -7571,6 +7755,30 @@ pub fn hermes_openrouter_cache_config_save(form: Value) -> Result<Value, String>
         "configPath": config_path.to_string_lossy(),
         "backup": backup,
         "values": build_hermes_openrouter_cache_config_values(&config),
+    }))
+}
+
+#[tauri::command]
+pub fn hermes_provider_routing_config_read() -> Result<Value, String> {
+    let (config_path, exists, config) = read_hermes_channel_yaml_config()?;
+    ensure_yaml_object(&mut config.clone())?;
+    Ok(serde_json::json!({
+        "exists": exists,
+        "configPath": config_path.to_string_lossy(),
+        "values": build_hermes_provider_routing_config_values(&config),
+    }))
+}
+
+#[tauri::command]
+pub fn hermes_provider_routing_config_save(form: Value) -> Result<Value, String> {
+    let (config_path, _exists, mut config) = read_hermes_channel_yaml_config()?;
+    merge_hermes_provider_routing_config(&mut config, &form)?;
+    let backup = write_hermes_yaml_config(&config_path, &config)?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "configPath": config_path.to_string_lossy(),
+        "backup": backup,
+        "values": build_hermes_provider_routing_config_values(&config),
     }))
 }
 
@@ -13330,6 +13538,193 @@ streaming:
             )
             .unwrap_err();
             assert!(err.contains("openrouter.response_cache_ttl"));
+        }
+    }
+}
+
+#[cfg(test)]
+mod hermes_provider_routing_config_tests {
+    use super::{
+        build_hermes_provider_routing_config_values, merge_hermes_provider_routing_config,
+    };
+    use serde_json::json;
+
+    #[test]
+    fn provider_routing_values_have_upstream_defaults() {
+        let config: serde_yaml::Value = serde_yaml::from_str("{}").unwrap();
+        let values = build_hermes_provider_routing_config_values(&config);
+        assert_eq!(values["providerRoutingSort"], "price");
+        assert_eq!(values["providerRoutingOnly"], "");
+        assert_eq!(values["providerRoutingIgnore"], "");
+        assert_eq!(values["providerRoutingOrder"], "");
+        assert_eq!(values["providerRoutingRequireParameters"], false);
+        assert_eq!(values["providerRoutingDataCollection"], "allow");
+    }
+
+    #[test]
+    fn provider_routing_values_read_yaml_fields() {
+        let config: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+provider_routing:
+  sort: throughput
+  only:
+    - anthropic
+    - google
+  ignore:
+    - deepinfra
+  order:
+    - anthropic
+    - google
+    - together
+  require_parameters: true
+  data_collection: deny
+"#,
+        )
+        .unwrap();
+
+        let values = build_hermes_provider_routing_config_values(&config);
+        assert_eq!(values["providerRoutingSort"], "throughput");
+        assert_eq!(values["providerRoutingOnly"], "anthropic\ngoogle");
+        assert_eq!(values["providerRoutingIgnore"], "deepinfra");
+        assert_eq!(
+            values["providerRoutingOrder"],
+            "anthropic\ngoogle\ntogether"
+        );
+        assert_eq!(values["providerRoutingRequireParameters"], true);
+        assert_eq!(values["providerRoutingDataCollection"], "deny");
+    }
+
+    #[test]
+    fn merge_provider_routing_config_preserves_unknown_fields() {
+        let mut config: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+model:
+  provider: openrouter
+openrouter:
+  response_cache: true
+provider_routing:
+  sort: price
+  custom_flag: keep-routing
+"#,
+        )
+        .unwrap();
+
+        merge_hermes_provider_routing_config(
+            &mut config,
+            &json!({
+                "providerRoutingSort": "latency",
+                "providerRoutingOnly": " anthropic \n google \n anthropic ",
+                "providerRoutingIgnore": "deepinfra\nfireworks",
+                "providerRoutingOrder": "google\nanthropic",
+                "providerRoutingRequireParameters": true,
+                "providerRoutingDataCollection": "deny",
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(config["model"]["provider"].as_str(), Some("openrouter"));
+        assert_eq!(config["openrouter"]["response_cache"].as_bool(), Some(true));
+        assert_eq!(config["provider_routing"]["sort"].as_str(), Some("latency"));
+        assert_eq!(
+            config["provider_routing"]["only"].as_sequence().unwrap(),
+            &vec![
+                serde_yaml::Value::String("anthropic".to_string()),
+                serde_yaml::Value::String("google".to_string()),
+            ]
+        );
+        assert_eq!(
+            config["provider_routing"]["ignore"].as_sequence().unwrap(),
+            &vec![
+                serde_yaml::Value::String("deepinfra".to_string()),
+                serde_yaml::Value::String("fireworks".to_string()),
+            ]
+        );
+        assert_eq!(
+            config["provider_routing"]["order"].as_sequence().unwrap(),
+            &vec![
+                serde_yaml::Value::String("google".to_string()),
+                serde_yaml::Value::String("anthropic".to_string()),
+            ]
+        );
+        assert_eq!(
+            config["provider_routing"]["require_parameters"].as_bool(),
+            Some(true)
+        );
+        assert_eq!(
+            config["provider_routing"]["data_collection"].as_str(),
+            Some("deny")
+        );
+        assert_eq!(
+            config["provider_routing"]["custom_flag"].as_str(),
+            Some("keep-routing")
+        );
+    }
+
+    #[test]
+    fn merge_provider_routing_config_removes_empty_lists() {
+        let mut config: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+provider_routing:
+  only:
+    - anthropic
+  ignore:
+    - deepinfra
+  order:
+    - google
+"#,
+        )
+        .unwrap();
+
+        merge_hermes_provider_routing_config(
+            &mut config,
+            &json!({
+                "providerRoutingOnly": "",
+                "providerRoutingIgnore": "  \n ",
+                "providerRoutingOrder": "",
+                "providerRoutingRequireParameters": false,
+                "providerRoutingDataCollection": "allow",
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(config["provider_routing"]["sort"].as_str(), Some("price"));
+        assert_eq!(
+            config["provider_routing"]["require_parameters"].as_bool(),
+            Some(false)
+        );
+        assert_eq!(
+            config["provider_routing"]["data_collection"].as_str(),
+            Some("allow")
+        );
+        let provider_routing = config["provider_routing"].as_mapping().unwrap();
+        assert!(!provider_routing.contains_key(super::yaml_key("only")));
+        assert!(!provider_routing.contains_key(super::yaml_key("ignore")));
+        assert!(!provider_routing.contains_key(super::yaml_key("order")));
+    }
+
+    #[test]
+    fn merge_provider_routing_config_rejects_invalid_values() {
+        for (form, expected) in [
+            (
+                json!({ "providerRoutingSort": "random" }),
+                "provider_routing.sort",
+            ),
+            (
+                json!({ "providerRoutingDataCollection": "maybe" }),
+                "provider_routing.data_collection",
+            ),
+            (
+                json!({ "providerRoutingOnly": "bad provider" }),
+                "provider_routing.only",
+            ),
+            (
+                json!({ "providerRoutingOrder": "../secret" }),
+                "provider_routing.order",
+            ),
+        ] {
+            let mut config: serde_yaml::Value = serde_yaml::from_str("{}").unwrap();
+            let err = merge_hermes_provider_routing_config(&mut config, &form).unwrap_err();
+            assert!(err.contains(expected), "{err}");
         }
     }
 }

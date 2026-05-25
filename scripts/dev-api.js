@@ -3335,6 +3335,8 @@ const HERMES_APPROVAL_CRON_MODES = new Set(['deny', 'approve'])
 const HERMES_LOGGING_LEVELS = new Set(['DEBUG', 'INFO', 'WARNING'])
 const HERMES_AGENT_IMAGE_INPUT_MODES = new Set(['auto', 'native', 'text'])
 const HERMES_PROMPT_CACHE_TTLS = new Set(['5m', '1h'])
+const HERMES_PROVIDER_ROUTING_SORTS = new Set(['price', 'throughput', 'latency'])
+const HERMES_PROVIDER_ROUTING_DATA_COLLECTION = new Set(['allow', 'deny'])
 const HERMES_DISPLAY_TOOL_PROGRESS_VALUES = new Set(['off', 'new', 'all', 'verbose'])
 const HERMES_DISPLAY_STREAMING_VALUES = new Set(['inherit', 'true', 'false'])
 const HERMES_DISPLAY_RESUME_VALUES = new Set(['full', 'minimal'])
@@ -3504,6 +3506,36 @@ function normalizeHermesPromptCacheTtl(value, strict = false) {
   if (HERMES_PROMPT_CACHE_TTLS.has(ttl)) return ttl
   if (strict) throw new Error('prompt_caching.cache_ttl 必须是 5m 或 1h')
   return '5m'
+}
+
+function normalizeHermesProviderRoutingSort(value, strict = false) {
+  const sort = String(value ?? '').trim().toLowerCase() || 'price'
+  if (HERMES_PROVIDER_ROUTING_SORTS.has(sort)) return sort
+  if (strict) throw new Error('provider_routing.sort 必须是 price、throughput 或 latency')
+  return 'price'
+}
+
+function normalizeHermesProviderRoutingDataCollection(value, strict = false) {
+  const policy = String(value ?? '').trim().toLowerCase() || 'allow'
+  if (HERMES_PROVIDER_ROUTING_DATA_COLLECTION.has(policy)) return policy
+  if (strict) throw new Error('provider_routing.data_collection 必须是 allow 或 deny')
+  return 'allow'
+}
+
+function normalizeHermesProviderRoutingList(value, key) {
+  const seen = new Set()
+  const normalized = []
+  for (const item of normalizeHermesMultilineList(value)) {
+    const provider = String(item ?? '').trim().toLowerCase()
+    if (!/^[a-zA-Z0-9_.-]+$/.test(provider)) {
+      throw new Error(`${key} 只能包含字母、数字、下划线、点和短横线`)
+    }
+    if (!seen.has(provider)) {
+      seen.add(provider)
+      normalized.push(provider)
+    }
+  }
+  return normalized
 }
 
 function normalizeHermesAuxiliaryProvider(value, key, strict = false) {
@@ -3763,6 +3795,45 @@ export function mergeHermesOpenrouterCacheConfig(config = {}, form = {}) {
   openrouter.response_cache = formHermesBool(form, 'openrouterResponseCache', currentValues.openrouterResponseCache)
   openrouter.response_cache_ttl = parseHermesInteger(Object.hasOwn(form, 'openrouterResponseCacheTtl') ? form.openrouterResponseCacheTtl : currentValues.openrouterResponseCacheTtl, 'openrouter.response_cache_ttl', 300, 1, 86400, true)
   next.openrouter = openrouter
+  return next
+}
+
+export function buildHermesProviderRoutingConfigValues(config = {}) {
+  const root = config && typeof config === 'object' && !Array.isArray(config) ? config : {}
+  const providerRouting = root.provider_routing && typeof root.provider_routing === 'object' && !Array.isArray(root.provider_routing)
+    ? root.provider_routing
+    : {}
+  return {
+    providerRoutingSort: normalizeHermesProviderRoutingSort(providerRouting.sort, false),
+    providerRoutingOnly: normalizeHermesProviderRoutingList(providerRouting.only || [], 'provider_routing.only').join('\n'),
+    providerRoutingIgnore: normalizeHermesProviderRoutingList(providerRouting.ignore || [], 'provider_routing.ignore').join('\n'),
+    providerRoutingOrder: normalizeHermesProviderRoutingList(providerRouting.order || [], 'provider_routing.order').join('\n'),
+    providerRoutingRequireParameters: readHermesBool(providerRouting.require_parameters, false),
+    providerRoutingDataCollection: normalizeHermesProviderRoutingDataCollection(providerRouting.data_collection, false),
+  }
+}
+
+export function mergeHermesProviderRoutingConfig(config = {}, form = {}) {
+  const next = mergeConfigsPreservingFields({}, config && typeof config === 'object' && !Array.isArray(config) ? config : {})
+  const currentValues = buildHermesProviderRoutingConfigValues(next)
+  const providerRouting = next.provider_routing && typeof next.provider_routing === 'object' && !Array.isArray(next.provider_routing)
+    ? mergeConfigsPreservingFields(next.provider_routing, {})
+    : {}
+  providerRouting.sort = normalizeHermesProviderRoutingSort(Object.hasOwn(form, 'providerRoutingSort') ? form.providerRoutingSort : currentValues.providerRoutingSort, true)
+  providerRouting.require_parameters = formHermesBool(form, 'providerRoutingRequireParameters', currentValues.providerRoutingRequireParameters)
+  providerRouting.data_collection = normalizeHermesProviderRoutingDataCollection(Object.hasOwn(form, 'providerRoutingDataCollection') ? form.providerRoutingDataCollection : currentValues.providerRoutingDataCollection, true)
+
+  for (const [field, formKey] of [
+    ['only', 'providerRoutingOnly'],
+    ['ignore', 'providerRoutingIgnore'],
+    ['order', 'providerRoutingOrder'],
+  ]) {
+    const values = normalizeHermesProviderRoutingList(Object.hasOwn(form, formKey) ? form[formKey] : currentValues[formKey], `provider_routing.${field}`)
+    if (values.length) providerRouting[field] = values
+    else delete providerRouting[field]
+  }
+
+  next.provider_routing = providerRouting
   return next
 }
 
@@ -10949,6 +11020,27 @@ const handlers = {
       configPath,
       backup,
       values: buildHermesOpenrouterCacheConfigValues(next),
+    }
+  },
+
+  hermes_provider_routing_config_read() {
+    const { configPath, exists, config } = readHermesConfigYamlObject()
+    return {
+      exists,
+      configPath,
+      values: buildHermesProviderRoutingConfigValues(config),
+    }
+  },
+
+  hermes_provider_routing_config_save({ form } = {}) {
+    const { configPath, config } = readHermesConfigYamlObject()
+    const next = mergeHermesProviderRoutingConfig(config, form || {})
+    const backup = writeHermesConfigYamlObject(configPath, next)
+    return {
+      ok: true,
+      configPath,
+      backup,
+      values: buildHermesProviderRoutingConfigValues(next),
     }
   },
 

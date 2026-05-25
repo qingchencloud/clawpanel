@@ -265,6 +265,8 @@ pub fn run() {
             hermes::hermes_prompt_caching_config_save,
             hermes::hermes_openrouter_cache_config_read,
             hermes::hermes_openrouter_cache_config_save,
+            hermes::hermes_provider_routing_config_read,
+            hermes::hermes_provider_routing_config_save,
             hermes::hermes_auxiliary_config_read,
             hermes::hermes_auxiliary_config_save,
             hermes::hermes_tool_loop_guardrails_config_read,
