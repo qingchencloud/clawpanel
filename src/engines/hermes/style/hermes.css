@@ -433,6 +433,15 @@
   text-decoration-color: color-mix(in srgb, currentColor 30%, transparent);
   text-underline-offset: 3px;
 }
+[data-engine="hermes"] button.hm-native-dashboard-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 10px;
+  touch-action: manipulation;
+}
 [data-engine="hermes"] .hm-native-dashboard-link:hover {
   color: var(--hm-accent);
 }
@@ -656,8 +665,10 @@
 }
 
 [data-engine="hermes"] .hm-btn--icon {
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
   padding: 0;
   background: transparent;
   border: 1px solid transparent;
@@ -714,6 +725,10 @@
   border-radius: 50%;
   background: var(--hm-accent);
   box-shadow: 0 0 0 2px rgba(202, 138, 4, 0.25);
+}
+[data-engine="hermes"] button.hm-pill {
+  min-height: 44px;
+  touch-action: manipulation;
 }
 
 /* ==========================================================================
