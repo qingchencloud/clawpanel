@@ -4407,6 +4407,123 @@ fn merge_hermes_quick_commands_config(
     Ok(())
 }
 
+fn is_hermes_model_alias_name(value: &str) -> bool {
+    let text = value.trim();
+    !text.is_empty()
+        && text
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.' | '-'))
+}
+
+fn normalize_hermes_model_alias_string(
+    entry: &mut serde_json::Map<String, Value>,
+    field: &str,
+    key: &str,
+    required: bool,
+) -> Result<(), String> {
+    let empty = entry.get(field).is_none_or(|value| {
+        value.is_null() || value.as_str().is_some_and(|text| text.trim().is_empty())
+    });
+    if empty {
+        if required {
+            return Err(format!("{key}.{field} 不能为空"));
+        }
+        entry.remove(field);
+        return Ok(());
+    }
+    let Some(value) = entry.get(field).and_then(|value| value.as_str()) else {
+        return Err(format!("{key}.{field} 必须是字符串"));
+    };
+    let value = value.trim().to_string();
+    if value.is_empty() {
+        if required {
+            return Err(format!("{key}.{field} 不能为空"));
+        }
+        entry.remove(field);
+    } else {
+        entry.insert(field.to_string(), Value::String(value));
+    }
+    Ok(())
+}
+
+fn validate_hermes_model_aliases(value: &Value) -> Result<serde_json::Map<String, Value>, String> {
+    let Some(object) = value.as_object() else {
+        return Err("model_aliases 必须是 JSON 对象".to_string());
+    };
+    let mut normalized = serde_json::Map::new();
+    for (raw_alias, raw_config) in object {
+        let alias = raw_alias.trim();
+        if !is_hermes_model_alias_name(alias) {
+            return Err(format!(
+                "model_aliases.{} 别名只能包含字母、数字、下划线、点和短横线",
+                if raw_alias.is_empty() {
+                    "<empty>"
+                } else {
+                    raw_alias
+                }
+            ));
+        }
+        let Some(config) = raw_config.as_object() else {
+            return Err(format!("model_aliases.{alias} 必须是 JSON 对象"));
+        };
+        let mut entry = config.clone();
+        let key = format!("model_aliases.{alias}");
+        normalize_hermes_model_alias_string(&mut entry, "model", &key, true)?;
+        normalize_hermes_model_alias_string(&mut entry, "provider", &key, false)?;
+        normalize_hermes_model_alias_string(&mut entry, "base_url", &key, false)?;
+        normalized.insert(alias.to_string(), Value::Object(entry));
+    }
+    Ok(normalized)
+}
+
+fn parse_hermes_model_aliases_json(
+    raw: Option<String>,
+) -> Result<serde_json::Map<String, Value>, String> {
+    let text = raw.unwrap_or_default().trim().to_string();
+    if text.is_empty() {
+        return Ok(serde_json::Map::new());
+    }
+    let value: Value =
+        serde_json::from_str(&text).map_err(|err| format!("model_aliases JSON 格式错误: {err}"))?;
+    validate_hermes_model_aliases(&value)
+}
+
+fn build_hermes_model_aliases_config_values(config: &serde_yaml::Value) -> Value {
+    let root = config.as_mapping();
+    let model_aliases = root
+        .and_then(|map| map.get(yaml_key("model_aliases")))
+        .and_then(|value| serde_json::to_value(value).ok())
+        .and_then(|value| validate_hermes_model_aliases(&value).ok())
+        .unwrap_or_default();
+
+    serde_json::json!({
+        "modelAliasesJson": serde_json::to_string_pretty(&Value::Object(model_aliases)).unwrap_or_else(|_| "{}".to_string()),
+    })
+}
+
+fn merge_hermes_model_aliases_config(
+    config: &mut serde_yaml::Value,
+    form: &Value,
+) -> Result<(), String> {
+    let current = build_hermes_model_aliases_config_values(config);
+    let model_aliases =
+        parse_hermes_model_aliases_json(form_string(form, "modelAliasesJson").or_else(|| {
+            current["modelAliasesJson"]
+                .as_str()
+                .map(ToString::to_string)
+        }))?;
+
+    let root = ensure_yaml_object(config)?;
+    if model_aliases.is_empty() {
+        root.remove(yaml_key("model_aliases"));
+    } else {
+        let yaml_value = serde_yaml::to_value(Value::Object(model_aliases))
+            .map_err(|err| format!("model_aliases 转换 YAML 失败: {err}"))?;
+        root.insert(yaml_key("model_aliases"), yaml_value);
+    }
+    Ok(())
+}
+
 fn is_hermes_hook_event(value: &str) -> bool {
     matches!(
         value,
@@ -8413,6 +8530,30 @@ pub fn hermes_quick_commands_config_save(form: Value) -> Result<Value, String> {
         "configPath": config_path.to_string_lossy(),
         "backup": backup,
         "values": build_hermes_quick_commands_config_values(&config),
+    }))
+}
+
+#[tauri::command]
+pub fn hermes_model_aliases_config_read() -> Result<Value, String> {
+    let (config_path, exists, config) = read_hermes_channel_yaml_config()?;
+    ensure_yaml_object(&mut config.clone())?;
+    Ok(serde_json::json!({
+        "exists": exists,
+        "configPath": config_path.to_string_lossy(),
+        "values": build_hermes_model_aliases_config_values(&config),
+    }))
+}
+
+#[tauri::command]
+pub fn hermes_model_aliases_config_save(form: Value) -> Result<Value, String> {
+    let (config_path, _exists, mut config) = read_hermes_channel_yaml_config()?;
+    merge_hermes_model_aliases_config(&mut config, &form)?;
+    let backup = write_hermes_yaml_config(&config_path, &config)?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "configPath": config_path.to_string_lossy(),
+        "backup": backup,
+        "values": build_hermes_model_aliases_config_values(&config),
     }))
 }
 
@@ -16203,6 +16344,163 @@ streaming:
         )
         .unwrap_err();
         assert!(err.contains("quick_commands.restart.target"));
+    }
+}
+
+#[cfg(test)]
+mod hermes_model_aliases_config_tests {
+    use super::{build_hermes_model_aliases_config_values, merge_hermes_model_aliases_config};
+    use serde_json::json;
+
+    #[test]
+    fn model_aliases_values_have_empty_defaults() {
+        let config: serde_yaml::Value = serde_yaml::from_str("{}").unwrap();
+        let values = build_hermes_model_aliases_config_values(&config);
+        assert_eq!(values["modelAliasesJson"], "{}");
+    }
+
+    #[test]
+    fn model_aliases_values_read_yaml_mapping() {
+        let config: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+model_aliases:
+  opus:
+    model: claude-opus-4-6
+    provider: anthropic
+  qwen:
+    model: "qwen3.5:397b"
+    provider: custom
+    base_url: https://ollama.com/v1
+"#,
+        )
+        .unwrap();
+
+        let values = build_hermes_model_aliases_config_values(&config);
+        let parsed: serde_json::Value =
+            serde_json::from_str(values["modelAliasesJson"].as_str().unwrap()).unwrap();
+        assert_eq!(parsed["opus"]["model"], "claude-opus-4-6");
+        assert_eq!(parsed["opus"]["provider"], "anthropic");
+        assert_eq!(parsed["qwen"]["model"], "qwen3.5:397b");
+        assert_eq!(parsed["qwen"]["base_url"], "https://ollama.com/v1");
+    }
+
+    #[test]
+    fn merge_model_aliases_config_preserves_unknown_fields_and_unrelated_yaml() {
+        let mut config: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+model:
+  provider: openrouter
+model_aliases:
+  opus:
+    model: old-opus
+    provider: anthropic
+    custom_flag: drop-with-replace
+memory:
+  memory_enabled: true
+"#,
+        )
+        .unwrap();
+
+        merge_hermes_model_aliases_config(
+            &mut config,
+            &json!({
+                "modelAliasesJson": r#"{
+                  "opus": {
+                    "model": "claude-opus-4-6",
+                    "provider": "anthropic",
+                    "custom_flag": "keep-alias"
+                  },
+                  "qwen": {
+                    "model": "qwen3.5:397b",
+                    "provider": "custom",
+                    "base_url": "https://ollama.com/v1"
+                  }
+                }"#,
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(config["model"]["provider"].as_str(), Some("openrouter"));
+        assert_eq!(config["memory"]["memory_enabled"].as_bool(), Some(true));
+        assert_eq!(
+            config["model_aliases"]["opus"]["model"].as_str(),
+            Some("claude-opus-4-6")
+        );
+        assert_eq!(
+            config["model_aliases"]["opus"]["custom_flag"].as_str(),
+            Some("keep-alias")
+        );
+        assert_eq!(
+            config["model_aliases"]["qwen"]["provider"].as_str(),
+            Some("custom")
+        );
+        assert_eq!(
+            config["model_aliases"]["qwen"]["base_url"].as_str(),
+            Some("https://ollama.com/v1")
+        );
+    }
+
+    #[test]
+    fn merge_model_aliases_config_removes_empty_mapping() {
+        let mut config: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+model_aliases:
+  opus:
+    model: claude-opus-4-6
+streaming:
+  enabled: true
+"#,
+        )
+        .unwrap();
+
+        merge_hermes_model_aliases_config(&mut config, &json!({ "modelAliasesJson": "{}" }))
+            .unwrap();
+
+        assert!(config["model_aliases"].is_null());
+        assert_eq!(config["streaming"]["enabled"].as_bool(), Some(true));
+    }
+
+    #[test]
+    fn merge_model_aliases_config_rejects_invalid_values() {
+        let mut config = serde_yaml::Value::Mapping(serde_yaml::Mapping::new());
+        let err =
+            merge_hermes_model_aliases_config(&mut config, &json!({ "modelAliasesJson": "[" }))
+                .unwrap_err();
+        assert!(err.contains("model_aliases JSON"));
+        let err =
+            merge_hermes_model_aliases_config(&mut config, &json!({ "modelAliasesJson": "[]" }))
+                .unwrap_err();
+        assert!(err.contains("model_aliases"));
+        let err = merge_hermes_model_aliases_config(
+            &mut config,
+            &json!({ "modelAliasesJson": r#"{ "bad alias": { "model": "m", "provider": "p" } }"# }),
+        )
+        .unwrap_err();
+        assert!(err.contains("model_aliases.bad alias"));
+        let err = merge_hermes_model_aliases_config(
+            &mut config,
+            &json!({ "modelAliasesJson": r#"{ "opus": "claude-opus-4-6" }"# }),
+        )
+        .unwrap_err();
+        assert!(err.contains("model_aliases.opus"));
+        let err = merge_hermes_model_aliases_config(
+            &mut config,
+            &json!({ "modelAliasesJson": r#"{ "opus": { "provider": "anthropic" } }"# }),
+        )
+        .unwrap_err();
+        assert!(err.contains("model_aliases.opus.model"));
+        let err = merge_hermes_model_aliases_config(
+            &mut config,
+            &json!({ "modelAliasesJson": r#"{ "opus": { "model": "claude-opus-4-6", "provider": 123 } }"# }),
+        )
+        .unwrap_err();
+        assert!(err.contains("model_aliases.opus.provider"));
+        let err = merge_hermes_model_aliases_config(
+            &mut config,
+            &json!({ "modelAliasesJson": r#"{ "qwen": { "model": "qwen3.5:397b", "base_url": 123 } }"# }),
+        )
+        .unwrap_err();
+        assert!(err.contains("model_aliases.qwen.base_url"));
     }
 }
 

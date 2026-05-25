@@ -83,6 +83,10 @@ const QUICK_COMMANDS_DEFAULTS = {
   quickCommandsJson: '{}',
 }
 
+const MODEL_ALIASES_DEFAULTS = {
+  modelAliasesJson: '{}',
+}
+
 const HOOKS_DEFAULTS = {
   hooksAutoAccept: false,
   hooksJson: '{}',
@@ -286,6 +290,7 @@ export function render() {
   let memoryValues = { ...MEMORY_DEFAULTS }
   let skillsValues = { ...SKILLS_DEFAULTS }
   let quickCommandsValues = { ...QUICK_COMMANDS_DEFAULTS }
+  let modelAliasesValues = { ...MODEL_ALIASES_DEFAULTS }
   let hooksValues = { ...HOOKS_DEFAULTS }
   let providerOverridesValues = { ...PROVIDER_OVERRIDES_DEFAULTS }
   let mcpServersValues = { ...MCP_SERVERS_DEFAULTS }
@@ -318,6 +323,7 @@ export function render() {
   let memoryLoading = true
   let skillsLoading = true
   let quickCommandsLoading = true
+  let modelAliasesLoading = true
   let hooksLoading = true
   let providerOverridesLoading = true
   let mcpServersLoading = true
@@ -350,6 +356,7 @@ export function render() {
   let memorySaving = false
   let skillsSaving = false
   let quickCommandsSaving = false
+  let modelAliasesSaving = false
   let hooksSaving = false
   let providerOverridesSaving = false
   let mcpServersSaving = false
@@ -382,6 +389,7 @@ export function render() {
   let memoryError = null
   let skillsError = null
   let quickCommandsError = null
+  let modelAliasesError = null
   let hooksError = null
   let providerOverridesError = null
   let mcpServersError = null
@@ -413,7 +421,7 @@ export function render() {
   }
 
   function isBusy() {
-    return loading || runtimeLoading || compressionLoading || promptCachingLoading || openrouterCacheLoading || providerRoutingLoading || auxiliaryLoading || toolGuardrailsLoading || memoryLoading || skillsLoading || quickCommandsLoading || hooksLoading || providerOverridesLoading || mcpServersLoading || agentToolsetsLoading || platformToolsetsLoading || agentRuntimeLoading || unauthorizedDmLoading || securityLoading || displayLoading || humanDelayLoading || streamingLoading || executionLimitsLoading || ioSafetyLoading || checkpointsLoading || cronLoading || loggingLoading || approvalsLoading || privacyLoading || browserLoading || sttLoading || terminalLoading || saving || runtimeSaving || compressionSaving || promptCachingSaving || openrouterCacheSaving || providerRoutingSaving || auxiliarySaving || toolGuardrailsSaving || memorySaving || skillsSaving || quickCommandsSaving || hooksSaving || providerOverridesSaving || mcpServersSaving || agentToolsetsSaving || platformToolsetsSaving || agentRuntimeSaving || unauthorizedDmSaving || securitySaving || displaySaving || humanDelaySaving || streamingSaving || executionLimitsSaving || ioSafetySaving || checkpointsSaving || cronSaving || loggingSaving || approvalsSaving || privacySaving || browserSaving || sttSaving || terminalSaving
+    return loading || runtimeLoading || compressionLoading || promptCachingLoading || openrouterCacheLoading || providerRoutingLoading || auxiliaryLoading || toolGuardrailsLoading || memoryLoading || skillsLoading || quickCommandsLoading || modelAliasesLoading || hooksLoading || providerOverridesLoading || mcpServersLoading || agentToolsetsLoading || platformToolsetsLoading || agentRuntimeLoading || unauthorizedDmLoading || securityLoading || displayLoading || humanDelayLoading || streamingLoading || executionLimitsLoading || ioSafetyLoading || checkpointsLoading || cronLoading || loggingLoading || approvalsLoading || privacyLoading || browserLoading || sttLoading || terminalLoading || saving || runtimeSaving || compressionSaving || promptCachingSaving || openrouterCacheSaving || providerRoutingSaving || auxiliarySaving || toolGuardrailsSaving || memorySaving || skillsSaving || quickCommandsSaving || modelAliasesSaving || hooksSaving || providerOverridesSaving || mcpServersSaving || agentToolsetsSaving || platformToolsetsSaving || agentRuntimeSaving || unauthorizedDmSaving || securitySaving || displaySaving || humanDelaySaving || streamingSaving || executionLimitsSaving || ioSafetySaving || checkpointsSaving || cronSaving || loggingSaving || approvalsSaving || privacySaving || browserSaving || sttSaving || terminalSaving
   }
 
   function option(labelKey, value, selected) {
@@ -875,7 +883,7 @@ export function render() {
   }
 
   function renderQuickCommandsConfigPanel() {
-    const disabled = loading || saving || quickCommandsLoading || quickCommandsSaving || hooksSaving || providerOverridesSaving || mcpServersSaving || agentToolsetsSaving || agentRuntimeSaving || runtimeSaving || compressionSaving || promptCachingSaving || openrouterCacheSaving || providerRoutingSaving || auxiliarySaving || toolGuardrailsSaving || memorySaving || skillsSaving || streamingSaving || executionLimitsSaving || checkpointsSaving || cronSaving || loggingSaving || approvalsSaving || terminalSaving
+    const disabled = loading || saving || quickCommandsLoading || quickCommandsSaving || modelAliasesSaving || hooksSaving || providerOverridesSaving || mcpServersSaving || agentToolsetsSaving || agentRuntimeSaving || runtimeSaving || compressionSaving || promptCachingSaving || openrouterCacheSaving || providerRoutingSaving || auxiliarySaving || toolGuardrailsSaving || memorySaving || skillsSaving || streamingSaving || executionLimitsSaving || checkpointsSaving || cronSaving || loggingSaving || approvalsSaving || terminalSaving
     return `
       <div class="hm-panel hm-config-runtime-panel hm-config-quick-commands-panel">
         <div class="hm-panel-header">
@@ -900,8 +908,34 @@ export function render() {
     `
   }
 
+  function renderModelAliasesConfigPanel() {
+    const disabled = loading || saving || modelAliasesLoading || modelAliasesSaving || quickCommandsSaving || hooksSaving || providerOverridesSaving || mcpServersSaving || agentToolsetsSaving || agentRuntimeSaving || runtimeSaving || compressionSaving || promptCachingSaving || openrouterCacheSaving || providerRoutingSaving || auxiliarySaving || toolGuardrailsSaving || memorySaving || skillsSaving || streamingSaving || executionLimitsSaving || checkpointsSaving || cronSaving || loggingSaving || approvalsSaving || terminalSaving
+    return `
+      <div class="hm-panel hm-config-runtime-panel hm-config-model-aliases-panel">
+        <div class="hm-panel-header">
+          <div>
+            <div class="hm-panel-title">${t('engine.hermesModelAliasesConfigTitle')}</div>
+            <div class="hm-channel-panel-desc">${t('engine.hermesModelAliasesConfigDesc')}</div>
+          </div>
+          <div class="hm-panel-actions">
+            <span class="hm-muted">${modelAliasesSaving ? t('engine.hermesConfigStatusSaving') : modelAliasesLoading ? t('engine.hermesConfigStatusLoading') : t('engine.hermesModelAliasesConfigStatusReady')}</span>
+            <button class="hm-btn hm-btn--cta hm-btn--sm" id="hm-model-aliases-save" ${disabled ? 'disabled' : ''}>${t('engine.hermesModelAliasesConfigSave')}</button>
+          </div>
+        </div>
+        <div class="hm-panel-body">
+          ${renderError(modelAliasesError)}
+          <label class="hm-field hm-field--wide">
+            <span class="hm-field-label">${t('engine.hermesModelAliasesConfigJson')}</span>
+            <textarea id="hm-model-aliases-json" class="hm-input" spellcheck="false" rows="8" ${disabled ? 'disabled' : ''} style="font-family:var(--hm-font-mono);line-height:1.65;min-height:220px">${esc(modelAliasesValues.modelAliasesJson)}</textarea>
+          </label>
+          <div class="hm-channel-footnote">${t('engine.hermesModelAliasesConfigFootnote')}</div>
+        </div>
+      </div>
+    `
+  }
+
   function renderHooksConfigPanel() {
-    const disabled = loading || saving || hooksLoading || hooksSaving || quickCommandsSaving || providerOverridesSaving || mcpServersSaving || agentToolsetsSaving || agentRuntimeSaving || runtimeSaving || compressionSaving || promptCachingSaving || openrouterCacheSaving || providerRoutingSaving || auxiliarySaving || toolGuardrailsSaving || memorySaving || skillsSaving || streamingSaving || executionLimitsSaving || checkpointsSaving || cronSaving || loggingSaving || approvalsSaving || terminalSaving
+    const disabled = loading || saving || hooksLoading || hooksSaving || quickCommandsSaving || modelAliasesSaving || providerOverridesSaving || mcpServersSaving || agentToolsetsSaving || agentRuntimeSaving || runtimeSaving || compressionSaving || promptCachingSaving || openrouterCacheSaving || providerRoutingSaving || auxiliarySaving || toolGuardrailsSaving || memorySaving || skillsSaving || streamingSaving || executionLimitsSaving || checkpointsSaving || cronSaving || loggingSaving || approvalsSaving || terminalSaving
     return `
       <div class="hm-panel hm-config-runtime-panel hm-config-hooks-panel">
         <div class="hm-panel-header">
@@ -1894,6 +1928,7 @@ export function render() {
       ${renderMemoryPanel()}
       ${renderSkillsConfigPanel()}
       ${renderQuickCommandsConfigPanel()}
+      ${renderModelAliasesConfigPanel()}
       ${renderHooksConfigPanel()}
       ${renderProviderOverridesConfigPanel()}
       ${renderMcpServersConfigPanel()}
@@ -1933,6 +1968,7 @@ export function render() {
     el.querySelector('#hm-memory-save')?.addEventListener('click', saveMemory)
     el.querySelector('#hm-skills-config-save')?.addEventListener('click', saveSkillsConfig)
     el.querySelector('#hm-quick-commands-save')?.addEventListener('click', saveQuickCommandsConfig)
+    el.querySelector('#hm-model-aliases-save')?.addEventListener('click', saveModelAliasesConfig)
     el.querySelector('#hm-hooks-save')?.addEventListener('click', saveHooksConfig)
     el.querySelector('#hm-provider-overrides-save')?.addEventListener('click', saveProviderOverridesConfig)
     el.querySelector('#hm-mcp-servers-save')?.addEventListener('click', saveMcpServersConfig)
@@ -2009,6 +2045,11 @@ export function render() {
   async function loadQuickCommandsConfig() {
     const data = await api.hermesQuickCommandsConfigRead()
     quickCommandsValues = { ...QUICK_COMMANDS_DEFAULTS, ...(data?.values || {}) }
+  }
+
+  async function loadModelAliasesConfig() {
+    const data = await api.hermesModelAliasesConfigRead()
+    modelAliasesValues = { ...MODEL_ALIASES_DEFAULTS, ...(data?.values || {}) }
   }
 
   async function loadHooksConfig() {
@@ -2128,6 +2169,7 @@ export function render() {
     memoryLoading = true
     skillsLoading = true
     quickCommandsLoading = true
+    modelAliasesLoading = true
     hooksLoading = true
     providerOverridesLoading = true
     mcpServersLoading = true
@@ -2160,6 +2202,7 @@ export function render() {
     memoryError = null
     skillsError = null
     quickCommandsError = null
+    modelAliasesError = null
     hooksError = null
     providerOverridesError = null
     mcpServersError = null
@@ -2358,6 +2401,14 @@ export function render() {
       draw()
     }
     try {
+      await loadModelAliasesConfig()
+    } catch (err) {
+      modelAliasesError = humanizeError(err, t('engine.hermesModelAliasesConfigLoadFailed') || 'Load model aliases config failed')
+    } finally {
+      modelAliasesLoading = false
+      draw()
+    }
+    try {
       await loadHooksConfig()
     } catch (err) {
       hooksError = humanizeError(err, t('engine.hermesHooksConfigLoadFailed') || 'Load hooks config failed')
@@ -2487,6 +2538,9 @@ export function render() {
       } catch {}
       try {
         await loadQuickCommandsConfig()
+      } catch {}
+      try {
+        await loadModelAliasesConfig()
       } catch {}
       try {
         await loadHooksConfig()
@@ -2840,6 +2894,31 @@ export function render() {
       toast(quickCommandsError, 'error')
     } finally {
       quickCommandsSaving = false
+      draw()
+    }
+  }
+
+  async function saveModelAliasesConfig() {
+    const form = {
+      modelAliasesJson: el.querySelector('#hm-model-aliases-json')?.value || '{}',
+    }
+    modelAliasesSaving = true
+    modelAliasesError = null
+    draw()
+    try {
+      const result = await api.hermesModelAliasesConfigSave(form)
+      modelAliasesValues = { ...MODEL_ALIASES_DEFAULTS, ...(result?.values || form) }
+      await refreshRawAfterStructuredSave()
+      const backup = result?.backup || ''
+      toast({
+        message: t('engine.hermesModelAliasesConfigSaveSuccess'),
+        hint: backup ? t('engine.hermesConfigBackupHint', { path: backup }) : '',
+      }, 'success')
+    } catch (err) {
+      modelAliasesError = humanizeError(err, t('engine.hermesModelAliasesConfigSaveFailed') || 'Save model aliases config failed')
+      toast(modelAliasesError, 'error')
+    } finally {
+      modelAliasesSaving = false
       draw()
     }
   }

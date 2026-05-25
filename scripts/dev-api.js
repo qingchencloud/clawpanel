@@ -4222,6 +4222,76 @@ export function mergeHermesQuickCommandsConfig(config = {}, form = {}) {
   return next
 }
 
+function isHermesModelAliasName(value) {
+  return /^[a-zA-Z0-9_.-]+$/.test(String(value || '').trim())
+}
+
+function normalizeHermesModelAliasString(entry, field, key, required = false) {
+  if (!Object.hasOwn(entry, field) || entry[field] == null || entry[field] === '') {
+    if (required) throw new Error(`${key}.${field} 不能为空`)
+    delete entry[field]
+    return
+  }
+  if (typeof entry[field] !== 'string') throw new Error(`${key}.${field} 必须是字符串`)
+  const value = entry[field].trim()
+  if (!value && required) throw new Error(`${key}.${field} 不能为空`)
+  if (value) entry[field] = value
+  else delete entry[field]
+}
+
+function validateHermesModelAliases(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('model_aliases 必须是 JSON 对象')
+  }
+  const normalized = {}
+  for (const [rawAlias, rawConfig] of Object.entries(value)) {
+    const alias = String(rawAlias || '').trim()
+    if (!alias || !isHermesModelAliasName(alias)) {
+      throw new Error(`model_aliases.${rawAlias || '<empty>'} 别名只能包含字母、数字、下划线、点和短横线`)
+    }
+    if (!rawConfig || typeof rawConfig !== 'object' || Array.isArray(rawConfig)) {
+      throw new Error(`model_aliases.${alias} 必须是 JSON 对象`)
+    }
+    const entry = mergeConfigsPreservingFields(rawConfig, {})
+    normalizeHermesModelAliasString(entry, 'model', `model_aliases.${alias}`, true)
+    normalizeHermesModelAliasString(entry, 'provider', `model_aliases.${alias}`)
+    normalizeHermesModelAliasString(entry, 'base_url', `model_aliases.${alias}`)
+    normalized[alias] = entry
+  }
+  return normalized
+}
+
+function parseHermesModelAliasesJson(raw) {
+  const text = String(raw ?? '').trim()
+  if (!text) return {}
+  let value
+  try {
+    value = JSON.parse(text)
+  } catch (err) {
+    throw new Error(`model_aliases JSON 格式错误: ${err.message}`)
+  }
+  return validateHermesModelAliases(value)
+}
+
+export function buildHermesModelAliasesConfigValues(config = {}) {
+  const root = config && typeof config === 'object' && !Array.isArray(config) ? config : {}
+  const modelAliases = root.model_aliases && typeof root.model_aliases === 'object' && !Array.isArray(root.model_aliases)
+    ? validateHermesModelAliases(root.model_aliases)
+    : {}
+  return {
+    modelAliasesJson: JSON.stringify(modelAliases, null, 2),
+  }
+}
+
+export function mergeHermesModelAliasesConfig(config = {}, form = {}) {
+  const next = mergeConfigsPreservingFields({}, config && typeof config === 'object' && !Array.isArray(config) ? config : {})
+  const currentValues = buildHermesModelAliasesConfigValues(next)
+  const modelAliases = parseHermesModelAliasesJson(Object.hasOwn(form, 'modelAliasesJson') ? form.modelAliasesJson : currentValues.modelAliasesJson)
+  if (Object.keys(modelAliases).length) next.model_aliases = modelAliases
+  else delete next.model_aliases
+  return next
+}
+
 function normalizeHermesHookTimeout(entry, key) {
   if (!Object.hasOwn(entry, 'timeout') || entry.timeout == null || entry.timeout === '') {
     delete entry.timeout
@@ -11432,6 +11502,27 @@ const handlers = {
       configPath,
       backup,
       values: buildHermesQuickCommandsConfigValues(next),
+    }
+  },
+
+  hermes_model_aliases_config_read() {
+    const { configPath, exists, config } = readHermesConfigYamlObject()
+    return {
+      exists,
+      configPath,
+      values: buildHermesModelAliasesConfigValues(config),
+    }
+  },
+
+  hermes_model_aliases_config_save({ form } = {}) {
+    const { configPath, config } = readHermesConfigYamlObject()
+    const next = mergeHermesModelAliasesConfig(config, form || {})
+    const backup = writeHermesConfigYamlObject(configPath, next)
+    return {
+      ok: true,
+      configPath,
+      backup,
+      values: buildHermesModelAliasesConfigValues(next),
     }
   },
 

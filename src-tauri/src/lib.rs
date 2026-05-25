@@ -277,6 +277,8 @@ pub fn run() {
             hermes::hermes_skills_config_save,
             hermes::hermes_quick_commands_config_read,
             hermes::hermes_quick_commands_config_save,
+            hermes::hermes_model_aliases_config_read,
+            hermes::hermes_model_aliases_config_save,
             hermes::hermes_hooks_config_read,
             hermes::hermes_hooks_config_save,
             hermes::hermes_provider_overrides_config_read,
