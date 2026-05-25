@@ -4209,6 +4209,107 @@ export function mergeHermesQuickCommandsConfig(config = {}, form = {}) {
   return next
 }
 
+function normalizeHermesMcpServerName(value) {
+  const name = String(value ?? '').trim()
+  if (!name || !/^[a-zA-Z0-9_.-]+$/.test(name)) {
+    throw new Error(`mcp_servers.${name || '<empty>'} 服务名只能包含字母、数字、下划线、点和短横线`)
+  }
+  return name
+}
+
+function normalizeHermesStringArray(value, key) {
+  if (value == null) return undefined
+  if (!Array.isArray(value)) throw new Error(`${key} 必须是字符串数组`)
+  return value.map((item, index) => {
+    if (typeof item !== 'string') throw new Error(`${key}.${index} 必须是字符串`)
+    return item
+  })
+}
+
+function normalizeHermesStringMap(value, key) {
+  if (value == null) return undefined
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${key} 必须是 JSON 对象`)
+  const normalized = {}
+  for (const [rawKey, rawValue] of Object.entries(value)) {
+    const itemKey = String(rawKey || '').trim()
+    if (!itemKey) throw new Error(`${key} 键名不能为空`)
+    if (typeof rawValue !== 'string') throw new Error(`${key}.${itemKey} 必须是字符串`)
+    normalized[itemKey] = rawValue
+  }
+  return normalized
+}
+
+function normalizeHermesMcpTimeout(entry, field, key) {
+  if (!Object.hasOwn(entry, field) || entry[field] == null || entry[field] === '') {
+    delete entry[field]
+    return
+  }
+  entry[field] = parseHermesInteger(entry[field], key, 120, 1, 86400, true)
+}
+
+function validateHermesMcpServers(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('mcp_servers 必须是 JSON 对象')
+  }
+  const normalized = {}
+  for (const [rawName, rawConfig] of Object.entries(value)) {
+    const name = normalizeHermesMcpServerName(rawName)
+    if (!rawConfig || typeof rawConfig !== 'object' || Array.isArray(rawConfig)) {
+      throw new Error(`mcp_servers.${name} 必须是 JSON 对象`)
+    }
+    const entry = mergeConfigsPreservingFields(rawConfig, {})
+    const command = typeof entry.command === 'string' ? entry.command.trim() : ''
+    const url = typeof entry.url === 'string' ? entry.url.trim() : ''
+    if (Object.hasOwn(entry, 'command')) {
+      if (!command) throw new Error(`mcp_servers.${name}.command 不能为空`)
+      entry.command = command
+    }
+    if (Object.hasOwn(entry, 'url')) {
+      if (!/^https?:\/\//i.test(url)) throw new Error(`mcp_servers.${name}.url 必须以 http:// 或 https:// 开头`)
+      entry.url = url
+    }
+    if (!command && !url) throw new Error(`mcp_servers.${name} 需要 command 或 url`)
+    if (Object.hasOwn(entry, 'args')) entry.args = normalizeHermesStringArray(entry.args, `mcp_servers.${name}.args`)
+    if (Object.hasOwn(entry, 'env')) entry.env = normalizeHermesStringMap(entry.env, `mcp_servers.${name}.env`)
+    if (Object.hasOwn(entry, 'headers')) entry.headers = normalizeHermesStringMap(entry.headers, `mcp_servers.${name}.headers`)
+    normalizeHermesMcpTimeout(entry, 'timeout', `mcp_servers.${name}.timeout`)
+    normalizeHermesMcpTimeout(entry, 'connect_timeout', `mcp_servers.${name}.connect_timeout`)
+    normalized[name] = entry
+  }
+  return normalized
+}
+
+function parseHermesMcpServersJson(raw) {
+  const text = String(raw ?? '').trim()
+  if (!text) return {}
+  let value
+  try {
+    value = JSON.parse(text)
+  } catch (err) {
+    throw new Error(`mcp_servers JSON 格式错误: ${err.message}`)
+  }
+  return validateHermesMcpServers(value)
+}
+
+export function buildHermesMcpServersConfigValues(config = {}) {
+  const root = config && typeof config === 'object' && !Array.isArray(config) ? config : {}
+  const mcpServers = root.mcp_servers && typeof root.mcp_servers === 'object' && !Array.isArray(root.mcp_servers)
+    ? validateHermesMcpServers(root.mcp_servers)
+    : {}
+  return {
+    mcpServersJson: JSON.stringify(mcpServers, null, 2),
+  }
+}
+
+export function mergeHermesMcpServersConfig(config = {}, form = {}) {
+  const next = mergeConfigsPreservingFields({}, config && typeof config === 'object' && !Array.isArray(config) ? config : {})
+  const currentValues = buildHermesMcpServersConfigValues(next)
+  const mcpServers = parseHermesMcpServersJson(Object.hasOwn(form, 'mcpServersJson') ? form.mcpServersJson : currentValues.mcpServersJson)
+  if (Object.keys(mcpServers).length) next.mcp_servers = mcpServers
+  else delete next.mcp_servers
+  return next
+}
+
 function isHermesProviderOverrideName(value) {
   return /^[a-zA-Z0-9_.-]+$/.test(String(value || '').trim())
 }
@@ -11264,6 +11365,27 @@ const handlers = {
       configPath,
       backup,
       values: buildHermesProviderOverridesConfigValues(next),
+    }
+  },
+
+  hermes_mcp_servers_config_read() {
+    const { configPath, exists, config } = readHermesConfigYamlObject()
+    return {
+      exists,
+      configPath,
+      values: buildHermesMcpServersConfigValues(config),
+    }
+  },
+
+  hermes_mcp_servers_config_save({ form } = {}) {
+    const { configPath, config } = readHermesConfigYamlObject()
+    const next = mergeHermesMcpServersConfig(config, form || {})
+    const backup = writeHermesConfigYamlObject(configPath, next)
+    return {
+      ok: true,
+      configPath,
+      backup,
+      values: buildHermesMcpServersConfigValues(next),
     }
   },
 

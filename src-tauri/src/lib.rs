@@ -279,6 +279,8 @@ pub fn run() {
             hermes::hermes_quick_commands_config_save,
             hermes::hermes_provider_overrides_config_read,
             hermes::hermes_provider_overrides_config_save,
+            hermes::hermes_mcp_servers_config_read,
+            hermes::hermes_mcp_servers_config_save,
             hermes::hermes_agent_toolsets_config_read,
             hermes::hermes_agent_toolsets_config_save,
             hermes::hermes_platform_toolsets_config_read,

@@ -87,6 +87,10 @@ const PROVIDER_OVERRIDES_DEFAULTS = {
   providerOverridesJson: '{}',
 }
 
+const MCP_SERVERS_DEFAULTS = {
+  mcpServersJson: '{}',
+}
+
 const AGENT_TOOLSETS_DEFAULTS = {
   disabledToolsets: '',
 }
@@ -278,6 +282,7 @@ export function render() {
   let skillsValues = { ...SKILLS_DEFAULTS }
   let quickCommandsValues = { ...QUICK_COMMANDS_DEFAULTS }
   let providerOverridesValues = { ...PROVIDER_OVERRIDES_DEFAULTS }
+  let mcpServersValues = { ...MCP_SERVERS_DEFAULTS }
   let agentToolsetsValues = { ...AGENT_TOOLSETS_DEFAULTS }
   let platformToolsetsValues = { ...PLATFORM_TOOLSETS_DEFAULTS }
   let agentRuntimeValues = { ...AGENT_RUNTIME_DEFAULTS }
@@ -308,6 +313,7 @@ export function render() {
   let skillsLoading = true
   let quickCommandsLoading = true
   let providerOverridesLoading = true
+  let mcpServersLoading = true
   let agentToolsetsLoading = true
   let platformToolsetsLoading = true
   let agentRuntimeLoading = true
@@ -338,6 +344,7 @@ export function render() {
   let skillsSaving = false
   let quickCommandsSaving = false
   let providerOverridesSaving = false
+  let mcpServersSaving = false
   let agentToolsetsSaving = false
   let platformToolsetsSaving = false
   let agentRuntimeSaving = false
@@ -368,6 +375,7 @@ export function render() {
   let skillsError = null
   let quickCommandsError = null
   let providerOverridesError = null
+  let mcpServersError = null
   let agentToolsetsError = null
   let platformToolsetsError = null
   let agentRuntimeError = null
@@ -396,7 +404,7 @@ export function render() {
   }
 
   function isBusy() {
-    return loading || runtimeLoading || compressionLoading || promptCachingLoading || openrouterCacheLoading || providerRoutingLoading || auxiliaryLoading || toolGuardrailsLoading || memoryLoading || skillsLoading || quickCommandsLoading || providerOverridesLoading || agentToolsetsLoading || platformToolsetsLoading || agentRuntimeLoading || unauthorizedDmLoading || securityLoading || displayLoading || humanDelayLoading || streamingLoading || executionLimitsLoading || ioSafetyLoading || checkpointsLoading || cronLoading || loggingLoading || approvalsLoading || privacyLoading || browserLoading || sttLoading || terminalLoading || saving || runtimeSaving || compressionSaving || promptCachingSaving || openrouterCacheSaving || providerRoutingSaving || auxiliarySaving || toolGuardrailsSaving || memorySaving || skillsSaving || quickCommandsSaving || providerOverridesSaving || agentToolsetsSaving || platformToolsetsSaving || agentRuntimeSaving || unauthorizedDmSaving || securitySaving || displaySaving || humanDelaySaving || streamingSaving || executionLimitsSaving || ioSafetySaving || checkpointsSaving || cronSaving || loggingSaving || approvalsSaving || privacySaving || browserSaving || sttSaving || terminalSaving
+    return loading || runtimeLoading || compressionLoading || promptCachingLoading || openrouterCacheLoading || providerRoutingLoading || auxiliaryLoading || toolGuardrailsLoading || memoryLoading || skillsLoading || quickCommandsLoading || providerOverridesLoading || mcpServersLoading || agentToolsetsLoading || platformToolsetsLoading || agentRuntimeLoading || unauthorizedDmLoading || securityLoading || displayLoading || humanDelayLoading || streamingLoading || executionLimitsLoading || ioSafetyLoading || checkpointsLoading || cronLoading || loggingLoading || approvalsLoading || privacyLoading || browserLoading || sttLoading || terminalLoading || saving || runtimeSaving || compressionSaving || promptCachingSaving || openrouterCacheSaving || providerRoutingSaving || auxiliarySaving || toolGuardrailsSaving || memorySaving || skillsSaving || quickCommandsSaving || providerOverridesSaving || mcpServersSaving || agentToolsetsSaving || platformToolsetsSaving || agentRuntimeSaving || unauthorizedDmSaving || securitySaving || displaySaving || humanDelaySaving || streamingSaving || executionLimitsSaving || ioSafetySaving || checkpointsSaving || cronSaving || loggingSaving || approvalsSaving || privacySaving || browserSaving || sttSaving || terminalSaving
   }
 
   function option(labelKey, value, selected) {
@@ -858,7 +866,7 @@ export function render() {
   }
 
   function renderQuickCommandsConfigPanel() {
-    const disabled = loading || saving || quickCommandsLoading || quickCommandsSaving || providerOverridesSaving || agentToolsetsSaving || agentRuntimeSaving || runtimeSaving || compressionSaving || promptCachingSaving || openrouterCacheSaving || providerRoutingSaving || auxiliarySaving || toolGuardrailsSaving || memorySaving || skillsSaving || streamingSaving || executionLimitsSaving || checkpointsSaving || cronSaving || loggingSaving || approvalsSaving || terminalSaving
+    const disabled = loading || saving || quickCommandsLoading || quickCommandsSaving || providerOverridesSaving || mcpServersSaving || agentToolsetsSaving || agentRuntimeSaving || runtimeSaving || compressionSaving || promptCachingSaving || openrouterCacheSaving || providerRoutingSaving || auxiliarySaving || toolGuardrailsSaving || memorySaving || skillsSaving || streamingSaving || executionLimitsSaving || checkpointsSaving || cronSaving || loggingSaving || approvalsSaving || terminalSaving
     return `
       <div class="hm-panel hm-config-runtime-panel hm-config-quick-commands-panel">
         <div class="hm-panel-header">
@@ -884,7 +892,7 @@ export function render() {
   }
 
   function renderProviderOverridesConfigPanel() {
-    const disabled = loading || saving || providerOverridesLoading || providerOverridesSaving || quickCommandsSaving || agentToolsetsSaving || agentRuntimeSaving || runtimeSaving || compressionSaving || promptCachingSaving || openrouterCacheSaving || providerRoutingSaving || auxiliarySaving || toolGuardrailsSaving || memorySaving || skillsSaving || streamingSaving || executionLimitsSaving || checkpointsSaving || cronSaving || loggingSaving || approvalsSaving || terminalSaving
+    const disabled = loading || saving || providerOverridesLoading || providerOverridesSaving || quickCommandsSaving || mcpServersSaving || agentToolsetsSaving || agentRuntimeSaving || runtimeSaving || compressionSaving || promptCachingSaving || openrouterCacheSaving || providerRoutingSaving || auxiliarySaving || toolGuardrailsSaving || memorySaving || skillsSaving || streamingSaving || executionLimitsSaving || checkpointsSaving || cronSaving || loggingSaving || approvalsSaving || terminalSaving
     return `
       <div class="hm-panel hm-config-runtime-panel hm-config-provider-overrides-panel">
         <div class="hm-panel-header">
@@ -909,8 +917,34 @@ export function render() {
     `
   }
 
+  function renderMcpServersConfigPanel() {
+    const disabled = loading || saving || mcpServersLoading || mcpServersSaving || quickCommandsSaving || providerOverridesSaving || agentToolsetsSaving || agentRuntimeSaving || runtimeSaving || compressionSaving || promptCachingSaving || openrouterCacheSaving || providerRoutingSaving || auxiliarySaving || toolGuardrailsSaving || memorySaving || skillsSaving || streamingSaving || executionLimitsSaving || checkpointsSaving || cronSaving || loggingSaving || approvalsSaving || terminalSaving
+    return `
+      <div class="hm-panel hm-config-runtime-panel hm-config-mcp-servers-panel">
+        <div class="hm-panel-header">
+          <div>
+            <div class="hm-panel-title">${t('engine.hermesMcpServersConfigTitle')}</div>
+            <div class="hm-channel-panel-desc">${t('engine.hermesMcpServersConfigDesc')}</div>
+          </div>
+          <div class="hm-panel-actions">
+            <span class="hm-muted">${mcpServersSaving ? t('engine.hermesConfigStatusSaving') : mcpServersLoading ? t('engine.hermesConfigStatusLoading') : t('engine.hermesMcpServersConfigStatusReady')}</span>
+            <button class="hm-btn hm-btn--cta hm-btn--sm" id="hm-mcp-servers-save" ${disabled ? 'disabled' : ''}>${t('engine.hermesMcpServersConfigSave')}</button>
+          </div>
+        </div>
+        <div class="hm-panel-body">
+          ${renderError(mcpServersError)}
+          <label class="hm-field hm-field--wide">
+            <span class="hm-field-label">${t('engine.hermesMcpServersConfigJson')}</span>
+            <textarea id="hm-mcp-servers-json" class="hm-input" spellcheck="false" rows="9" ${disabled ? 'disabled' : ''} style="font-family:var(--hm-font-mono);line-height:1.65;min-height:260px">${esc(mcpServersValues.mcpServersJson)}</textarea>
+          </label>
+          <div class="hm-channel-footnote">${t('engine.hermesMcpServersConfigFootnote')}</div>
+        </div>
+      </div>
+    `
+  }
+
   function renderAgentToolsetsConfigPanel() {
-    const disabled = loading || saving || agentToolsetsLoading || agentToolsetsSaving || platformToolsetsSaving || agentRuntimeSaving || runtimeSaving || compressionSaving || promptCachingSaving || openrouterCacheSaving || providerRoutingSaving || auxiliarySaving || toolGuardrailsSaving || memorySaving || skillsSaving || quickCommandsSaving || providerOverridesSaving || unauthorizedDmSaving || streamingSaving || executionLimitsSaving || checkpointsSaving || cronSaving || loggingSaving || approvalsSaving || terminalSaving
+    const disabled = loading || saving || agentToolsetsLoading || agentToolsetsSaving || platformToolsetsSaving || agentRuntimeSaving || runtimeSaving || compressionSaving || promptCachingSaving || openrouterCacheSaving || providerRoutingSaving || auxiliarySaving || toolGuardrailsSaving || memorySaving || skillsSaving || quickCommandsSaving || providerOverridesSaving || mcpServersSaving || unauthorizedDmSaving || streamingSaving || executionLimitsSaving || checkpointsSaving || cronSaving || loggingSaving || approvalsSaving || terminalSaving
     return `
       <div class="hm-panel hm-config-runtime-panel hm-config-agent-toolsets-panel">
         <div class="hm-panel-header">
@@ -936,7 +970,7 @@ export function render() {
   }
 
   function renderPlatformToolsetsConfigPanel() {
-    const disabled = loading || saving || platformToolsetsLoading || platformToolsetsSaving || agentToolsetsSaving || agentRuntimeSaving || runtimeSaving || compressionSaving || promptCachingSaving || openrouterCacheSaving || providerRoutingSaving || auxiliarySaving || toolGuardrailsSaving || memorySaving || skillsSaving || quickCommandsSaving || providerOverridesSaving || unauthorizedDmSaving || streamingSaving || executionLimitsSaving || checkpointsSaving || cronSaving || loggingSaving || approvalsSaving || terminalSaving
+    const disabled = loading || saving || platformToolsetsLoading || platformToolsetsSaving || agentToolsetsSaving || agentRuntimeSaving || runtimeSaving || compressionSaving || promptCachingSaving || openrouterCacheSaving || providerRoutingSaving || auxiliarySaving || toolGuardrailsSaving || memorySaving || skillsSaving || quickCommandsSaving || providerOverridesSaving || mcpServersSaving || unauthorizedDmSaving || streamingSaving || executionLimitsSaving || checkpointsSaving || cronSaving || loggingSaving || approvalsSaving || terminalSaving
     return `
       <div class="hm-panel hm-config-runtime-panel hm-config-platform-toolsets-panel">
         <div class="hm-panel-header">
@@ -1822,6 +1856,7 @@ export function render() {
       ${renderSkillsConfigPanel()}
       ${renderQuickCommandsConfigPanel()}
       ${renderProviderOverridesConfigPanel()}
+      ${renderMcpServersConfigPanel()}
       ${renderAgentToolsetsConfigPanel()}
       ${renderPlatformToolsetsConfigPanel()}
       ${renderAgentRuntimeConfigPanel()}
@@ -1859,6 +1894,7 @@ export function render() {
     el.querySelector('#hm-skills-config-save')?.addEventListener('click', saveSkillsConfig)
     el.querySelector('#hm-quick-commands-save')?.addEventListener('click', saveQuickCommandsConfig)
     el.querySelector('#hm-provider-overrides-save')?.addEventListener('click', saveProviderOverridesConfig)
+    el.querySelector('#hm-mcp-servers-save')?.addEventListener('click', saveMcpServersConfig)
     el.querySelector('#hm-agent-toolsets-save')?.addEventListener('click', saveAgentToolsetsConfig)
     el.querySelector('#hm-platform-toolsets-save')?.addEventListener('click', savePlatformToolsetsConfig)
     el.querySelector('#hm-agent-runtime-save')?.addEventListener('click', saveAgentRuntimeConfig)
@@ -1937,6 +1973,11 @@ export function render() {
   async function loadProviderOverridesConfig() {
     const data = await api.hermesProviderOverridesConfigRead()
     providerOverridesValues = { ...PROVIDER_OVERRIDES_DEFAULTS, ...(data?.values || {}) }
+  }
+
+  async function loadMcpServersConfig() {
+    const data = await api.hermesMcpServersConfigRead()
+    mcpServersValues = { ...MCP_SERVERS_DEFAULTS, ...(data?.values || {}) }
   }
 
   async function loadAgentToolsetsConfig() {
@@ -2042,6 +2083,7 @@ export function render() {
     skillsLoading = true
     quickCommandsLoading = true
     providerOverridesLoading = true
+    mcpServersLoading = true
     agentToolsetsLoading = true
     platformToolsetsLoading = true
     agentRuntimeLoading = true
@@ -2072,6 +2114,7 @@ export function render() {
     skillsError = null
     quickCommandsError = null
     providerOverridesError = null
+    mcpServersError = null
     agentToolsetsError = null
     platformToolsetsError = null
     agentRuntimeError = null
@@ -2275,6 +2318,14 @@ export function render() {
       draw()
     }
     try {
+      await loadMcpServersConfig()
+    } catch (err) {
+      mcpServersError = humanizeError(err, t('engine.hermesMcpServersConfigLoadFailed') || 'Load MCP servers config failed')
+    } finally {
+      mcpServersLoading = false
+      draw()
+    }
+    try {
       await loadAgentToolsetsConfig()
     } catch (err) {
       agentToolsetsError = humanizeError(err, t('engine.hermesAgentToolsetsConfigLoadFailed') || 'Load agent toolsets config failed')
@@ -2383,6 +2434,9 @@ export function render() {
       } catch {}
       try {
         await loadProviderOverridesConfig()
+      } catch {}
+      try {
+        await loadMcpServersConfig()
       } catch {}
       try {
         await loadAgentToolsetsConfig()
@@ -2752,6 +2806,31 @@ export function render() {
       toast(providerOverridesError, 'error')
     } finally {
       providerOverridesSaving = false
+      draw()
+    }
+  }
+
+  async function saveMcpServersConfig() {
+    const form = {
+      mcpServersJson: el.querySelector('#hm-mcp-servers-json')?.value || '{}',
+    }
+    mcpServersSaving = true
+    mcpServersError = null
+    draw()
+    try {
+      const result = await api.hermesMcpServersConfigSave(form)
+      mcpServersValues = { ...MCP_SERVERS_DEFAULTS, ...(result?.values || form) }
+      await refreshRawAfterStructuredSave()
+      const backup = result?.backup || ''
+      toast({
+        message: t('engine.hermesMcpServersConfigSaveSuccess'),
+        hint: backup ? t('engine.hermesConfigBackupHint', { path: backup }) : '',
+      }, 'success')
+    } catch (err) {
+      mcpServersError = humanizeError(err, t('engine.hermesMcpServersConfigSaveFailed') || 'Save MCP servers config failed')
+      toast(mcpServersError, 'error')
+    } finally {
+      mcpServersSaving = false
       draw()
     }
   }

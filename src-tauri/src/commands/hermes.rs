@@ -4407,6 +4407,201 @@ fn merge_hermes_quick_commands_config(
     Ok(())
 }
 
+fn is_hermes_mcp_server_name(value: &str) -> bool {
+    let value = value.trim();
+    !value.is_empty()
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.' | '-'))
+}
+
+fn normalize_hermes_json_string_array(value: &Value, key: &str) -> Result<Vec<Value>, String> {
+    let Some(items) = value.as_array() else {
+        return Err(format!("{key} 必须是字符串数组"));
+    };
+    let mut normalized = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        let Some(text) = item.as_str() else {
+            return Err(format!("{key}.{index} 必须是字符串"));
+        };
+        normalized.push(Value::String(text.to_string()));
+    }
+    Ok(normalized)
+}
+
+fn normalize_hermes_json_string_map(
+    value: &Value,
+    key: &str,
+) -> Result<serde_json::Map<String, Value>, String> {
+    let Some(items) = value.as_object() else {
+        return Err(format!("{key} 必须是 JSON 对象"));
+    };
+    let mut normalized = serde_json::Map::new();
+    for (raw_key, raw_value) in items {
+        let item_key = raw_key.trim();
+        if item_key.is_empty() {
+            return Err(format!("{key} 键名不能为空"));
+        }
+        let Some(text) = raw_value.as_str() else {
+            return Err(format!("{key}.{item_key} 必须是字符串"));
+        };
+        normalized.insert(item_key.to_string(), Value::String(text.to_string()));
+    }
+    Ok(normalized)
+}
+
+fn normalize_hermes_mcp_timeout(
+    entry: &mut serde_json::Map<String, Value>,
+    field: &str,
+    key: &str,
+) -> Result<(), String> {
+    if !entry.contains_key(field)
+        || entry.get(field).is_some_and(|value| {
+            value.is_null() || value.as_str().is_some_and(|text| text.trim().is_empty())
+        })
+    {
+        entry.remove(field);
+        return Ok(());
+    }
+    let value = entry.get(field).cloned().unwrap_or(Value::Null);
+    let parsed = if let Some(value) = value.as_i64() {
+        Some(value)
+    } else if let Some(value) = value.as_u64() {
+        i64::try_from(value).ok()
+    } else if let Some(value) = value.as_str() {
+        value.trim().parse::<i64>().ok()
+    } else {
+        None
+    };
+    let parsed = parsed.ok_or_else(|| format!("{key} 必须是整数"))?;
+    let parsed = validate_hermes_i64(Some(parsed), key, 120, 1, 86400)?;
+    entry.insert(field.to_string(), Value::Number(parsed.into()));
+    Ok(())
+}
+
+fn validate_hermes_mcp_servers(value: &Value) -> Result<serde_json::Map<String, Value>, String> {
+    let Some(map) = value.as_object() else {
+        return Err("mcp_servers 必须是 JSON 对象".to_string());
+    };
+    let mut normalized = serde_json::Map::new();
+    for (raw_name, raw_config) in map {
+        let name = raw_name.trim();
+        if !is_hermes_mcp_server_name(name) {
+            return Err(format!(
+                "mcp_servers.{} 服务名只能包含字母、数字、下划线、点和短横线",
+                if name.is_empty() { "<empty>" } else { raw_name }
+            ));
+        }
+        let Some(config) = raw_config.as_object() else {
+            return Err(format!("mcp_servers.{name} 必须是 JSON 对象"));
+        };
+        let mut entry = config.clone();
+        let command = entry
+            .get("command")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        let url = entry
+            .get("url")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        let command_is_empty = command.is_empty();
+        let url_is_empty = url.is_empty();
+        if entry.contains_key("command") {
+            if command_is_empty {
+                return Err(format!("mcp_servers.{name}.command 不能为空"));
+            }
+            entry.insert("command".to_string(), Value::String(command));
+        }
+        if entry.contains_key("url") {
+            if !(url.starts_with("http://") || url.starts_with("https://")) {
+                return Err(format!(
+                    "mcp_servers.{name}.url 必须以 http:// 或 https:// 开头"
+                ));
+            }
+            entry.insert("url".to_string(), Value::String(url));
+        }
+        if command_is_empty && url_is_empty {
+            return Err(format!("mcp_servers.{name} 需要 command 或 url"));
+        }
+        if let Some(args) = entry.get("args") {
+            let args =
+                normalize_hermes_json_string_array(args, &format!("mcp_servers.{name}.args"))?;
+            entry.insert("args".to_string(), Value::Array(args));
+        }
+        if let Some(env) = entry.get("env") {
+            let env = normalize_hermes_json_string_map(env, &format!("mcp_servers.{name}.env"))?;
+            entry.insert("env".to_string(), Value::Object(env));
+        }
+        if let Some(headers) = entry.get("headers") {
+            let headers =
+                normalize_hermes_json_string_map(headers, &format!("mcp_servers.{name}.headers"))?;
+            entry.insert("headers".to_string(), Value::Object(headers));
+        }
+        normalize_hermes_mcp_timeout(
+            &mut entry,
+            "timeout",
+            &format!("mcp_servers.{name}.timeout"),
+        )?;
+        normalize_hermes_mcp_timeout(
+            &mut entry,
+            "connect_timeout",
+            &format!("mcp_servers.{name}.connect_timeout"),
+        )?;
+        normalized.insert(name.to_string(), Value::Object(entry));
+    }
+    Ok(normalized)
+}
+
+fn parse_hermes_mcp_servers_json(
+    raw: Option<String>,
+) -> Result<serde_json::Map<String, Value>, String> {
+    let text = raw.unwrap_or_default().trim().to_string();
+    if text.is_empty() {
+        return Ok(serde_json::Map::new());
+    }
+    let value: Value =
+        serde_json::from_str(&text).map_err(|err| format!("mcp_servers JSON 格式错误: {err}"))?;
+    validate_hermes_mcp_servers(&value)
+}
+
+fn build_hermes_mcp_servers_config_values(config: &serde_yaml::Value) -> Value {
+    let root = config.as_mapping();
+    let mcp_servers = root
+        .and_then(|map| map.get(yaml_key("mcp_servers")))
+        .and_then(|value| serde_json::to_value(value).ok())
+        .and_then(|value| validate_hermes_mcp_servers(&value).ok())
+        .unwrap_or_default();
+
+    serde_json::json!({
+        "mcpServersJson": serde_json::to_string_pretty(&Value::Object(mcp_servers)).unwrap_or_else(|_| "{}".to_string()),
+    })
+}
+
+fn merge_hermes_mcp_servers_config(
+    config: &mut serde_yaml::Value,
+    form: &Value,
+) -> Result<(), String> {
+    let current = build_hermes_mcp_servers_config_values(config);
+    let mcp_servers = parse_hermes_mcp_servers_json(
+        form_string(form, "mcpServersJson")
+            .or_else(|| current["mcpServersJson"].as_str().map(ToString::to_string)),
+    )?;
+
+    let root = ensure_yaml_object(config)?;
+    if mcp_servers.is_empty() {
+        root.remove(yaml_key("mcp_servers"));
+    } else {
+        let yaml_value = serde_yaml::to_value(Value::Object(mcp_servers))
+            .map_err(|err| format!("mcp_servers 转换 YAML 失败: {err}"))?;
+        root.insert(yaml_key("mcp_servers"), yaml_value);
+    }
+    Ok(())
+}
+
 fn is_hermes_provider_override_name(value: &str) -> bool {
     let value = value.trim();
     !value.is_empty()
@@ -8093,6 +8288,30 @@ pub fn hermes_provider_overrides_config_save(form: Value) -> Result<Value, Strin
         "configPath": config_path.to_string_lossy(),
         "backup": backup,
         "values": build_hermes_provider_overrides_config_values(&config),
+    }))
+}
+
+#[tauri::command]
+pub fn hermes_mcp_servers_config_read() -> Result<Value, String> {
+    let (config_path, exists, config) = read_hermes_channel_yaml_config()?;
+    ensure_yaml_object(&mut config.clone())?;
+    Ok(serde_json::json!({
+        "exists": exists,
+        "configPath": config_path.to_string_lossy(),
+        "values": build_hermes_mcp_servers_config_values(&config),
+    }))
+}
+
+#[tauri::command]
+pub fn hermes_mcp_servers_config_save(form: Value) -> Result<Value, String> {
+    let (config_path, _exists, mut config) = read_hermes_channel_yaml_config()?;
+    merge_hermes_mcp_servers_config(&mut config, &form)?;
+    let backup = write_hermes_yaml_config(&config_path, &config)?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "configPath": config_path.to_string_lossy(),
+        "backup": backup,
+        "values": build_hermes_mcp_servers_config_values(&config),
     }))
 }
 
@@ -15811,6 +16030,185 @@ streaming:
         )
         .unwrap_err();
         assert!(err.contains("quick_commands.restart.target"));
+    }
+}
+
+#[cfg(test)]
+mod hermes_mcp_servers_config_tests {
+    use super::{build_hermes_mcp_servers_config_values, merge_hermes_mcp_servers_config};
+    use serde_json::json;
+
+    #[test]
+    fn mcp_servers_values_have_empty_defaults() {
+        let config = serde_yaml::Value::Mapping(Default::default());
+        let values = build_hermes_mcp_servers_config_values(&config);
+
+        assert_eq!(values["mcpServersJson"], "{}");
+    }
+
+    #[test]
+    fn mcp_servers_values_read_yaml_mapping() {
+        let config: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+mcp_servers:
+  time:
+    command: uvx
+    args:
+      - mcp-server-time
+  notion:
+    url: https://mcp.notion.com/mcp
+    connect_timeout: 30
+"#,
+        )
+        .unwrap();
+
+        let values = build_hermes_mcp_servers_config_values(&config);
+        let mapping: serde_json::Value =
+            serde_json::from_str(values["mcpServersJson"].as_str().unwrap()).unwrap();
+
+        assert_eq!(mapping["time"]["command"], "uvx");
+        assert_eq!(mapping["time"]["args"][0], "mcp-server-time");
+        assert_eq!(mapping["notion"]["url"], "https://mcp.notion.com/mcp");
+        assert_eq!(mapping["notion"]["connect_timeout"], 30);
+    }
+
+    #[test]
+    fn merge_mcp_servers_config_preserves_unknown_fields_and_unrelated_yaml() {
+        let mut config: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+model:
+  provider: openrouter
+mcp_servers:
+  time:
+    command: uvx
+    args:
+      - old-server
+    sampling:
+      enabled: true
+      model: gemini-3-flash
+memory:
+  memory_enabled: true
+"#,
+        )
+        .unwrap();
+
+        merge_hermes_mcp_servers_config(
+            &mut config,
+            &json!({
+                "mcpServersJson": serde_json::to_string(&json!({
+                    "time": {
+                        "command": "uvx",
+                        "args": ["mcp-server-time"],
+                        "timeout": 120,
+                        "sampling": {
+                            "enabled": true,
+                            "model": "gemini-3-flash"
+                        }
+                    },
+                    "notion": {
+                        "url": "https://mcp.notion.com/mcp",
+                        "headers": {
+                            "Authorization": "Bearer token"
+                        },
+                        "connect_timeout": 30
+                    }
+                })).unwrap(),
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(config["model"]["provider"].as_str(), Some("openrouter"));
+        assert_eq!(config["memory"]["memory_enabled"].as_bool(), Some(true));
+        assert_eq!(
+            config["mcp_servers"]["time"]["command"].as_str(),
+            Some("uvx")
+        );
+        assert_eq!(
+            config["mcp_servers"]["time"]["args"][0].as_str(),
+            Some("mcp-server-time")
+        );
+        assert_eq!(config["mcp_servers"]["time"]["timeout"].as_i64(), Some(120));
+        assert_eq!(
+            config["mcp_servers"]["time"]["sampling"]["model"].as_str(),
+            Some("gemini-3-flash")
+        );
+        assert_eq!(
+            config["mcp_servers"]["notion"]["headers"]["Authorization"].as_str(),
+            Some("Bearer token")
+        );
+        assert_eq!(
+            config["mcp_servers"]["notion"]["connect_timeout"].as_i64(),
+            Some(30)
+        );
+    }
+
+    #[test]
+    fn merge_mcp_servers_config_removes_empty_mapping() {
+        let mut config: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+mcp_servers:
+  time:
+    command: uvx
+streaming:
+  enabled: true
+"#,
+        )
+        .unwrap();
+
+        merge_hermes_mcp_servers_config(&mut config, &json!({ "mcpServersJson": "{}" })).unwrap();
+
+        assert!(config["mcp_servers"].is_null());
+        assert_eq!(config["streaming"]["enabled"].as_bool(), Some(true));
+    }
+
+    #[test]
+    fn merge_mcp_servers_config_rejects_invalid_values() {
+        let mut config = serde_yaml::Value::Mapping(Default::default());
+        let err = merge_hermes_mcp_servers_config(&mut config, &json!({ "mcpServersJson": "[" }))
+            .unwrap_err();
+        assert!(err.contains("mcp_servers JSON"));
+
+        let err = merge_hermes_mcp_servers_config(
+            &mut config,
+            &json!({ "mcpServersJson": serde_json::to_string(&json!({ "bad server": { "command": "uvx" } })).unwrap() }),
+        )
+        .unwrap_err();
+        assert!(err.contains("mcp_servers.bad server"));
+
+        let err = merge_hermes_mcp_servers_config(
+            &mut config,
+            &json!({ "mcpServersJson": serde_json::to_string(&json!({ "time": "uvx" })).unwrap() }),
+        )
+        .unwrap_err();
+        assert!(err.contains("mcp_servers.time"));
+
+        let err = merge_hermes_mcp_servers_config(
+            &mut config,
+            &json!({ "mcpServersJson": serde_json::to_string(&json!({ "time": { "command": "" } })).unwrap() }),
+        )
+        .unwrap_err();
+        assert!(err.contains("mcp_servers.time.command"));
+
+        let err = merge_hermes_mcp_servers_config(
+            &mut config,
+            &json!({ "mcpServersJson": serde_json::to_string(&json!({ "notion": { "url": "ftp://example.com/mcp" } })).unwrap() }),
+        )
+        .unwrap_err();
+        assert!(err.contains("mcp_servers.notion.url"));
+
+        let err = merge_hermes_mcp_servers_config(
+            &mut config,
+            &json!({ "mcpServersJson": serde_json::to_string(&json!({ "time": { "command": "uvx", "args": "mcp-server-time" } })).unwrap() }),
+        )
+        .unwrap_err();
+        assert!(err.contains("mcp_servers.time.args"));
+
+        let err = merge_hermes_mcp_servers_config(
+            &mut config,
+            &json!({ "mcpServersJson": serde_json::to_string(&json!({ "time": { "command": "uvx", "timeout": 0 } })).unwrap() }),
+        )
+        .unwrap_err();
+        assert!(err.contains("mcp_servers.time.timeout"));
     }
 }
 
