@@ -369,6 +369,9 @@ const TERMINAL_DEFAULTS = {
   terminalDockerMountCwdToWorkspace: false,
   terminalDockerRunAsHostUser: false,
   terminalDockerImage: '',
+  terminalDockerEnvJson: '{}',
+  terminalDockerVolumes: '',
+  terminalDockerExtraArgs: '',
   terminalSingularityImage: '',
   terminalModalImage: '',
   terminalModalMode: 'auto',
@@ -2761,6 +2764,18 @@ export function render() {
               <span class="hm-field-label">${t('engine.hermesTerminalConfigDockerForwardEnv')}</span>
               <textarea id="hm-terminal-docker-forward-env" class="hm-input hm-textarea" rows="3" placeholder="GITHUB_TOKEN&#10;NPM_TOKEN" ${disabled ? 'disabled' : ''}>${esc(terminalValues.terminalDockerForwardEnv)}</textarea>
             </label>
+            <label class="hm-field hm-field--wide">
+              <span class="hm-field-label">${t('engine.hermesTerminalConfigDockerEnvJson')}</span>
+              <textarea id="hm-terminal-docker-env-json" class="hm-input hm-textarea" rows="4" placeholder="{&#10;  &quot;PLAYWRIGHT_BROWSERS_PATH&quot;: &quot;/ms-playwright&quot;&#10;}" ${disabled ? 'disabled' : ''}>${esc(terminalValues.terminalDockerEnvJson)}</textarea>
+            </label>
+            <label class="hm-field hm-field--wide">
+              <span class="hm-field-label">${t('engine.hermesTerminalConfigDockerVolumes')}</span>
+              <textarea id="hm-terminal-docker-volumes" class="hm-input hm-textarea" rows="3" placeholder="/data/projects:/workspace/projects&#10;/data/cache:/cache" ${disabled ? 'disabled' : ''}>${esc(terminalValues.terminalDockerVolumes)}</textarea>
+            </label>
+            <label class="hm-field hm-field--wide">
+              <span class="hm-field-label">${t('engine.hermesTerminalConfigDockerExtraArgs')}</span>
+              <textarea id="hm-terminal-docker-extra-args" class="hm-input hm-textarea" rows="3" placeholder="--network=host&#10;--add-host=host.docker.internal:host-gateway" ${disabled ? 'disabled' : ''}>${esc(terminalValues.terminalDockerExtraArgs)}</textarea>
+            </label>
             <label class="hm-field">
               <span class="hm-field-label">${t('engine.hermesTerminalConfigSingularityImage')}</span>
               <input id="hm-terminal-singularity-image" class="hm-input" value="${esc(terminalValues.terminalSingularityImage)}" placeholder="docker://nikolaik/python-nodejs:python3.11-nodejs20" ${disabled ? 'disabled' : ''}>
@@ -4964,10 +4979,13 @@ export function render() {
       terminalPersistentShell: !!el.querySelector('#hm-terminal-persistent-shell')?.checked,
       terminalEnvPassthrough: el.querySelector('#hm-terminal-env-passthrough')?.value || '',
       terminalDockerMountCwdToWorkspace: !!el.querySelector('#hm-terminal-docker-mount-cwd-to-workspace')?.checked,
-      terminalDockerRunAsHostUser: !!el.querySelector('#hm-terminal-docker-run-as-host-user')?.checked,
-      terminalDockerImage: el.querySelector('#hm-terminal-docker-image')?.value || '',
-      terminalDockerForwardEnv: el.querySelector('#hm-terminal-docker-forward-env')?.value || '',
-      terminalSingularityImage: el.querySelector('#hm-terminal-singularity-image')?.value || '',
+        terminalDockerRunAsHostUser: !!el.querySelector('#hm-terminal-docker-run-as-host-user')?.checked,
+        terminalDockerImage: el.querySelector('#hm-terminal-docker-image')?.value || '',
+        terminalDockerForwardEnv: el.querySelector('#hm-terminal-docker-forward-env')?.value || '',
+        terminalDockerEnvJson: el.querySelector('#hm-terminal-docker-env-json')?.value || '{}',
+        terminalDockerVolumes: el.querySelector('#hm-terminal-docker-volumes')?.value || '',
+        terminalDockerExtraArgs: el.querySelector('#hm-terminal-docker-extra-args')?.value || '',
+        terminalSingularityImage: el.querySelector('#hm-terminal-singularity-image')?.value || '',
       terminalModalImage: el.querySelector('#hm-terminal-modal-image')?.value || '',
       terminalModalMode: el.querySelector('#hm-terminal-modal-mode')?.value || 'auto',
       terminalVercelRuntime: el.querySelector('#hm-terminal-vercel-runtime')?.value || 'node24',

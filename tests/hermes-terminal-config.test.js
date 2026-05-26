@@ -31,6 +31,9 @@ test('Hermes 终端执行配置读取会提供上游默认值', () => {
     terminalVercelRuntime: 'node24',
     terminalDaytonaImage: '',
     terminalDockerForwardEnv: '',
+    terminalDockerEnvJson: '{}',
+    terminalDockerVolumes: '',
+    terminalDockerExtraArgs: '',
     terminalSshHost: '',
     terminalSshUser: '',
     terminalSshPort: 22,
@@ -53,6 +56,12 @@ test('Hermes 终端执行配置读取会回显 YAML 字段', () => {
       docker_run_as_host_user: true,
       docker_image: 'nikolaik/python-nodejs:python3.11-nodejs20',
       docker_forward_env: ['GITHUB_TOKEN', 'NPM_TOKEN'],
+      docker_env: {
+        PLAYWRIGHT_BROWSERS_PATH: '/ms-playwright',
+        PIP_CACHE_DIR: '/workspace/.cache/pip',
+      },
+      docker_volumes: ['/data/projects:/workspace/projects', '/data/cache:/cache'],
+      docker_extra_args: ['--network=host', '--add-host=host.docker.internal:host-gateway'],
       singularity_image: 'docker://nikolaik/python-nodejs:python3.11-nodejs20',
       modal_image: 'python:3.12',
       modal_mode: 'managed',
@@ -81,6 +90,9 @@ test('Hermes 终端执行配置读取会回显 YAML 字段', () => {
   assert.equal(values.terminalDockerRunAsHostUser, true)
   assert.equal(values.terminalDockerImage, 'nikolaik/python-nodejs:python3.11-nodejs20')
   assert.equal(values.terminalDockerForwardEnv, 'GITHUB_TOKEN\nNPM_TOKEN')
+  assert.equal(values.terminalDockerEnvJson, '{\n  "PLAYWRIGHT_BROWSERS_PATH": "/ms-playwright",\n  "PIP_CACHE_DIR": "/workspace/.cache/pip"\n}')
+  assert.equal(values.terminalDockerVolumes, '/data/projects:/workspace/projects\n/data/cache:/cache')
+  assert.equal(values.terminalDockerExtraArgs, '--network=host\n--add-host=host.docker.internal:host-gateway')
   assert.equal(values.terminalSingularityImage, 'docker://nikolaik/python-nodejs:python3.11-nodejs20')
   assert.equal(values.terminalModalImage, 'python:3.12')
   assert.equal(values.terminalModalMode, 'managed')
@@ -105,6 +117,9 @@ test('Hermes 终端执行配置保存会保留未知字段并写入上游结构'
       env_passthrough: ['OLD_TOKEN'],
       docker_image: 'custom/python-node',
       docker_forward_env: ['OLD_TOKEN'],
+      docker_env: { OLD_FLAG: 'keep-old' },
+      docker_volumes: ['/old:/old'],
+      docker_extra_args: ['--old'],
       custom_flag: 'keep-terminal',
     },
     streaming: { enabled: true },
@@ -121,6 +136,9 @@ test('Hermes 终端执行配置保存会保留未知字段并写入上游结构'
     terminalDockerRunAsHostUser: true,
     terminalDockerImage: 'nikolaik/python-nodejs:python3.12-nodejs22',
     terminalDockerForwardEnv: 'GITHUB_TOKEN\nNPM_TOKEN\nGITHUB_TOKEN',
+    terminalDockerEnvJson: '{ "PLAYWRIGHT_BROWSERS_PATH": "/ms-playwright", "PIP_CACHE_DIR": "/workspace/.cache/pip" }',
+    terminalDockerVolumes: '/data/projects:/workspace/projects\n/data/cache:/cache\n/data/projects:/workspace/projects',
+    terminalDockerExtraArgs: '--network=host\n--add-host=host.docker.internal:host-gateway\n--network=host',
     terminalSingularityImage: 'docker://ubuntu:24.04',
     terminalModalImage: 'debian:bookworm',
     terminalModalMode: 'direct',
@@ -163,6 +181,32 @@ test('Hermes 终端执行配置保存会保留未知字段并写入上游结构'
   assert.equal(next.terminal.container_disk, 20480)
   assert.equal(next.terminal.container_persistent, false)
   assert.deepEqual(next.terminal.docker_forward_env, ['GITHUB_TOKEN', 'NPM_TOKEN'])
+  assert.deepEqual(next.terminal.docker_env, {
+    PLAYWRIGHT_BROWSERS_PATH: '/ms-playwright',
+    PIP_CACHE_DIR: '/workspace/.cache/pip',
+  })
+  assert.deepEqual(next.terminal.docker_volumes, ['/data/projects:/workspace/projects', '/data/cache:/cache'])
+  assert.deepEqual(next.terminal.docker_extra_args, ['--network=host', '--add-host=host.docker.internal:host-gateway'])
+  assert.equal(next.terminal.custom_flag, 'keep-terminal')
+})
+
+test('Hermes 终端执行配置保存空 Docker 高级字段会删除对应字段', () => {
+  const next = mergeHermesTerminalConfig({
+    terminal: {
+      docker_env: { OLD_FLAG: '1' },
+      docker_volumes: ['/old:/old'],
+      docker_extra_args: ['--old'],
+      custom_flag: 'keep-terminal',
+    },
+  }, {
+    terminalDockerEnvJson: '{}',
+    terminalDockerVolumes: '  \n',
+    terminalDockerExtraArgs: '  \n',
+  })
+
+  assert.equal(Object.hasOwn(next.terminal, 'docker_env'), false)
+  assert.equal(Object.hasOwn(next.terminal, 'docker_volumes'), false)
+  assert.equal(Object.hasOwn(next.terminal, 'docker_extra_args'), false)
   assert.equal(next.terminal.custom_flag, 'keep-terminal')
 })
 
@@ -302,5 +346,21 @@ test('Hermes 终端执行配置保存会拒绝非法后端和越界值', () => {
   assert.throws(
     () => mergeHermesTerminalConfig({}, { terminalEnvPassthrough: 'GOOD_TOKEN\nBAD TOKEN' }),
     /terminal\.env_passthrough/,
+  )
+  assert.throws(
+    () => mergeHermesTerminalConfig({}, { terminalDockerEnvJson: '[]' }),
+    /terminal\.docker_env/,
+  )
+  assert.throws(
+    () => mergeHermesTerminalConfig({}, { terminalDockerEnvJson: '{ "BAD KEY": "value" }' }),
+    /terminal\.docker_env/,
+  )
+  assert.throws(
+    () => mergeHermesTerminalConfig({}, { terminalDockerVolumes: '/host only' }),
+    /terminal\.docker_volumes/,
+  )
+  assert.throws(
+    () => mergeHermesTerminalConfig({}, { terminalDockerExtraArgs: 'bad arg' }),
+    /terminal\.docker_extra_args/,
   )
 })

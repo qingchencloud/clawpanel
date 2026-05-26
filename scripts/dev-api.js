@@ -3695,6 +3695,63 @@ function normalizeHermesShellInitFileList(value, key) {
   return normalized
 }
 
+function normalizeHermesDockerEnvJson(value, key) {
+  let object = value
+  if (typeof value === 'string') {
+    const text = value.trim()
+    object = text ? JSON.parse(text) : {}
+  }
+  if (!object || typeof object !== 'object' || Array.isArray(object)) {
+    throw new Error(`${key} 必须是 JSON object，例如 {"PLAYWRIGHT_BROWSERS_PATH":"/ms-playwright"}`)
+  }
+  const normalized = {}
+  for (const [name, rawValue] of Object.entries(object)) {
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+      throw new Error(`${key} 只能使用合法环境变量名作为 key`)
+    }
+    if (rawValue === null || (typeof rawValue === 'object' && !Array.isArray(rawValue))) {
+      throw new Error(`${key}.${name} 只能是字符串、数字或布尔值`)
+    }
+    if (Array.isArray(rawValue)) {
+      throw new Error(`${key}.${name} 不能是数组`)
+    }
+    normalized[name] = String(rawValue)
+  }
+  return normalized
+}
+
+function normalizeHermesDockerVolumeList(value, key) {
+  const seen = new Set()
+  const normalized = []
+  for (const item of normalizeHermesMultilineList(value)) {
+    const volume = String(item ?? '').trim()
+    if (!volume.includes(':') || /[\u0000-\u001f\u007f\s]/.test(volume)) {
+      throw new Error(`${key} 每行一个 Docker volume 映射，例如 /host/path:/container/path`)
+    }
+    if (!seen.has(volume)) {
+      seen.add(volume)
+      normalized.push(volume)
+    }
+  }
+  return normalized
+}
+
+function normalizeHermesDockerExtraArgsList(value, key) {
+  const seen = new Set()
+  const normalized = []
+  for (const item of normalizeHermesMultilineList(value)) {
+    const arg = String(item ?? '').trim()
+    if (!arg.startsWith('-') || /[\u0000-\u001f\u007f\s]/.test(arg)) {
+      throw new Error(`${key} 每行一个 Docker 参数，必须以 - 开头，例如 --network=host`)
+    }
+    if (!seen.has(arg)) {
+      seen.add(arg)
+      normalized.push(arg)
+    }
+  }
+  return normalized
+}
+
 function normalizeHermesAuxiliaryProvider(value, key, strict = false) {
   const provider = String(value ?? '').trim().toLowerCase() || 'auto'
   if (HERMES_AUXILIARY_PROVIDERS.has(provider)) return provider
@@ -5897,6 +5954,9 @@ export function buildHermesTerminalConfigValues(config = {}) {
     terminalDockerMountCwdToWorkspace: readHermesBool(terminal.docker_mount_cwd_to_workspace, false),
     terminalDockerRunAsHostUser: readHermesBool(terminal.docker_run_as_host_user, false),
     terminalDockerImage: typeof terminal.docker_image === 'string' ? terminal.docker_image.trim() : '',
+    terminalDockerEnvJson: JSON.stringify(normalizeHermesDockerEnvJson(terminal.docker_env || {}, 'terminal.docker_env'), null, 2),
+    terminalDockerVolumes: normalizeHermesDockerVolumeList(terminal.docker_volumes || [], 'terminal.docker_volumes').join('\n'),
+    terminalDockerExtraArgs: normalizeHermesDockerExtraArgsList(terminal.docker_extra_args || [], 'terminal.docker_extra_args').join('\n'),
     terminalSingularityImage: typeof terminal.singularity_image === 'string' ? terminal.singularity_image.trim() : '',
     terminalModalImage: typeof terminal.modal_image === 'string' ? terminal.modal_image.trim() : '',
     terminalModalMode: normalizeHermesTerminalModalMode(terminal.modal_mode, false),
@@ -5949,6 +6009,15 @@ export function mergeHermesTerminalConfig(config = {}, form = {}) {
   const dockerForwardEnv = normalizeHermesEnvNameList(Object.hasOwn(form, 'terminalDockerForwardEnv') ? form.terminalDockerForwardEnv : currentValues.terminalDockerForwardEnv, 'terminal.docker_forward_env')
   if (dockerForwardEnv.length) terminal.docker_forward_env = dockerForwardEnv
   else delete terminal.docker_forward_env
+  const dockerEnv = normalizeHermesDockerEnvJson(Object.hasOwn(form, 'terminalDockerEnvJson') ? form.terminalDockerEnvJson : currentValues.terminalDockerEnvJson, 'terminal.docker_env')
+  if (Object.keys(dockerEnv).length) terminal.docker_env = dockerEnv
+  else delete terminal.docker_env
+  const dockerVolumes = normalizeHermesDockerVolumeList(Object.hasOwn(form, 'terminalDockerVolumes') ? form.terminalDockerVolumes : currentValues.terminalDockerVolumes, 'terminal.docker_volumes')
+  if (dockerVolumes.length) terminal.docker_volumes = dockerVolumes
+  else delete terminal.docker_volumes
+  const dockerExtraArgs = normalizeHermesDockerExtraArgsList(Object.hasOwn(form, 'terminalDockerExtraArgs') ? form.terminalDockerExtraArgs : currentValues.terminalDockerExtraArgs, 'terminal.docker_extra_args')
+  if (dockerExtraArgs.length) terminal.docker_extra_args = dockerExtraArgs
+  else delete terminal.docker_extra_args
   for (const [formKey, yamlKey] of [
     ['terminalSshHost', 'ssh_host'],
     ['terminalSshUser', 'ssh_user'],

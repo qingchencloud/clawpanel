@@ -2437,6 +2437,97 @@ fn normalize_hermes_shell_init_file_list(
     Ok(values)
 }
 
+fn validate_hermes_env_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    let valid_first = chars
+        .next()
+        .map(|ch| ch.is_ascii_alphabetic() || ch == '_')
+        .unwrap_or(false);
+    valid_first && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+}
+
+fn normalize_hermes_docker_env_json(
+    raw: Option<String>,
+    key: &str,
+) -> Result<serde_json::Map<String, Value>, String> {
+    let text = raw.unwrap_or_default().trim().to_string();
+    if text.is_empty() {
+        return Ok(serde_json::Map::new());
+    }
+    let value: Value =
+        serde_json::from_str(&text).map_err(|err| format!("{key} JSON 格式错误: {err}"))?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| format!("{key} 必须是 JSON object"))?;
+    let mut normalized = serde_json::Map::new();
+    for (name, raw_value) in object {
+        if !validate_hermes_env_name(name) {
+            return Err(format!("{key} 只能使用合法环境变量名作为 key"));
+        }
+        let value = if let Some(value) = raw_value.as_str() {
+            value.to_string()
+        } else if let Some(value) = raw_value.as_i64() {
+            value.to_string()
+        } else if let Some(value) = raw_value.as_u64() {
+            value.to_string()
+        } else if let Some(value) = raw_value.as_f64() {
+            if value.is_finite() {
+                value.to_string()
+            } else {
+                return Err(format!("{key}.{name} 只能是字符串、数字或布尔值"));
+            }
+        } else if let Some(value) = raw_value.as_bool() {
+            value.to_string()
+        } else {
+            return Err(format!("{key}.{name} 只能是字符串、数字或布尔值"));
+        };
+        normalized.insert(name.to_string(), Value::String(value));
+    }
+    Ok(normalized)
+}
+
+fn normalize_hermes_docker_volume_list(
+    raw: Option<String>,
+    key: &str,
+) -> Result<Vec<String>, String> {
+    let mut values = Vec::new();
+    for item in normalize_hermes_multiline_list(raw) {
+        let volume = item.trim().to_string();
+        if !volume.contains(':')
+            || volume
+                .chars()
+                .any(|ch| ch.is_control() || ch.is_whitespace())
+        {
+            return Err(format!(
+                "{key} 每行一个 Docker volume 映射，例如 /host/path:/container/path"
+            ));
+        }
+        if !values.contains(&volume) {
+            values.push(volume);
+        }
+    }
+    Ok(values)
+}
+
+fn normalize_hermes_docker_extra_args_list(
+    raw: Option<String>,
+    key: &str,
+) -> Result<Vec<String>, String> {
+    let mut values = Vec::new();
+    for item in normalize_hermes_multiline_list(raw) {
+        let arg = item.trim().to_string();
+        if !arg.starts_with('-') || arg.chars().any(|ch| ch.is_control() || ch.is_whitespace()) {
+            return Err(format!(
+                "{key} 每行一个 Docker 参数，必须以 - 开头，例如 --network=host"
+            ));
+        }
+        if !values.contains(&arg) {
+            values.push(arg);
+        }
+    }
+    Ok(values)
+}
+
 fn normalize_hermes_auxiliary_provider(
     value: Option<String>,
     key: &str,
@@ -2525,6 +2616,49 @@ fn yaml_string_sequence_field(map: &serde_yaml::Mapping, key: &str) -> Vec<Strin
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default()
+}
+
+fn yaml_docker_env_json_field(map: Option<&serde_yaml::Mapping>, key: &str) -> String {
+    let Some(env_map) = map
+        .and_then(|map| yaml_get(map, key))
+        .and_then(|value| value.as_mapping())
+    else {
+        return "{}".to_string();
+    };
+    let mut lines = Vec::new();
+    for (raw_key, raw_value) in env_map {
+        let Some(name) = raw_key.as_str() else {
+            continue;
+        };
+        if !validate_hermes_env_name(name) {
+            continue;
+        }
+        let value = if let Some(value) = raw_value.as_str() {
+            value.to_string()
+        } else if let Some(value) = raw_value.as_i64() {
+            value.to_string()
+        } else if let Some(value) = raw_value.as_u64() {
+            value.to_string()
+        } else if let Some(value) = raw_value.as_f64() {
+            if value.is_finite() {
+                value.to_string()
+            } else {
+                continue;
+            }
+        } else if let Some(value) = raw_value.as_bool() {
+            value.to_string()
+        } else {
+            continue;
+        };
+        let encoded_name = serde_json::to_string(name).unwrap_or_else(|_| "\"\"".to_string());
+        let encoded_value = serde_json::to_string(&value).unwrap_or_else(|_| "\"\"".to_string());
+        lines.push(format!("  {encoded_name}: {encoded_value}"));
+    }
+    if lines.is_empty() {
+        "{}".to_string()
+    } else {
+        format!("{{\n{}\n}}", lines.join(",\n"))
+    }
 }
 
 fn yaml_scalar_string_field(map: &serde_yaml::Mapping, key: &str) -> Option<String> {
@@ -9567,6 +9701,13 @@ fn build_hermes_terminal_config_values(config: &serde_yaml::Value) -> Value {
     let terminal_docker_forward_env = terminal
         .map(|map| yaml_string_sequence_field(map, "docker_forward_env").join("\n"))
         .unwrap_or_default();
+    let terminal_docker_env_json = yaml_docker_env_json_field(terminal, "docker_env");
+    let terminal_docker_volumes = terminal
+        .map(|map| yaml_string_sequence_field(map, "docker_volumes").join("\n"))
+        .unwrap_or_default();
+    let terminal_docker_extra_args = terminal
+        .map(|map| yaml_string_sequence_field(map, "docker_extra_args").join("\n"))
+        .unwrap_or_default();
     let terminal_ssh_host = terminal_string("ssh_host");
     let terminal_ssh_user = terminal_string("ssh_user");
     let terminal_ssh_port = terminal
@@ -9604,6 +9745,9 @@ fn build_hermes_terminal_config_values(config: &serde_yaml::Value) -> Value {
         "terminalVercelRuntime": terminal_vercel_runtime,
         "terminalDaytonaImage": terminal_daytona_image,
         "terminalDockerForwardEnv": terminal_docker_forward_env,
+        "terminalDockerEnvJson": terminal_docker_env_json,
+        "terminalDockerVolumes": terminal_docker_volumes,
+        "terminalDockerExtraArgs": terminal_docker_extra_args,
         "terminalSshHost": terminal_ssh_host,
         "terminalSshUser": terminal_ssh_user,
         "terminalSshPort": terminal_ssh_port,
@@ -9763,6 +9907,30 @@ fn merge_hermes_terminal_config(
         }),
         "terminal.docker_forward_env",
     )?;
+    let terminal_docker_env = normalize_hermes_docker_env_json(
+        form_string(form, "terminalDockerEnvJson").or_else(|| {
+            current["terminalDockerEnvJson"]
+                .as_str()
+                .map(ToString::to_string)
+        }),
+        "terminal.docker_env",
+    )?;
+    let terminal_docker_volumes = normalize_hermes_docker_volume_list(
+        form_string(form, "terminalDockerVolumes").or_else(|| {
+            current["terminalDockerVolumes"]
+                .as_str()
+                .map(ToString::to_string)
+        }),
+        "terminal.docker_volumes",
+    )?;
+    let terminal_docker_extra_args = normalize_hermes_docker_extra_args_list(
+        form_string(form, "terminalDockerExtraArgs").or_else(|| {
+            current["terminalDockerExtraArgs"]
+                .as_str()
+                .map(ToString::to_string)
+        }),
+        "terminal.docker_extra_args",
+    )?;
     let terminal_ssh_host = form_string(form, "terminalSshHost")
         .or_else(|| current["terminalSshHost"].as_str().map(ToString::to_string))
         .unwrap_or_default()
@@ -9905,6 +10073,45 @@ fn merge_hermes_terminal_config(
             yaml_key("docker_forward_env"),
             serde_yaml::Value::Sequence(
                 terminal_docker_forward_env
+                    .into_iter()
+                    .map(serde_yaml::Value::String)
+                    .collect(),
+            ),
+        );
+    }
+    if terminal_docker_env.is_empty() {
+        terminal.remove(yaml_key("docker_env"));
+    } else {
+        let mut docker_env = serde_yaml::Mapping::new();
+        for (name, value) in terminal_docker_env {
+            let value = value.as_str().unwrap_or_default().to_string();
+            docker_env.insert(yaml_key(&name), serde_yaml::Value::String(value));
+        }
+        terminal.insert(
+            yaml_key("docker_env"),
+            serde_yaml::Value::Mapping(docker_env),
+        );
+    }
+    if terminal_docker_volumes.is_empty() {
+        terminal.remove(yaml_key("docker_volumes"));
+    } else {
+        terminal.insert(
+            yaml_key("docker_volumes"),
+            serde_yaml::Value::Sequence(
+                terminal_docker_volumes
+                    .into_iter()
+                    .map(serde_yaml::Value::String)
+                    .collect(),
+            ),
+        );
+    }
+    if terminal_docker_extra_args.is_empty() {
+        terminal.remove(yaml_key("docker_extra_args"));
+    } else {
+        terminal.insert(
+            yaml_key("docker_extra_args"),
+            serde_yaml::Value::Sequence(
+                terminal_docker_extra_args
                     .into_iter()
                     .map(serde_yaml::Value::String)
                     .collect(),
@@ -19753,6 +19960,9 @@ mod hermes_terminal_config_tests {
         assert_eq!(values["terminalVercelRuntime"], "node24");
         assert_eq!(values["terminalDaytonaImage"], "");
         assert_eq!(values["terminalDockerForwardEnv"], "");
+        assert_eq!(values["terminalDockerEnvJson"], "{}");
+        assert_eq!(values["terminalDockerVolumes"], "");
+        assert_eq!(values["terminalDockerExtraArgs"], "");
         assert_eq!(values["terminalSshHost"], "");
         assert_eq!(values["terminalSshUser"], "");
         assert_eq!(values["terminalSshPort"], 22);
@@ -19782,6 +19992,15 @@ terminal:
   docker_forward_env:
     - GITHUB_TOKEN
     - NPM_TOKEN
+  docker_env:
+    PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
+    PIP_CACHE_DIR: /workspace/.cache/pip
+  docker_volumes:
+    - /data/projects:/workspace/projects
+    - /data/cache:/cache
+  docker_extra_args:
+    - --network=host
+    - --add-host=host.docker.internal:host-gateway
   singularity_image: docker://nikolaik/python-nodejs:python3.11-nodejs20
   modal_image: python:3.12
   modal_mode: managed
@@ -19824,6 +20043,18 @@ terminal:
             "GITHUB_TOKEN\nNPM_TOKEN"
         );
         assert_eq!(
+            values["terminalDockerEnvJson"],
+            "{\n  \"PLAYWRIGHT_BROWSERS_PATH\": \"/ms-playwright\",\n  \"PIP_CACHE_DIR\": \"/workspace/.cache/pip\"\n}"
+        );
+        assert_eq!(
+            values["terminalDockerVolumes"],
+            "/data/projects:/workspace/projects\n/data/cache:/cache"
+        );
+        assert_eq!(
+            values["terminalDockerExtraArgs"],
+            "--network=host\n--add-host=host.docker.internal:host-gateway"
+        );
+        assert_eq!(
             values["terminalSingularityImage"],
             "docker://nikolaik/python-nodejs:python3.11-nodejs20"
         );
@@ -19856,6 +20087,12 @@ terminal:
   docker_image: custom/python-node
   docker_forward_env:
     - OLD_TOKEN
+  docker_env:
+    OLD_FLAG: keep-old
+  docker_volumes:
+    - /old:/old
+  docker_extra_args:
+    - --old
   custom_flag: keep-terminal
 streaming:
   enabled: true
@@ -19878,6 +20115,9 @@ streaming:
                 "terminalDockerRunAsHostUser": true,
                 "terminalDockerImage": "nikolaik/python-nodejs:python3.12-nodejs22",
                 "terminalDockerForwardEnv": "GITHUB_TOKEN\nNPM_TOKEN\nGITHUB_TOKEN",
+                "terminalDockerEnvJson": "{ \"PLAYWRIGHT_BROWSERS_PATH\": \"/ms-playwright\", \"PIP_CACHE_DIR\": \"/workspace/.cache/pip\" }",
+                "terminalDockerVolumes": "/data/projects:/workspace/projects\n/data/cache:/cache\n/data/projects:/workspace/projects",
+                "terminalDockerExtraArgs": "--network=host\n--add-host=host.docker.internal:host-gateway\n--network=host",
                 "terminalSingularityImage": "docker://ubuntu:24.04",
                 "terminalModalImage": "debian:bookworm",
                 "terminalModalMode": "direct",
@@ -20000,6 +20240,79 @@ streaming:
                 .len(),
             2
         );
+        assert_eq!(
+            config["terminal"]["docker_env"]["PLAYWRIGHT_BROWSERS_PATH"].as_str(),
+            Some("/ms-playwright")
+        );
+        assert_eq!(
+            config["terminal"]["docker_env"]["PIP_CACHE_DIR"].as_str(),
+            Some("/workspace/.cache/pip")
+        );
+        assert_eq!(
+            config["terminal"]["docker_volumes"][0].as_str(),
+            Some("/data/projects:/workspace/projects")
+        );
+        assert_eq!(
+            config["terminal"]["docker_volumes"][1].as_str(),
+            Some("/data/cache:/cache")
+        );
+        assert_eq!(
+            config["terminal"]["docker_volumes"]
+                .as_sequence()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            config["terminal"]["docker_extra_args"][0].as_str(),
+            Some("--network=host")
+        );
+        assert_eq!(
+            config["terminal"]["docker_extra_args"][1].as_str(),
+            Some("--add-host=host.docker.internal:host-gateway")
+        );
+        assert_eq!(
+            config["terminal"]["docker_extra_args"]
+                .as_sequence()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            config["terminal"]["custom_flag"].as_str(),
+            Some("keep-terminal")
+        );
+    }
+
+    #[test]
+    fn merge_terminal_config_removes_empty_docker_advanced_fields() {
+        let mut config: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+terminal:
+  docker_env:
+    OLD_FLAG: "1"
+  docker_volumes:
+    - /old:/old
+  docker_extra_args:
+    - --old
+  custom_flag: keep-terminal
+"#,
+        )
+        .unwrap();
+
+        merge_hermes_terminal_config(
+            &mut config,
+            &json!({
+                "terminalDockerEnvJson": "{}",
+                "terminalDockerVolumes": "  \n",
+                "terminalDockerExtraArgs": "  \n",
+            }),
+        )
+        .unwrap();
+
+        assert!(config["terminal"]["docker_env"].is_null());
+        assert!(config["terminal"]["docker_volumes"].is_null());
+        assert!(config["terminal"]["docker_extra_args"].is_null());
         assert_eq!(
             config["terminal"]["custom_flag"].as_str(),
             Some("keep-terminal")
@@ -20210,6 +20523,28 @@ terminal:
         )
         .unwrap_err();
         assert!(err.contains("terminal.env_passthrough"));
+        let err =
+            merge_hermes_terminal_config(&mut config, &json!({ "terminalDockerEnvJson": "[]" }))
+                .unwrap_err();
+        assert!(err.contains("terminal.docker_env"));
+        let err = merge_hermes_terminal_config(
+            &mut config,
+            &json!({ "terminalDockerEnvJson": "{ \"BAD KEY\": \"value\" }" }),
+        )
+        .unwrap_err();
+        assert!(err.contains("terminal.docker_env"));
+        let err = merge_hermes_terminal_config(
+            &mut config,
+            &json!({ "terminalDockerVolumes": "/host only" }),
+        )
+        .unwrap_err();
+        assert!(err.contains("terminal.docker_volumes"));
+        let err = merge_hermes_terminal_config(
+            &mut config,
+            &json!({ "terminalDockerExtraArgs": "bad arg" }),
+        )
+        .unwrap_err();
+        assert!(err.contains("terminal.docker_extra_args"));
     }
 }
 
