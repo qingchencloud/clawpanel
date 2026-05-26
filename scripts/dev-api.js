@@ -3357,6 +3357,8 @@ const HERMES_DISPLAY_FINAL_RESPONSE_MARKDOWN_VALUES = new Set(['render', 'strip'
 const HERMES_DISPLAY_LANGUAGE_VALUES = new Set(['en', 'zh', 'zh-hant', 'ja', 'de', 'es', 'fr', 'tr', 'uk', 'af', 'ko', 'it', 'ga', 'pt', 'ru', 'hu'])
 const HERMES_DISPLAY_SKINS = new Set(['default', 'ares', 'mono', 'slate', 'daylight', 'warm-lightmode', 'poseidon', 'sisyphus', 'charizard'])
 const HERMES_RUNTIME_FOOTER_FIELDS = new Set(['model', 'context_pct', 'cwd', 'duration', 'tokens', 'cost'])
+const HERMES_TUI_STATUS_INDICATORS = new Set(['kaomoji', 'emoji', 'unicode', 'ascii'])
+const HERMES_COPY_SHORTCUTS = new Set(['auto', 'ctrl_c', 'ctrl_shift_c', 'disabled'])
 const HERMES_HOOK_EVENTS = new Set([
   'pre_tool_call',
   'post_tool_call',
@@ -3817,6 +3819,20 @@ function normalizeHermesDisplayFinalResponseMarkdown(value, strict = false) {
   return 'strip'
 }
 
+function normalizeHermesTuiStatusIndicator(value, strict = false) {
+  const mode = String(value ?? '').trim().toLowerCase() || 'kaomoji'
+  if (HERMES_TUI_STATUS_INDICATORS.has(mode)) return mode
+  if (strict) throw new Error('display.tui_status_indicator 必须是 kaomoji、emoji、unicode 或 ascii')
+  return 'kaomoji'
+}
+
+function normalizeHermesCopyShortcut(value, strict = false) {
+  const mode = String(value ?? '').trim().toLowerCase() || 'auto'
+  if (HERMES_COPY_SHORTCUTS.has(mode)) return mode
+  if (strict) throw new Error('display.copy_shortcut 必须是 auto、ctrl_c、ctrl_shift_c 或 disabled')
+  return 'auto'
+}
+
 function normalizeHermesDisplayLanguage(value, strict = false) {
   const language = String(value ?? '').trim().toLowerCase() || 'en'
   if (HERMES_DISPLAY_LANGUAGE_VALUES.has(language)) return language
@@ -3869,6 +3885,9 @@ export function buildHermesDisplayConfigValues(config = {}) {
   const runtimeFooter = display.runtime_footer && typeof display.runtime_footer === 'object' && !Array.isArray(display.runtime_footer)
     ? display.runtime_footer
     : {}
+  const userMessagePreview = display.user_message_preview && typeof display.user_message_preview === 'object' && !Array.isArray(display.user_message_preview)
+    ? display.user_message_preview
+    : {}
   return {
     displayCompact: readHermesBool(display.compact, false),
     displaySkin: normalizeHermesDisplaySkin(display.skin, false),
@@ -3893,6 +3912,13 @@ export function buildHermesDisplayConfigValues(config = {}) {
     displayBellOnComplete: readHermesBool(display.bell_on_complete, false),
     displayPersistentOutput: readHermesBool(display.persistent_output, true),
     displayPersistentOutputMaxLines: parseHermesInteger(display.persistent_output_max_lines, 'display.persistent_output_max_lines', 200, 0, 100000, false),
+    displayInlineDiffs: readHermesBool(display.inline_diffs, true),
+    displayTuiAutoResumeRecent: readHermesBool(display.tui_auto_resume_recent, false),
+    displayTuiStatusIndicator: normalizeHermesTuiStatusIndicator(display.tui_status_indicator, false),
+    displayUserMessagePreviewFirstLines: parseHermesInteger(userMessagePreview.first_lines, 'display.user_message_preview.first_lines', 2, 1, 100, false),
+    displayUserMessagePreviewLastLines: parseHermesInteger(userMessagePreview.last_lines, 'display.user_message_preview.last_lines', 2, 0, 100, false),
+    displayEphemeralSystemTtl: parseHermesInteger(display.ephemeral_system_ttl, 'display.ephemeral_system_ttl', 0, 0, 86400, false),
+    displayCopyShortcut: normalizeHermesCopyShortcut(display.copy_shortcut, false),
   }
 }
 
@@ -3904,6 +3930,9 @@ export function mergeHermesDisplayConfig(config = {}, form = {}) {
     : {}
   const runtimeFooter = display.runtime_footer && typeof display.runtime_footer === 'object' && !Array.isArray(display.runtime_footer)
     ? mergeConfigsPreservingFields(display.runtime_footer, {})
+    : {}
+  const userMessagePreview = display.user_message_preview && typeof display.user_message_preview === 'object' && !Array.isArray(display.user_message_preview)
+    ? mergeConfigsPreservingFields(display.user_message_preview, {})
     : {}
 
   display.compact = formHermesBool(form, 'displayCompact', currentValues.displayCompact)
@@ -3929,6 +3958,14 @@ export function mergeHermesDisplayConfig(config = {}, form = {}) {
   display.bell_on_complete = formHermesBool(form, 'displayBellOnComplete', currentValues.displayBellOnComplete)
   display.persistent_output = formHermesBool(form, 'displayPersistentOutput', currentValues.displayPersistentOutput)
   display.persistent_output_max_lines = parseHermesInteger(Object.hasOwn(form, 'displayPersistentOutputMaxLines') ? form.displayPersistentOutputMaxLines : currentValues.displayPersistentOutputMaxLines, 'display.persistent_output_max_lines', 200, 0, 100000, true)
+  display.inline_diffs = formHermesBool(form, 'displayInlineDiffs', currentValues.displayInlineDiffs)
+  display.tui_auto_resume_recent = formHermesBool(form, 'displayTuiAutoResumeRecent', currentValues.displayTuiAutoResumeRecent)
+  display.tui_status_indicator = normalizeHermesTuiStatusIndicator(Object.hasOwn(form, 'displayTuiStatusIndicator') ? form.displayTuiStatusIndicator : currentValues.displayTuiStatusIndicator, true)
+  userMessagePreview.first_lines = parseHermesInteger(Object.hasOwn(form, 'displayUserMessagePreviewFirstLines') ? form.displayUserMessagePreviewFirstLines : currentValues.displayUserMessagePreviewFirstLines, 'display.user_message_preview.first_lines', 2, 1, 100, true)
+  userMessagePreview.last_lines = parseHermesInteger(Object.hasOwn(form, 'displayUserMessagePreviewLastLines') ? form.displayUserMessagePreviewLastLines : currentValues.displayUserMessagePreviewLastLines, 'display.user_message_preview.last_lines', 2, 0, 100, true)
+  display.user_message_preview = userMessagePreview
+  display.ephemeral_system_ttl = parseHermesInteger(Object.hasOwn(form, 'displayEphemeralSystemTtl') ? form.displayEphemeralSystemTtl : currentValues.displayEphemeralSystemTtl, 'display.ephemeral_system_ttl', 0, 0, 86400, true)
+  display.copy_shortcut = normalizeHermesCopyShortcut(Object.hasOwn(form, 'displayCopyShortcut') ? form.displayCopyShortcut : currentValues.displayCopyShortcut, true)
   next.display = display
   const dashboard = next.dashboard && typeof next.dashboard === 'object' && !Array.isArray(next.dashboard)
     ? mergeConfigsPreservingFields(next.dashboard, {})

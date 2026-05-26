@@ -33,6 +33,13 @@ test('Hermes 显示配置读取会提供上游默认值', () => {
     displayBellOnComplete: false,
     displayPersistentOutput: true,
     displayPersistentOutputMaxLines: 200,
+    displayInlineDiffs: true,
+    displayTuiAutoResumeRecent: false,
+    displayTuiStatusIndicator: 'kaomoji',
+    displayUserMessagePreviewFirstLines: 2,
+    displayUserMessagePreviewLastLines: 2,
+    displayEphemeralSystemTtl: 0,
+    displayCopyShortcut: 'auto',
   })
 })
 
@@ -63,6 +70,15 @@ test('Hermes 显示配置读取会规范化已有字段', () => {
       bell_on_complete: true,
       persistent_output: false,
       persistent_output_max_lines: 80,
+      inline_diffs: false,
+      tui_auto_resume_recent: true,
+      tui_status_indicator: 'EMOJI',
+      user_message_preview: {
+        first_lines: 3,
+        last_lines: 1,
+      },
+      ephemeral_system_ttl: 120,
+      copy_shortcut: 'CTRL_SHIFT_C',
     },
     dashboard: {
       show_token_analytics: true,
@@ -92,6 +108,13 @@ test('Hermes 显示配置读取会规范化已有字段', () => {
   assert.equal(values.displayBellOnComplete, true)
   assert.equal(values.displayPersistentOutput, false)
   assert.equal(values.displayPersistentOutputMaxLines, 80)
+  assert.equal(values.displayInlineDiffs, false)
+  assert.equal(values.displayTuiAutoResumeRecent, true)
+  assert.equal(values.displayTuiStatusIndicator, 'emoji')
+  assert.equal(values.displayUserMessagePreviewFirstLines, 3)
+  assert.equal(values.displayUserMessagePreviewLastLines, 1)
+  assert.equal(values.displayEphemeralSystemTtl, 120)
+  assert.equal(values.displayCopyShortcut, 'ctrl_shift_c')
 })
 
 test('Hermes 显示配置保存会保留未知 YAML 并写入 display', () => {
@@ -103,9 +126,13 @@ test('Hermes 显示配置保存会保留未知 YAML 并写入 display', () => {
         enabled: false,
         custom_flag: 'keep-footer',
       },
+      user_message_preview: {
+        custom_flag: 'keep-preview',
+      },
       platforms: {
         telegram: { tool_progress: 'new' },
       },
+      custom_flag: 'keep-display',
     },
     dashboard: {
       custom_flag: 'keep-dashboard',
@@ -135,6 +162,13 @@ test('Hermes 显示配置保存会保留未知 YAML 并写入 display', () => {
     displayBellOnComplete: true,
     displayPersistentOutput: false,
     displayPersistentOutputMaxLines: 120,
+    displayInlineDiffs: false,
+    displayTuiAutoResumeRecent: true,
+    displayTuiStatusIndicator: 'ascii',
+    displayUserMessagePreviewFirstLines: 4,
+    displayUserMessagePreviewLastLines: 0,
+    displayEphemeralSystemTtl: 360,
+    displayCopyShortcut: 'disabled',
   })
 
   assert.deepEqual(next.model, { provider: 'anthropic' })
@@ -165,6 +199,15 @@ test('Hermes 显示配置保存会保留未知 YAML 并写入 display', () => {
   assert.equal(next.display.bell_on_complete, true)
   assert.equal(next.display.persistent_output, false)
   assert.equal(next.display.persistent_output_max_lines, 120)
+  assert.equal(next.display.inline_diffs, false)
+  assert.equal(next.display.tui_auto_resume_recent, true)
+  assert.equal(next.display.tui_status_indicator, 'ascii')
+  assert.equal(next.display.user_message_preview.first_lines, 4)
+  assert.equal(next.display.user_message_preview.last_lines, 0)
+  assert.equal(next.display.user_message_preview.custom_flag, 'keep-preview')
+  assert.equal(next.display.ephemeral_system_ttl, 360)
+  assert.equal(next.display.copy_shortcut, 'disabled')
+  assert.equal(next.display.custom_flag, 'keep-display')
 })
 
 test('Hermes 显示配置保存会拒绝非法枚举和页脚字段', () => {
@@ -211,5 +254,25 @@ test('Hermes 显示配置保存会拒绝非法枚举和页脚字段', () => {
   assert.throws(
     () => mergeHermesDisplayConfig({}, { displayToolPreviewLength: '200001' }),
     /display\.tool_preview_length/,
+  )
+  assert.throws(
+    () => mergeHermesDisplayConfig({}, { displayTuiStatusIndicator: 'rainbow' }),
+    /display\.tui_status_indicator/,
+  )
+  assert.throws(
+    () => mergeHermesDisplayConfig({}, { displayCopyShortcut: 'cmd_c' }),
+    /display\.copy_shortcut/,
+  )
+  assert.throws(
+    () => mergeHermesDisplayConfig({}, { displayUserMessagePreviewFirstLines: '0' }),
+    /display\.user_message_preview\.first_lines/,
+  )
+  assert.throws(
+    () => mergeHermesDisplayConfig({}, { displayUserMessagePreviewLastLines: '101' }),
+    /display\.user_message_preview\.last_lines/,
+  )
+  assert.throws(
+    () => mergeHermesDisplayConfig({}, { displayEphemeralSystemTtl: '86401' }),
+    /display\.ephemeral_system_ttl/,
   )
 })

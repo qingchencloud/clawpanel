@@ -211,6 +211,13 @@ const DISPLAY_DEFAULTS = {
   displayBellOnComplete: false,
   displayPersistentOutput: true,
   displayPersistentOutputMaxLines: 200,
+  displayInlineDiffs: true,
+  displayTuiAutoResumeRecent: false,
+  displayTuiStatusIndicator: 'kaomoji',
+  displayUserMessagePreviewFirstLines: 2,
+  displayUserMessagePreviewLastLines: 2,
+  displayEphemeralSystemTtl: 0,
+  displayCopyShortcut: 'auto',
 }
 
 const HUMAN_DELAY_DEFAULTS = {
@@ -419,6 +426,8 @@ const DISPLAY_RESUME_VALUES = ['full', 'minimal']
 const DISPLAY_BUSY_INPUT_MODES = ['interrupt', 'queue', 'steer']
 const DISPLAY_BACKGROUND_PROCESS_NOTIFICATIONS = ['off', 'result', 'error', 'all']
 const DISPLAY_FINAL_RESPONSE_MARKDOWN_VALUES = ['render', 'strip', 'raw']
+const DISPLAY_TUI_STATUS_INDICATORS = ['kaomoji', 'emoji', 'unicode', 'ascii']
+const DISPLAY_COPY_SHORTCUTS = ['auto', 'ctrl_c', 'ctrl_shift_c', 'disabled']
 const HUMAN_DELAY_MODES = ['off', 'natural', 'custom']
 const APPROVAL_MODES = ['manual', 'smart', 'off']
 const APPROVAL_CRON_MODES = ['deny', 'approve']
@@ -1787,6 +1796,30 @@ export function render() {
               <input id="hm-display-persistent-output-max-lines" class="hm-input" type="number" inputmode="numeric" min="0" max="100000" step="1" value="${esc(displayValues.displayPersistentOutputMaxLines)}" ${disabled ? 'disabled' : ''}>
             </label>
             <label class="hm-field">
+              <span class="hm-field-label">${t('engine.hermesDisplayConfigTuiStatusIndicator')}</span>
+              <select id="hm-display-tui-status-indicator" class="hm-input" ${disabled ? 'disabled' : ''}>
+                ${DISPLAY_TUI_STATUS_INDICATORS.map(mode => option(`engine.hermesDisplayConfigTuiStatusIndicator_${mode}`, mode, displayValues.displayTuiStatusIndicator)).join('')}
+              </select>
+            </label>
+            <label class="hm-field">
+              <span class="hm-field-label">${t('engine.hermesDisplayConfigUserMessagePreviewFirstLines')}</span>
+              <input id="hm-display-user-message-preview-first-lines" class="hm-input" type="number" inputmode="numeric" min="1" max="100" step="1" value="${esc(displayValues.displayUserMessagePreviewFirstLines)}" ${disabled ? 'disabled' : ''}>
+            </label>
+            <label class="hm-field">
+              <span class="hm-field-label">${t('engine.hermesDisplayConfigUserMessagePreviewLastLines')}</span>
+              <input id="hm-display-user-message-preview-last-lines" class="hm-input" type="number" inputmode="numeric" min="0" max="100" step="1" value="${esc(displayValues.displayUserMessagePreviewLastLines)}" ${disabled ? 'disabled' : ''}>
+            </label>
+            <label class="hm-field">
+              <span class="hm-field-label">${t('engine.hermesDisplayConfigEphemeralSystemTtl')}</span>
+              <input id="hm-display-ephemeral-system-ttl" class="hm-input" type="number" inputmode="numeric" min="0" max="86400" step="1" value="${esc(displayValues.displayEphemeralSystemTtl)}" ${disabled ? 'disabled' : ''}>
+            </label>
+            <label class="hm-field">
+              <span class="hm-field-label">${t('engine.hermesDisplayConfigCopyShortcut')}</span>
+              <select id="hm-display-copy-shortcut" class="hm-input" ${disabled ? 'disabled' : ''}>
+                ${DISPLAY_COPY_SHORTCUTS.map(mode => option(`engine.hermesDisplayConfigCopyShortcut_${mode}`, mode, displayValues.displayCopyShortcut)).join('')}
+              </select>
+            </label>
+            <label class="hm-field">
               <span class="hm-field-label">${t('engine.hermesDisplayConfigToolPreviewLength')}</span>
               <input id="hm-display-tool-preview-length" class="hm-input" type="number" inputmode="numeric" min="0" max="200000" step="1" value="${esc(displayValues.displayToolPreviewLength)}" ${disabled ? 'disabled' : ''}>
             </label>
@@ -1843,6 +1876,14 @@ export function render() {
             <label class="hm-channel-check">
               <input id="hm-display-persistent-output" type="checkbox" ${displayValues.displayPersistentOutput ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
               <span>${t('engine.hermesDisplayConfigPersistentOutput')}</span>
+            </label>
+            <label class="hm-channel-check">
+              <input id="hm-display-inline-diffs" type="checkbox" ${displayValues.displayInlineDiffs ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
+              <span>${t('engine.hermesDisplayConfigInlineDiffs')}</span>
+            </label>
+            <label class="hm-channel-check">
+              <input id="hm-display-tui-auto-resume-recent" type="checkbox" ${displayValues.displayTuiAutoResumeRecent ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
+              <span>${t('engine.hermesDisplayConfigTuiAutoResumeRecent')}</span>
             </label>
           </div>
           <div class="hm-channel-footnote">${t('engine.hermesDisplayConfigFootnote')}</div>
@@ -4512,6 +4553,13 @@ export function render() {
       displayBellOnComplete: !!el.querySelector('#hm-display-bell-on-complete')?.checked,
       displayPersistentOutput: !!el.querySelector('#hm-display-persistent-output')?.checked,
       displayPersistentOutputMaxLines: el.querySelector('#hm-display-persistent-output-max-lines')?.value || '200',
+      displayInlineDiffs: !!el.querySelector('#hm-display-inline-diffs')?.checked,
+      displayTuiAutoResumeRecent: !!el.querySelector('#hm-display-tui-auto-resume-recent')?.checked,
+      displayTuiStatusIndicator: el.querySelector('#hm-display-tui-status-indicator')?.value || 'kaomoji',
+      displayUserMessagePreviewFirstLines: el.querySelector('#hm-display-user-message-preview-first-lines')?.value || '2',
+      displayUserMessagePreviewLastLines: el.querySelector('#hm-display-user-message-preview-last-lines')?.value || '2',
+      displayEphemeralSystemTtl: el.querySelector('#hm-display-ephemeral-system-ttl')?.value || '0',
+      displayCopyShortcut: el.querySelector('#hm-display-copy-shortcut')?.value || 'auto',
     }
     displaySaving = true
     displayError = null

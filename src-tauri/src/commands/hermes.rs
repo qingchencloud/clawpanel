@@ -6463,6 +6463,8 @@ const HERMES_DISPLAY_LANGUAGE_VALUES: &[&str] = &[
 const HERMES_DISPLAY_BUSY_INPUT_MODES: &[&str] = &["interrupt", "queue", "steer"];
 const HERMES_DISPLAY_BACKGROUND_PROCESS_NOTIFICATIONS: &[&str] = &["off", "result", "error", "all"];
 const HERMES_DISPLAY_FINAL_RESPONSE_MARKDOWN_VALUES: &[&str] = &["render", "strip", "raw"];
+const HERMES_TUI_STATUS_INDICATORS: &[&str] = &["kaomoji", "emoji", "unicode", "ascii"];
+const HERMES_COPY_SHORTCUTS: &[&str] = &["auto", "ctrl_c", "ctrl_shift_c", "disabled"];
 const HERMES_DISPLAY_SKINS: &[&str] = &[
     "default",
     "ares",
@@ -6586,6 +6588,41 @@ fn normalize_hermes_display_final_response_markdown(
     }
 }
 
+fn normalize_hermes_tui_status_indicator(
+    value: Option<String>,
+    strict: bool,
+) -> Result<String, String> {
+    let mode = value.unwrap_or_default().trim().to_ascii_lowercase();
+    let mode = if mode.is_empty() {
+        "kaomoji".to_string()
+    } else {
+        mode
+    };
+    if HERMES_TUI_STATUS_INDICATORS.contains(&mode.as_str()) {
+        Ok(mode)
+    } else if strict {
+        Err("display.tui_status_indicator 必须是 kaomoji、emoji、unicode 或 ascii".to_string())
+    } else {
+        Ok("kaomoji".to_string())
+    }
+}
+
+fn normalize_hermes_copy_shortcut(value: Option<String>, strict: bool) -> Result<String, String> {
+    let mode = value.unwrap_or_default().trim().to_ascii_lowercase();
+    let mode = if mode.is_empty() {
+        "auto".to_string()
+    } else {
+        mode
+    };
+    if HERMES_COPY_SHORTCUTS.contains(&mode.as_str()) {
+        Ok(mode)
+    } else if strict {
+        Err("display.copy_shortcut 必须是 auto、ctrl_c、ctrl_shift_c 或 disabled".to_string())
+    } else {
+        Ok("auto".to_string())
+    }
+}
+
 fn normalize_hermes_runtime_footer_fields_text(
     value: Option<String>,
     strict: bool,
@@ -6668,6 +6705,8 @@ fn build_hermes_display_config_values(config: &serde_yaml::Value) -> Value {
     let display = root.and_then(|map| yaml_get_mapping(map, "display"));
     let dashboard = root.and_then(|map| yaml_get_mapping(map, "dashboard"));
     let runtime_footer = display.and_then(|map| yaml_get_mapping(map, "runtime_footer"));
+    let user_message_preview =
+        display.and_then(|map| yaml_get_mapping(map, "user_message_preview"));
     let runtime_footer_fields = normalize_hermes_runtime_footer_fields(
         runtime_footer.and_then(|map| yaml_get(map, "fields")),
         false,
@@ -6733,6 +6772,25 @@ fn build_hermes_display_config_values(config: &serde_yaml::Value) -> Value {
         "displayPersistentOutputMaxLines": display
             .map(|map| bounded_hermes_i64(yaml_i64_field(map, "persistent_output_max_lines"), 200, 0, 100000))
             .unwrap_or(200),
+        "displayInlineDiffs": display.and_then(|map| yaml_bool_field(map, "inline_diffs")).unwrap_or(true),
+        "displayTuiAutoResumeRecent": display.and_then(|map| yaml_bool_field(map, "tui_auto_resume_recent")).unwrap_or(false),
+        "displayTuiStatusIndicator": normalize_hermes_tui_status_indicator(
+            display.and_then(|map| yaml_string_field(map, "tui_status_indicator")),
+            false,
+        ).unwrap_or_else(|_| "kaomoji".to_string()),
+        "displayUserMessagePreviewFirstLines": user_message_preview
+            .map(|map| bounded_hermes_i64(yaml_i64_field(map, "first_lines"), 2, 1, 100))
+            .unwrap_or(2),
+        "displayUserMessagePreviewLastLines": user_message_preview
+            .map(|map| bounded_hermes_i64(yaml_i64_field(map, "last_lines"), 2, 0, 100))
+            .unwrap_or(2),
+        "displayEphemeralSystemTtl": display
+            .map(|map| bounded_hermes_i64(yaml_i64_field(map, "ephemeral_system_ttl"), 0, 0, 86400))
+            .unwrap_or(0),
+        "displayCopyShortcut": normalize_hermes_copy_shortcut(
+            display.and_then(|map| yaml_string_field(map, "copy_shortcut")),
+            false,
+        ).unwrap_or_else(|_| "auto".to_string()),
     })
 }
 
@@ -6772,6 +6830,30 @@ fn merge_hermes_display_config(config: &mut serde_yaml::Value, form: &Value) -> 
         200,
         0,
         100000,
+    )?;
+    let user_message_preview_first_lines = validate_hermes_i64(
+        form_i64(form, "displayUserMessagePreviewFirstLines")
+            .or_else(|| current["displayUserMessagePreviewFirstLines"].as_i64()),
+        "display.user_message_preview.first_lines",
+        2,
+        1,
+        100,
+    )?;
+    let user_message_preview_last_lines = validate_hermes_i64(
+        form_i64(form, "displayUserMessagePreviewLastLines")
+            .or_else(|| current["displayUserMessagePreviewLastLines"].as_i64()),
+        "display.user_message_preview.last_lines",
+        2,
+        0,
+        100,
+    )?;
+    let ephemeral_system_ttl = validate_hermes_i64(
+        form_i64(form, "displayEphemeralSystemTtl")
+            .or_else(|| current["displayEphemeralSystemTtl"].as_i64()),
+        "display.ephemeral_system_ttl",
+        0,
+        0,
+        86400,
     )?;
     let tool_preview_length = validate_hermes_i64(
         form_i64(form, "displayToolPreviewLength")
@@ -6937,6 +7019,58 @@ fn merge_hermes_display_config(config: &mut serde_yaml::Value, form: &Value) -> 
     display.insert(
         yaml_key("persistent_output_max_lines"),
         serde_yaml::Value::Number(serde_yaml::Number::from(persistent_output_max_lines)),
+    );
+    display.insert(
+        yaml_key("inline_diffs"),
+        serde_yaml::Value::Bool(
+            form_bool(form, "displayInlineDiffs")
+                .unwrap_or_else(|| current["displayInlineDiffs"].as_bool().unwrap_or(true)),
+        ),
+    );
+    display.insert(
+        yaml_key("tui_auto_resume_recent"),
+        serde_yaml::Value::Bool(
+            form_bool(form, "displayTuiAutoResumeRecent").unwrap_or_else(|| {
+                current["displayTuiAutoResumeRecent"]
+                    .as_bool()
+                    .unwrap_or(false)
+            }),
+        ),
+    );
+    display.insert(
+        yaml_key("tui_status_indicator"),
+        serde_yaml::Value::String(normalize_hermes_tui_status_indicator(
+            form_string(form, "displayTuiStatusIndicator").or_else(|| {
+                current["displayTuiStatusIndicator"]
+                    .as_str()
+                    .map(ToString::to_string)
+            }),
+            true,
+        )?),
+    );
+    display.insert(
+        yaml_key("ephemeral_system_ttl"),
+        serde_yaml::Value::Number(serde_yaml::Number::from(ephemeral_system_ttl)),
+    );
+    display.insert(
+        yaml_key("copy_shortcut"),
+        serde_yaml::Value::String(normalize_hermes_copy_shortcut(
+            form_string(form, "displayCopyShortcut").or_else(|| {
+                current["displayCopyShortcut"]
+                    .as_str()
+                    .map(ToString::to_string)
+            }),
+            true,
+        )?),
+    );
+    let user_message_preview = yaml_child_object(display, "user_message_preview")?;
+    user_message_preview.insert(
+        yaml_key("first_lines"),
+        serde_yaml::Value::Number(serde_yaml::Number::from(user_message_preview_first_lines)),
+    );
+    user_message_preview.insert(
+        yaml_key("last_lines"),
+        serde_yaml::Value::Number(serde_yaml::Number::from(user_message_preview_last_lines)),
     );
     let runtime_footer = yaml_child_object(display, "runtime_footer")?;
     runtime_footer.insert(
@@ -22816,6 +22950,13 @@ mod hermes_display_config_tests {
         assert_eq!(values["displayBellOnComplete"], false);
         assert_eq!(values["displayPersistentOutput"], true);
         assert_eq!(values["displayPersistentOutputMaxLines"], 200);
+        assert_eq!(values["displayInlineDiffs"], true);
+        assert_eq!(values["displayTuiAutoResumeRecent"], false);
+        assert_eq!(values["displayTuiStatusIndicator"], "kaomoji");
+        assert_eq!(values["displayUserMessagePreviewFirstLines"], 2);
+        assert_eq!(values["displayUserMessagePreviewLastLines"], 2);
+        assert_eq!(values["displayEphemeralSystemTtl"], 0);
+        assert_eq!(values["displayCopyShortcut"], "auto");
     }
 
     #[test]
@@ -22849,6 +22990,14 @@ display:
   bell_on_complete: true
   persistent_output: false
   persistent_output_max_lines: 80
+  inline_diffs: false
+  tui_auto_resume_recent: true
+  tui_status_indicator: EMOJI
+  user_message_preview:
+    first_lines: 3
+    last_lines: 1
+  ephemeral_system_ttl: 120
+  copy_shortcut: CTRL_SHIFT_C
 dashboard:
   show_token_analytics: true
 "#,
@@ -22881,6 +23030,13 @@ dashboard:
         assert_eq!(values["displayBellOnComplete"], true);
         assert_eq!(values["displayPersistentOutput"], false);
         assert_eq!(values["displayPersistentOutputMaxLines"], 80);
+        assert_eq!(values["displayInlineDiffs"], false);
+        assert_eq!(values["displayTuiAutoResumeRecent"], true);
+        assert_eq!(values["displayTuiStatusIndicator"], "emoji");
+        assert_eq!(values["displayUserMessagePreviewFirstLines"], 3);
+        assert_eq!(values["displayUserMessagePreviewLastLines"], 1);
+        assert_eq!(values["displayEphemeralSystemTtl"], 120);
+        assert_eq!(values["displayCopyShortcut"], "ctrl_shift_c");
     }
 
     #[test]
@@ -22894,9 +23050,12 @@ display:
   runtime_footer:
     enabled: false
     custom_flag: keep-footer
+  user_message_preview:
+    custom_flag: keep-preview
   platforms:
     telegram:
       tool_progress: new
+  custom_flag: keep-display
 dashboard:
   custom_flag: keep-dashboard
 memory:
@@ -22931,6 +23090,13 @@ memory:
                 "displayBellOnComplete": true,
                 "displayPersistentOutput": false,
                 "displayPersistentOutputMaxLines": 120,
+                "displayInlineDiffs": false,
+                "displayTuiAutoResumeRecent": true,
+                "displayTuiStatusIndicator": "ascii",
+                "displayUserMessagePreviewFirstLines": 4,
+                "displayUserMessagePreviewLastLines": 0,
+                "displayEphemeralSystemTtl": 360,
+                "displayCopyShortcut": "disabled",
             }),
         )
         .unwrap();
@@ -23010,6 +23176,39 @@ memory:
             config["display"]["persistent_output_max_lines"].as_i64(),
             Some(120)
         );
+        assert_eq!(config["display"]["inline_diffs"].as_bool(), Some(false));
+        assert_eq!(
+            config["display"]["tui_auto_resume_recent"].as_bool(),
+            Some(true)
+        );
+        assert_eq!(
+            config["display"]["tui_status_indicator"].as_str(),
+            Some("ascii")
+        );
+        assert_eq!(
+            config["display"]["user_message_preview"]["first_lines"].as_i64(),
+            Some(4)
+        );
+        assert_eq!(
+            config["display"]["user_message_preview"]["last_lines"].as_i64(),
+            Some(0)
+        );
+        assert_eq!(
+            config["display"]["user_message_preview"]["custom_flag"].as_str(),
+            Some("keep-preview")
+        );
+        assert_eq!(
+            config["display"]["ephemeral_system_ttl"].as_i64(),
+            Some(360)
+        );
+        assert_eq!(
+            config["display"]["copy_shortcut"].as_str(),
+            Some("disabled")
+        );
+        assert_eq!(
+            config["display"]["custom_flag"].as_str(),
+            Some("keep-display")
+        );
     }
 
     #[test]
@@ -23081,6 +23280,39 @@ memory:
         )
         .unwrap_err();
         assert!(err.contains("display.tool_preview_length"));
+
+        let err = merge_hermes_display_config(
+            &mut config,
+            &json!({ "displayTuiStatusIndicator": "rainbow" }),
+        )
+        .unwrap_err();
+        assert!(err.contains("display.tui_status_indicator"));
+
+        let err =
+            merge_hermes_display_config(&mut config, &json!({ "displayCopyShortcut": "cmd_c" }))
+                .unwrap_err();
+        assert!(err.contains("display.copy_shortcut"));
+
+        let err = merge_hermes_display_config(
+            &mut config,
+            &json!({ "displayUserMessagePreviewFirstLines": 0 }),
+        )
+        .unwrap_err();
+        assert!(err.contains("display.user_message_preview.first_lines"));
+
+        let err = merge_hermes_display_config(
+            &mut config,
+            &json!({ "displayUserMessagePreviewLastLines": 101 }),
+        )
+        .unwrap_err();
+        assert!(err.contains("display.user_message_preview.last_lines"));
+
+        let err = merge_hermes_display_config(
+            &mut config,
+            &json!({ "displayEphemeralSystemTtl": 86401 }),
+        )
+        .unwrap_err();
+        assert!(err.contains("display.ephemeral_system_ttl"));
     }
 }
 
