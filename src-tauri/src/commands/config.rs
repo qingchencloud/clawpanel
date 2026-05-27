@@ -851,7 +851,10 @@ pub fn write_openclaw_config(config: Value) -> Result<(), String> {
     fs::write(&path, &json).map_err(|e| format!("写入失败: {e}"))?;
 
     // 同步 provider 配置到所有 agent 的 models.json（运行时注册表）
-    sync_providers_to_agent_models(&config);
+    // 必须使用与磁盘一致的 merged+strip 结果，而非前端原始 payload：
+    // 否则 partial 写入时 merge 保留了其它 provider，但 sync 按 payload 会把
+    // agents/*/agent/models.json 里多出的 provider 整棵删掉，造成与 openclaw.json 不一致。
+    sync_providers_to_agent_models(&cleaned);
 
     Ok(())
 }
@@ -7001,4 +7004,46 @@ pub fn invalidate_path_cache() -> Result<(), String> {
     super::refresh_enhanced_path();
     crate::commands::service::invalidate_cli_detection_cache();
     Ok(())
+}
+
+#[cfg(test)]
+mod write_openclaw_config_merge_tests {
+    use super::merge_configs_preserving_fields;
+    use serde_json::json;
+
+    /// Regression guard: Issue #127 merge keeps full provider map when the UI payload
+    /// only touches one provider — `sync_providers_to_agent_models` must use the same
+    /// merged view (see `write_openclaw_config`), not the raw `config` argument.
+    #[test]
+    fn partial_models_merge_retains_other_providers() {
+        let existing = json!({
+            "models": {
+                "providers": {
+                    "a": { "models": [{ "id": "m1" }] },
+                    "b": { "models": [{ "id": "m2" }] }
+                }
+            }
+        });
+        let new = json!({
+            "models": {
+                "providers": {
+                    "a": {
+                        "baseUrl": "http://example",
+                        "models": [{ "id": "m1" }]
+                    }
+                }
+            }
+        });
+        let merged = merge_configs_preserving_fields(&existing, &new);
+        let prov = merged
+            .pointer("/models/providers")
+            .and_then(|p| p.as_object())
+            .expect("merged.models.providers");
+        assert!(prov.contains_key("a"));
+        assert!(
+            prov.contains_key("b"),
+            "merged config must retain provider b when the write payload omits it"
+        );
+        assert_eq!(prov["a"]["baseUrl"], json!("http://example"));
+    }
 }
