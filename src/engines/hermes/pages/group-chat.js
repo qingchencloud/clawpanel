@@ -13,6 +13,7 @@
  */
 import { t } from '../../../lib/i18n.js'
 import { api, isTauriRuntime, safeTauriListen } from '../../../lib/tauri-api.js'
+import { matchesHermesRun } from '../lib/hermes-run-events.js'
 import { svgIcon } from '../lib/svg-icons.js'
 
 /**
@@ -58,27 +59,27 @@ async function runHermesAgentAndWaitFinal(input) {
       cleanup()
       reject(err)
     }
-    const matchesRun = (rid) => !runId || !rid || rid === runId
     ;(async () => {
       try {
         unsubs.push(await safeTauriListen('hermes-run-started', (e) => {
-          if (!runId && e?.payload?.run_id) runId = e.payload.run_id
+          const rid = e?.payload?.run_id
+          if (!runId && rid) runId = rid
         }))
         unsubs.push(await safeTauriListen('hermes-run-delta', (e) => {
-          if (!matchesRun(e?.payload?.run_id)) return
+          if (!matchesHermesRun(runId, e?.payload?.run_id)) return
           accumulated += e?.payload?.delta || ''
         }))
         unsubs.push(await safeTauriListen('hermes-run-done', (e) => {
-          if (!matchesRun(e?.payload?.run_id)) return
+          if (!matchesHermesRun(runId, e?.payload?.run_id)) return
           const out = (e?.payload?.output || accumulated || '').trim()
           finish(out)
         }))
         unsubs.push(await safeTauriListen('hermes-run-error', (e) => {
-          if (!matchesRun(e?.payload?.run_id)) return
+          if (!matchesHermesRun(runId, e?.payload?.run_id)) return
           fail(new Error(e?.payload?.error || 'unknown error'))
         }))
         unsubs.push(await safeTauriListen('hermes-run-cancelled', (e) => {
-          if (!matchesRun(e?.payload?.run_id)) return
+          if (!matchesHermesRun(runId, e?.payload?.run_id)) return
           finish(accumulated.trim() || '(cancelled)')
         }))
 
@@ -89,7 +90,7 @@ async function runHermesAgentAndWaitFinal(input) {
 
         // 防御：如果 done 事件因为顺序问题尚未派发（理论上不会发生），等一拍兜底
         setTimeout(() => {
-          if (!settled) finish(accumulated.trim())
+          if (!settled && runId) finish(accumulated.trim())
         }, 300)
       } catch (e) {
         fail(e)
@@ -303,11 +304,13 @@ export function render() {
     // 每个 profile run 完后切到下一个。
     // 这是个 trade-off — 真正的并发需要后端改造支持 per-call profile。
     let activeProfile = null
+    let initialProfile = null
     try {
       // 记下当前 active profile 用于最后还原
       const curResp = await api.hermesProfilesList().catch(() => null)
       const curArr = Array.isArray(curResp) ? curResp : (curResp?.profiles || [])
-      activeProfile = curResp?.active || curArr.find(p => p.active)?.name || 'default'
+      initialProfile = curResp?.active || curArr.find(p => p.active)?.name || 'default'
+      activeProfile = initialProfile
     } catch {}
 
     for (let i = 0; i < targets.length; i++) {
@@ -333,6 +336,11 @@ export function render() {
     }
 
     // 还原 active profile（如果改了）— 静默尝试
+    if (initialProfile && activeProfile !== initialProfile) {
+      try {
+        await api.hermesProfileUse(initialProfile)
+      } catch {}
+    }
     sending = false
     draw()
   }
