@@ -12672,57 +12672,19 @@ pub async fn hermes_read_config() -> Result<Value, String> {
     let home = hermes_home();
     let config_path = home.join("config.yaml");
     let env_path = home.join(".env");
-    let _ = sanitize_hermes_openrouter_custom_mismatch();
+    sanitize_hermes_openrouter_custom_mismatch()?;
 
-    // 读取 config.yaml
-    let config_raw = std::fs::read_to_string(&config_path).unwrap_or_default();
-    let mut model_name = String::new();
-    let mut base_url_from_yaml = String::new();
-    let mut provider_from_yaml = String::new();
-    let mut in_model = false;
-    for line in config_raw.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("model:") {
-            in_model = true;
-            // `model: "xxx"` 单行格式
-            if let Some(v) = trimmed
-                .strip_prefix("model:")
-                .map(|s| s.trim().trim_matches('"'))
-            {
-                if !v.is_empty() && !v.contains(':') {
-                    model_name = v.to_string();
-                }
-            }
-            continue;
-        }
-        if in_model {
-            if trimmed.starts_with("default:") {
-                model_name = trimmed
-                    .strip_prefix("default:")
-                    .unwrap()
-                    .trim()
-                    .trim_matches('"')
-                    .to_string();
-            } else if trimmed.starts_with("base_url:") {
-                base_url_from_yaml = trimmed
-                    .strip_prefix("base_url:")
-                    .unwrap()
-                    .trim()
-                    .trim_matches('"')
-                    .to_string();
-            } else if trimmed.starts_with("provider:") {
-                provider_from_yaml = trimmed
-                    .strip_prefix("provider:")
-                    .unwrap()
-                    .trim()
-                    .trim_matches('"')
-                    .to_string();
-            } else if !trimmed.is_empty() && !trimmed.starts_with('#') && !trimmed.starts_with('-')
-            {
-                in_model = false;
-            }
-        }
-    }
+    // 读取顶层 model 配置；不要让 auxiliary/x_search 等子配置污染仪表盘显示。
+    let model_fields = if config_path.exists() {
+        let config_raw = std::fs::read_to_string(&config_path)
+            .map_err(|e| format!("读取 config.yaml 失败: {e}"))?;
+        read_top_level_hermes_model_fields(&config_raw)?
+    } else {
+        HermesModelFields::default()
+    };
+    let model_name = model_fields.default_model;
+    let base_url_from_yaml = model_fields.base_url;
+    let provider_from_yaml = model_fields.provider;
 
     // 读取 .env 到 key→value map
     let env_raw = std::fs::read_to_string(&env_path).unwrap_or_default();
@@ -17558,6 +17520,63 @@ mod hermes_config_raw_tests {
     fn accepts_empty_and_mapping_raw_config_yaml() {
         validate_hermes_config_raw_yaml("").unwrap();
         validate_hermes_config_raw_yaml("model:\n  default: gpt-4o\n").unwrap();
+    }
+}
+
+#[cfg(test)]
+mod hermes_dashboard_config_read_tests {
+    use super::read_top_level_hermes_model_fields;
+
+    #[test]
+    fn dashboard_reader_uses_only_top_level_model_mapping() {
+        let raw = "\
+model:
+  provider: openai-codex
+  base_url: https://chatgpt.com/backend-api/codex
+  default: gpt-5.5
+auxiliary:
+  web_extract:
+    provider: custom
+    model: ''
+x_search:
+  model: grok-4.20-reasoning
+  provider: custom
+";
+
+        let fields = read_top_level_hermes_model_fields(raw).unwrap();
+
+        assert_eq!(fields.default_model, "gpt-5.5");
+        assert_eq!(fields.provider, "openai-codex");
+        assert_eq!(fields.base_url, "https://chatgpt.com/backend-api/codex");
+    }
+
+    #[test]
+    fn dashboard_reader_keeps_scalar_model_compatibility() {
+        let raw = "\
+model: gpt-5.5
+x_search:
+  model: grok-4.20-reasoning
+  provider: custom
+";
+
+        let fields = read_top_level_hermes_model_fields(raw).unwrap();
+
+        assert_eq!(fields.default_model, "gpt-5.5");
+        assert!(fields.provider.is_empty());
+        assert!(fields.base_url.is_empty());
+    }
+
+    #[test]
+    fn dashboard_reader_rejects_invalid_yaml() {
+        let raw = "\
+model:
+  provider: openai-codex
+    default: gpt-5.5
+";
+
+        let err = read_top_level_hermes_model_fields(raw).unwrap_err();
+
+        assert!(err.contains("config.yaml YAML 格式错误"));
     }
 }
 
