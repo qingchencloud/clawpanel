@@ -3402,6 +3402,10 @@ fn build_hermes_channel_config_values(
                     .unwrap_or_default();
                 form.insert("appToken".to_string(), Value::String(app_token));
                 insert_json_string_if_present(&mut form, &extra, "signing_secret", "signingSecret");
+                let signing_secret = hermes_env_value(env_values, "SLACK_SIGNING_SECRET")
+                    .or_else(|| json_form_string(&form, "signingSecret"))
+                    .unwrap_or_default();
+                form.insert("signingSecret".to_string(), Value::String(signing_secret));
                 insert_json_string_if_present(&mut form, &extra, "webhook_path", "webhookPath");
             }
             "feishu" => {
@@ -11181,6 +11185,10 @@ fn build_hermes_channel_env_updates(platform: &str, form: &Value) -> Vec<(String
             push(
                 "SLACK_APP_TOKEN",
                 form_string(form, "appToken").unwrap_or_default(),
+            );
+            push(
+                "SLACK_SIGNING_SECRET",
+                form_string(form, "signingSecret").unwrap_or_default(),
             );
             push("SLACK_ALLOWED_USERS", csv_env_value(form, "allowFrom"));
             if let Some(value) = form_bool(form, "requireMention") {
@@ -24515,6 +24523,41 @@ platforms:
             config["platforms"]["slack"]["extra"]["unknown_option"].as_str(),
             Some("keep-me")
         );
+    }
+
+    #[test]
+    fn channel_env_updates_include_slack_signing_secret() {
+        let env = build_hermes_channel_env_updates(
+            "slack",
+            &json!({
+                "botToken": "xoxb-new",
+                "appToken": "xapp-new",
+                "signingSecret": "new-signing-secret",
+                "allowFrom": ["U1"],
+                "requireMention": true,
+            }),
+        );
+
+        assert!(env.contains(&(
+            "SLACK_BOT_TOKEN".to_string(),
+            "xoxb-new".to_string()
+        )));
+        assert!(env.contains(&(
+            "SLACK_APP_TOKEN".to_string(),
+            "xapp-new".to_string()
+        )));
+        assert!(env.contains(&(
+            "SLACK_SIGNING_SECRET".to_string(),
+            "new-signing-secret".to_string()
+        )));
+        assert!(env.contains(&(
+            "SLACK_ALLOWED_USERS".to_string(),
+            "U1".to_string()
+        )));
+        assert!(env.contains(&(
+            "SLACK_REQUIRE_MENTION".to_string(),
+            "true".to_string()
+        )));
     }
 
     #[test]

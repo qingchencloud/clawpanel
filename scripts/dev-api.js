@@ -2247,10 +2247,70 @@ function mergeConfigsPreservingFields(existing, next) {
   return merged
 }
 
+export function syncProvidersToAgentModels(config, openclawDir = OPENCLAW_DIR) {
+  const srcProviders = config?.models?.providers
+  if (!srcProviders || typeof srcProviders !== 'object' || Array.isArray(srcProviders)) return
+
+  const agentIds = ['main']
+  for (const agent of Array.isArray(config?.agents?.list) ? config.agents.list : []) {
+    const id = String(agent?.id || '').trim()
+    if (id && id !== 'main') agentIds.push(id)
+  }
+
+  const agentsDir = path.join(openclawDir, 'agents')
+  for (const agentId of agentIds) {
+    const modelsPath = path.join(agentsDir, agentId, 'agent', 'models.json')
+    if (!fs.existsSync(modelsPath)) continue
+
+    let modelsJson
+    try {
+      modelsJson = JSON.parse(fs.readFileSync(modelsPath, 'utf8'))
+    } catch {
+      continue
+    }
+    if (!modelsJson || typeof modelsJson !== 'object' || Array.isArray(modelsJson)) continue
+
+    let changed = false
+    if (!modelsJson.providers || typeof modelsJson.providers !== 'object' || Array.isArray(modelsJson.providers)) {
+      modelsJson.providers = {}
+      changed = true
+    }
+
+    const dstProviders = modelsJson.providers
+    for (const providerName of Object.keys(dstProviders)) {
+      if (!Object.hasOwn(srcProviders, providerName)) {
+        delete dstProviders[providerName]
+        changed = true
+      }
+    }
+    for (const [providerName, srcProvider] of Object.entries(srcProviders)) {
+      if (!Object.hasOwn(dstProviders, providerName)) {
+        dstProviders[providerName] = srcProvider
+        changed = true
+        continue
+      }
+      const dstProvider = dstProviders[providerName]
+      if (!dstProvider || typeof dstProvider !== 'object' || Array.isArray(dstProvider)) continue
+      for (const field of ['baseUrl', 'apiKey', 'api']) {
+        const srcVal = srcProvider?.[field]
+        if (typeof srcVal === 'string' && dstProvider[field] !== srcVal) {
+          dstProvider[field] = srcVal
+          changed = true
+        }
+      }
+    }
+
+    if (changed) {
+      fs.writeFileSync(modelsPath, JSON.stringify(modelsJson, null, 2))
+    }
+  }
+}
+
 function writeOpenclawConfigFile(config) {
   const cleaned = stripUiFields(config)
   if (fs.existsSync(CONFIG_PATH)) fs.copyFileSync(CONFIG_PATH, CONFIG_PATH + '.bak')
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(cleaned, null, 2))
+  syncProvidersToAgentModels(cleaned)
 }
 
 function ensureAgentsList(config) {
@@ -6313,6 +6373,7 @@ export function buildHermesChannelConfigValues(config = {}, envValues = {}) {
       putHermesString(form, extra, 'app_token')
       form.appToken = hermesEnvValue(envValues, 'SLACK_APP_TOKEN') || form.appToken || ''
       putHermesString(form, extra, 'signing_secret')
+      form.signingSecret = hermesEnvValue(envValues, 'SLACK_SIGNING_SECRET') || form.signingSecret || ''
       putHermesString(form, extra, 'webhook_path')
     } else if (platform === 'feishu') {
       for (const key of ['app_id', 'app_secret', 'domain', 'connection_mode', 'webhook_path', 'reaction_notifications']) {
@@ -6772,6 +6833,7 @@ export function buildHermesChannelEnvUpdates(platform, form = {}) {
   } else if (platform === 'slack') {
     updates.SLACK_BOT_TOKEN = String(form.botToken || '').trim()
     updates.SLACK_APP_TOKEN = String(form.appToken || '').trim()
+    updates.SLACK_SIGNING_SECRET = String(form.signingSecret || '').trim()
     updates.SLACK_ALLOWED_USERS = csvEnvValue(form.allowFrom)
     if (Object.hasOwn(form, 'requireMention')) updates.SLACK_REQUIRE_MENTION = boolEnvValue(form.requireMention)
   } else if (platform === 'feishu') {
