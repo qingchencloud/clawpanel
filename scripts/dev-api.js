@@ -6851,11 +6851,15 @@ function secretAwareAccountDisplayValue(value) {
   return formatSecretRefPlaceholder(value)
 }
 
-function resolvePlatformConfigEntry(channelRoot, platform, accountId) {
+export function resolvePlatformConfigEntry(channelRoot, platform, accountId) {
   if (!channelRoot || typeof channelRoot !== 'object') return null
   const accountKey = typeof accountId === 'string' ? accountId.trim() : ''
   if (platformStorageKey(platform) === 'tlon' && accountKey === QQBOT_DEFAULT_ACCOUNT_ID) return channelRoot
-  if (accountKey) return channelRoot.accounts?.[accountKey] || channelRoot
+  if (accountKey) {
+    const entry = channelRoot.accounts?.[accountKey]
+    if (entry && typeof entry === 'object') return entry
+    return null
+  }
   if (platformStorageKey(platform) === 'qqbot' && !channelHasQqbotCredentials(channelRoot)) {
     return channelRoot.accounts?.[QQBOT_DEFAULT_ACCOUNT_ID] || channelRoot
   }

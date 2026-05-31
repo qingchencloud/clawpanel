@@ -2524,17 +2524,22 @@ async function openConfigDialog(pid, page, state, accountId) {
   }
 
   // 尝试加载已有配置（accountId 用于多账号读取）
+  // 「添加账号」传入 ''，且 readPlatformConfig 会把 '' 当成 null；此处直接跳过读取，避免预填默认账号凭证。
+  const dialogAccountId = accountId != null ? String(accountId).trim() : ''
+  const isNewAccountDialog = supportsMessagingMultiAccount(pid) && accountId === ''
   let existing = {}
   let isEdit = false
-  try {
-    const res = await api.readPlatformConfig(pid, accountId)
-    if (res?.values) {
-      existing = res.values
-    }
-    if (res?.exists) {
-      isEdit = true
-    }
-  } catch {}
+  if (!isNewAccountDialog) {
+    try {
+      const res = await api.readPlatformConfig(pid, accountId)
+      if (res?.values) {
+        existing = res.values
+      }
+      if (res?.exists) {
+        isEdit = true
+      }
+    } catch {}
+  }
 
   // 加载 Agent 列表（不预选，因为一个 channel+accountId 可以被多个 agent 绑定）
   let agents = []
@@ -2547,11 +2552,12 @@ async function openConfigDialog(pid, page, state, accountId) {
   const supportsMultiAccount = supportsMessagingMultiAccount(pid)
 
   // 账号标识（多账号）；编辑时 accountId 非空会在 input value 中显示
+  const accountIdReadonly = isEdit && dialogAccountId
   const accountIdHtml = supportsMultiAccount ? `
     <div class="form-group">
       <label class="form-label">${t('channels.accountIdentifier')}</label>
-      <input class="form-input" name="__accountId" placeholder="${t('channels.accountIdPlaceholder')}" value="${escapeAttr(accountId != null ? accountId : '')}">
-      <div class="form-hint">${t('channels.accountIdHint')}</div>
+      <input class="form-input" name="__accountId" placeholder="${t('channels.accountIdPlaceholder')}" value="${escapeAttr(accountId != null ? accountId : '')}" ${accountIdReadonly ? 'readonly' : ''}>
+      <div class="form-hint">${accountIdReadonly ? t('channels.accountIdLockedHint') : t('channels.accountIdHint')}</div>
     </div>
   ` : ''
 

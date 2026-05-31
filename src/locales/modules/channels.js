@@ -544,6 +544,7 @@ export default {
   accountIdentifier: _('账号标识', 'Account Identifier', '账號標識'),
   accountIdPlaceholder: _('留空为默认账号；修改会创建新账号', 'Leave empty for default account; changing creates a new account', '留空為預設账號；修改會建立新账號'),
   accountIdHint: _('每个账号对应一个独立机器人。不同账号可绑定不同 Agent。', 'Each account corresponds to an independent bot. Different accounts can bind to different Agents.', '每個账號对應一個獨立機器人。不同账號可綁定不同 Agent。'),
+  accountIdLockedHint: _('编辑已有账号时不可修改标识，避免误写入根配置。', 'Account identifier cannot be changed when editing an existing account; this prevents writing to the root config by mistake.', '編輯已有账號時不可修改標識，避免誤寫入根設定。'),
   bindAgent: _('绑定 Agent', 'Bind Agent', '綁定 Agent', 'Agent をバインド', 'Agent 바인딩', 'Liên kết Agent', 'Vincular Agent', 'Vincular Agent', 'Привязать агента', 'Lier un Agent', 'Agent verknüpfen'),
   bindAgentHint: _('该账号收到的消息路由到哪个 Agent（可在「Agent 对接」页添加更多绑定）。', 'Which Agent receives messages for this account (add more bindings in "Agent Binding" tab).', '該账號收到的訊息路由到哪個 Agent（可在「Agent 对接」頁新增更多綁定）。'),
   show: _('显示', 'Show', '顯示'),
