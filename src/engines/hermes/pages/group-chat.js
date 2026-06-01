@@ -32,6 +32,12 @@ import { svgIcon } from '../lib/svg-icons.js'
  * 注意：并发场景下 listener 会全局收事件，因此用 run_id 过滤，
  * 串行模式（当前群聊调度方式）也能 race-safe。
  */
+
+/** @internal Exported for regression tests — do not accept events until run_id is known. */
+export function matchesHermesRun(runId, eventRunId) {
+  return Boolean(runId && eventRunId && eventRunId === runId)
+}
+
 async function runHermesAgentAndWaitFinal(input) {
   if (!isTauriRuntime()) {
     throw new Error('Hermes group chat requires Tauri runtime')
@@ -58,27 +64,26 @@ async function runHermesAgentAndWaitFinal(input) {
       cleanup()
       reject(err)
     }
-    const matchesRun = (rid) => !runId || !rid || rid === runId
     ;(async () => {
       try {
         unsubs.push(await safeTauriListen('hermes-run-started', (e) => {
           if (!runId && e?.payload?.run_id) runId = e.payload.run_id
         }))
         unsubs.push(await safeTauriListen('hermes-run-delta', (e) => {
-          if (!matchesRun(e?.payload?.run_id)) return
+          if (!matchesHermesRun(runId, e?.payload?.run_id)) return
           accumulated += e?.payload?.delta || ''
         }))
         unsubs.push(await safeTauriListen('hermes-run-done', (e) => {
-          if (!matchesRun(e?.payload?.run_id)) return
+          if (!matchesHermesRun(runId, e?.payload?.run_id)) return
           const out = (e?.payload?.output || accumulated || '').trim()
           finish(out)
         }))
         unsubs.push(await safeTauriListen('hermes-run-error', (e) => {
-          if (!matchesRun(e?.payload?.run_id)) return
+          if (!matchesHermesRun(runId, e?.payload?.run_id)) return
           fail(new Error(e?.payload?.error || 'unknown error'))
         }))
         unsubs.push(await safeTauriListen('hermes-run-cancelled', (e) => {
-          if (!matchesRun(e?.payload?.run_id)) return
+          if (!matchesHermesRun(runId, e?.payload?.run_id)) return
           finish(accumulated.trim() || '(cancelled)')
         }))
 
@@ -302,39 +307,44 @@ export function render() {
     // 简化策略：用 hermes_profile_use 切换 profile（串行调度），
     // 每个 profile run 完后切到下一个。
     // 这是个 trade-off — 真正的并发需要后端改造支持 per-call profile。
-    let activeProfile = null
+    let initialProfile = 'default'
+    let currentProfile = initialProfile
     try {
-      // 记下当前 active profile 用于最后还原
       const curResp = await api.hermesProfilesList().catch(() => null)
       const curArr = Array.isArray(curResp) ? curResp : (curResp?.profiles || [])
-      activeProfile = curResp?.active || curArr.find(p => p.active)?.name || 'default'
-    } catch {}
+      initialProfile = curResp?.active || curArr.find(p => p.active)?.name || 'default'
+      currentProfile = initialProfile
+    } catch { /* keep default */ }
 
-    for (let i = 0; i < targets.length; i++) {
-      const profile = targets[i]
-      const placeholder = placeholders[i]
-      try {
-        // 切到该 profile
-        if (profile !== activeProfile) {
-          await api.hermesProfileUse(profile)
-          activeProfile = profile
+    try {
+      for (let i = 0; i < targets.length; i++) {
+        const profile = targets[i]
+        const placeholder = placeholders[i]
+        try {
+          if (profile !== currentProfile) {
+            await api.hermesProfileUse(profile)
+            currentProfile = profile
+          }
+          // 触发 agent run，并通过 hermes-run-* 事件等真正的 final 输出。
+          // 不能直接用 hermesAgentRun 的返回值，它只是 run_id 字符串，不是回复内容。
+          const finalText = await runHermesAgentAndWaitFinal(text)
+          placeholder.loading = false
+          placeholder.content = finalText || t('engine.hermesGroupChatNoOutput')
+          placeholder.ts = Date.now()
+        } catch (e) {
+          placeholder.loading = false
+          placeholder.error = String(e?.message || e).slice(0, 500)
         }
-        // 触发 agent run，并通过 hermes-run-* 事件等真正的 final 输出。
-        // 不能直接用 hermesAgentRun 的返回值，它只是 run_id 字符串，不是回复内容。
-        const finalText = await runHermesAgentAndWaitFinal(text)
-        placeholder.loading = false
-        placeholder.content = finalText || t('engine.hermesGroupChatNoOutput')
-        placeholder.ts = Date.now()
-      } catch (e) {
-        placeholder.loading = false
-        placeholder.error = String(e?.message || e).slice(0, 500)
+        draw()
       }
+    } finally {
+      // 还原进入群聊前的 active profile，避免污染后续 Chat / Channels 等页面
+      if (currentProfile !== initialProfile) {
+        await api.hermesProfileUse(initialProfile).catch(() => {})
+      }
+      sending = false
       draw()
     }
-
-    // 还原 active profile（如果改了）— 静默尝试
-    sending = false
-    draw()
   }
 
   draw()
