@@ -3,7 +3,7 @@
  * 包装现有 OpenClaw 逻辑为统一的 Engine 接口，不改动原有代码
  */
 import { detectOpenclawStatus, isOpenclawReady, isGatewayRunning, isGatewayForeign,
-         onGatewayChange, startGatewayPoll, stopGatewayPoll, onReadyChange } from '../../lib/app-state.js'
+          onGatewayChange, startGatewayPoll, stopGatewayPoll, onReadyChange } from '../../lib/app-state.js'
 import { initFeatureGates, isFeatureAvailable } from '../../lib/feature-gates.js'
 import { t } from '../../lib/i18n.js'
 

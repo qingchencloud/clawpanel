@@ -45,11 +45,7 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;')
 }
 
-// 预加载 Tauri convertFileSrc
-let _convertFileSrc = null
-if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
-  import('@tauri-apps/api/core').then(m => { _convertFileSrc = m.convertFileSrc }).catch(() => {})
-}
+// Web-only：不再预加载 Tauri convertFileSrc
 
 /** 将本地文件路径转换为可加载的 URL */
 function resolveImageSrc(src) {
@@ -61,11 +57,7 @@ function resolveImageSrc(src) {
   // Unix 绝对路径 (/Users/... /home/... /tmp/...)
   const isUnixPath = /^\/[^/]/.test(src)
   if (isWinPath || isUnixPath) {
-    // Tauri 环境：使用 convertFileSrc 转换为 asset protocol URL
-    if (_convertFileSrc) {
-      try { return _convertFileSrc(src) } catch {}
-    }
-    // Tauri 未就绪或 Web 模式：返回原始路径（onerror 会处理显示）
+    // Web 模式：返回原始路径（onerror 会处理显示）
     return src
   }
   return src

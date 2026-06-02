@@ -6,53 +6,9 @@ import { toast } from '../components/toast.js'
 import { statusIcon } from '../lib/icons.js'
 import { t } from '../lib/i18n.js'
 
-const isTauri = !!window.__TAURI_INTERNALS__
-let _tauriApi = null
-
-async function getTauriApi() {
-  if (!_tauriApi) _tauriApi = (await import('../lib/tauri-api.js')).api
-  return _tauriApi
-}
+const isTauri = false
 
 async function apiCall(cmd, args = {}) {
-  if (isTauri) {
-    // 桌面端：通过 Tauri IPC 读写 clawpanel.json
-    const api = await getTauriApi()
-    const cfg = await api.readPanelConfig()
-
-    if (cmd === 'auth_status') {
-      const isDefault = cfg.accessPassword === '123456'
-      const result = { hasPassword: !!cfg.accessPassword, mustChangePassword: isDefault, ignoreRisk: !!cfg.ignoreRisk }
-      if (isDefault) result.defaultPassword = '123456'
-      return result
-    }
-    if (cmd === 'auth_change_password') {
-      if (cfg.accessPassword && args.oldPassword !== cfg.accessPassword) throw new Error(t('security.wrongPassword'))
-      const weakErr = checkPasswordStrengthLocal(args.newPassword)
-      if (weakErr) throw new Error(weakErr)
-      if (args.newPassword === cfg.accessPassword) throw new Error(t('security.pwSameAsOld'))
-      cfg.accessPassword = args.newPassword
-      delete cfg.mustChangePassword
-      delete cfg.ignoreRisk
-      await api.writePanelConfig(cfg)
-      sessionStorage.setItem('clawpanel_authed', '1')
-      return { success: true }
-    }
-    if (cmd === 'auth_ignore_risk') {
-      if (args.enable) {
-        delete cfg.accessPassword
-        delete cfg.mustChangePassword
-        cfg.ignoreRisk = true
-        sessionStorage.removeItem('clawpanel_authed')
-      } else {
-        delete cfg.ignoreRisk
-      }
-      await api.writePanelConfig(cfg)
-      return { success: true }
-    }
-    throw new Error(`${t('common.unknownCommand')}: ${cmd}`)
-  }
-  // Web 模式
   const resp = await fetch(`/__api/${cmd}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

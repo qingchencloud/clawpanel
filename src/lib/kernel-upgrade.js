@@ -4,7 +4,7 @@
  * 把 about 页升级流程的核心代码提取出来，让 sidebar / dashboard 也能复用。
  * 全程对小白透明：弹确认 → 进度展示 → 成功提示 / 失败提示，无需打开终端。
  */
-import { api, isTauriRuntime } from './tauri-api.js'
+import { api } from './tauri-api.js'
 import { showUpgradeModal, showConfirm } from '../components/modal.js'
 import { setUpgrading } from './app-state.js'
 import { toast } from '../components/toast.js'
@@ -54,36 +54,13 @@ export async function triggerKernelUpgrade(opts = {}) {
   }
 
   try {
-    if (isTauriRuntime() && window.__TAURI_INTERNALS__) {
-      // 桌面端：订阅原生事件流
-      const { listen } = await import('@tauri-apps/api/event')
-      unlistenLog = await listen('upgrade-log', (e) => modal.appendLog(e.payload))
-      unlistenProgress = await listen('upgrade-progress', (e) => modal.setProgress(e.payload))
-      unlistenDone = await listen('upgrade-done', (e) => {
-        cleanup()
-        const msg = typeof e.payload === 'string'
-          ? e.payload
-          : t('kernel.upgrade.successMessage')
-        modal.setDone(msg)
-        toast(t('kernel.upgrade.successToast'), 'success')
-      })
-      unlistenError = await listen('upgrade-error', (e) => {
-        cleanup()
-        modal.setError(t('kernel.upgrade.failurePrefix') + ' ' + (e.payload || ''))
-      })
-
-      modal.appendLog(t('kernel.upgrade.starting', { version: targetVersion || t('common.recommended') }))
-      // version=null 让后端按 openclaw-version-policy.json 自己挑推荐版
-      await api.upgradeOpenclaw(variant, null, 'auto')
-    } else {
-      // Web 模式：单次同步调用，无进度事件
-      modal.appendLog(t('kernel.upgrade.starting', { version: targetVersion || t('common.recommended') }))
-      const result = await api.upgradeOpenclaw(variant, null, 'auto')
-      modal.setProgress(100)
-      modal.setDone(typeof result === 'string' ? result : t('kernel.upgrade.successMessage'))
-      toast(t('kernel.upgrade.successToast'), 'success')
-      cleanup()
-    }
+    // Web-only：单次同步调用，无进度事件
+    modal.appendLog(t('kernel.upgrade.starting', { version: targetVersion || t('common.recommended') }))
+    const result = await api.upgradeOpenclaw(variant, null, 'auto')
+    modal.setProgress(100)
+    modal.setDone(typeof result === 'string' ? result : t('kernel.upgrade.successMessage'))
+    toast(t('kernel.upgrade.successToast'), 'success')
+    cleanup()
     return true
   } catch (e) {
     console.error('[kernel-upgrade] 升级失败', e)

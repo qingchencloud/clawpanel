@@ -952,45 +952,12 @@ async function doUpgradeWithModal(source, page, version = null, method = 'auto')
   }
 
   try {
-    if (window.__TAURI_INTERNALS__) {
-      const { listen } = await import('@tauri-apps/api/event')
-      unlistenLog = await listen('upgrade-log', (e) => modal.appendLog(e.payload))
-      unlistenProgress = await listen('upgrade-progress', (e) => modal.setProgress(e.payload))
-
-      // 后台任务完成事件
-      unlistenDone = await listen('upgrade-done', (e) => {
-        cleanup()
-        modal.setDone(typeof e.payload === 'string' ? e.payload : t('services.taskDone'))
-        loadVersion(page)
-      })
-
-      // 后台任务失败事件
-      unlistenError = await listen('upgrade-error', (e) => {
-        cleanup()
-        const errStr = String(e.payload || t('common.error'))
-        modal.appendLog(errStr)
-        const fullLog = modal.getLogText() + '\n' + errStr
-        const diagnosis = diagnoseInstallError(fullLog)
-        modal.setError(diagnosis.title)
-        if (diagnosis.hint) modal.appendLog('')
-        if (diagnosis.hint) modal.appendHtmlLog(`${statusIcon('info', 14)} ${diagnosis.hint}`)
-        if (diagnosis.command) modal.appendHtmlLog(`${icon('clipboard', 14)} ${diagnosis.command}`)
-        if (window.__openAIDrawerWithError) {
-          window.__openAIDrawerWithError({ title: diagnosis.title, error: fullLog, scene: t('services.upgradeScene'), hint: diagnosis.hint })
-        }
-      })
-
-      // 发起后台任务（立即返回）
-      await api.upgradeOpenclaw(source, version, method)
-      modal.appendLog(t('services.taskStarted'))
-    } else {
-      // Web 模式：仍然同步等待（dev-api 后端没有 spawn）
-      modal.appendLog(t('services.webModeNoLog'))
-      const msg = await api.upgradeOpenclaw(source, version, method)
-      modal.setDone(typeof msg === 'string' ? msg : (msg?.message || t('services.upgradeDone')))
-      await loadVersion(page)
-      cleanup()
-    }
+    // Web-only：同步等待，不再订阅桌面事件流
+    modal.appendLog(t('services.webModeNoLog'))
+    const msg = await api.upgradeOpenclaw(source, version, method)
+    modal.setDone(typeof msg === 'string' ? msg : (msg?.message || t('services.upgradeDone')))
+    await loadVersion(page)
+    cleanup()
   } catch (e) {
     cleanup()
     const errStr = String(e)

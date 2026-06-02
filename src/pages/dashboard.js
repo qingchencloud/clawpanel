@@ -723,24 +723,14 @@ function bindActions(page) {
     try {
       const config = await api.readOpenclawConfig()
       const port = config?.gateway?.port || 18789
-      // 远程部署时使用当前浏览器域名/IP，桌面版用 127.0.0.1
-      const host = window.__TAURI_INTERNALS__ ? '127.0.0.1' : (location.hostname || '127.0.0.1')
+      // Web-only：始终使用当前浏览器域名/IP
+      const host = location.hostname || '127.0.0.1'
       const proto = location.protocol === 'https:' ? 'https' : 'http'
       let url = `${proto}://${host}:${port}`
       // 如果 Gateway 配置了 token 鉴权，附加到 URL 方便直接访问
       const authToken = config?.gateway?.auth?.token
       if (authToken) url += `?token=${encodeURIComponent(authToken)}`
-      // 尝试多种方式打开浏览器
-      if (window.__TAURI_INTERNALS__) {
-        try {
-          const { open } = await import('@tauri-apps/plugin-shell')
-          await open(url)
-        } catch {
-          window.open(url, '_blank')
-        }
-      } else {
-        window.open(url, '_blank')
-      }
+      window.open(url, '_blank')
     } catch (e2) {
       toast(t('dashboard.openControlUIFail') + ': ' + (e2.message || e2), 'error')
     }
