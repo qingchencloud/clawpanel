@@ -289,22 +289,7 @@ async function handleInstallCftunnel(page) {
 
   let unlistenLog, unlistenProgress
   try {
-    if (window.__TAURI_INTERNALS__) {
-      try {
-        const { listen } = await import('@tauri-apps/api/event')
-        unlistenLog = await listen('install-log', (e) => {
-          logBox.textContent += e.payload + '\n'
-          logBox.scrollTop = logBox.scrollHeight
-        })
-        unlistenProgress = await listen('install-progress', (e) => {
-          const progress = e.payload
-          progressFill.style.width = progress + '%'
-          progressText.textContent = t('ext.installing') + ` ${progress}%`
-        })
-      } catch { /* Web mode no Tauri event */ }
-    } else {
-      logBox.textContent += t('ext.webModeNoLogs') + '\n'
-    }
+    logBox.textContent += t('ext.webModeNoLogs') + '\n'
 
     await api.installCftunnel()
 
@@ -355,22 +340,7 @@ async function handleInstallClawapp(page) {
 
   let unlistenLog, unlistenProgress
   try {
-    if (window.__TAURI_INTERNALS__) {
-      try {
-        const { listen } = await import('@tauri-apps/api/event')
-        unlistenLog = await listen('install-log', (e) => {
-          logBox.textContent += e.payload + '\n'
-          logBox.scrollTop = logBox.scrollHeight
-        })
-        unlistenProgress = await listen('install-progress', (e) => {
-          const progress = e.payload
-          progressFill.style.width = progress + '%'
-          progressText.textContent = t('ext.installing') + ` ${progress}%`
-        })
-      } catch { /* Web mode no Tauri event */ }
-    } else {
-      logBox.textContent += t('ext.webModeNoLogs') + '\n'
-    }
+    logBox.textContent += t('ext.webModeNoLogs') + '\n'
 
     await api.installClawapp()
 

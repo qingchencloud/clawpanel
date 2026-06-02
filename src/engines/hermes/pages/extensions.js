@@ -127,12 +127,7 @@ export function render() {
         ev.preventDefault()
         const openWith = async (port) => {
           const url = a.href.replace(/:9119(\/?)/, ':' + port + '$1')
-          if (window.__TAURI_INTERNALS__) {
-            const { open } = await import('@tauri-apps/plugin-shell')
-            await open(url)
-          } else {
-            window.open(url, '_blank', 'noopener,noreferrer')
-          }
+          window.open(url, '_blank', 'noopener,noreferrer')
         }
         // 1. probe
         const probe = await api.hermesDashboardProbe().catch(() => ({ running: false, port: 9119 }))

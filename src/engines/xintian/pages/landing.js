@@ -37,13 +37,6 @@ function esc(s) { return String(s ?? '').replace(/</g, '&lt;').replace(/>/g, '&g
 
 async function openExternal(url) {
   if (!url) return
-  try {
-    if (window.__TAURI_INTERNALS__) {
-      const { open } = await import('@tauri-apps/plugin-shell')
-      await open(url)
-      return
-    }
-  } catch (_) { /* fallback */ }
   try { window.open(url, '_blank', 'noopener,noreferrer') } catch (_) {}
 }
 

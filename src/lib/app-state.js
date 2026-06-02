@@ -4,7 +4,7 @@
  */
 import { api } from './tauri-api.js'
 
-const isTauri = !!window.__TAURI_INTERNALS__
+const isTauri = false
 
 let _openclawReady = false
 let _gatewayRunning = false
@@ -20,6 +20,7 @@ let _isUpgrading = false // 升级/切换版本期间，阻止 setup 跳转
 let _userStopped = false // 用户主动停止，不自动拉起
 let _gatewayRunningSince = 0 // Gateway 最近一次进入稳定运行状态的时间
 let _guardianListeners = [] // 守护放弃时的回调（后端 guardian-event 触发）
+let _statusStream = null
 
 /** openclaw 是否就绪（CLI 已安装 + 配置文件存在） */
 export function isOpenclawReady() {
@@ -159,11 +160,8 @@ function _setGatewayRunning(val, foreign = false) {
   }
 }
 
-/** 刷新 Gateway 运行状态（轻量，仅查服务状态）
- *  防抖：running→stopped 需要连续 3 次检测才切换，避免瞬态误判 */
-export async function refreshGatewayStatus() {
+function _applyGatewayServices(services) {
   try {
-    const services = await api.getServicesStatus()
     if (services?.length > 0) {
       const gw = services.find?.(s => s.label === 'ai.openclaw.gateway') || services[0]
       const ownedRunning = gw?.running === true && gw?.owned_by_current_instance !== false
@@ -192,13 +190,50 @@ export async function refreshGatewayStatus() {
   return _gatewayRunning
 }
 
+/** 刷新 Gateway 运行状态（轻量，仅查服务状态）
+ *  防抖：running→stopped 需要连续 3 次检测才切换，避免瞬态误判 */
+export async function refreshGatewayStatus() {
+  try {
+    const services = await api.getServicesStatus()
+    return _applyGatewayServices(services)
+  } catch {
+    _gwStopCount++
+    if (_gwStopCount >= 3) _setGatewayRunning(false)
+    return _gatewayRunning
+  }
+}
+
 let _pollTimer = null
 /** 启动 Gateway 状态轮询（每 15 秒检测一次） */
 export function startGatewayPoll() {
-  if (_pollTimer) return
+  if (_pollTimer || _statusStream) return
+  if (!isTauri && typeof EventSource !== 'undefined') {
+    try {
+      const stream = new EventSource('/__api/gateway_status_stream')
+      _statusStream = stream
+      stream.onmessage = (e) => {
+        try {
+          const payload = JSON.parse(e.data || '{}')
+          _applyGatewayServices(payload.services || [])
+        } catch {}
+      }
+      stream.onerror = () => {
+        try { stream.close() } catch {}
+        if (_statusStream === stream) _statusStream = null
+        if (!_pollTimer) _pollTimer = setInterval(() => refreshGatewayStatus(), 15000)
+      }
+      return
+    } catch {
+      _statusStream = null
+    }
+  }
   _pollTimer = setInterval(() => refreshGatewayStatus(), 15000)
 }
 export function stopGatewayPoll() {
+  if (_statusStream) {
+    try { _statusStream.close() } catch {}
+    _statusStream = null
+  }
   if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null }
 }
 

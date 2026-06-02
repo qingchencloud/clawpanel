@@ -31,11 +31,6 @@ const HERMES_DASHBOARD_URL = 'http://127.0.0.1:9119/'
  */
 async function openExternalUrl(url) {
   if (!url) return
-  if (window.__TAURI_INTERNALS__) {
-    const { open } = await import('@tauri-apps/plugin-shell')
-    await open(url)
-    return
-  }
   // Web 模式：打开用户浏览器中的新标签
   const win = window.open(url, '_blank', 'noopener,noreferrer')
   if (!win) throw new Error('popup blocked')
@@ -583,12 +578,7 @@ export function render() {
 
           let installOk = false
           try {
-            if (window.__TAURI_INTERNALS__) {
-              const { listen } = await import('@tauri-apps/api/event')
-              const u1 = await listen('hermes-install-log', (ev) => um.appendLog(String(ev.payload)))
-              const u2 = await listen('hermes-install-progress', (ev) => um.setProgress(Number(ev.payload) || 0))
-              unlisten = () => { u1(); u2() }
-            }
+            unlisten = null
 
             if (gatewayWasRunning) {
               um.appendLog(t('engine.dashNativePanelInstallStoppingGw'))

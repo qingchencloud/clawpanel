@@ -102,6 +102,7 @@ export class WsClient {
     this._authRetryCount = 0
     this._password = ''
     this._serverVersion = null
+    this._connectSignature = ''
 
     // 增强状态追踪
     this._lastConnectedAt = null
@@ -190,18 +191,23 @@ export class WsClient {
   }
 
   connect(host, token, opts = {}) {
-    this._intentionalClose = false
-    this._autoPairAttempts = 0
-    this._token = token || ''
-    this._password = opts.password || ''
+    const nextToken = token || ''
+    const nextPassword = opts.password || ''
     // 自动检测协议：如果页面通过 HTTPS 加载（反代场景），使用 wss://
     const proto = opts.secure ?? (typeof location !== 'undefined' && location.protocol === 'https:') ? 'wss' : 'ws'
-    const nextUrl = `${proto}://${host}/ws?token=${encodeURIComponent(this._token)}`
-    if (this._connecting || this._handshaking || this._gatewayReady) {
-      if (this._url === nextUrl) return
+    const nextUrl = `${proto}://${host}/ws?token=${encodeURIComponent(nextToken)}`
+    const nextSignature = `${nextUrl}::${nextPassword}`
+    const busy = this._connecting || this._handshaking || this._gatewayReady || (this._ws && (this._ws.readyState === WebSocket.OPEN || this._ws.readyState === WebSocket.CONNECTING))
+    if (busy && this._connectSignature === nextSignature) return
+    if (this._ws && (this._ws.readyState === WebSocket.OPEN || this._ws.readyState === WebSocket.CONNECTING)) {
+      this.disconnect()
     }
-    if (this._ws && (this._ws.readyState === WebSocket.OPEN || this._ws.readyState === WebSocket.CONNECTING)) return
+    this._intentionalClose = false
+    this._autoPairAttempts = 0
+    this._token = nextToken
+    this._password = nextPassword
     this._url = nextUrl
+    this._connectSignature = nextSignature
     this._lastConnectedAt = Date.now()
     this._doConnect()
   }
@@ -219,6 +225,7 @@ export class WsClient {
     this._handshaking = false
     this._reconnectState = 'idle'
     this._pendingReconnect = false
+    this._connectSignature = ''
   }
 
   reconnect() {
@@ -234,6 +241,7 @@ export class WsClient {
     this._clearChallengeTimer()
     this._flushPending()
     this._closeWs()
+    this._connectSignature = `${this._url}::${this._password}`
     this._doConnect()
   }
 

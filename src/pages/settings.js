@@ -10,7 +10,7 @@ import { isMacPlatform } from '../lib/app-state.js'
 import { renderSidebar } from '../components/sidebar.js'
 import { getActiveEngineId } from '../lib/engine-manager.js'
 
-const isTauri = !!window.__TAURI_INTERNALS__
+const isTauri = false
 
 function escapeHtml(str) {
   if (!str) return ''
@@ -123,11 +123,6 @@ export async function render() {
       <div id="language-bar"></div>
     </div>
 
-    ${window.__TAURI_INTERNALS__ ? `<div class="config-section" id="autostart-section">
-      <div class="config-section-title">${t('settings.autostart')}</div>
-      <div id="autostart-bar"><div class="stat-card loading-placeholder" style="height:48px"></div></div>
-    </div>` : ''}
-
   `
 
   bindEvents(page)
@@ -141,7 +136,6 @@ async function loadAll(page) {
   if (!isHermes) {
     tasks.push(loadOpenclawDir(page), loadOpenclawSearchPaths(page), loadDockerDefaults(page), loadGitPath(page), loadCliBinding(page), loadRegistry(page))
   }
-  if (window.__TAURI_INTERNALS__) tasks.push(loadAutostart(page))
   await Promise.all(tasks)
   loadLanguageSwitcher(page)
 }
