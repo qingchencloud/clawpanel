@@ -14,6 +14,7 @@
 import { t } from '../../../lib/i18n.js'
 import { api, isTauriRuntime, safeTauriListen } from '../../../lib/tauri-api.js'
 import { svgIcon } from '../lib/svg-icons.js'
+import { matchesHermesRun } from '../lib/hermes-run-events.js'
 
 /**
  * Hermes `hermes_agent_run` 是 streaming-with-events：它通过 SSE 消费 Hermes Gateway
@@ -58,27 +59,26 @@ async function runHermesAgentAndWaitFinal(input) {
       cleanup()
       reject(err)
     }
-    const matchesRun = (rid) => !runId || !rid || rid === runId
     ;(async () => {
       try {
         unsubs.push(await safeTauriListen('hermes-run-started', (e) => {
           if (!runId && e?.payload?.run_id) runId = e.payload.run_id
         }))
         unsubs.push(await safeTauriListen('hermes-run-delta', (e) => {
-          if (!matchesRun(e?.payload?.run_id)) return
+          if (!matchesHermesRun(runId, e?.payload?.run_id)) return
           accumulated += e?.payload?.delta || ''
         }))
         unsubs.push(await safeTauriListen('hermes-run-done', (e) => {
-          if (!matchesRun(e?.payload?.run_id)) return
+          if (!matchesHermesRun(runId, e?.payload?.run_id)) return
           const out = (e?.payload?.output || accumulated || '').trim()
           finish(out)
         }))
         unsubs.push(await safeTauriListen('hermes-run-error', (e) => {
-          if (!matchesRun(e?.payload?.run_id)) return
+          if (!matchesHermesRun(runId, e?.payload?.run_id)) return
           fail(new Error(e?.payload?.error || 'unknown error'))
         }))
         unsubs.push(await safeTauriListen('hermes-run-cancelled', (e) => {
-          if (!matchesRun(e?.payload?.run_id)) return
+          if (!matchesHermesRun(runId, e?.payload?.run_id)) return
           finish(accumulated.trim() || '(cancelled)')
         }))
 
@@ -302,19 +302,19 @@ export function render() {
     // 简化策略：用 hermes_profile_use 切换 profile（串行调度），
     // 每个 profile run 完后切到下一个。
     // 这是个 trade-off — 真正的并发需要后端改造支持 per-call profile。
+    let initialProfile = null
     let activeProfile = null
     try {
-      // 记下当前 active profile 用于最后还原
       const curResp = await api.hermesProfilesList().catch(() => null)
       const curArr = Array.isArray(curResp) ? curResp : (curResp?.profiles || [])
-      activeProfile = curResp?.active || curArr.find(p => p.active)?.name || 'default'
+      initialProfile = curResp?.active || curArr.find(p => p.active)?.name || 'default'
+      activeProfile = initialProfile
     } catch {}
 
     for (let i = 0; i < targets.length; i++) {
       const profile = targets[i]
       const placeholder = placeholders[i]
       try {
-        // 切到该 profile
         if (profile !== activeProfile) {
           await api.hermesProfileUse(profile)
           activeProfile = profile
@@ -332,7 +332,9 @@ export function render() {
       draw()
     }
 
-    // 还原 active profile（如果改了）— 静默尝试
+    if (initialProfile && activeProfile !== initialProfile) {
+      await api.hermesProfileUse(initialProfile).catch(() => {})
+    }
     sending = false
     draw()
   }
