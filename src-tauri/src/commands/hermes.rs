@@ -3402,6 +3402,13 @@ fn build_hermes_channel_config_values(
                     .unwrap_or_default();
                 form.insert("appToken".to_string(), Value::String(app_token));
                 insert_json_string_if_present(&mut form, &extra, "signing_secret", "signingSecret");
+                let signing_secret = hermes_env_value(env_values, "SLACK_SIGNING_SECRET")
+                    .or_else(|| json_form_string(&form, "signingSecret"))
+                    .unwrap_or_default();
+                form.insert(
+                    "signingSecret".to_string(),
+                    Value::String(signing_secret),
+                );
                 insert_json_string_if_present(&mut form, &extra, "webhook_path", "webhookPath");
             }
             "feishu" => {
@@ -11182,6 +11189,10 @@ fn build_hermes_channel_env_updates(platform: &str, form: &Value) -> Vec<(String
                 "SLACK_APP_TOKEN",
                 form_string(form, "appToken").unwrap_or_default(),
             );
+            push(
+                "SLACK_SIGNING_SECRET",
+                form_string(form, "signingSecret").unwrap_or_default(),
+            );
             push("SLACK_ALLOWED_USERS", csv_env_value(form, "allowFrom"));
             if let Some(value) = form_bool(form, "requireMention") {
                 push("SLACK_REQUIRE_MENTION", bool_env_value(value));
@@ -11431,6 +11442,7 @@ fn write_hermes_channel_env(platform: &str, form: &Value) -> Result<(), String> 
         "slack" => vec![
             "SLACK_BOT_TOKEN",
             "SLACK_APP_TOKEN",
+            "SLACK_SIGNING_SECRET",
             "SLACK_ALLOWED_USERS",
             "SLACK_REQUIRE_MENTION",
         ],
@@ -24515,6 +24527,21 @@ platforms:
             config["platforms"]["slack"]["extra"]["unknown_option"].as_str(),
             Some("keep-me")
         );
+
+        let env = build_hermes_channel_env_updates(
+            "slack",
+            &json!({
+                "enabled": true,
+                "botToken": "xoxb-new",
+                "appToken": "xapp-new",
+                "signingSecret": "new-signing-secret",
+                "webhookPath": "/slack/events",
+            }),
+        );
+        assert!(env.contains(&(
+            "SLACK_SIGNING_SECRET".to_string(),
+            "new-signing-secret".to_string()
+        )));
     }
 
     #[test]
