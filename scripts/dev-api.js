@@ -6469,6 +6469,7 @@ export function buildHermesChannelConfigValues(config = {}, envValues = {}) {
       putHermesString(form, extra, 'app_token')
       form.appToken = hermesEnvValue(envValues, 'SLACK_APP_TOKEN') || form.appToken || ''
       putHermesString(form, extra, 'signing_secret')
+      form.signingSecret = hermesEnvValue(envValues, 'SLACK_SIGNING_SECRET') || form.signingSecret || ''
       putHermesString(form, extra, 'webhook_path')
     } else if (platform === 'feishu') {
       for (const key of ['app_id', 'app_secret', 'domain', 'connection_mode', 'webhook_path', 'reaction_notifications']) {
@@ -6928,6 +6929,7 @@ export function buildHermesChannelEnvUpdates(platform, form = {}) {
   } else if (platform === 'slack') {
     updates.SLACK_BOT_TOKEN = String(form.botToken || '').trim()
     updates.SLACK_APP_TOKEN = String(form.appToken || '').trim()
+    updates.SLACK_SIGNING_SECRET = String(form.signingSecret || '').trim()
     updates.SLACK_ALLOWED_USERS = csvEnvValue(form.allowFrom)
     if (Object.hasOwn(form, 'requireMention')) updates.SLACK_REQUIRE_MENTION = boolEnvValue(form.requireMention)
   } else if (platform === 'feishu') {

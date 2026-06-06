@@ -358,6 +358,38 @@ test('Hermes 渠道保存会从 YAML 清理旧凭证，避免覆盖 .env 运行�
   assert.equal(next.platforms.slack.extra.signing_secret, undefined)
   assert.equal(next.platforms.slack.extra.webhook_path, '/slack/events')
   assert.equal(next.platforms.slack.extra.unknown_option, 'keep-me')
+
+  const env = buildHermesChannelEnvUpdates('slack', {
+    enabled: true,
+    botToken: 'xoxb-new',
+    appToken: 'xapp-new',
+    signingSecret: 'new-signing-secret',
+    webhookPath: '/slack/events',
+  })
+  assert.equal(env.SLACK_BOT_TOKEN, 'xoxb-new')
+  assert.equal(env.SLACK_APP_TOKEN, 'xapp-new')
+  assert.equal(env.SLACK_SIGNING_SECRET, 'new-signing-secret')
+})
+
+test('Hermes Slack 读取会从 .env 回填 signing secret', () => {
+  const values = buildHermesChannelConfigValues({
+    platforms: {
+      slack: {
+        enabled: true,
+        extra: {
+          webhook_path: '/slack/events',
+        },
+      },
+    },
+  }, {
+    SLACK_SIGNING_SECRET: 'env-signing-secret',
+    SLACK_BOT_TOKEN: 'xoxb-env',
+    SLACK_APP_TOKEN: 'xapp-env',
+  })
+
+  assert.equal(values.slack.signingSecret, 'env-signing-secret')
+  assert.equal(values.slack.botToken, 'xoxb-env')
+  assert.equal(values.slack.appToken, 'xapp-env')
 })
 
 test('Hermes 钉钉保存会使用运行时实际读取的字段', () => {
