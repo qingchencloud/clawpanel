@@ -333,9 +333,20 @@ fn normalize_provider_url(raw: &str) -> String {
     out
 }
 
+fn is_openai_codex_endpoint(base_url: &str) -> bool {
+    normalize_provider_url(base_url)
+        == normalize_provider_url("https://chatgpt.com/backend-api/codex")
+}
+
 fn normalize_hermes_provider_for_base_url(provider: &str, base_url: Option<&str>) -> String {
     let pid = provider.trim();
-    if pid == "openrouter" {
+    if pid.eq_ignore_ascii_case("openai-codex") {
+        return "openai-codex".into();
+    }
+    if base_url.map(is_openai_codex_endpoint).unwrap_or(false) {
+        return "openai-codex".into();
+    }
+    if pid.eq_ignore_ascii_case("openrouter") {
         if let Some(url) = base_url {
             let base = normalize_provider_url(url);
             let expected = normalize_provider_url("https://openrouter.ai/api/v1");
@@ -345,6 +356,117 @@ fn normalize_hermes_provider_for_base_url(provider: &str, base_url: Option<&str>
         }
     }
     pid.to_string()
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
+struct HermesModelFields {
+    default_model: String,
+    provider: String,
+    base_url: String,
+}
+
+fn read_top_level_hermes_model_fields(raw: &str) -> Result<HermesModelFields, String> {
+    let config: serde_yaml::Value =
+        serde_yaml::from_str(raw).map_err(|e| format!("config.yaml YAML 格式错误: {e}"))?;
+    let root = config
+        .as_mapping()
+        .ok_or_else(|| "config.yaml 顶层必须是对象".to_string())?;
+    let Some(model_value) = yaml_get(root, "model") else {
+        return Ok(HermesModelFields::default());
+    };
+    let Some(model) = model_value.as_mapping() else {
+        return Ok(HermesModelFields {
+            default_model: model_value.as_str().unwrap_or_default().to_string(),
+            provider: String::new(),
+            base_url: String::new(),
+        });
+    };
+    Ok(HermesModelFields {
+        default_model: yaml_string_field(model, "default").unwrap_or_default(),
+        provider: yaml_string_field(model, "provider").unwrap_or_default(),
+        base_url: yaml_string_field(model, "base_url").unwrap_or_default(),
+    })
+}
+
+fn rewrite_top_level_hermes_model_provider(raw: &str, provider: &str) -> Result<String, String> {
+    let mut out = Vec::new();
+    let mut in_model = false;
+    let mut provider_written = false;
+    let mut saw_model = false;
+    let mut model_indent = 0usize;
+    let mut child_prefix: Option<String> = None;
+
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        let indent = line.len() - line.trim_start_matches(|c| c == ' ' || c == '\t').len();
+
+        if !in_model && indent == 0 && trimmed.starts_with("model:") {
+            in_model = true;
+            saw_model = true;
+            provider_written = false;
+            model_indent = indent;
+            child_prefix = None;
+            out.push(line.to_string());
+            continue;
+        }
+
+        if in_model {
+            if indent <= model_indent && !trimmed.is_empty() && !trimmed.starts_with('#') {
+                if !provider_written {
+                    let prefix = child_prefix
+                        .clone()
+                        .unwrap_or_else(|| " ".repeat(model_indent + 2));
+                    out.push(format!("{prefix}provider: {provider}"));
+                    provider_written = true;
+                }
+                in_model = false;
+            } else if indent > model_indent && trimmed.starts_with("provider:") {
+                let prefix: String = line
+                    .chars()
+                    .take_while(|c| *c == ' ' || *c == '\t')
+                    .collect();
+                out.push(format!("{prefix}provider: {provider}"));
+                provider_written = true;
+                continue;
+            } else if indent > model_indent
+                && child_prefix.is_none()
+                && !trimmed.is_empty()
+                && !trimmed.starts_with('#')
+            {
+                child_prefix = Some(
+                    line.chars()
+                        .take_while(|c| *c == ' ' || *c == '\t')
+                        .collect(),
+                );
+            }
+        }
+
+        out.push(line.to_string());
+    }
+
+    if !saw_model {
+        return Err("config.yaml 中未找到顶层 model 字段".into());
+    }
+    if in_model && !provider_written {
+        let prefix = child_prefix.unwrap_or_else(|| " ".repeat(model_indent + 2));
+        out.push(format!("{prefix}provider: {provider}"));
+    }
+
+    let mut fixed = out.join("\n");
+    if !fixed.ends_with('\n') {
+        fixed.push('\n');
+    }
+    Ok(fixed)
+}
+
+fn should_alias_custom_openai_key(fields: &HermesModelFields) -> bool {
+    let provider = fields.provider.trim();
+    let base = normalize_provider_url(&fields.base_url);
+    let expected = normalize_provider_url("https://openrouter.ai/api/v1");
+    !is_openai_codex_endpoint(&fields.base_url)
+        && (provider.is_empty() || provider.eq_ignore_ascii_case("custom"))
+        && !base.is_empty()
+        && base != expected
 }
 
 fn env_file_has_value(raw: &str, key: &str) -> bool {
@@ -407,81 +529,46 @@ fn sanitize_hermes_openrouter_custom_mismatch() -> Result<bool, String> {
     if !config_path.exists() {
         return Ok(false);
     }
-
+    let changed = sanitize_hermes_openrouter_custom_mismatch_at(&config_path)?;
     let raw =
         std::fs::read_to_string(&config_path).map_err(|e| format!("读取 config.yaml 失败: {e}"))?;
-    let mut provider = String::new();
-    let mut base_url = String::new();
-    let mut in_model = false;
-
-    for line in raw.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("model:") {
-            in_model = true;
-            continue;
-        }
-        if in_model {
-            let indented = line.starts_with(' ') || line.starts_with('\t');
-            if !indented && !trimmed.is_empty() && !trimmed.starts_with('#') {
-                break;
-            }
-            if let Some(v) = trimmed.strip_prefix("provider:") {
-                provider = v.trim().trim_matches('"').trim_matches('\'').to_string();
-            } else if let Some(v) = trimmed.strip_prefix("base_url:") {
-                base_url = v.trim().trim_matches('"').trim_matches('\'').to_string();
-            }
-        }
-    }
-
-    let base = normalize_provider_url(&base_url);
-    let expected = normalize_provider_url("https://openrouter.ai/api/v1");
-    let uses_custom_endpoint = !base.is_empty() && base != expected;
-    let alias_changed = if provider.is_empty() || provider == "custom" || uses_custom_endpoint {
+    let fields = read_top_level_hermes_model_fields(&raw)?;
+    let alias_changed = if should_alias_custom_openai_key(&fields) {
         ensure_custom_openai_key_alias()?
     } else {
         false
     };
-    if !uses_custom_endpoint {
-        return Ok(alias_changed);
-    }
-    if provider == "custom" {
-        return Ok(alias_changed);
+    Ok(changed || alias_changed)
+}
+
+fn sanitize_hermes_openrouter_custom_mismatch_at(
+    config_path: &std::path::Path,
+) -> Result<bool, String> {
+    if !config_path.exists() {
+        return Ok(false);
     }
 
-    let mut out = Vec::new();
-    let mut in_model = false;
-    let mut provider_written = false;
-    for line in raw.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("model:") {
-            in_model = true;
-            provider_written = false;
-            out.push(line.to_string());
-            continue;
-        }
-        if in_model {
-            let indented = line.starts_with(' ') || line.starts_with('\t');
-            if !indented && !trimmed.is_empty() && !trimmed.starts_with('#') {
-                in_model = false;
-                if !provider_written {
-                    out.push("  provider: custom".to_string());
-                    provider_written = true;
-                }
-            } else if trimmed.starts_with("provider:") {
-                out.push("  provider: custom".to_string());
-                provider_written = true;
-                continue;
-            }
-        }
-        out.push(line.to_string());
+    let raw =
+        std::fs::read_to_string(&config_path).map_err(|e| format!("读取 config.yaml 失败: {e}"))?;
+    let fields = read_top_level_hermes_model_fields(&raw)?;
+    let provider = fields.provider.trim();
+    let base = normalize_provider_url(&fields.base_url);
+    let expected = normalize_provider_url("https://openrouter.ai/api/v1");
+    let desired_provider = if provider.eq_ignore_ascii_case("openai-codex")
+        || is_openai_codex_endpoint(&fields.base_url)
+    {
+        "openai-codex"
+    } else if provider.eq_ignore_ascii_case("openrouter") && !base.is_empty() && base != expected {
+        "custom"
+    } else {
+        return Ok(false);
+    };
+
+    if provider.eq_ignore_ascii_case(desired_provider) {
+        return Ok(false);
     }
-    if in_model && !provider_written {
-        out.push("  provider: custom".to_string());
-    }
-    let mut fixed = out.join("\n");
-    if !fixed.ends_with('\n') {
-        fixed.push('\n');
-    }
+
+    let fixed = rewrite_top_level_hermes_model_provider(&raw, desired_provider)?;
     std::fs::write(&config_path, fixed).map_err(|e| format!("写入 config.yaml 失败: {e}"))?;
     Ok(true)
 }
@@ -12585,57 +12672,19 @@ pub async fn hermes_read_config() -> Result<Value, String> {
     let home = hermes_home();
     let config_path = home.join("config.yaml");
     let env_path = home.join(".env");
-    let _ = sanitize_hermes_openrouter_custom_mismatch();
+    sanitize_hermes_openrouter_custom_mismatch()?;
 
-    // 读取 config.yaml
-    let config_raw = std::fs::read_to_string(&config_path).unwrap_or_default();
-    let mut model_name = String::new();
-    let mut base_url_from_yaml = String::new();
-    let mut provider_from_yaml = String::new();
-    let mut in_model = false;
-    for line in config_raw.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("model:") {
-            in_model = true;
-            // `model: "xxx"` 单行格式
-            if let Some(v) = trimmed
-                .strip_prefix("model:")
-                .map(|s| s.trim().trim_matches('"'))
-            {
-                if !v.is_empty() && !v.contains(':') {
-                    model_name = v.to_string();
-                }
-            }
-            continue;
-        }
-        if in_model {
-            if trimmed.starts_with("default:") {
-                model_name = trimmed
-                    .strip_prefix("default:")
-                    .unwrap()
-                    .trim()
-                    .trim_matches('"')
-                    .to_string();
-            } else if trimmed.starts_with("base_url:") {
-                base_url_from_yaml = trimmed
-                    .strip_prefix("base_url:")
-                    .unwrap()
-                    .trim()
-                    .trim_matches('"')
-                    .to_string();
-            } else if trimmed.starts_with("provider:") {
-                provider_from_yaml = trimmed
-                    .strip_prefix("provider:")
-                    .unwrap()
-                    .trim()
-                    .trim_matches('"')
-                    .to_string();
-            } else if !trimmed.is_empty() && !trimmed.starts_with('#') && !trimmed.starts_with('-')
-            {
-                in_model = false;
-            }
-        }
-    }
+    // 读取顶层 model 配置；不要让 auxiliary/x_search 等子配置污染仪表盘显示。
+    let model_fields = if config_path.exists() {
+        let config_raw = std::fs::read_to_string(&config_path)
+            .map_err(|e| format!("读取 config.yaml 失败: {e}"))?;
+        read_top_level_hermes_model_fields(&config_raw)?
+    } else {
+        HermesModelFields::default()
+    };
+    let model_name = model_fields.default_model;
+    let base_url_from_yaml = model_fields.base_url;
+    let provider_from_yaml = model_fields.provider;
 
     // 读取 .env 到 key→value map
     let env_raw = std::fs::read_to_string(&env_path).unwrap_or_default();
@@ -17471,6 +17520,227 @@ mod hermes_config_raw_tests {
     fn accepts_empty_and_mapping_raw_config_yaml() {
         validate_hermes_config_raw_yaml("").unwrap();
         validate_hermes_config_raw_yaml("model:\n  default: gpt-4o\n").unwrap();
+    }
+}
+
+#[cfg(test)]
+mod hermes_dashboard_config_read_tests {
+    use super::read_top_level_hermes_model_fields;
+
+    #[test]
+    fn dashboard_reader_uses_only_top_level_model_mapping() {
+        let raw = "\
+model:
+  provider: openai-codex
+  base_url: https://chatgpt.com/backend-api/codex
+  default: gpt-5.5
+auxiliary:
+  web_extract:
+    provider: custom
+    model: ''
+x_search:
+  model: grok-4.20-reasoning
+  provider: custom
+";
+
+        let fields = read_top_level_hermes_model_fields(raw).unwrap();
+
+        assert_eq!(fields.default_model, "gpt-5.5");
+        assert_eq!(fields.provider, "openai-codex");
+        assert_eq!(fields.base_url, "https://chatgpt.com/backend-api/codex");
+    }
+
+    #[test]
+    fn dashboard_reader_keeps_scalar_model_compatibility() {
+        let raw = "\
+model: gpt-5.5
+x_search:
+  model: grok-4.20-reasoning
+  provider: custom
+";
+
+        let fields = read_top_level_hermes_model_fields(raw).unwrap();
+
+        assert_eq!(fields.default_model, "gpt-5.5");
+        assert!(fields.provider.is_empty());
+        assert!(fields.base_url.is_empty());
+    }
+
+    #[test]
+    fn dashboard_reader_rejects_invalid_yaml() {
+        let raw = "\
+model:
+  provider: openai-codex
+    default: gpt-5.5
+";
+
+        let err = read_top_level_hermes_model_fields(raw).unwrap_err();
+
+        assert!(err.contains("config.yaml YAML 格式错误"));
+    }
+}
+
+#[cfg(test)]
+mod hermes_sanitizer_tests {
+    use super::{
+        normalize_hermes_provider_for_base_url, sanitize_hermes_openrouter_custom_mismatch_at,
+        yaml_key,
+    };
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn write_config(name: &str, raw: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("clawpanel-hermes-sanitizer-{name}-{nanos}"));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.yaml");
+        fs::write(&path, raw).unwrap();
+        path
+    }
+
+    fn top_level_section(raw: &str, key: &str) -> String {
+        let mut out = String::new();
+        let mut in_section = false;
+        for line in raw.lines() {
+            let trimmed = line.trim();
+            let indent = line.len() - line.trim_start_matches(|c| c == ' ' || c == '\t').len();
+            if indent == 0 && trimmed.starts_with(&format!("{key}:")) {
+                in_section = true;
+            } else if in_section && indent == 0 && !trimmed.is_empty() && !trimmed.starts_with('#')
+            {
+                break;
+            }
+            if in_section {
+                out.push_str(line);
+                out.push('\n');
+            }
+        }
+        out
+    }
+
+    fn top_level_model_provider(raw: &str) -> Option<String> {
+        let config: serde_yaml::Value = serde_yaml::from_str(raw).unwrap();
+        let root = config.as_mapping().unwrap();
+        root.get(yaml_key("model"))
+            .and_then(|model| model.as_mapping())
+            .and_then(|model| model.get(yaml_key("provider")))
+            .and_then(|provider| provider.as_str())
+            .map(ToString::to_string)
+    }
+
+    #[test]
+    fn sanitizer_keeps_openai_codex_with_codex_endpoint_unchanged() {
+        let raw = "\
+model:
+  provider: openai-codex
+  base_url: https://chatgpt.com/backend-api/codex
+  default: gpt-5.5
+auxiliary:
+  web_extract:
+    provider: custom
+    model: ''
+";
+        let path = write_config("codex-noop", raw);
+
+        assert!(!sanitize_hermes_openrouter_custom_mismatch_at(&path).unwrap());
+        assert_eq!(fs::read_to_string(&path).unwrap(), raw);
+        assert_eq!(
+            normalize_hermes_provider_for_base_url(
+                "openrouter",
+                Some("https://chatgpt.com/backend-api/codex"),
+            ),
+            "openai-codex"
+        );
+    }
+
+    #[test]
+    fn sanitizer_repairs_custom_codex_endpoint_without_touching_auxiliary() {
+        let raw = "\
+model:
+  provider: custom
+  base_url: https://chatgpt.com/backend-api/codex
+  default: gpt-5.5
+auxiliary:
+  vision:
+    provider: auto
+    model: ''
+  web_extract:
+    provider: custom
+    model: ''
+display:
+  theme: system
+";
+        let path = write_config("custom-codex", raw);
+        let auxiliary_before = top_level_section(raw, "auxiliary");
+
+        assert!(sanitize_hermes_openrouter_custom_mismatch_at(&path).unwrap());
+        let fixed = fs::read_to_string(&path).unwrap();
+
+        serde_yaml::from_str::<serde_yaml::Value>(&fixed).unwrap();
+        assert_eq!(
+            top_level_model_provider(&fixed).as_deref(),
+            Some("openai-codex")
+        );
+        assert_eq!(top_level_section(&fixed, "auxiliary"), auxiliary_before);
+    }
+
+    #[test]
+    fn sanitizer_rewrites_openrouter_custom_endpoint_only_at_top_level() {
+        let raw = "\
+model:
+  provider: openrouter
+  base_url: https://example.invalid/v1
+  default: gpt-5.5
+auxiliary:
+  compression:
+    provider: openrouter
+    model: ''
+";
+        let path = write_config("openrouter-custom", raw);
+        let auxiliary_before = top_level_section(raw, "auxiliary");
+
+        assert!(sanitize_hermes_openrouter_custom_mismatch_at(&path).unwrap());
+        let fixed = fs::read_to_string(&path).unwrap();
+
+        serde_yaml::from_str::<serde_yaml::Value>(&fixed).unwrap();
+        assert_eq!(top_level_model_provider(&fixed).as_deref(), Some("custom"));
+        assert_eq!(top_level_section(&fixed, "auxiliary"), auxiliary_before);
+    }
+
+    #[test]
+    fn sanitizer_leaves_custom_non_codex_endpoint_unchanged() {
+        let raw = "\
+model:
+  provider: custom
+  base_url: https://example.invalid/v1
+  default: gpt-5.5
+";
+        let path = write_config("custom-non-codex", raw);
+
+        assert!(!sanitize_hermes_openrouter_custom_mismatch_at(&path).unwrap());
+        assert_eq!(fs::read_to_string(&path).unwrap(), raw);
+    }
+
+    #[test]
+    fn sanitizer_rejects_invalid_yaml_without_writing() {
+        let raw = "\
+model:
+  provider: openrouter
+  base_url: https://example.invalid/v1
+auxiliary:
+  web_extract:
+  provider: custom
+    model: ''
+";
+        let path = write_config("invalid-yaml", raw);
+        let err = sanitize_hermes_openrouter_custom_mismatch_at(&path).unwrap_err();
+
+        assert!(err.contains("config.yaml YAML 格式错误"));
+        assert_eq!(fs::read_to_string(&path).unwrap(), raw);
     }
 }
 
