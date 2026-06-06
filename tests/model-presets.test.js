@@ -52,12 +52,15 @@ test('MODEL_PRESETS contains MiniMax models', () => {
   assert.ok(MODEL_PRESETS.minimax.length >= 2, 'should have at least 2 MiniMax models')
 })
 
-test('MiniMax model presets include M2.7 and M2.5 variants', () => {
+test('MiniMax model presets include M3 and M2.7 variants', () => {
   const ids = MODEL_PRESETS.minimax.map(m => m.id)
+  assert.ok(ids.includes('MiniMax-M3'), 'should include MiniMax-M3')
   assert.ok(ids.includes('MiniMax-M2.7'), 'should include MiniMax-M2.7')
   assert.ok(ids.includes('MiniMax-M2.7-highspeed'), 'should include MiniMax-M2.7-highspeed')
-  assert.ok(ids.includes('MiniMax-M2.5'), 'should include MiniMax-M2.5')
-  assert.ok(ids.includes('MiniMax-M2.5-highspeed'), 'should include MiniMax-M2.5-highspeed')
+})
+
+test('MiniMax M3 is listed as the new default (first entry)', () => {
+  assert.equal(MODEL_PRESETS.minimax[0].id, 'MiniMax-M3', 'MiniMax-M3 should be the first model')
 })
 
 test('MiniMax model presets have required fields', () => {
@@ -76,11 +79,10 @@ test('MiniMax M2.7 models have 1M context window', () => {
   assert.equal(m27hs.contextWindow, 1000000)
 })
 
-test('MiniMax M2.5 models have 204K context window', () => {
-  const m25 = MODEL_PRESETS.minimax.find(m => m.id === 'MiniMax-M2.5')
-  assert.equal(m25.contextWindow, 204000)
-  const m25hs = MODEL_PRESETS.minimax.find(m => m.id === 'MiniMax-M2.5-highspeed')
-  assert.equal(m25hs.contextWindow, 204000)
+test('MiniMax M3 has 524K context window', () => {
+  const m3 = MODEL_PRESETS.minimax.find(m => m.id === 'MiniMax-M3')
+  assert.ok(m3, 'should include MiniMax-M3')
+  assert.equal(m3.contextWindow, 524288)
 })
 
 test('all model preset groups have valid structure', () => {
