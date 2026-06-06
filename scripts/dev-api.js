@@ -15254,6 +15254,28 @@ function _endStream(res) {
   if (!res.writableEnded && !res.destroyed) res.end()
 }
 
+function _startSse(res) {
+  if (res.headersSent) return
+  res.statusCode = 200
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
+  res.setHeader('Cache-Control', 'no-cache, no-transform')
+  res.setHeader('Connection', 'keep-alive')
+  res.setHeader('X-Accel-Buffering', 'no')
+  if (typeof res.flushHeaders === 'function') res.flushHeaders()
+}
+
+function _writeSse(res, event, data) {
+  if (res.writableEnded || res.destroyed) return
+  if (event) res.write(`event: ${event}\n`)
+  if (data !== undefined) {
+    const payload = typeof data === 'string' ? data : JSON.stringify(data)
+    for (const line of String(payload).split(/\r?\n/)) {
+      res.write(`data: ${line}\n`)
+    }
+  }
+  res.write('\n')
+}
+
 function _startHermesNdjsonStream(res) {
   if (res.headersSent) return
   res.statusCode = 200
@@ -15527,6 +15549,22 @@ async function _apiMiddleware(req, res, next) {
     return
   }
 
+  if (cmd === 'gateway_status_stream') {
+    const send = async () => {
+      try {
+        const services = await handlers.get_services_status()
+        _writeSse(res, 'message', { ts: Date.now(), services })
+      } catch (e) {
+        _writeSse(res, 'error', { error: e.message || String(e) })
+      }
+    }
+    _startSse(res)
+    const timer = setInterval(send, 15000)
+    res.on('close', () => clearInterval(timer))
+    await send()
+    return
+  }
+
   // --- 认证特殊处理 ---
   if (cmd === 'auth_check') {
     const cfg = readPanelConfig()
@@ -15674,6 +15712,28 @@ async function _apiMiddleware(req, res, next) {
     return
   }
 
+  const activeInst = getActiveInstance()
+
+  if (cmd === 'gateway_status_stream') {
+    if (activeInst.type !== 'local' && activeInst.endpoint) {
+      await proxyStreamToInstance(activeInst, cmd, {}, req, res)
+      return
+    }
+    const send = async () => {
+      try {
+        const services = await handlers.get_services_status()
+        _writeSse(res, 'message', { ts: Date.now(), services })
+      } catch (e) {
+        _writeSse(res, 'error', { error: e.message || String(e) })
+      }
+    }
+    _startSse(res)
+    const timer = setInterval(send, 15000)
+    res.on('close', () => clearInterval(timer))
+    await send()
+    return
+  }
+
   // --- 认证中间件：非豁免接口必须校验 ---
   if (!isAuthenticated(req)) {
     res.statusCode = 401
@@ -15681,8 +15741,6 @@ async function _apiMiddleware(req, res, next) {
     res.end(JSON.stringify({ error: '未登录', code: 'AUTH_REQUIRED' }))
     return
   }
-
-  const activeInst = getActiveInstance()
 
   if (cmd === 'hermes_agent_run_stream') {
     const args = await readBody(req)

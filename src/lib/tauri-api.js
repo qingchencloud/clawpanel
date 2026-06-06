@@ -6,7 +6,7 @@
 import { t } from './i18n.js'
 
 export function isTauriRuntime() {
-  return !!window.__TAURI_INTERNALS__ || !!window.__TAURI__ || window.location?.hostname === 'tauri.localhost'
+  return false
 }
 
 let _tauriListenFn = null

@@ -169,14 +169,7 @@ async function maybeRefreshGatewayServiceBinding() {
 }
 
 async function promptRestart(msg) {
-  if (!window.__TAURI_INTERNALS__) { toast(msg, 'success'); return }
-  const ok = await showConfirm(`${msg}\n\n${t('settings.restartConfirm')}`)
-  if (ok) {
-    toast(t('settings.restarting'), 'info')
-    try { await api.relaunchApp() } catch { toast(t('settings.restartFailed'), 'warning') }
-  } else {
-    toast(`${msg}, ${t('settings.effectNextLaunch')}`, 'success')
-  }
+  toast(msg, 'success')
 }
 
 async function runDetect(page) {
@@ -533,8 +526,6 @@ function renderInstallSection() {
 function renderEnvironmentHint() {
   const isWin = navigator.platform?.startsWith('Win') || navigator.userAgent?.includes('Windows')
   const isMac = navigator.platform?.startsWith('Mac') || navigator.userAgent?.includes('Macintosh')
-  const isDesktop = !!window.__TAURI_INTERNALS__
-  if (!isDesktop) return ''
 
   return `
     <div class="config-section" style="text-align:left;margin-top:var(--space-md)">
@@ -1006,93 +997,17 @@ function bindEvents(page, nodeOk, detectState) {
     let unlistenDone, unlistenError
 
     try {
-      if (window.__TAURI_INTERNALS__) {
-        const { listen } = await import('@tauri-apps/api/event')
-        unlistenLog = await listen('upgrade-log', (e) => modal.appendLog(e.payload))
-        unlistenProgress = await listen('upgrade-progress', (e) => modal.setProgress(e.payload))
-
-        // 后台任务完成：继续安装 Gateway + 自动配置
-        unlistenDone = await listen('upgrade-done', async (e) => {
-          cleanup()
-          modal.setDone(typeof e.payload === 'string' ? e.payload : t('setup.installComplete'))
-
-          // 安装成功后自动安装 Gateway
-          modal.appendLog(t('setup.installingGateway'))
-          try {
-            await api.installGateway()
-            modal.appendHtmlLog(`${statusIcon('ok', 14)} ${t('setup.gatewayInstalled')}`)
-          } catch (ge) {
-            modal.appendHtmlLog(`${statusIcon('warn', 14)} ${t('setup.gatewayInstallFailed', { err: ge })}`)
-          }
-
-          // 确保 openclaw.json 有关键默认值
-          try {
-            const config = await api.readOpenclawConfig()
-            if (config) {
-              let patched = false
-              if (!config.gateway) config.gateway = {}
-              if (!config.gateway.mode) {
-                config.gateway.mode = 'local'
-                patched = true
-                modal.appendHtmlLog(`${statusIcon('ok', 14)} ${t('setup.gwModeSet')}`)
-              }
-              if (!config.tools || config.tools.profile !== 'full') {
-                config.tools = { profile: 'full', sessions: { visibility: 'all' }, ...(config.tools || {}) }
-                config.tools.profile = 'full'
-                if (!config.tools.sessions) config.tools.sessions = {}
-                config.tools.sessions.visibility = 'all'
-                patched = true
-                modal.appendHtmlLog(`${statusIcon('ok', 14)} ${t('setup.toolsFullEnabled')}`)
-              }
-              if (patched) await api.writeOpenclawConfig(config)
-            }
-          } catch (ce) {
-            modal.appendHtmlLog(`${statusIcon('warn', 14)} ${t('setup.autoConfigFailed', { err: ce })}`)
-          }
-
-          toast(t('setup.installSuccess'), 'success')
-          setTimeout(() => window.location.reload(), 1500)
-        })
-
-        // 后台任务失败
-        unlistenError = await listen('upgrade-error', async (e) => {
-          cleanup()
-          const errStr = String(e.payload || t('common.unknown'))
-          modal.appendLog(errStr)
-          await new Promise(r => setTimeout(r, 150))
-          const fullLog = modal.getLogText() + '\n' + errStr
-          const diagnosis = diagnoseInstallError(fullLog)
-          modal.setError(diagnosis.title)
-          if (diagnosis.hint) modal.appendLog('')
-          if (diagnosis.hint) modal.appendHtmlLog(`${statusIcon('info', 14)} ${diagnosis.hint}`)
-          if (diagnosis.command) modal.appendHtmlLog(`${icon('clipboard', 14)} ${diagnosis.command}`)
-          if (window.__openAIDrawerWithError) {
-            window.__openAIDrawerWithError({ title: diagnosis.title, error: fullLog, scene: t('setup.installScene'), hint: diagnosis.hint })
-          }
-        })
-
-        // 先设置镜像源
-        if (registry) {
-          modal.appendLog(t('setup.setRegistry', { url: registry }))
-          try { await api.setNpmRegistry(registry) } catch {}
-        }
-
-        // 发起后台任务（立即返回）
-        await api.upgradeOpenclaw(source, null, method)
-        modal.appendLog(t('setup.bgTaskStarted'))
-      } else {
-        // Web 模式：同步等待
-        modal.appendLog(t('setup.webModeLogHint'))
-        if (registry) {
-          modal.appendLog(t('setup.setRegistry', { url: registry }))
-          try { await api.setNpmRegistry(registry) } catch {}
-        }
-        const msg = await api.upgradeOpenclaw(source, null, method)
-        modal.setDone(msg)
-        toast(t('setup.installSuccess'), 'success')
-        setTimeout(() => window.location.reload(), 1500)
-        cleanup()
+      // Web-only：同步等待
+      modal.appendLog(t('setup.webModeLogHint'))
+      if (registry) {
+        modal.appendLog(t('setup.setRegistry', { url: registry }))
+        try { await api.setNpmRegistry(registry) } catch {}
       }
+      const msg = await api.upgradeOpenclaw(source, null, method)
+      modal.setDone(msg)
+      toast(t('setup.installSuccess'), 'success')
+      setTimeout(() => window.location.reload(), 1500)
+      cleanup()
     } catch (e) {
       cleanup()
       const errStr = String(e)
@@ -1103,4 +1018,3 @@ function bindEvents(page, nodeOk, detectState) {
     }
   })
 }
-

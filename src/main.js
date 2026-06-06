@@ -27,6 +27,8 @@ import openclawEngine from './engines/openclaw/index.js'
 import hermesEngine from './engines/hermes/index.js'
 import xintianEngine from './engines/xintian/index.js'
 
+let _autoConnectWebSocketTask = null
+
 // 样式
 import './style/variables.css'
 import './style/reset.css'
@@ -867,6 +869,8 @@ async function boot() {
 }
 
 async function autoConnectWebSocket() {
+  if (_autoConnectWebSocketTask) return _autoConnectWebSocketTask
+  _autoConnectWebSocketTask = (async () => {
   try {
     const inst = getActiveInstance()
     console.log(`[main] 自动连接 WebSocket (实例: ${inst.name})...`)
@@ -947,6 +951,11 @@ async function autoConnectWebSocket() {
   } catch (e) {
     console.error('[main] 自动连接 WebSocket 失败:', e)
   }
+  })().finally(() => {
+    _autoConnectWebSocketTask = null
+  })
+
+  return _autoConnectWebSocketTask
 }
 
 function setupGatewayBanner() {
