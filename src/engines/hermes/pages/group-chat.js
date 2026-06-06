@@ -58,27 +58,32 @@ async function runHermesAgentAndWaitFinal(input) {
       cleanup()
       reject(err)
     }
-    const matchesRun = (rid) => !runId || !rid || rid === runId
+    // Ignore events from other runs until we know our run_id (prevents cross-talk with /h/chat).
+    const matchesHermesRun = (rid) => {
+      if (!rid) return false
+      if (!runId) return false
+      return rid === runId
+    }
     ;(async () => {
       try {
         unsubs.push(await safeTauriListen('hermes-run-started', (e) => {
           if (!runId && e?.payload?.run_id) runId = e.payload.run_id
         }))
         unsubs.push(await safeTauriListen('hermes-run-delta', (e) => {
-          if (!matchesRun(e?.payload?.run_id)) return
+          if (!matchesHermesRun(e?.payload?.run_id)) return
           accumulated += e?.payload?.delta || ''
         }))
         unsubs.push(await safeTauriListen('hermes-run-done', (e) => {
-          if (!matchesRun(e?.payload?.run_id)) return
+          if (!matchesHermesRun(e?.payload?.run_id)) return
           const out = (e?.payload?.output || accumulated || '').trim()
           finish(out)
         }))
         unsubs.push(await safeTauriListen('hermes-run-error', (e) => {
-          if (!matchesRun(e?.payload?.run_id)) return
+          if (!matchesHermesRun(e?.payload?.run_id)) return
           fail(new Error(e?.payload?.error || 'unknown error'))
         }))
         unsubs.push(await safeTauriListen('hermes-run-cancelled', (e) => {
-          if (!matchesRun(e?.payload?.run_id)) return
+          if (!matchesHermesRun(e?.payload?.run_id)) return
           finish(accumulated.trim() || '(cancelled)')
         }))
 
@@ -303,11 +308,13 @@ export function render() {
     // 每个 profile run 完后切到下一个。
     // 这是个 trade-off — 真正的并发需要后端改造支持 per-call profile。
     let activeProfile = null
+    let initialProfile = null
     try {
       // 记下当前 active profile 用于最后还原
       const curResp = await api.hermesProfilesList().catch(() => null)
       const curArr = Array.isArray(curResp) ? curResp : (curResp?.profiles || [])
-      activeProfile = curResp?.active || curArr.find(p => p.active)?.name || 'default'
+      initialProfile = curResp?.active || curArr.find(p => p.active)?.name || 'default'
+      activeProfile = initialProfile
     } catch {}
 
     for (let i = 0; i < targets.length; i++) {
@@ -333,6 +340,9 @@ export function render() {
     }
 
     // 还原 active profile（如果改了）— 静默尝试
+    if (initialProfile && activeProfile && activeProfile !== initialProfile) {
+      try { await api.hermesProfileUse(initialProfile) } catch { /* best-effort */ }
+    }
     sending = false
     draw()
   }

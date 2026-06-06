@@ -1556,12 +1556,18 @@ pub async fn read_platform_config(
                 return Ok(json!({ "exists": false }));
             }
 
-            // 写入表单字段（前端 UI 用 clientSecret）
-            if let Some(v) = app_id_val {
-                form.insert("appId".into(), Value::String(v.into()));
+            // 写入表单字段（前端 UI 用 clientSecret）；SecretRef 显示占位并保留原始对象
+            insert_secret_aware_form_value(&mut form, qqbot_val, "appId");
+            insert_secret_aware_form_value(&mut form, qqbot_val, "clientSecret");
+            if !form.contains_key("appId") {
+                if let Some(v) = app_id_val {
+                    form.insert("appId".into(), Value::String(v.into()));
+                }
             }
-            if let Some(v) = client_secret_val {
-                form.insert("clientSecret".into(), Value::String(v.into()));
+            if !form.contains_key("clientSecret") {
+                if let Some(v) = client_secret_val {
+                    form.insert("clientSecret".into(), Value::String(v.into()));
+                }
             }
 
             // 旧格式迁移：仅有 token 字符串时，折叠为 accounts.* 下的 appId + clientSecret + token（与官方 CLI 结构一致）
@@ -2481,20 +2487,12 @@ pub async fn save_messaging_platform(
                 .trim()
                 .to_string();
 
-            if app_id.is_empty() {
-                return Err("AppID 不能为空".into());
-            }
-            if client_secret.is_empty() {
-                return Err("ClientSecret 不能为空".into());
-            }
-
-            // 与 `openclaw channels add --channel qqbot --token "AppID:Secret"` 一致：凭证写在 accounts.<id> 下，并保留组合 token
+            // 与 `openclaw channels add --channel qqbot --token "AppID:Secret"` 一致：凭证写在 accounts.<id> 下
             let acct_key = account_id
                 .as_deref()
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .unwrap_or(QQBOT_DEFAULT_ACCOUNT_ID);
-            let token_combo = format!("{}:{}", app_id, client_secret);
 
             let qqbot_node = channels_map
                 .entry("qqbot")
@@ -2507,14 +2505,36 @@ pub async fn save_messaging_platform(
             qqbot_obj.remove("appSecret");
             qqbot_obj.remove("token");
 
-            let accounts = qqbot_obj.entry("accounts").or_insert_with(|| json!({}));
-            let accounts_obj = accounts.as_object_mut().ok_or("accounts 格式错误")?;
             let mut entry = Map::new();
-            entry.insert("appId".into(), Value::String(app_id));
-            entry.insert("clientSecret".into(), Value::String(client_secret));
-            entry.insert("token".into(), Value::String(token_combo));
+            if !app_id.is_empty() {
+                entry.insert("appId".into(), Value::String(app_id));
+            }
+            if !client_secret.is_empty() {
+                entry.insert("clientSecret".into(), Value::String(client_secret));
+            }
             entry.insert("enabled".into(), Value::Bool(true));
-            accounts_obj.insert(acct_key.to_string(), Value::Object(entry));
+            preserve_messaging_credential_refs(&mut entry, form_obj, &current_saved);
+
+            if !has_configured_messaging_value(entry.get("appId")) {
+                return Err("AppID 不能为空".into());
+            }
+            if !has_configured_messaging_value(entry.get("clientSecret")) {
+                return Err("ClientSecret 不能为空".into());
+            }
+
+            // 明文凭证时写入组合 token；SecretRef 等场景保留已有 token
+            if let (Some(Value::String(aid)), Some(Value::String(sec))) = (
+                entry.get("appId"),
+                entry.get("clientSecret"),
+            ) {
+                entry.insert("token".into(), Value::String(format!("{}:{}", aid, sec)));
+            } else if let Some(token) = current_saved.get("token") {
+                if has_configured_messaging_value(Some(token)) {
+                    entry.insert("token".into(), token.clone());
+                }
+            }
+
+            merge_account_channel_entry(channels_map, "qqbot", acct_key, entry)?;
 
             ensure_openclaw_qqbot_plugin(&mut cfg)?;
             ensure_chat_completions_enabled(&mut cfg)?;
@@ -7663,5 +7683,80 @@ mod tests {
         });
 
         assert!(value_has_messaging_credential(&account));
+    }
+
+    #[test]
+    fn qqbot_account_merge_preserves_cli_custom_fields() {
+        let mut channels_map = Map::new();
+        channels_map.insert(
+            "qqbot".into(),
+            json!({
+                "enabled": true,
+                "accounts": {
+                    "mybot": {
+                        "appId": "aid",
+                        "clientSecret": "sec",
+                        "token": "aid:sec",
+                        "enabled": true,
+                        "dmPolicy": "pairing",
+                        "groupPolicy": "allowlist"
+                    }
+                }
+            }),
+        );
+        let current = channels_map
+            .get("qqbot")
+            .and_then(|v| v.get("accounts"))
+            .and_then(|a| a.get("mybot"))
+            .cloned()
+            .unwrap_or(Value::Null);
+        let mut entry = Map::new();
+        entry.insert("appId".into(), Value::String("aid".into()));
+        entry.insert("clientSecret".into(), Value::String("sec".into()));
+        entry.insert("enabled".into(), Value::Bool(true));
+        entry.insert("token".into(), Value::String("aid:sec".into()));
+        preserve_messaging_credential_refs(&mut entry, &Map::new(), &current);
+        merge_account_channel_entry(&mut channels_map, "qqbot", "mybot", entry).expect("merge");
+
+        let saved = channels_map
+            .get("qqbot")
+            .and_then(|v| v.get("accounts"))
+            .and_then(|a| a.get("mybot"))
+            .expect("account");
+        assert_eq!(saved.get("dmPolicy").and_then(|v| v.as_str()), Some("pairing"));
+        assert_eq!(
+            saved.get("groupPolicy").and_then(|v| v.as_str()),
+            Some("allowlist")
+        );
+    }
+
+    #[test]
+    fn qqbot_save_preserves_unchanged_client_secret_secret_ref() {
+        let current = json!({
+            "appId": "aid",
+            "clientSecret": {
+                "source": "env",
+                "provider": "default",
+                "id": "QQBOT_CLIENT_SECRET"
+            },
+            "token": "aid:placeholder"
+        });
+        let form = json!({
+            "appId": "aid",
+            "clientSecret": "SecretRef(env:default:QQBOT_CLIENT_SECRET)"
+        });
+        let mut entry = Map::new();
+        entry.insert("appId".into(), Value::String("aid".into()));
+        entry.insert(
+            "clientSecret".into(),
+            Value::String("SecretRef(env:default:QQBOT_CLIENT_SECRET)".into()),
+        );
+        preserve_messaging_credential_refs(
+            &mut entry,
+            form.as_object().expect("object"),
+            &current,
+        );
+
+        assert_eq!(entry.get("clientSecret"), current.get("clientSecret"));
     }
 }
