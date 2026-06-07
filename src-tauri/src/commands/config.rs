@@ -814,6 +814,46 @@ pub fn save_openclaw_json(config: &Value) -> Result<(), String> {
     write_openclaw_config(config.clone())
 }
 
+/// Append required Gateway control-ui origins without clobbering other gateway fields.
+///
+/// Callers must pass a **partial** delta (not a full config snapshot). `write_openclaw_config`
+/// shallow-merges top-level objects; a stale full snapshot would revert concurrent edits to
+/// `gateway.auth`, `gateway.port`, etc.
+pub fn append_gateway_allowed_origins(required: &[&str]) -> Result<(), String> {
+    let config = load_openclaw_json().unwrap_or_else(|_| json!({}));
+    let existing: Vec<String> = config
+        .pointer("/gateway/controlUi/allowedOrigins")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|value| value.as_str().map(|value| value.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut merged = existing.clone();
+    let mut changed = false;
+    for origin in required {
+        let origin = (*origin).to_string();
+        if !merged.iter().any(|existing| existing == &origin) {
+            merged.push(origin);
+            changed = true;
+        }
+    }
+    if !changed {
+        return Ok(());
+    }
+
+    let delta = json!({
+        "gateway": {
+            "controlUi": {
+                "allowedOrigins": merged
+            }
+        }
+    });
+    write_openclaw_config(delta)
+}
+
 fn model_env_values_for_config(config: &Value) -> HashMap<String, String> {
     let mut values = HashMap::new();
     if let Some(env) = config.get("env").and_then(|v| v.as_object()) {
@@ -7213,6 +7253,61 @@ mod write_openclaw_config_merge_tests {
             .unwrap()
             .as_nanos();
         std::env::temp_dir().join(format!("clawpanel-{name}-{}-{suffix}", std::process::id()))
+    }
+
+    /// Regression: auto-pair must patch allowedOrigins with a partial delta, not a stale
+    /// full config snapshot — otherwise shallow gateway merge reverts concurrent auth/port edits.
+    #[test]
+    fn partial_gateway_patch_preserves_auth_and_port() {
+        let existing = json!({
+            "gateway": {
+                "port": 9999,
+                "auth": { "mode": "token", "token": "user-new-token" },
+                "controlUi": { "allowedOrigins": ["http://localhost"] }
+            }
+        });
+        let stale_full_snapshot = json!({
+            "gateway": {
+                "port": 18789,
+                "auth": { "mode": "token", "token": "old-token" },
+                "controlUi": {
+                    "allowedOrigins": [
+                        "http://localhost",
+                        "tauri://localhost",
+                        "http://localhost:1420"
+                    ]
+                }
+            }
+        });
+        let clobbered = merge_configs_preserving_fields(&existing, &stale_full_snapshot);
+        assert_eq!(
+            clobbered["gateway"]["auth"]["token"],
+            "old-token",
+            "full snapshot merge must reproduce the clobber bug for this test"
+        );
+
+        let delta = json!({
+            "gateway": {
+                "controlUi": {
+                    "allowedOrigins": [
+                        "http://localhost",
+                        "tauri://localhost",
+                        "http://localhost:1420"
+                    ]
+                }
+            }
+        });
+        let merged = merge_configs_preserving_fields(&existing, &delta);
+        assert_eq!(merged["gateway"]["auth"]["token"], "user-new-token");
+        assert_eq!(merged["gateway"]["port"], 9999);
+        assert_eq!(
+            merged["gateway"]["controlUi"]["allowedOrigins"],
+            json!([
+                "http://localhost",
+                "tauri://localhost",
+                "http://localhost:1420"
+            ])
+        );
     }
 
     /// Regression guard: Issue #127 merge keeps full provider map when the UI payload
