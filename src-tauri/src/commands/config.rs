@@ -5253,11 +5253,10 @@ pub fn save_custom_node_path(node_dir: String) -> Result<(), String> {
     {
         return Err("该目录下未找到 node 可执行文件，请确认路径正确。".into());
     }
-    if detected
+    if !detected
         .get("compatible")
         .and_then(Value::as_bool)
         .unwrap_or(true)
-        == false
     {
         let version = detected
             .get("version")
@@ -7488,9 +7487,9 @@ pub async fn auto_install_node(app: tauri::AppHandle) -> Result<String, String> 
             .get("requiredVersion")
             .and_then(Value::as_str)
             .unwrap_or("当前 OpenClaw 要求的版本");
-        return Err(format!(
+        Err(format!(
             "Node.js 升级后仍不满足要求：当前 {version}，要求 {requirement}。请重启 ClawPanel 或手动安装新版 Node.js。"
-        ));
+        ))
     }
 
     #[cfg(target_os = "macos")]
