@@ -61,6 +61,8 @@ Eine Community leidenschaftlicher KI-Agenten-Entwickler und -Enthusiasten — tr
 <p align="center">
   <a href="https://discord.gg/U9AttmsNHh"><strong>Discord</strong></a>
   &nbsp;·&nbsp;
+  <a href="https://t.me/clawpanel"><strong>Telegram</strong></a>
+  &nbsp;·&nbsp;
   <a href="https://github.com/qingchencloud/clawpanel/discussions"><strong>Discussions</strong></a>
   &nbsp;·&nbsp;
   <a href="https://github.com/qingchencloud/clawpanel/issues/new"><strong>Issue melden</strong></a>

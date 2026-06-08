@@ -142,6 +142,8 @@ ClawPanel 提供**纯 Web 版部署模式**（零 GUI 依赖），天然兼容 A
 <p align="center">
   <a href="https://discord.gg/U9AttmsNHh"><strong>Discord</strong></a>
   &nbsp;·&nbsp;
+  <a href="https://t.me/clawpanel"><strong>Telegram 群</strong></a>
+  &nbsp;·&nbsp;
   <a href="https://yb.tencent.com/gp/i/IIGXzcMcdh84"><strong>元宝派</strong></a>
   &nbsp;·&nbsp;
   <a href="https://github.com/qingchencloud/clawpanel/discussions"><strong>Discussions</strong></a>

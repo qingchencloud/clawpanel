@@ -61,6 +61,8 @@ Una comunidad de desarrolladores y entusiastas apasionados por los AI Agents —
 <p align="center">
   <a href="https://discord.gg/U9AttmsNHh"><strong>Discord</strong></a>
   &nbsp;·&nbsp;
+  <a href="https://t.me/clawpanel"><strong>Telegram</strong></a>
+  &nbsp;·&nbsp;
   <a href="https://github.com/qingchencloud/clawpanel/discussions"><strong>Discussions</strong></a>
   &nbsp;·&nbsp;
   <a href="https://github.com/qingchencloud/clawpanel/issues/new"><strong>Reportar Issue</strong></a>

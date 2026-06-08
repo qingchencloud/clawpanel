@@ -61,6 +61,8 @@ ClawPanel 是支援多 AI Agent 框架的視覺化管理面板，目前支援 [O
 <p align="center">
   <a href="https://discord.gg/U9AttmsNHh"><strong>Discord</strong></a>
   &nbsp;·&nbsp;
+  <a href="https://t.me/clawpanel"><strong>Telegram 群</strong></a>
+  &nbsp;·&nbsp;
   <a href="https://github.com/qingchencloud/clawpanel/discussions"><strong>Discussions</strong></a>
   &nbsp;·&nbsp;
   <a href="https://github.com/qingchencloud/clawpanel/issues/new"><strong>回報 Issue</strong></a>

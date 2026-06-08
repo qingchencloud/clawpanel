@@ -556,3 +556,4 @@ git push origin main
 ## 问题反馈
 
 如果发现 Bug 或有功能建议，欢迎通过 [GitHub Issues](https://github.com/qingchencloud/clawpanel/issues) 提交。
+日常交流和使用讨论也可以加入 [Telegram 群](https://t.me/clawpanel)。
