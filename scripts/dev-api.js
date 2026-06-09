@@ -2687,10 +2687,17 @@ function patchGatewayOrigins() {
   const merged = [...new Set([...existing, ...origins])]
   // 幂等：已包含所有需要的 origin 时跳过写入
   if (origins.every(o => existing.includes(o))) return false
-  if (!config.gateway) config.gateway = {}
-  if (!config.gateway.controlUi) config.gateway.controlUi = {}
-  config.gateway.controlUi.allowedOrigins = merged
-  writeOpenclawConfigFile(config)
+  // 只写入 allowedOrigins 增量，避免用陈旧全量快照覆盖并发保存的其它配置字段。
+  const existingOnDisk = fs.existsSync(CONFIG_PATH) ? JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')) : null
+  const partial = {
+    gateway: {
+      controlUi: {
+        allowedOrigins: merged,
+      },
+    },
+  }
+  const mergedConfig = existingOnDisk ? mergeConfigsPreservingFields(existingOnDisk, partial) : partial
+  writeOpenclawConfigFile(mergedConfig)
   return true
 }
 

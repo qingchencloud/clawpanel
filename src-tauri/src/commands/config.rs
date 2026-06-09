@@ -7614,6 +7614,33 @@ mod write_openclaw_config_merge_tests {
     }
 
     #[test]
+    fn partial_gateway_patch_preserves_auth_token() {
+        let existing = json!({
+            "gateway": {
+                "auth": { "token": "secret-new" },
+                "controlUi": { "allowedOrigins": ["http://localhost:3000"] }
+            }
+        });
+        let patch = json!({
+            "gateway": {
+                "controlUi": {
+                    "allowedOrigins": ["http://localhost:3000", "tauri://localhost"]
+                }
+            }
+        });
+        let merged = merge_configs_preserving_fields(&existing, &patch);
+        assert_eq!(
+            merged.pointer("/gateway/auth/token"),
+            Some(&json!("secret-new"))
+        );
+        let origins = merged
+            .pointer("/gateway/controlUi/allowedOrigins")
+            .and_then(|v| v.as_array())
+            .expect("allowedOrigins");
+        assert!(origins.iter().any(|v| v == "tauri://localhost"));
+    }
+
+    #[test]
     fn node_requirement_rejects_versions_below_minimum() {
         assert!(!node_version_satisfies_requirement("v22.17.0", ">=22.19.0"));
     }
