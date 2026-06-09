@@ -660,6 +660,56 @@ const P_COPILOT_ACP: HermesProvider = HermesProvider {
     cli_auth_hint: "hermes auth login copilot-acp",
 };
 
+const P_ATLAS_CLOUD: HermesProvider = HermesProvider {
+    id: "atlas-cloud",
+    name: "Atlas Cloud",
+    auth_type: AUTH_API_KEY,
+    base_url: "https://api.atlascloud.ai/v1",
+    base_url_env_var: "ATLASCLOUD_BASE_URL",
+    api_key_env_vars: &["ATLASCLOUD_API_KEY"],
+    transport: TRANSPORT_OPENAI_CHAT,
+    models_probe: PROBE_OPENAI,
+    models: &[
+        "deepseek-ai/deepseek-v4-pro",
+        "deepseek-ai/deepseek-v4-0520",
+        "deepseek-ai/deepseek-v4-flash",
+        "deepseek-ai/deepseek-r2",
+        "deepseek-ai/deepseek-r1-0528",
+        "deepseek-ai/deepseek-r1",
+        "moonshot-ai/kimi-k2",
+        "moonshot-ai/kimi-k2-0711",
+        "qwen/qwen3-235b-a22b",
+        "qwen/qwen3-32b",
+        "qwen/qwq-32b",
+        "openai/gpt-5",
+        "openai/gpt-5-mini",
+        "openai/gpt-4.1",
+        "openai/gpt-4o",
+        "openai/o3",
+        "openai/o4-mini",
+        "anthropic/claude-sonnet-4-5",
+        "anthropic/claude-opus-4",
+        "anthropic/claude-sonnet-4",
+        "anthropic/claude-haiku-4-5",
+        "google/gemini-2.5-pro",
+        "google/gemini-2.5-flash",
+        "google/gemini-2.5-flash-lite",
+        "google/gemini-2.0-flash",
+        "xai/grok-4",
+        "xai/grok-3",
+        "xai/grok-3-mini",
+        "meta-llama/llama-4-scout",
+        "meta-llama/llama-4-maverick",
+        "meta-llama/llama-3.3-70b",
+        "cohere/command-a",
+        "mistral/mistral-large",
+        "minimax/minimax-m1",
+        "01ai/yi-lightning",
+    ],
+    is_aggregator: true,
+    cli_auth_hint: "",
+};
+
 // Custom placeholder — frontend-only. Backend treats `custom` as opaque:
 // uses whatever api_key + base_url the user provides.
 const P_CUSTOM: HermesProvider = HermesProvider {
@@ -679,6 +729,7 @@ const P_CUSTOM: HermesProvider = HermesProvider {
 /// Full provider registry. Order matters for UI rendering (first = top).
 pub const ALL_PROVIDERS: &[HermesProvider] = &[
     // API-key providers — international
+    P_ATLAS_CLOUD,
     P_ANTHROPIC,
     P_GEMINI,
     P_DEEPSEEK,
@@ -827,7 +878,7 @@ mod tests {
 
     #[test]
     fn registry_has_expected_providers() {
-        assert_eq!(ALL_PROVIDERS.len(), 33);
+        assert_eq!(ALL_PROVIDERS.len(), 34);
         assert!(get_provider("anthropic").is_some());
         assert!(get_provider("gemini").is_some());
         assert!(get_provider("alibaba-coding-plan").is_some());
