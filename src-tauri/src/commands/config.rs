@@ -250,6 +250,50 @@ pub(crate) fn openclaw_node_requirement() -> Option<String> {
     read_package_json_field(&pkg_json, "/engines/node")
 }
 
+fn standalone_bundled_node_bin(cli_path: &str) -> Option<PathBuf> {
+    let dir = std::path::Path::new(cli_path).parent()?;
+    #[cfg(target_os = "windows")]
+    let node_bin = dir.join("node.exe");
+    #[cfg(not(target_os = "windows"))]
+    let node_bin = dir.join("node");
+    node_bin.is_file().then_some(node_bin)
+}
+
+fn node_version_from_bin(node_bin: &std::path::Path) -> Option<String> {
+    let mut cmd = Command::new(node_bin);
+    cmd.arg("--version");
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    let output = cmd.output().ok()?;
+    if output.status.success() {
+        Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        None
+    }
+}
+
+fn populate_node_detection_result(
+    result: &mut serde_json::Map<String, Value>,
+    version: String,
+    path: String,
+    detected_from: String,
+) {
+    let required_version = openclaw_node_requirement();
+    let compatible = required_version
+        .as_deref()
+        .map(|req| node_version_satisfies_requirement(&version, req))
+        .unwrap_or(true);
+    result.insert("installed".into(), Value::Bool(true));
+    result.insert("version".into(), Value::String(version));
+    result.insert("path".into(), Value::String(path));
+    result.insert("detectedFrom".into(), Value::String(detected_from));
+    result.insert("compatible".into(), Value::Bool(compatible));
+    result.insert(
+        "requiredVersion".into(),
+        required_version.map(Value::String).unwrap_or(Value::Null),
+    );
+}
+
 pub(crate) fn ensure_node_runtime_compatible() -> Result<(), String> {
     let node = check_node()?;
     let installed = node
@@ -4771,6 +4815,23 @@ pub fn check_node() -> Result<Value, String> {
     let mut result = serde_json::Map::new();
     let enhanced = super::enhanced_path();
 
+    // standalone 自带 Node.js；其 openclaw.cmd 优先使用同目录 node.exe，与 PATH 中的旧版 Node 无关。
+    if let Some(cli_path) = crate::utils::resolve_openclaw_cli_path() {
+        if crate::utils::classify_cli_source(&cli_path) == "standalone" {
+            if let Some(bundled) = standalone_bundled_node_bin(&cli_path) {
+                if let Some(ver) = node_version_from_bin(&bundled) {
+                    populate_node_detection_result(
+                        &mut result,
+                        ver,
+                        bundled.to_string_lossy().to_string(),
+                        "standalone-bundled".into(),
+                    );
+                    return Ok(Value::Object(result));
+                }
+            }
+        }
+    }
+
     // 尝试通过 which/where 命令找到 node 的实际路径
     let node_path = find_node_path(&enhanced);
 
@@ -4783,20 +4844,7 @@ pub fn check_node() -> Result<Value, String> {
             Ok(o) if o.status.success() => {
                 let ver = String::from_utf8_lossy(&o.stdout).trim().to_string();
                 let detected_from = detect_node_source(&path);
-                let required_version = openclaw_node_requirement();
-                let compatible = required_version
-                    .as_deref()
-                    .map(|req| node_version_satisfies_requirement(&ver, req))
-                    .unwrap_or(true);
-                result.insert("installed".into(), Value::Bool(true));
-                result.insert("version".into(), Value::String(ver));
-                result.insert("path".into(), Value::String(path));
-                result.insert("detectedFrom".into(), Value::String(detected_from));
-                result.insert("compatible".into(), Value::Bool(compatible));
-                result.insert(
-                    "requiredVersion".into(),
-                    required_version.map(Value::String).unwrap_or(Value::Null),
-                );
+                populate_node_detection_result(&mut result, ver, path, detected_from);
             }
             _ => {
                 result.insert("installed".into(), Value::Bool(false));
@@ -7638,5 +7686,24 @@ mod write_openclaw_config_merge_tests {
             "v24.1.0",
             "^22.19.0 || >=24.0.0"
         ));
+    }
+
+    #[test]
+    fn standalone_bundled_node_bin_resolves_next_to_cli() {
+        let dir = unique_temp_dir("standalone-bundled-node");
+        std::fs::create_dir_all(&dir).unwrap();
+        let cli_path = dir.join("openclaw.cmd");
+        std::fs::write(&cli_path, "@echo off\r\n").unwrap();
+        #[cfg(target_os = "windows")]
+        let node_name = "node.exe";
+        #[cfg(not(target_os = "windows"))]
+        let node_name = "node";
+        let node_bin = dir.join(node_name);
+        std::fs::write(&node_bin, "").unwrap();
+
+        let resolved = super::standalone_bundled_node_bin(&cli_path.to_string_lossy());
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert_eq!(resolved, Some(node_bin));
     }
 }
