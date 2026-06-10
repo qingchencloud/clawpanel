@@ -730,6 +730,13 @@ function decorateNodeDetection(base) {
   }
 }
 
+function standaloneBundledNodePath(cliPath) {
+  if (!cliPath) return null
+  const dir = path.dirname(cliPath)
+  const nodeBin = path.join(dir, isWindows ? 'node.exe' : 'node')
+  return fs.existsSync(nodeBin) ? nodeBin : null
+}
+
 function ensureNodeRuntimeCompatibleWeb() {
   const node = handlers.check_node()
   if (!node.installed) throw new Error('Node.js 未安装或未检测到，请先安装 Node.js 后重新检测')
@@ -10851,6 +10858,19 @@ const handlers = {
 
   check_node() {
     try {
+      const cliPath = resolveOpenclawCliPath()
+      if (cliPath && classifyCliSource(cliPath) === 'standalone') {
+        const bundled = standaloneBundledNodePath(cliPath)
+        if (bundled) {
+          const ver = execSync(`"${bundled}" --version 2>&1`, { windowsHide: true }).toString().trim()
+          return decorateNodeDetection({
+            installed: true,
+            version: ver,
+            path: bundled,
+            detectedFrom: 'standalone-bundled',
+          })
+        }
+      }
       const ver = execSync('node --version 2>&1', { windowsHide: true }).toString().trim()
       return decorateNodeDetection({ installed: true, version: ver, path: findCommandPath('node') })
     } catch {
