@@ -67,7 +67,7 @@ OpenClaw 是开源个人 AI 助手平台，核心组件：
 | \`openclaw channels login\` | 登录渠道（如 WhatsApp QR） |
 | \`openclaw pairing list <channel>\` | 列出配对请求 |
 | \`openclaw pairing approve <channel> <code>\` | 批准配对 |
-| \`openclaw configure --section web\` | 配置 Web 搜索（Brave API） |
+| \`openclaw configure --section web\` | 配置 Web 搜索（Brave / Parallel 等） |
 | \`openclaw config set <key> <value>\` | 设置单个配置项 |
 | \`openclaw logs\` | 查看日志 |
 | \`openclaw service start/stop/restart\` | 管理后台服务 |
@@ -76,6 +76,13 @@ OpenClaw 是开源个人 AI 助手平台，核心组件：
 ## 四、配置文件（openclaw.json）
 配置位于 \`~/.openclaw/openclaw.json\`，JSON5 格式（支持注释和尾逗号）。
 不存在时使用安全默认值。严格 schema 验证，未知键会阻止启动。
+
+### Web 搜索插件
+- Parallel Web Search 插件 id 为 \`parallel\`，目录为 \`extensions/parallel\`
+- 免费候选 provider 为 \`parallel-free\`；正式 Parallel Search provider 为 \`parallel\`
+- API Key 环境变量：\`PARALLEL_API_KEY\`
+- 配置路径：\`plugins.entries.parallel.config.webSearch.apiKey\` / \`plugins.entries.parallel.config.webSearch.baseUrl\`
+- QMD 查询重排序开关：\`memory.qmd.rerank\`
 
 ### 最小配置示例
 \`\`\`json5
@@ -185,7 +192,7 @@ iwr -useb https://openclaw.ai/install.ps1 | iex
 \`\`\`bash
 npm install -g openclaw@latest
 \`\`\`
-**前置条件：** Node.js >= 22
+**前置条件：** Node.js >= 22.19.0
 
 ## 九、后台服务
 - **macOS**：launchd 服务（openclaw 应用管理）

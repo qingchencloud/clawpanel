@@ -49,7 +49,7 @@
 
 | 依赖 | 最低版本 | 说明 |
 |------|----------|------|
-| Node.js | 18+ | ClawPanel Web 后端；运行 OpenClaw Gateway 建议 22.19.0+，实际要求按当前 OpenClaw `engines.node` 检测 |
+| Node.js | 18+ | ClawPanel Web 后端；运行 OpenClaw Gateway 时按当前 OpenClaw `engines.node` 检测，OpenClaw 2026.6.5+ 通常需要 22.19.0+ |
 | npm | 随 Node.js | 包管理器 |
 | Git | 任意 | 克隆仓库 |
 | OpenClaw | 最新 | ClawPanel 管理的对象 |
@@ -167,7 +167,7 @@ docker run -d \
   --restart unless-stopped \
   -p 1420:1420 \
   -v clawpanel-data:/root/.openclaw \
-  node:22-slim \
+  node:22.19.0-slim \
   sh -c "apt-get update && apt-get install -y git && \
     npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com && \
     git clone https://github.com/qingchencloud/clawpanel.git /app && \

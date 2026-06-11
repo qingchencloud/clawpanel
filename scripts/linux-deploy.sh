@@ -11,6 +11,11 @@ PANEL_PORT=1420
 REPO_URL="https://github.com/qingchencloud/clawpanel.git"
 REPO_URL_GITEE="https://gitee.com/QtCodeCreators/clawpanel.git"
 NPM_REGISTRY="https://registry.npmmirror.com"
+PANEL_NODE_MIN_VERSION="18.0.0"
+OPENCLAW_RECOMMENDED_VERSION="2026.5.18-zh.1"
+OPENCLAW_NODE_RUNTIME_FLOOR_VERSION="2026.6.5"
+OPENCLAW_NEW_NODE_MIN_VERSION="22.19.0"
+NODE_MIN_VERSION="$PANEL_NODE_MIN_VERSION"
 
 # 检测权限模式
 if [ "$(id -u)" = "0" ]; then
@@ -67,19 +72,52 @@ detect_os() {
     esac
 }
 
+# 比较语义版本，要求 actual >= min
+version_ge() {
+    local actual="${1#v}"
+    local min="${2#v}"
+    local actual_major actual_minor actual_patch min_major min_minor min_patch
+    actual=$(printf '%s' "$actual" | grep -Eo '[0-9]+(\.[0-9]+){0,2}' | head -1 || true)
+    min=$(printf '%s' "$min" | grep -Eo '[0-9]+(\.[0-9]+){0,2}' | head -1 || true)
+    if [ -z "$actual" ] || [ -z "$min" ]; then return 1; fi
+    IFS=. read -r actual_major actual_minor actual_patch <<< "$actual"
+    IFS=. read -r min_major min_minor min_patch <<< "$min"
+    actual_major=${actual_major:-0}
+    actual_minor=${actual_minor:-0}
+    actual_patch=${actual_patch:-0}
+    min_major=${min_major:-0}
+    min_minor=${min_minor:-0}
+    min_patch=${min_patch:-0}
+    if [ "$actual_major" -gt "$min_major" ]; then return 0; fi
+    if [ "$actual_major" -lt "$min_major" ]; then return 1; fi
+    if [ "$actual_minor" -gt "$min_minor" ]; then return 0; fi
+    if [ "$actual_minor" -lt "$min_minor" ]; then return 1; fi
+    [ "$actual_patch" -ge "$min_patch" ]
+}
+
+node_version_ge_min() {
+    version_ge "$1" "$NODE_MIN_VERSION"
+}
+
+openclaw_version_needs_new_node() {
+    local base_version="${1%%-*}"
+    [ -n "$base_version" ] && version_ge "$base_version" "$OPENCLAW_NODE_RUNTIME_FLOOR_VERSION"
+}
+
 # 安装 Node.js
 install_node() {
     if command -v node &> /dev/null; then
-        local node_major=$(node -v | sed 's/v//' | cut -d. -f1)
-        if [ "$node_major" -ge 18 ]; then
+        local node_version
+        node_version=$(node -v)
+        if node_version_ge_min "$node_version"; then
             echo "✅ Node.js $(node -v) 已安装"
             return 0
         else
-            echo "⚠️  Node.js $(node -v) 版本过低，需要 18+"
+            echo "⚠️  Node.js $(node -v) 版本过低，需要 >=${NODE_MIN_VERSION}"
         fi
     fi
 
-    echo "📦 安装 Node.js 22 LTS..."
+    echo "📦 安装 Node.js LTS（要求 >=${NODE_MIN_VERSION}）..."
     case "$OS" in
         ubuntu|debian|linuxmint|pop)
             curl -fsSL https://deb.nodesource.com/setup_22.x | run_pkg_cmd bash -
@@ -101,7 +139,21 @@ install_node() {
             exit 1
             ;;
     esac
+    if ! node_version_ge_min "$(node -v)"; then
+        echo "❌ Node.js $(node -v) 仍低于 OpenClaw 要求 >=${NODE_MIN_VERSION}"
+        echo "   请手动安装 Node.js ${NODE_MIN_VERSION} 或更高版本后重试"
+        exit 1
+    fi
     echo "✅ Node.js $(node -v) 安装完成"
+}
+
+ensure_node_for_openclaw_version() {
+    local openclaw_version="$1"
+    if openclaw_version_needs_new_node "$openclaw_version"; then
+        NODE_MIN_VERSION="$OPENCLAW_NEW_NODE_MIN_VERSION"
+        echo "ℹ️  OpenClaw ${openclaw_version} 需要 Node.js >=${NODE_MIN_VERSION}"
+        install_node
+    fi
 }
 
 # 安装 Git
@@ -171,8 +223,9 @@ detect_openclaw_source() {
 # 安装 OpenClaw
 install_openclaw() {
     local oc_path=$(find_openclaw)
+    local oc_ver=""
     if [ -n "$oc_path" ]; then
-        local oc_ver=$("$oc_path" --version 2>/dev/null || echo "未知版本")
+        oc_ver=$("$oc_path" --version 2>/dev/null || echo "未知版本")
         local oc_src=$(detect_openclaw_source "$oc_path")
         if [ "$oc_src" = "chinese" ]; then
             echo "✅ OpenClaw 汉化版已安装: $oc_ver (${oc_path})"
@@ -185,16 +238,25 @@ install_openclaw() {
             echo "ℹ️  已将 $(dirname "$oc_path") 加入 PATH"
         fi
     else
-        echo "📦 安装 OpenClaw 汉化版..."
+        echo "📦 安装 OpenClaw 汉化版稳定版 ${OPENCLAW_RECOMMENDED_VERSION}..."
+        local openclaw_spec="@qingchencloud/openclaw-zh@${OPENCLAW_RECOMMENDED_VERSION}"
         if [ "$IS_ROOT" = true ]; then
-            npm install -g @qingchencloud/openclaw-zh --registry "$NPM_REGISTRY" || \
-            npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmjs.org
+            npm install -g "$openclaw_spec" --registry "$NPM_REGISTRY" || \
+            npm install -g "$openclaw_spec" --registry https://registry.npmjs.org
         else
-            sudo -E npm install -g @qingchencloud/openclaw-zh --registry "$NPM_REGISTRY" || \
-            sudo -E npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmjs.org
+            sudo -E npm install -g "$openclaw_spec" --registry "$NPM_REGISTRY" || \
+            sudo -E npm install -g "$openclaw_spec" --registry https://registry.npmjs.org
         fi
         echo "✅ OpenClaw 安装完成"
+        oc_path=$(find_openclaw)
+        if [ -n "$oc_path" ]; then
+            oc_ver=$("$oc_path" --version 2>/dev/null || echo "$OPENCLAW_RECOMMENDED_VERSION")
+        else
+            oc_ver="$OPENCLAW_RECOMMENDED_VERSION"
+        fi
     fi
+
+    ensure_node_for_openclaw_version "$oc_ver"
 
     # 初始化配置（如果不存在）
     if [ ! -f "$HOME/.openclaw/openclaw.json" ]; then

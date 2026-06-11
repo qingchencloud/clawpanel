@@ -22,6 +22,7 @@
 - [部署模式](#部署模式)
 - [分支与提交规范](#分支与提交规范)
 - [PR 流程](#pr-流程)
+- [服务商接入规范](#服务商接入规范)
 - [代码规范](#代码规范)
 - [问题反馈](#问题反馈)
 
@@ -31,7 +32,7 @@
 
 | 依赖 | 最低版本 | 说明 |
 |------|----------|------|
-| Node.js | 18+ | 前端构建与 Web 后端（推荐 22 LTS）；运行 OpenClaw Gateway 时按当前 OpenClaw 的 `engines.node` 检测 |
+| Node.js | 18+ | 前端构建与 Web 后端；运行 OpenClaw Gateway 时按当前 OpenClaw 的 `engines.node` 检测，OpenClaw 2026.6.5+ 通常需要 22.19.0+ |
 | Rust | stable | Tauri 后端编译 |
 | Tauri CLI | v2 | `cargo install tauri-cli --version "^2"` |
 
@@ -510,6 +511,21 @@ curl -fsSL https://raw.githubusercontent.com/qingchencloud/clawpanel/main/script
 5. 提交并推送到你的 Fork 仓库
 6. 发起 Pull Request，描述清楚变更内容和测试情况
 7. 等待代码审查，根据反馈修改
+
+---
+
+## 服务商接入规范
+
+ClawPanel 欢迎中性的模型服务商、聚合网关和 OpenAI-compatible provider 接入贡献，但这类 PR 必须保持技术范围清晰：
+
+1. **只做必要接入**：优先限制在 provider registry、配置字段、模型探测和必要测试，不要夹带无关 README 重排、品牌露出或营销内容。
+2. **不接受默认推广位**：README 首屏、Logo、推荐位、赞助位、UTM/tracking 链接、折扣或商业导流内容，必须先与维护者达成明确合作或赞助协议。
+3. **文案保持中性**：可说明 provider 的基础能力、API 类型、base URL、环境变量和使用方式，不使用“最佳”“官方推荐”“独家”等未经项目确认的宣传表述。
+4. **能力不能夸大**：只列 ClawPanel 当前实际支持的能力。若接入的是 Chat/LLM transport，不要把图片、视频、语音等未实现路径写成已支持功能。
+5. **避免破坏自动推断**：新增静态模型名时要检查是否与已有 provider 冲突；如果冲突会影响 provider 反查或默认模型切换，需要同步调整逻辑和测试。
+6. **测试要覆盖边界**：至少覆盖 provider 注册、API key/base URL 环境变量、managed env keys，以及模型名冲突或 provider 推断相关行为。
+
+不符合以上要求的 PR，维护者会要求拆分、改为中性技术接入，或直接关闭。
 
 ---
 

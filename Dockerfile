@@ -16,7 +16,7 @@
 # -----------------------------------------------------------------------------
 # 阶段 1: 构建阶段 (builder)
 # -----------------------------------------------------------------------------
-FROM node:22-alpine AS builder
+FROM node:22.19.0-alpine AS builder
 
 # 安装构建依赖
 RUN apk add --no-cache \
@@ -41,7 +41,7 @@ RUN npm ci --prefer-offline --registry https://registry.npmmirror.com && \
 # -----------------------------------------------------------------------------
 # 阶段 2: 生产阶段 (production)
 # -----------------------------------------------------------------------------
-FROM node:22-alpine AS production
+FROM node:22.19.0-alpine AS production
 
 # 安装运行时依赖
 RUN apk add --no-cache \

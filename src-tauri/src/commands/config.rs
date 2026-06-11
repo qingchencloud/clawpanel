@@ -210,6 +210,13 @@ fn read_package_json_field(path: &std::path::Path, pointer: &str) -> Option<Stri
         .filter(|v| !v.is_empty())
 }
 
+const OPENCLAW_NODE_REQUIREMENT_VERSION_FLOOR: &str = "2026.6.5";
+const OPENCLAW_NODE_REQUIREMENT_FOR_NEWER_RUNTIME: &str = ">=22.19.0";
+
+fn openclaw_version_requires_node_22_19(version: &str) -> bool {
+    parse_version(&base_version(version)) >= parse_version(OPENCLAW_NODE_REQUIREMENT_VERSION_FLOOR)
+}
+
 fn find_openclaw_package_json(cli_path: &std::path::Path) -> Option<PathBuf> {
     let dir = cli_path.parent()?;
     let cli_source = crate::utils::classify_cli_source(&cli_path.to_string_lossy());
@@ -246,8 +253,66 @@ fn find_openclaw_package_json(cli_path: &std::path::Path) -> Option<PathBuf> {
 
 pub(crate) fn openclaw_node_requirement() -> Option<String> {
     let cli_path = crate::utils::resolve_openclaw_cli_path()?;
-    let pkg_json = find_openclaw_package_json(std::path::Path::new(&cli_path))?;
-    read_package_json_field(&pkg_json, "/engines/node")
+    let cli_path_ref = std::path::Path::new(&cli_path);
+    let pkg_json = find_openclaw_package_json(cli_path_ref);
+    if let Some(pkg_json) = pkg_json.as_ref() {
+        if let Some(requirement) = read_package_json_field(pkg_json, "/engines/node")
+            .filter(|requirement| !requirement.trim().is_empty())
+        {
+            return Some(requirement);
+        }
+    }
+    let installed_version = pkg_json
+        .as_ref()
+        .and_then(|pkg| read_package_json_field(pkg, "/version"))
+        .or_else(|| read_version_from_installation(cli_path_ref));
+    installed_version
+        .filter(|version| openclaw_version_requires_node_22_19(version))
+        .map(|_| OPENCLAW_NODE_REQUIREMENT_FOR_NEWER_RUNTIME.to_string())
+}
+
+fn standalone_bundled_node_bin(cli_path: &str) -> Option<PathBuf> {
+    let dir = std::path::Path::new(cli_path).parent()?;
+    #[cfg(target_os = "windows")]
+    let node_bin = dir.join("node.exe");
+    #[cfg(not(target_os = "windows"))]
+    let node_bin = dir.join("node");
+    node_bin.is_file().then_some(node_bin)
+}
+
+fn node_version_from_bin(node_bin: &std::path::Path) -> Option<String> {
+    let mut cmd = Command::new(node_bin);
+    cmd.arg("--version");
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    let output = cmd.output().ok()?;
+    if output.status.success() {
+        Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        None
+    }
+}
+
+fn populate_node_detection_result(
+    result: &mut serde_json::Map<String, Value>,
+    version: String,
+    path: String,
+    detected_from: String,
+) {
+    let required_version = openclaw_node_requirement();
+    let compatible = required_version
+        .as_deref()
+        .map(|req| node_version_satisfies_requirement(&version, req))
+        .unwrap_or(true);
+    result.insert("installed".into(), Value::Bool(true));
+    result.insert("version".into(), Value::String(version));
+    result.insert("path".into(), Value::String(path));
+    result.insert("detectedFrom".into(), Value::String(detected_from));
+    result.insert("compatible".into(), Value::Bool(compatible));
+    result.insert(
+        "requiredVersion".into(),
+        required_version.map(Value::String).unwrap_or(Value::Null),
+    );
 }
 
 pub(crate) fn ensure_node_runtime_compatible() -> Result<(), String> {
@@ -1027,7 +1092,7 @@ pub fn write_openclaw_config(config: Value) -> Result<(), String> {
     // 即使这些字段不在前端传入的配置对象中
     let existing_config = fs::read_to_string(&path)
         .ok()
-        .and_then(|c| serde_json::from_str::<Value>(&c).ok());
+        .and_then(|c| parse_json_relaxed(&c));
 
     // 备份
     let bak = super::openclaw_dir().join("openclaw.json.bak");
@@ -1060,8 +1125,8 @@ pub fn write_openclaw_config(config: Value) -> Result<(), String> {
 }
 
 const CALIBRATION_RESET_INHERIT_KEYS: &[&str] = &[
-    "agents", "auth", "bindings", "browser", "channels", "commands", "env", "hooks", "models",
-    "plugins", "session", "skills", "wizard",
+    "agents", "auth", "bindings", "browser", "channels", "commands", "env", "hooks", "memory",
+    "models", "plugins", "security", "session", "skills", "wizard",
 ];
 
 fn calibration_required_origins() -> Vec<String> {
@@ -1558,7 +1623,8 @@ pub fn calibrate_openclaw_config(mode: String) -> Result<Value, String> {
 ///
 /// Issue #127: 修复配置合并时丢失 browser.* 等合法字段的问题
 ///
-/// 策略：对所有顶级 Object 类型字段做浅合并（新值覆盖旧值，旧值中新配置没有的字段保留）。
+/// 策略：对 Object 类型字段递归合并（新值覆盖旧值，旧值中新配置没有的字段保留）。
+/// 数组与标量显式替换，避免把模型列表、Agent 列表等顺序集合错误拼接。
 /// 这样用户通过 CLI / 手动编辑添加的自定义子字段不会被前端的部分配置所覆盖掉。
 ///
 /// 清理的字段：
@@ -1575,14 +1641,16 @@ fn merge_configs_preserving_fields(existing: &Value, new: &Value) -> Value {
                     if let (Value::Object(existing_sub), Value::Object(new_sub)) =
                         (existing_value, new_value)
                     {
-                        // 两边都是对象：浅合并（新值覆盖，旧值保留未覆盖的 key）
-                        let mut sub_merged = existing_sub.clone();
-                        for (sub_key, sub_value) in new_sub {
-                            sub_merged.insert(sub_key.clone(), sub_value.clone());
-                        }
-                        merged.insert(key.clone(), Value::Object(sub_merged));
+                        // 两边都是对象：递归合并（新值覆盖，旧值保留未覆盖的 key）
+                        merged.insert(
+                            key.clone(),
+                            merge_configs_preserving_fields(
+                                &Value::Object(existing_sub.clone()),
+                                &Value::Object(new_sub.clone()),
+                            ),
+                        );
                     } else {
-                        // 类型不同或不是对象，直接使用新值
+                        // 类型不同、数组或标量，直接使用新值
                         merged.insert(key.clone(), new_value.clone());
                     }
                 } else {
@@ -4771,6 +4839,24 @@ pub fn check_node() -> Result<Value, String> {
     let mut result = serde_json::Map::new();
     let enhanced = super::enhanced_path();
 
+    // standalone 安装会在 openclaw 启动脚本中优先使用同目录 Node.js。
+    // 这里按实际运行时检测，避免被 PATH 中较旧的系统 Node.js 误判拦截。
+    if let Some(cli_path) = crate::utils::resolve_openclaw_cli_path() {
+        if crate::utils::classify_cli_source(&cli_path) == "standalone" {
+            if let Some(bundled) = standalone_bundled_node_bin(&cli_path) {
+                if let Some(ver) = node_version_from_bin(&bundled) {
+                    populate_node_detection_result(
+                        &mut result,
+                        ver,
+                        bundled.to_string_lossy().to_string(),
+                        "standalone-bundled".into(),
+                    );
+                    return Ok(Value::Object(result));
+                }
+            }
+        }
+    }
+
     // 尝试通过 which/where 命令找到 node 的实际路径
     let node_path = find_node_path(&enhanced);
 
@@ -4783,20 +4869,7 @@ pub fn check_node() -> Result<Value, String> {
             Ok(o) if o.status.success() => {
                 let ver = String::from_utf8_lossy(&o.stdout).trim().to_string();
                 let detected_from = detect_node_source(&path);
-                let required_version = openclaw_node_requirement();
-                let compatible = required_version
-                    .as_deref()
-                    .map(|req| node_version_satisfies_requirement(&ver, req))
-                    .unwrap_or(true);
-                result.insert("installed".into(), Value::Bool(true));
-                result.insert("version".into(), Value::String(ver));
-                result.insert("path".into(), Value::String(path));
-                result.insert("detectedFrom".into(), Value::String(detected_from));
-                result.insert("compatible".into(), Value::Bool(compatible));
-                result.insert(
-                    "requiredVersion".into(),
-                    required_version.map(Value::String).unwrap_or(Value::Null),
-                );
+                populate_node_detection_result(&mut result, ver, path, detected_from);
             }
             _ => {
                 result.insert("installed".into(), Value::Bool(false));
@@ -7458,8 +7531,8 @@ pub async fn auto_install_node(app: tauri::AppHandle) -> Result<String, String> 
                 .wait()
                 .map_err(|e| format!("等待 winget 安装 Node.js 失败: {e}"))?;
             if !install_status.success() {
-                let requirement =
-                    openclaw_node_requirement().unwrap_or_else(|| "22.19.0 或更高版本".to_string());
+                let requirement = openclaw_node_requirement()
+                    .unwrap_or_else(|| "当前 OpenClaw 要求的版本".to_string());
                 return Err(format!(
                     "winget 安装/升级 Node.js 失败，请手动安装满足 {requirement} 的 Node.js：https://nodejs.org/"
                 ));
@@ -7527,15 +7600,16 @@ pub fn invalidate_path_cache() -> Result<(), String> {
 
 #[cfg(test)]
 mod write_openclaw_config_merge_tests {
+    use super::apply_reset_inheritance;
     use super::merge_configs_preserving_fields;
     use super::node_version_satisfies_requirement;
+    use super::openclaw_version_requires_node_22_19;
     #[cfg(target_os = "windows")]
     use super::resolve_openclaw_cli_input_path;
+    use super::standalone_bundled_node_bin;
     use serde_json::json;
-    #[cfg(target_os = "windows")]
     use std::path::PathBuf;
 
-    #[cfg(target_os = "windows")]
     fn unique_temp_dir(name: &str) -> PathBuf {
         let suffix = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -7578,6 +7652,61 @@ mod write_openclaw_config_merge_tests {
             "merged config must retain provider b when the write payload omits it"
         );
         assert_eq!(prov["a"]["baseUrl"], json!("http://example"));
+    }
+
+    #[test]
+    fn calibration_reset_inherits_memory_and_security_extensions() {
+        let baseline = json!({});
+        let seed = json!({
+            "memory": {
+                "qmd": { "rerank": false },
+            },
+            "security": {
+                "installPolicy": {
+                    "enabled": true,
+                    "targets": ["skill", "plugin"]
+                }
+            }
+        });
+
+        let (next, inherited) = apply_reset_inheritance(baseline, &seed);
+
+        assert!(inherited.contains(&"memory".to_string()));
+        assert!(inherited.contains(&"security".to_string()));
+        assert_eq!(next["memory"]["qmd"]["rerank"], json!(false));
+        assert_eq!(
+            next["security"]["installPolicy"]["targets"][1],
+            json!("plugin")
+        );
+    }
+
+    #[test]
+    fn partial_gateway_patch_preserves_auth_token() {
+        let existing = json!({
+            "gateway": {
+                "auth": { "token": "secret-new" },
+                "controlUi": { "allowedOrigins": ["http://localhost:3000"] }
+            }
+        });
+        let patch = json!({
+            "gateway": {
+                "controlUi": {
+                    "allowedOrigins": ["http://localhost:3000", "tauri://localhost"]
+                }
+            }
+        });
+
+        let merged = merge_configs_preserving_fields(&existing, &patch);
+
+        assert_eq!(
+            merged.pointer("/gateway/auth/token"),
+            Some(&json!("secret-new"))
+        );
+        let origins = merged
+            .pointer("/gateway/controlUi/allowedOrigins")
+            .and_then(|v| v.as_array())
+            .expect("allowedOrigins");
+        assert!(origins.iter().any(|v| v == "tauri://localhost"));
     }
 
     #[cfg(target_os = "windows")]
@@ -7625,6 +7754,14 @@ mod write_openclaw_config_merge_tests {
     }
 
     #[test]
+    fn openclaw_node_requirement_floor_starts_at_2026_6_5() {
+        assert!(!openclaw_version_requires_node_22_19("2026.6.4"));
+        assert!(openclaw_version_requires_node_22_19("2026.6.5"));
+        assert!(openclaw_version_requires_node_22_19("2026.6.5-zh.1"));
+        assert!(openclaw_version_requires_node_22_19("2026.7.1"));
+    }
+
+    #[test]
     fn node_requirement_supports_common_or_ranges() {
         assert!(node_version_satisfies_requirement(
             "v22.20.0",
@@ -7638,5 +7775,24 @@ mod write_openclaw_config_merge_tests {
             "v24.1.0",
             "^22.19.0 || >=24.0.0"
         ));
+    }
+
+    #[test]
+    fn standalone_bundled_node_bin_resolves_next_to_cli() {
+        let dir = unique_temp_dir("standalone-bundled-node");
+        std::fs::create_dir_all(&dir).unwrap();
+        let cli_path = dir.join("openclaw.cmd");
+        std::fs::write(&cli_path, "@echo off\r\n").unwrap();
+        #[cfg(target_os = "windows")]
+        let node_name = "node.exe";
+        #[cfg(not(target_os = "windows"))]
+        let node_name = "node";
+        let node_bin = dir.join(node_name);
+        std::fs::write(&node_bin, "").unwrap();
+
+        let resolved = standalone_bundled_node_bin(&cli_path.to_string_lossy());
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert_eq!(resolved, Some(node_bin));
     }
 }

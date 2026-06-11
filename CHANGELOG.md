@@ -5,6 +5,37 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.18.3] - 2026-06-11
+
+### 修复 (Fixes)
+
+- **最新版 OpenClaw 的 Node.js 门槛兼容** — 继续保留当前稳定推荐版不变；当用户已安装 OpenClaw `2026.6.5` 或更高版本时，面板会按新版运行要求检测 Node.js `>=22.19.0`，旧稳定版不会被误拦截
+- **standalone OpenClaw Node.js 检测误判** — standalone 安装会优先使用同目录捆绑的 `node` / `node.exe` 做兼容检测，避免被 PATH 中较旧的系统 Node.js 误判
+- **配对修复覆盖配置风险** — Gateway 配对流程只增量写入 `gateway.controlUi.allowedOrigins`，避免用旧的全量配置快照覆盖用户刚保存的模型、认证或安全配置
+- **配置写回保留深层字段** — `openclaw.json` 写回改为对象递归合并，数组与标量仍显式替换，减少升级或自动修复时丢失未知配置字段的风险
+
+### 兼容性 (Compatibility)
+
+- **兼容 Parallel Web Search 插件** — Web 搜索后端白名单补充 `parallel-free` 与 `parallel`，并保留 `plugins.entries.parallel.config.webSearch.apiKey` / `baseUrl` 等插件配置
+- **保留 OpenClaw 新增配置项** — 支持并保留 `memory.qmd.rerank` 与 `security.installPolicy`；校准/重置配置时会继承 `memory`、`security` 等高级配置块
+- **Linux 部署默认仍走稳定版** — 一键部署脚本默认安装 `@qingchencloud/openclaw-zh@2026.5.18-zh.1`，仅当检测到 OpenClaw `2026.6.5+` 时才提升 Node.js 运行门槛
+
+### 改进 (Improvements)
+
+- **Hermes 配置页补充 QMD 与 Install Policy** — 记忆配置新增 QMD rerank 开关，安全配置新增 Install Policy JSON 编辑入口，并保留其他高级 YAML 字段
+- **第三方服务商接入规范更清晰** — 贡献指南新增 provider 接入规范，要求服务商 PR 保持中性技术接入，不夹带默认推广位或未经确认的商业宣传
+
+### 测试与验证 (Testing)
+
+- 已通过 `git diff --check`
+- 已通过 `bash -n scripts/linux-deploy.sh`
+- 已通过 `npm run build`
+- 已通过 `node --test tests/patch-gateway-origins.test.js tests/node-runtime-detection-policy.test.js tests/hermes-web-config.test.js tests/hermes-memory-config.test.js tests/hermes-security-config.test.js tests/hermes-config-page-ui.test.js`
+- 已通过 `cd src-tauri && cargo fmt --check`
+- 已通过 `cd src-tauri && cargo check`
+- 已通过 `cd src-tauri && cargo test --lib`
+- 已通过 `cd src-tauri && cargo clippy --all-targets -- -D warnings`
+
 ## [0.18.2] - 2026-06-08
 
 ### 修复 (Fixes)

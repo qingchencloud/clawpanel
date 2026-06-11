@@ -125,7 +125,7 @@ services:
   # OpenClaw Gateway 服务（可选，取消注释以启用）
   # ---------------------------------------------------------------------------
   # gateway:
-  #   image: node:22-alpine
+  #   image: node:22.19.0-alpine
   #   container_name: openclaw-gateway
   #   hostname: openclaw-gateway
   #   network_mode: host

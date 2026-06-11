@@ -152,7 +152,10 @@ fn parse_lsof_pid_output(text: &str) -> Option<u32> {
 
 #[cfg(test)]
 mod gateway_pid_parse_tests {
-    use super::{parse_lsof_pid_output, parse_ss_listen_pid_output};
+    use super::{
+        parse_lsof_pid_output, parse_ss_listen_pid_output,
+        should_preserve_plugin_config_on_generic_strip,
+    };
 
     #[test]
     fn parses_linux_ss_listener_pid() {
@@ -166,6 +169,15 @@ LISTEN 0      511        127.0.0.1:18789      0.0.0.0:*    users:((\"node\",pid=
     fn parses_lsof_listener_pid() {
         assert_eq!(parse_lsof_pid_output("4242\n"), Some(4242));
         assert_eq!(parse_lsof_pid_output("not-a-pid\n4242\n"), Some(4242));
+    }
+
+    #[test]
+    fn generic_config_strip_preserves_parallel_plugin_config() {
+        assert!(should_preserve_plugin_config_on_generic_strip("parallel"));
+        assert!(should_preserve_plugin_config_on_generic_strip("Parallel"));
+        assert!(!should_preserve_plugin_config_on_generic_strip(
+            "legacy-plugin"
+        ));
     }
 }
 
@@ -326,6 +338,14 @@ fn looks_like_gateway_config_mismatch(reason: &str) -> bool {
 
 /// 直接修复 openclaw.json 中 plugins.entries.*.config 的多余属性
 /// 当 `openclaw doctor --fix` 无法修复时作为二级回退
+const GENERIC_CONFIG_STRIP_PROTECTED_PLUGINS: &[&str] = &["parallel"];
+
+fn should_preserve_plugin_config_on_generic_strip(name: &str) -> bool {
+    GENERIC_CONFIG_STRIP_PROTECTED_PLUGINS
+        .iter()
+        .any(|id| id.eq_ignore_ascii_case(name))
+}
+
 fn try_direct_config_strip() -> Result<bool, String> {
     let config_path = crate::commands::openclaw_dir().join("openclaw.json");
     let raw =
@@ -372,6 +392,12 @@ fn try_direct_config_strip() -> Result<bool, String> {
         {
             let entry_names: Vec<String> = entries.keys().cloned().collect();
             for name in &entry_names {
+                if should_preserve_plugin_config_on_generic_strip(name) {
+                    guardian_log(&format!(
+                        "直接修复(通用回退): 保留 plugins.entries.{name}.config"
+                    ));
+                    continue;
+                }
                 if let Some(entry) = entries.get_mut(name) {
                     if let Some(obj) = entry.as_object_mut() {
                         if obj.contains_key("config") {

@@ -71,6 +71,7 @@ test('Hermes 配置页会暴露记忆结构化配置字段', () => {
     'hm-memory-user-char-limit',
     'hm-memory-nudge-interval',
     'hm-memory-flush-min-turns',
+    'hm-memory-qmd-rerank',
   ]) {
     assert.match(source, new RegExp(`id="${id}"`), `缺少 ${id}`)
   }
@@ -243,6 +244,7 @@ test('Hermes 配置页会暴露 Tirith 安全扫描结构化配置字段', () =>
     'hm-security-tirith-path',
     'hm-security-tirith-timeout',
     'hm-security-tirith-fail-open',
+    'hm-security-install-policy-json',
   ]) {
     assert.match(source, new RegExp(`id="${id}"`), `缺少 ${id}`)
   }

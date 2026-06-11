@@ -4944,6 +4944,10 @@ fn build_hermes_memory_config_values(config: &serde_yaml::Value) -> Value {
     let flush_min_turns = memory
         .map(|map| bounded_hermes_i64(yaml_i64_field(map, "flush_min_turns"), 6, 0, 1000))
         .unwrap_or(6);
+    let qmd = memory.and_then(|map| yaml_get_mapping(map, "qmd"));
+    let qmd_rerank = qmd
+        .and_then(|map| yaml_bool_field(map, "rerank"))
+        .unwrap_or(true);
 
     serde_json::json!({
         "memoryEnabled": memory_enabled,
@@ -4952,6 +4956,7 @@ fn build_hermes_memory_config_values(config: &serde_yaml::Value) -> Value {
         "userCharLimit": user_char_limit,
         "nudgeInterval": nudge_interval,
         "flushMinTurns": flush_min_turns,
+        "qmdRerank": qmd_rerank,
     })
 }
 
@@ -5005,6 +5010,8 @@ fn merge_hermes_memory_config(config: &mut serde_yaml::Value, form: &Value) -> R
         0,
         1000,
     )?;
+    let qmd_rerank = form_bool(form, "qmdRerank")
+        .unwrap_or_else(|| current["qmdRerank"].as_bool().unwrap_or(true));
 
     let root = ensure_yaml_object(config)?;
     let memory = yaml_child_object(root, "memory")?;
@@ -5032,6 +5039,8 @@ fn merge_hermes_memory_config(config: &mut serde_yaml::Value, form: &Value) -> R
         yaml_key("flush_min_turns"),
         serde_yaml::Value::Number(flush_min_turns.into()),
     );
+    let qmd = yaml_child_object(memory, "qmd")?;
+    qmd.insert(yaml_key("rerank"), serde_yaml::Value::Bool(qmd_rerank));
     Ok(())
 }
 
@@ -6816,13 +6825,37 @@ fn build_hermes_security_config_values(config: &serde_yaml::Value) -> Value {
     let tirith_fail_open = security
         .and_then(|map| yaml_bool_field(map, "tirith_fail_open"))
         .unwrap_or(true);
+    let install_policy_json = security
+        .and_then(|map| yaml_get(map, "installPolicy"))
+        .and_then(|value| serde_json::to_value(value).ok())
+        .filter(|value| value.is_object())
+        .and_then(|value| serde_json::to_string_pretty(&value).ok())
+        .unwrap_or_default();
 
     serde_json::json!({
         "tirithEnabled": tirith_enabled,
         "tirithPath": tirith_path,
         "tirithTimeout": tirith_timeout,
         "tirithFailOpen": tirith_fail_open,
+        "installPolicyJson": install_policy_json,
     })
+}
+
+fn parse_hermes_install_policy_json(
+    raw: Option<String>,
+) -> Result<Option<serde_yaml::Value>, String> {
+    let text = raw.unwrap_or_default().trim().to_string();
+    if text.is_empty() {
+        return Ok(None);
+    }
+    let value: Value = serde_json::from_str(&text)
+        .map_err(|err| format!("security.installPolicy JSON 格式错误: {err}"))?;
+    if !value.is_object() {
+        return Err("security.installPolicy 必须是 JSON 对象".to_string());
+    }
+    serde_yaml::to_value(value)
+        .map(Some)
+        .map_err(|err| format!("security.installPolicy 转换 YAML 失败: {err}"))
 }
 
 fn merge_hermes_security_config(
@@ -6851,6 +6884,14 @@ fn merge_hermes_security_config(
         1,
         300,
     )?;
+    let install_policy =
+        parse_hermes_install_policy_json(if form.get("installPolicyJson").is_some() {
+            form_string(form, "installPolicyJson")
+        } else {
+            current["installPolicyJson"]
+                .as_str()
+                .map(ToString::to_string)
+        })?;
     let security = yaml_child_object(root, "security")?;
     security.insert(
         yaml_key("tirith_enabled"),
@@ -6874,6 +6915,11 @@ fn merge_hermes_security_config(
                 .unwrap_or_else(|| current["tirithFailOpen"].as_bool().unwrap_or(true)),
         ),
     );
+    if let Some(install_policy) = install_policy {
+        security.insert(yaml_key("installPolicy"), install_policy);
+    } else {
+        security.remove(yaml_key("installPolicy"));
+    }
     Ok(())
 }
 
@@ -7999,6 +8045,7 @@ fn normalize_hermes_web_backend(
         backend.as_str(),
         "tavily"
             | "firecrawl"
+            | "parallel-free"
             | "parallel"
             | "exa"
             | "searxng"
@@ -8011,7 +8058,7 @@ fn normalize_hermes_web_backend(
         return Ok(backend);
     }
     if strict {
-        Err(format!("{key} 必须为空或 tavily、firecrawl、parallel、exa、searxng、brave、brave_free、ddgs、xai、native"))
+        Err(format!("{key} 必须为空或 tavily、firecrawl、parallel-free、parallel、exa、searxng、brave、brave_free、ddgs、xai、native"))
     } else {
         Ok(String::new())
     }
@@ -19407,7 +19454,7 @@ streaming:
         merge_hermes_web_config(
             &mut config,
             &json!({
-                "webBackend": "parallel",
+                "webBackend": "parallel-free",
                 "webSearchBackend": "exa",
                 "webExtractBackend": "native",
             }),
@@ -19416,7 +19463,7 @@ streaming:
 
         assert_eq!(config["model"]["provider"].as_str(), Some("anthropic"));
         assert_eq!(config["streaming"]["enabled"].as_bool(), Some(true));
-        assert_eq!(config["web"]["backend"].as_str(), Some("parallel"));
+        assert_eq!(config["web"]["backend"].as_str(), Some("parallel-free"));
         assert_eq!(config["web"]["search_backend"].as_str(), Some("exa"));
         assert_eq!(config["web"]["extract_backend"].as_str(), Some("native"));
         assert_eq!(config["web"]["custom_flag"].as_str(), Some("keep-web"));
@@ -21510,6 +21557,7 @@ mod hermes_memory_config_tests {
         assert_eq!(values["userCharLimit"], 1375);
         assert_eq!(values["nudgeInterval"], 10);
         assert_eq!(values["flushMinTurns"], 6);
+        assert_eq!(values["qmdRerank"], true);
     }
 
     #[test]
@@ -21523,6 +21571,9 @@ memory:
   provider: honcho
   custom_flag: keep-me
   flush_min_turns: 9
+  qmd:
+    provider: qmd
+    rerank: true
 streaming:
   enabled: true
 "#,
@@ -21538,6 +21589,7 @@ streaming:
                 "userCharLimit": "1500",
                 "nudgeInterval": "0",
                 "flushMinTurns": "7",
+                "qmdRerank": false,
             }),
         )
         .unwrap();
@@ -21553,6 +21605,8 @@ streaming:
         assert_eq!(config["memory"]["user_char_limit"].as_i64(), Some(1500));
         assert_eq!(config["memory"]["nudge_interval"].as_i64(), Some(0));
         assert_eq!(config["memory"]["flush_min_turns"].as_i64(), Some(7));
+        assert_eq!(config["memory"]["qmd"]["rerank"].as_bool(), Some(false));
+        assert_eq!(config["memory"]["qmd"]["provider"].as_str(), Some("qmd"));
         assert_eq!(config["memory"]["provider"].as_str(), Some("honcho"));
         assert_eq!(config["memory"]["custom_flag"].as_str(), Some("keep-me"));
     }
@@ -24195,6 +24249,7 @@ mod hermes_security_config_tests {
         assert_eq!(values["tirithPath"], "tirith");
         assert_eq!(values["tirithTimeout"], 5);
         assert_eq!(values["tirithFailOpen"], true);
+        assert_eq!(values["installPolicyJson"], "");
     }
 
     #[test]
@@ -24206,6 +24261,11 @@ security:
   tirith_path: C:/tools/tirith.exe
   tirith_timeout: 12
   tirith_fail_open: false
+  installPolicy:
+    enabled: true
+    targets:
+      - skill
+      - plugin
 "#,
         )
         .unwrap();
@@ -24214,6 +24274,10 @@ security:
         assert_eq!(values["tirithPath"], "C:/tools/tirith.exe");
         assert_eq!(values["tirithTimeout"], 12);
         assert_eq!(values["tirithFailOpen"], false);
+        let install_policy: serde_json::Value =
+            serde_json::from_str(values["installPolicyJson"].as_str().unwrap()).unwrap();
+        assert_eq!(install_policy["enabled"], true);
+        assert_eq!(install_policy["targets"][0], "skill");
     }
 
     #[test]
@@ -24228,6 +24292,10 @@ security:
     enabled: true
     domains:
       - example.com
+  installPolicy:
+    enabled: false
+    targets:
+      - skill
   custom_flag: keep-security
 terminal:
   backend: docker
@@ -24242,6 +24310,7 @@ terminal:
                 "tirithPath": "~/bin/tirith",
                 "tirithTimeout": 9,
                 "tirithFailOpen": false,
+                "installPolicyJson": r#"{"enabled":true,"targets":["skill","plugin"],"exec":{"source":"exec","command":"tirith","args":["scan"]}}"#,
             }),
         )
         .unwrap();
@@ -24251,6 +24320,18 @@ terminal:
         assert_eq!(
             config["security"]["custom_flag"].as_str(),
             Some("keep-security")
+        );
+        assert_eq!(
+            config["security"]["installPolicy"]["enabled"].as_bool(),
+            Some(true)
+        );
+        assert_eq!(
+            config["security"]["installPolicy"]["targets"][1].as_str(),
+            Some("plugin")
+        );
+        assert_eq!(
+            config["security"]["installPolicy"]["exec"]["command"].as_str(),
+            Some("tirith")
         );
         assert_eq!(config["security"]["tirith_enabled"].as_bool(), Some(false));
         assert_eq!(
@@ -24274,6 +24355,10 @@ terminal:
         let err =
             merge_hermes_security_config(&mut config, &json!({ "tirithPath": "" })).unwrap_err();
         assert!(err.contains("security.tirith_path"));
+
+        let err = merge_hermes_security_config(&mut config, &json!({ "installPolicyJson": "[]" }))
+            .unwrap_err();
+        assert!(err.contains("security.installPolicy"));
     }
 }
 

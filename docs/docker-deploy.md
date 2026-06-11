@@ -48,7 +48,7 @@ docker run -d \
   --restart unless-stopped \
   -p 1420:1420 \
   -v clawpanel-data:/root/.openclaw \
-  node:22-slim \
+  node:22.19.0-slim \
   sh -c "\
     apt-get update && apt-get install -y git && \
     npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com && \
@@ -86,7 +86,7 @@ services:
       - NODE_ENV=production
 
   gateway:
-    image: node:22-slim
+    image: node:22.19.0-slim
     container_name: openclaw-gateway
     restart: unless-stopped
     ports:
@@ -110,7 +110,7 @@ volumes:
 同目录下创建 `Dockerfile.clawpanel`：
 
 ```dockerfile
-FROM node:22-slim
+FROM node:22.19.0-slim
 
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 
@@ -140,7 +140,7 @@ docker compose up -d
 如果只需要 ClawPanel Web（Gateway 在宿主机或其他地方运行）：
 
 ```dockerfile
-FROM node:22-slim
+FROM node:22.19.0-slim
 
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 
@@ -336,7 +336,7 @@ docker logs clawpanel
 
 2. **在 Dockerfile 中预装**：构建镜像时就安装好 OpenClaw，避免运行时下载：
    ```dockerfile
-   FROM node:22-slim
+   FROM node:22.19.0-slim
    RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
    # 预装 OpenClaw CLI（使用国内镜像源加速）
    RUN npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com

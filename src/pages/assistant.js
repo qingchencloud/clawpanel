@@ -786,7 +786,7 @@ const BUILTIN_SKILLS = [
 
 具体操作：
 1. 调用 get_system_info 获取 OS、架构、Node.js 版本等基础信息
-2. 用 run_command 检查 Node.js 版本（node -v），要求 >= 18
+2. 用 run_command 检查 Node.js 版本（node -v），并按当前 OpenClaw 的 engines.node 判断是否兼容
 3. 用 run_command 检查 npm 版本（npm -v）
 4. 用 run_command 检查 OpenClaw CLI（openclaw --version）
 5. 用 check_port 检查 Gateway 端口 18789

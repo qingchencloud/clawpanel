@@ -86,6 +86,7 @@ const MEMORY_DEFAULTS = {
   userCharLimit: 1375,
   nudgeInterval: 10,
   flushMinTurns: 6,
+  qmdRerank: true,
 }
 
 const SKILLS_DEFAULTS = {
@@ -185,6 +186,7 @@ const SECURITY_DEFAULTS = {
   tirithPath: 'tirith',
   tirithTimeout: 5,
   tirithFailOpen: true,
+  installPolicyJson: '',
 }
 
 const DISPLAY_DEFAULTS = {
@@ -407,7 +409,7 @@ const TERMINAL_MODAL_MODES = ['auto', 'managed', 'direct']
 const TERMINAL_VERCEL_RUNTIMES = ['node24', 'node22', 'python3.13']
 const BROWSER_ENGINES = ['auto', 'lightpanda', 'chrome']
 const BROWSER_DIALOG_POLICIES = ['must_respond', 'auto_dismiss', 'auto_accept']
-const WEB_BACKENDS = ['', 'tavily', 'firecrawl', 'parallel', 'exa', 'searxng', 'brave', 'brave_free', 'ddgs', 'xai', 'native']
+const WEB_BACKENDS = ['', 'tavily', 'firecrawl', 'parallel-free', 'parallel', 'exa', 'searxng', 'brave', 'brave_free', 'ddgs', 'xai', 'native']
 const LSP_WAIT_MODES = ['document', 'full']
 const LSP_INSTALL_STRATEGIES = ['auto', 'manual', 'off']
 const STT_PROVIDERS = ['auto', 'local', 'groq', 'openai', 'mistral']
@@ -1115,6 +1117,10 @@ export function render() {
               <input id="hm-memory-user-profile-enabled" type="checkbox" ${memoryValues.userProfileEnabled ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
               <span>${t('engine.hermesMemoryConfigUserProfileEnabled')}</span>
             </label>
+            <label class="hm-channel-check">
+              <input id="hm-memory-qmd-rerank" type="checkbox" ${memoryValues.qmdRerank ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
+              <span>${t('engine.hermesMemoryConfigQmdRerank')}</span>
+            </label>
           </div>
           <div class="hm-config-runtime-grid hm-config-memory-grid">
             <label class="hm-field">
@@ -1722,6 +1728,10 @@ export function render() {
               <input id="hm-security-tirith-timeout" class="hm-input" type="number" inputmode="numeric" min="1" max="300" step="1" value="${esc(securityValues.tirithTimeout)}" ${disabled ? 'disabled' : ''}>
             </label>
           </div>
+          <label class="hm-field" style="margin-top:14px">
+            <span class="hm-field-label">${t('engine.hermesSecurityConfigInstallPolicyJson')}</span>
+            <textarea id="hm-security-install-policy-json" class="hm-input" spellcheck="false" rows="8" ${disabled ? 'disabled' : ''} style="font-family:var(--hm-font-mono);line-height:1.65;min-height:220px">${esc(securityValues.installPolicyJson)}</textarea>
+          </label>
           <div class="hm-channel-footnote">${t('engine.hermesSecurityConfigFootnote')}</div>
         </div>
       </div>
@@ -4071,6 +4081,7 @@ export function render() {
       userCharLimit: el.querySelector('#hm-memory-user-char-limit')?.value || '1375',
       nudgeInterval: el.querySelector('#hm-memory-nudge-interval')?.value || '10',
       flushMinTurns: el.querySelector('#hm-memory-flush-min-turns')?.value || '6',
+      qmdRerank: !!el.querySelector('#hm-memory-qmd-rerank')?.checked,
     }
     memorySaving = true
     memoryError = null
@@ -4506,6 +4517,7 @@ export function render() {
       tirithPath: el.querySelector('#hm-security-tirith-path')?.value || 'tirith',
       tirithTimeout: el.querySelector('#hm-security-tirith-timeout')?.value || '5',
       tirithFailOpen: !!el.querySelector('#hm-security-tirith-fail-open')?.checked,
+      installPolicyJson: el.querySelector('#hm-security-install-policy-json')?.value || '',
     }
     securitySaving = true
     securityError = null

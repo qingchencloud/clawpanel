@@ -267,6 +267,8 @@ const PANEL_VERSION = (() => {
 })()
 const SITE_BASE_URL = 'https://claw.qt.cool'
 const VERSION_POLICY_PATH = path.join(__dev_dirname, '..', 'openclaw-version-policy.json')
+const OPENCLAW_NODE_REQUIREMENT_VERSION_FLOOR = '2026.6.5'
+const OPENCLAW_NODE_REQUIREMENT_FOR_NEWER_RUNTIME = '>=22.19.0'
 
 function ensureArrayContains(value, required) {
   const current = Array.isArray(value)
@@ -665,13 +667,21 @@ function findOpenclawPackageJson(cliPath) {
 function openclawNodeRequirement() {
   const cliPath = resolveOpenclawCliPath()
   const pkgPath = cliPath ? findOpenclawPackageJson(cliPath) : null
-  if (!pkgPath) return null
-  try {
-    const requirement = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))?.engines?.node
-    return typeof requirement === 'string' && requirement.trim() ? requirement.trim() : null
-  } catch {
-    return null
+  let installedVersion = null
+  if (pkgPath) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
+      const requirement = pkg?.engines?.node
+      if (typeof requirement === 'string' && requirement.trim()) return requirement.trim()
+      installedVersion = typeof pkg?.version === 'string' ? pkg.version : null
+    } catch {
+      installedVersion = null
+    }
   }
+  if (!installedVersion && cliPath) installedVersion = readVersionFromInstallation(cliPath)
+  return installedVersion && versionGe(baseVersion(installedVersion), OPENCLAW_NODE_REQUIREMENT_VERSION_FLOOR)
+    ? OPENCLAW_NODE_REQUIREMENT_FOR_NEWER_RUNTIME
+    : null
 }
 
 function parseNodeVersionTriplet(value) {
@@ -728,6 +738,12 @@ function decorateNodeDetection(base) {
     compatible,
     requiredVersion: requirement,
   }
+}
+
+function standaloneBundledNodePath(cliPath) {
+  if (!cliPath) return null
+  const nodeBin = path.join(path.dirname(cliPath), isWindows ? 'node.exe' : 'node')
+  return fs.existsSync(nodeBin) ? nodeBin : null
 }
 
 function ensureNodeRuntimeCompatibleWeb() {
@@ -2346,8 +2362,10 @@ const CALIBRATION_RESET_INHERIT_KEYS = [
   'commands',
   'env',
   'hooks',
+  'memory',
   'models',
   'plugins',
+  'security',
   'session',
   'skills',
   'wizard',
@@ -2687,10 +2705,18 @@ function patchGatewayOrigins() {
   const merged = [...new Set([...existing, ...origins])]
   // 幂等：已包含所有需要的 origin 时跳过写入
   if (origins.every(o => existing.includes(o))) return false
-  if (!config.gateway) config.gateway = {}
-  if (!config.gateway.controlUi) config.gateway.controlUi = {}
-  config.gateway.controlUi.allowedOrigins = merged
-  writeOpenclawConfigFile(config)
+  // 只写入 allowedOrigins 增量，避免用陈旧全量快照覆盖并发保存的其它配置字段。
+  const latest = readJsonFileRelaxed(CONFIG_PATH)
+  if (!latest || typeof latest !== 'object' || Array.isArray(latest)) return false
+  const partial = {
+    gateway: {
+      controlUi: {
+        allowedOrigins: merged,
+      },
+    },
+  }
+  const mergedConfig = mergeConfigsPreservingFields(latest, partial)
+  writeOpenclawConfigFile(mergedConfig)
   return true
 }
 
@@ -3842,7 +3868,7 @@ const HERMES_TERMINAL_MODAL_MODES = new Set(['auto', 'managed', 'direct'])
 const HERMES_TERMINAL_VERCEL_RUNTIMES = new Set(['node24', 'node22', 'python3.13'])
 const HERMES_BROWSER_ENGINES = new Set(['auto', 'lightpanda', 'chrome'])
 const HERMES_BROWSER_DIALOG_POLICIES = new Set(['must_respond', 'auto_dismiss', 'auto_accept'])
-const HERMES_WEB_BACKENDS = new Set(['tavily', 'firecrawl', 'parallel', 'exa', 'searxng', 'brave', 'brave_free', 'ddgs', 'xai', 'native'])
+const HERMES_WEB_BACKENDS = new Set(['tavily', 'firecrawl', 'parallel-free', 'parallel', 'exa', 'searxng', 'brave', 'brave_free', 'ddgs', 'xai', 'native'])
 const HERMES_LSP_WAIT_MODES = new Set(['document', 'full'])
 const HERMES_LSP_INSTALL_STRATEGIES = new Set(['auto', 'manual', 'off'])
 const HERMES_MODEL_CATALOG_DEFAULT_URL = 'https://hermes-agent.nousresearch.com/docs/api/model-catalog.json'
@@ -4012,7 +4038,7 @@ function normalizeHermesWebBackend(value, key, strict = false) {
   const backend = String(value ?? '').trim().toLowerCase()
   if (!backend) return ''
   if (HERMES_WEB_BACKENDS.has(backend)) return backend
-  if (strict) throw new Error(`${key} 必须为空或 tavily、firecrawl、parallel、exa、searxng、brave、brave_free、ddgs、xai、native`)
+  if (strict) throw new Error(`${key} 必须为空或 tavily、firecrawl、parallel-free、parallel、exa、searxng、brave、brave_free、ddgs、xai、native`)
   return ''
 }
 
@@ -4936,6 +4962,9 @@ export function buildHermesMemoryConfigValues(config = {}) {
   const memory = root.memory && typeof root.memory === 'object' && !Array.isArray(root.memory)
     ? root.memory
     : {}
+  const qmd = memory.qmd && typeof memory.qmd === 'object' && !Array.isArray(memory.qmd)
+    ? memory.qmd
+    : {}
   return {
     memoryEnabled: readHermesBool(memory.memory_enabled, true),
     userProfileEnabled: readHermesBool(memory.user_profile_enabled, true),
@@ -4943,6 +4972,7 @@ export function buildHermesMemoryConfigValues(config = {}) {
     userCharLimit: parseHermesInteger(memory.user_char_limit, 'memory.user_char_limit', 1375, 100, 200000, false),
     nudgeInterval: parseHermesInteger(memory.nudge_interval, 'memory.nudge_interval', 10, 0, 1000, false),
     flushMinTurns: parseHermesInteger(memory.flush_min_turns, 'memory.flush_min_turns', 6, 0, 1000, false),
+    qmdRerank: readHermesBool(qmd.rerank, true),
   }
 }
 
@@ -4958,6 +4988,11 @@ export function mergeHermesMemoryConfig(config = {}, form = {}) {
   memory.user_char_limit = parseHermesInteger(Object.hasOwn(form, 'userCharLimit') ? form.userCharLimit : currentValues.userCharLimit, 'memory.user_char_limit', 1375, 100, 200000, true)
   memory.nudge_interval = parseHermesInteger(Object.hasOwn(form, 'nudgeInterval') ? form.nudgeInterval : currentValues.nudgeInterval, 'memory.nudge_interval', 10, 0, 1000, true)
   memory.flush_min_turns = parseHermesInteger(Object.hasOwn(form, 'flushMinTurns') ? form.flushMinTurns : currentValues.flushMinTurns, 'memory.flush_min_turns', 6, 0, 1000, true)
+  const qmd = memory.qmd && typeof memory.qmd === 'object' && !Array.isArray(memory.qmd)
+    ? mergeConfigsPreservingFields(memory.qmd, {})
+    : {}
+  qmd.rerank = formHermesBool(form, 'qmdRerank', currentValues.qmdRerank)
+  memory.qmd = qmd
   next.memory = memory
   return next
 }
@@ -5855,7 +5890,25 @@ export function buildHermesSecurityConfigValues(config = {}) {
     tirithPath,
     tirithTimeout: parseHermesInteger(security.tirith_timeout, 'security.tirith_timeout', 5, 1, 300, false),
     tirithFailOpen: readHermesBool(security.tirith_fail_open, true),
+    installPolicyJson: security.installPolicy && typeof security.installPolicy === 'object' && !Array.isArray(security.installPolicy)
+      ? JSON.stringify(security.installPolicy, null, 2)
+      : '',
   }
+}
+
+function parseHermesInstallPolicyJson(raw) {
+  const text = String(raw ?? '').trim()
+  if (!text) return null
+  let value
+  try {
+    value = JSON.parse(text)
+  } catch (err) {
+    throw new Error(`security.installPolicy JSON 格式错误: ${err.message}`)
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('security.installPolicy 必须是 JSON 对象')
+  }
+  return value
 }
 
 export function mergeHermesSecurityConfig(config = {}, form = {}) {
@@ -5870,6 +5923,9 @@ export function mergeHermesSecurityConfig(config = {}, form = {}) {
   security.tirith_path = tirithPath
   security.tirith_timeout = parseHermesInteger(Object.hasOwn(form, 'tirithTimeout') ? form.tirithTimeout : currentValues.tirithTimeout, 'security.tirith_timeout', 5, 1, 300, true)
   security.tirith_fail_open = formHermesBool(form, 'tirithFailOpen', currentValues.tirithFailOpen)
+  const installPolicy = parseHermesInstallPolicyJson(Object.hasOwn(form, 'installPolicyJson') ? form.installPolicyJson : currentValues.installPolicyJson)
+  if (installPolicy) security.installPolicy = installPolicy
+  else delete security.installPolicy
   next.security = security
   return next
 }
@@ -10851,6 +10907,21 @@ const handlers = {
 
   check_node() {
     try {
+      const cliPath = resolveOpenclawCliPath()
+      if (cliPath && classifyCliSource(cliPath) === 'standalone') {
+        const bundled = standaloneBundledNodePath(cliPath)
+        if (bundled) {
+          const result = spawnSync(bundled, ['--version'], { windowsHide: true, encoding: 'utf8' })
+          if (result.status === 0) {
+            return decorateNodeDetection({
+              installed: true,
+              version: String(result.stdout || '').trim(),
+              path: bundled,
+              detectedFrom: 'standalone-bundled',
+            })
+          }
+        }
+      }
       const ver = execSync('node --version 2>&1', { windowsHide: true }).toString().trim()
       return decorateNodeDetection({ installed: true, version: ver, path: findCommandPath('node') })
     } catch {

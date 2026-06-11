@@ -38,11 +38,11 @@ jobs:
       - name: 签出代码
         uses: actions/checkout@v4
 
-      # 安装 Node.js 22
+      # 安装 OpenClaw 当前最低要求的 Node.js 版本
       - name: 安装 Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 22.19.0
           cache: npm
 
       # 安装前端依赖

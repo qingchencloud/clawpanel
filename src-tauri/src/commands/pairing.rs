@@ -297,7 +297,7 @@ pub fn auto_pair_device() -> Result<String, String> {
 /// 将 Tauri 应用的 origin 写入 gateway.controlUi.allowedOrigins
 /// 避免 Gateway 因 origin not allowed 拒绝 WebSocket 握手
 fn patch_gateway_origins() {
-    let Ok(mut config) = super::config::load_openclaw_json() else {
+    let Ok(config) = super::config::load_openclaw_json() else {
         return;
     };
 
@@ -310,37 +310,39 @@ fn patch_gateway_origins() {
         "http://127.0.0.1:1420".into(),
     ];
 
-    if let Some(obj) = config.as_object_mut() {
-        let gateway = obj
-            .entry("gateway")
-            .or_insert_with(|| serde_json::json!({}));
-        if let Some(gw) = gateway.as_object_mut() {
-            let control_ui = gw
-                .entry("controlUi")
-                .or_insert_with(|| serde_json::json!({}));
-            if let Some(cui) = control_ui.as_object_mut() {
-                // 合并：保留用户已有的 origin，追加缺失的 Tauri origin
-                let existing: Vec<String> = cui
-                    .get("allowedOrigins")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|s| s.as_str().map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                let mut merged = existing;
-                for r in &required {
-                    if !merged.iter().any(|e| e == r) {
-                        merged.push(r.clone());
-                    }
-                }
-                cui.insert("allowedOrigins".to_string(), serde_json::json!(merged));
-            }
+    let existing: Vec<String> = config
+        .pointer("/gateway/controlUi/allowedOrigins")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|s| s.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if required
+        .iter()
+        .all(|origin| existing.iter().any(|item| item == origin))
+    {
+        return;
+    }
+
+    let mut merged = existing;
+    for origin in &required {
+        if !merged.iter().any(|item| item == origin) {
+            merged.push(origin.clone());
         }
     }
 
-    let _ = super::config::save_openclaw_json(&config);
+    // 只写入 allowedOrigins 增量，避免用陈旧全量快照覆盖并发保存的其它配置字段。
+    let patch = serde_json::json!({
+        "gateway": {
+            "controlUi": {
+                "allowedOrigins": merged
+            }
+        }
+    });
+    let _ = super::config::save_openclaw_json(&patch);
 }
 
 #[tauri::command]

@@ -10,7 +10,7 @@ ClawPanel 支持在 ARM 开发板（如 Orange Pi、Raspberry Pi、RK3588 等）
 | 内存 | 1GB | 2GB+ |
 | 存储 | 2GB 可用空间 | 4GB+ |
 | 系统 | Armbian / Debian / Ubuntu | Armbian 24+ |
-| Node.js | 18+ | ClawPanel Web 后端；运行 OpenClaw Gateway 建议 22.19.0+ |
+| Node.js | 18+ | ClawPanel Web 后端；运行 OpenClaw Gateway 时按当前 OpenClaw `engines.node` 检测 |
 
 > ⚠️ 当前不支持 ARM 32 位 (armv7) 的 Docker 镜像。Web 模式在 armv7 上可用（只要 Node.js 支持）。
 
@@ -130,7 +130,7 @@ docker run -d \
 A: 不建议。Tauri 需要 WebKitGTK + 图形界面，ARM 板通常是 headless 环境。请使用 Web 模式。
 
 **Q: armv7 (32位) 板子能用吗？**
-A: Web 模式可以（ClawPanel Web 后端需要 Node.js 18+；运行 OpenClaw Gateway 建议 Node.js 22.19.0+）。Docker 模式目前只提供 arm64 镜像。
+A: Web 模式可以（ClawPanel Web 后端需要 Node.js 18+；运行 OpenClaw Gateway 时按当前 OpenClaw `engines.node` 检测）。Docker 模式目前只提供 arm64 镜像。
 
 **Q: 树莓派 Zero / Pi 1 能跑吗？**
 A: 这些是 armv6，内存也只有 256-512MB，不推荐。建议至少树莓派 3B+ 或更新的 ARM64 板子。
