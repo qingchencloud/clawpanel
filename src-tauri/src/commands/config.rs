@@ -1278,12 +1278,16 @@ fn select_calibration_source(current: Option<Value>, backup: Option<Value>) -> (
     match (current, backup) {
         (Some(current), Some(backup)) => {
             let current_score = calibration_richness_score(&current);
-            let backup_score = calibration_richness_score(&backup);
-            if backup_score > current_score {
-                ("backup".into(), backup)
-            } else {
-                ("current".into(), current)
+            // write_openclaw_config copies the previous file to .bak on every save, so a
+            // slimmer intentional edit still leaves a richer backup. Only fall back when
+            // current is effectively empty, not when the user removed providers/channels.
+            if current_score == 0 {
+                let backup_score = calibration_richness_score(&backup);
+                if backup_score > 0 {
+                    return ("backup".into(), backup);
+                }
             }
+            ("current".into(), current)
         }
         (Some(current), None) => ("current".into(), current),
         (None, Some(backup)) => ("backup".into(), backup),
@@ -7794,5 +7798,63 @@ mod write_openclaw_config_merge_tests {
         let _ = std::fs::remove_dir_all(&dir);
 
         assert_eq!(resolved, Some(node_bin));
+    }
+}
+
+#[cfg(test)]
+mod calibration_source_tests {
+    use super::{calibration_richness_score, select_calibration_source};
+    use serde_json::json;
+
+    #[test]
+    fn select_calibration_source_prefers_current_over_richer_backup() {
+        let current = json!({
+            "models": { "providers": {} },
+            "gateway": {
+                "auth": { "mode": "token", "token": "secret" },
+                "controlUi": { "allowedOrigins": ["http://localhost:1420"] }
+            }
+        });
+        let backup = json!({
+            "models": {
+                "providers": {
+                    "openai": { "apiKey": "sk-test", "baseUrl": "https://api.openai.com" }
+                }
+            },
+            "channels": { "telegram": { "enabled": true } },
+            "gateway": {
+                "auth": { "mode": "token", "token": "secret" },
+                "controlUi": { "allowedOrigins": ["http://localhost:1420"] }
+            }
+        });
+
+        assert!(
+            calibration_richness_score(&backup) > calibration_richness_score(&current),
+            "backup fixture should be richer than current"
+        );
+
+        let (source, seed) =
+            select_calibration_source(Some(current.clone()), Some(backup.clone()));
+
+        assert_eq!(source, "current");
+        assert_eq!(seed, current);
+    }
+
+    #[test]
+    fn select_calibration_source_uses_backup_when_current_empty() {
+        let current = json!({});
+        let backup = json!({
+            "models": {
+                "providers": {
+                    "openai": { "apiKey": "sk-test" }
+                }
+            }
+        });
+
+        let (source, seed) =
+            select_calibration_source(Some(current), Some(backup.clone()));
+
+        assert_eq!(source, "backup");
+        assert_eq!(seed, backup);
     }
 }

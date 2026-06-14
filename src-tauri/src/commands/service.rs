@@ -2023,22 +2023,163 @@ mod platform {
         }
     }
 
-    /// 清理残留的 Gateway 进程（Linux 版：通过 fuser 查端口占用进程并 kill）
-    fn cleanup_zombie_gateway_processes() {
-        let port = crate::commands::gateway_listen_port();
-        // 尝试用 fuser 找到端口占用进程
-        if let Ok(output) = std::process::Command::new("fuser")
-            .args([&format!("{port}/tcp")])
+    static LAST_KNOWN_GATEWAY_PID: Mutex<Option<u32>> = Mutex::new(None);
+
+    /// 检查 Gateway 端口是否有响应（阻塞式 HTTP /health，3s 超时）
+    fn is_gateway_port_responsive(port: u16) -> bool {
+        use std::io::{Read, Write as IoWrite};
+        use std::net::TcpStream;
+        let addr = format!("127.0.0.1:{port}");
+        let mut stream =
+            match TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_secs(3)) {
+                Ok(s) => s,
+                Err(_) => return false,
+            };
+        let _ = stream.set_read_timeout(Some(Duration::from_secs(3)));
+        let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
+        let req = format!("GET /health HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\n\r\n");
+        if stream.write_all(req.as_bytes()).is_err() {
+            return false;
+        }
+        let mut buf = [0u8; 256];
+        match stream.read(&mut buf) {
+            Ok(n) if n > 0 => {
+                let resp = String::from_utf8_lossy(&buf[..n]);
+                resp.contains("200") || resp.contains("OK")
+            }
+            _ => false,
+        }
+    }
+
+    fn is_gateway_port_responsive_with_retry(port: u16, retries: u32, interval: Duration) -> bool {
+        for attempt in 0..retries {
+            if attempt > 0 {
+                std::thread::sleep(interval);
+            }
+            if is_gateway_port_responsive(port) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn find_listening_pids(port: u16) -> Vec<u32> {
+        let mut pids = Vec::new();
+        let filter = format!("sport = :{port}");
+        if let Ok(output) = std::process::Command::new("ss")
+            .args(["-ltnp", &filter])
             .output()
         {
-            let pids = String::from_utf8_lossy(&output.stdout);
-            for pid_str in pids.split_whitespace() {
-                if let Ok(pid) = pid_str.trim().parse::<u32>() {
-                    let _ = std::process::Command::new("kill")
-                        .args(["-9", &pid.to_string()])
-                        .output();
-                    eprintln!("[cleanup_zombie] killed PID {pid} on port {port}");
+            let text = String::from_utf8_lossy(&output.stdout);
+            for line in text.lines() {
+                let Some(idx) = line.find("pid=") else {
+                    continue;
+                };
+                let digits: String = line[idx + 4..]
+                    .chars()
+                    .take_while(|c| c.is_ascii_digit())
+                    .collect();
+                if let Ok(pid) = digits.parse::<u32>() {
+                    if pid > 0 && !pids.contains(&pid) {
+                        pids.push(pid);
+                    }
                 }
+            }
+        }
+
+        if pids.is_empty() {
+            if let Ok(output) = std::process::Command::new("lsof")
+                .args(["-i", &format!("TCP:{port}"), "-sTCP:LISTEN", "-t"])
+                .output()
+            {
+                let text = String::from_utf8_lossy(&output.stdout);
+                for line in text.lines() {
+                    if let Ok(pid) = line.trim().parse::<u32>() {
+                        if pid > 0 && !pids.contains(&pid) {
+                            pids.push(pid);
+                        }
+                    }
+                }
+            }
+        }
+
+        pids
+    }
+
+    fn read_process_command_line(pid: u32) -> Option<String> {
+        let raw = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
+        let cmdline = raw
+            .split(|&b| b == 0)
+            .filter(|part| !part.is_empty())
+            .map(|part| String::from_utf8_lossy(part).into_owned())
+            .collect::<Vec<_>>()
+            .join(" ");
+        if cmdline.is_empty() {
+            None
+        } else {
+            Some(cmdline)
+        }
+    }
+
+    fn is_process_alive(pid: u32) -> bool {
+        std::path::Path::new(&format!("/proc/{pid}")).exists()
+    }
+
+    fn kill_process_tree(pid: u32) {
+        let _ = std::process::Command::new("kill")
+            .args(["-TERM", &pid.to_string()])
+            .output();
+        let _ = std::process::Command::new("pkill")
+            .args(["-TERM", "-P", &pid.to_string()])
+            .output();
+        std::thread::sleep(Duration::from_millis(500));
+        if is_process_alive(pid) {
+            let _ = std::process::Command::new("kill")
+                .args(["-KILL", &pid.to_string()])
+                .output();
+            let _ = std::process::Command::new("pkill")
+                .args(["-KILL", "-P", &pid.to_string()])
+                .output();
+        }
+    }
+
+    /// 清理残留的 Gateway 进程（Linux 版：对齐 Windows 的安全策略）
+    ///
+    /// 仅终止命令行确认为 openclaw gateway 且 /health 连续无响应的进程；
+    /// 健康的 Gateway（含外部启动）不会被误杀。
+    fn cleanup_zombie_gateway_processes() {
+        let port = crate::commands::gateway_listen_port();
+        let pids = find_listening_pids(port);
+        if pids.is_empty() {
+            return;
+        }
+
+        let responsive =
+            is_gateway_port_responsive_with_retry(port, 3, Duration::from_millis(800));
+
+        for pid in pids {
+            let Some(cmdline) = read_process_command_line(pid) else {
+                continue;
+            };
+            let cmdline_lower = cmdline.to_lowercase();
+            let is_gateway =
+                cmdline_lower.contains("openclaw") && cmdline_lower.contains("gateway");
+            if !is_gateway {
+                continue;
+            }
+
+            let our_pid = *LAST_KNOWN_GATEWAY_PID.lock().unwrap();
+            if !responsive {
+                super::guardian_log(&format!(
+                    "检测到僵尸 Gateway 进程 (PID {pid})：端口 {port} 占用但 /health 连续 3 次无响应，强制终止"
+                ));
+                kill_process_tree(pid);
+            } else if Some(pid) != our_pid {
+                super::guardian_log(&format!(
+                    "检测到健康的 Gateway 进程 (PID {pid})：/health 正常响应，已采纳"
+                ));
+                let mut known = LAST_KNOWN_GATEWAY_PID.lock().unwrap();
+                *known = Some(pid);
             }
         }
     }
