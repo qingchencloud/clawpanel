@@ -669,43 +669,10 @@ const P_ATLAS_CLOUD: HermesProvider = HermesProvider {
     api_key_env_vars: &["ATLASCLOUD_API_KEY"],
     transport: TRANSPORT_OPENAI_CHAT,
     models_probe: PROBE_OPENAI,
-    models: &[
-        "deepseek-ai/deepseek-v4-pro",
-        "deepseek-ai/deepseek-v4-0520",
-        "deepseek-ai/deepseek-v4-flash",
-        "deepseek-ai/deepseek-r2",
-        "deepseek-ai/deepseek-r1-0528",
-        "deepseek-ai/deepseek-r1",
-        "moonshot-ai/kimi-k2",
-        "moonshot-ai/kimi-k2-0711",
-        "qwen/qwen3-235b-a22b",
-        "qwen/qwen3-32b",
-        "qwen/qwq-32b",
-        "openai/gpt-5",
-        "openai/gpt-5-mini",
-        "openai/gpt-4.1",
-        "openai/gpt-4o",
-        "openai/o3",
-        "openai/o4-mini",
-        "anthropic/claude-sonnet-4-5",
-        "anthropic/claude-opus-4",
-        "anthropic/claude-sonnet-4",
-        "anthropic/claude-haiku-4-5",
-        "google/gemini-2.5-pro",
-        "google/gemini-2.5-flash",
-        "google/gemini-2.5-flash-lite",
-        "google/gemini-2.0-flash",
-        "xai/grok-4",
-        "xai/grok-3",
-        "xai/grok-3-mini",
-        "meta-llama/llama-4-scout",
-        "meta-llama/llama-4-maverick",
-        "meta-llama/llama-3.3-70b",
-        "cohere/command-a",
-        "mistral/mistral-large",
-        "minimax/minimax-m1",
-        "01ai/yi-lightning",
-    ],
+    // Aggregator: models are discovered at runtime via the OpenAI-compatible
+    // `/models` probe (same as OpenRouter). No static catalog, so it never
+    // collides with another provider's model names in `find_provider_by_model`.
+    models: &[],
     is_aggregator: true,
     cli_auth_hint: "",
 };
@@ -880,6 +847,7 @@ mod tests {
     fn registry_has_expected_providers() {
         assert_eq!(ALL_PROVIDERS.len(), 34);
         assert!(get_provider("anthropic").is_some());
+        assert!(get_provider("atlas-cloud").is_some());
         assert!(get_provider("gemini").is_some());
         assert!(get_provider("alibaba-coding-plan").is_some());
         assert!(get_provider("bedrock").is_some());
@@ -943,5 +911,19 @@ mod tests {
         assert_eq!(find_provider_by_model("deepseek-chat"), Some("deepseek"));
         assert_eq!(find_provider_by_model("kimi-for-coding"), None);
         assert_eq!(find_provider_by_model("nonexistent"), None);
+    }
+
+    #[test]
+    fn atlas_cloud_is_a_neutral_aggregator() {
+        let p = get_provider("atlas-cloud").expect("atlas-cloud registered");
+        // OpenAI-compatible API-key provider.
+        assert_eq!(p.auth_type, AUTH_API_KEY);
+        assert_eq!(p.transport, TRANSPORT_OPENAI_CHAT);
+        assert_eq!(p.api_key_env_vars, &["ATLASCLOUD_API_KEY"]);
+        // Aggregator with no static catalog: models are probed at runtime, so it
+        // contributes no model names to `find_provider_by_model` (no collisions).
+        assert!(p.is_aggregator);
+        assert!(p.models.is_empty());
+        assert_eq!(p.models_probe, PROBE_OPENAI);
     }
 }
