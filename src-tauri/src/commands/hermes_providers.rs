@@ -660,6 +660,23 @@ const P_COPILOT_ACP: HermesProvider = HermesProvider {
     cli_auth_hint: "hermes auth login copilot-acp",
 };
 
+const P_ATLAS_CLOUD: HermesProvider = HermesProvider {
+    id: "atlas-cloud",
+    name: "Atlas Cloud",
+    auth_type: AUTH_API_KEY,
+    base_url: "https://api.atlascloud.ai/v1",
+    base_url_env_var: "ATLASCLOUD_BASE_URL",
+    api_key_env_vars: &["ATLASCLOUD_API_KEY"],
+    transport: TRANSPORT_OPENAI_CHAT,
+    models_probe: PROBE_OPENAI,
+    // Aggregator: models are discovered at runtime via the OpenAI-compatible
+    // `/models` probe (same as OpenRouter). No static catalog, so it never
+    // collides with another provider's model names in `find_provider_by_model`.
+    models: &[],
+    is_aggregator: true,
+    cli_auth_hint: "",
+};
+
 // Custom placeholder — frontend-only. Backend treats `custom` as opaque:
 // uses whatever api_key + base_url the user provides.
 const P_CUSTOM: HermesProvider = HermesProvider {
@@ -679,6 +696,7 @@ const P_CUSTOM: HermesProvider = HermesProvider {
 /// Full provider registry. Order matters for UI rendering (first = top).
 pub const ALL_PROVIDERS: &[HermesProvider] = &[
     // API-key providers — international
+    P_ATLAS_CLOUD,
     P_ANTHROPIC,
     P_GEMINI,
     P_DEEPSEEK,
@@ -827,8 +845,9 @@ mod tests {
 
     #[test]
     fn registry_has_expected_providers() {
-        assert_eq!(ALL_PROVIDERS.len(), 33);
+        assert_eq!(ALL_PROVIDERS.len(), 34);
         assert!(get_provider("anthropic").is_some());
+        assert!(get_provider("atlas-cloud").is_some());
         assert!(get_provider("gemini").is_some());
         assert!(get_provider("alibaba-coding-plan").is_some());
         assert!(get_provider("bedrock").is_some());
@@ -892,5 +911,19 @@ mod tests {
         assert_eq!(find_provider_by_model("deepseek-chat"), Some("deepseek"));
         assert_eq!(find_provider_by_model("kimi-for-coding"), None);
         assert_eq!(find_provider_by_model("nonexistent"), None);
+    }
+
+    #[test]
+    fn atlas_cloud_is_a_neutral_aggregator() {
+        let p = get_provider("atlas-cloud").expect("atlas-cloud registered");
+        // OpenAI-compatible API-key provider.
+        assert_eq!(p.auth_type, AUTH_API_KEY);
+        assert_eq!(p.transport, TRANSPORT_OPENAI_CHAT);
+        assert_eq!(p.api_key_env_vars, &["ATLASCLOUD_API_KEY"]);
+        // Aggregator with no static catalog: models are probed at runtime, so it
+        // contributes no model names to `find_provider_by_model` (no collisions).
+        assert!(p.is_aggregator);
+        assert!(p.models.is_empty());
+        assert_eq!(p.models_probe, PROBE_OPENAI);
     }
 }
