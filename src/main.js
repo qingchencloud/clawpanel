@@ -874,10 +874,16 @@ async function boot() {
           if (isOpenclawReady() && window.location.hash === '#/setup') {
             navigate('/dashboard')
           }
-          // 如果卸载后变为未就绪，跳转到 setup
+          // 如果卸载后变为未就绪，把默认路由指向 setup；
+          // 但只有停留在依赖 CLI 的页面（仪表盘）才主动跳转，
+          // 避免安装失败事件把用户从诊断/设置等页面反复拽回安装页、
+          // 或在 setup 页上重复 navigate 导致页面反复重建重新检测
           if (!isOpenclawReady() && !isUpgrading()) {
             setDefaultRoute('/setup')
-            navigate('/setup')
+            const current = window.location.hash.replace(/^#/, '')
+            if (current === '/dashboard' || current === '' || current === '/') {
+              navigate('/setup')
+            }
           }
           window.dispatchEvent(new CustomEvent('openclaw:runtime-changed'))
         }

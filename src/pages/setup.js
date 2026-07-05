@@ -184,7 +184,8 @@ export async function render() {
     const now = Date.now()
     if (now - _lastRedetectAt < 3000) return
     _lastRedetectAt = now
-    runDetect(page)
+    // 聚焦重检走 silent：需要刷新缓存（可能刚装完 Node/Git），但不清空已渲染内容
+    runDetect(page, { silent: true })
   }
   document.addEventListener('visibilitychange', onVisibilityChange)
   window.addEventListener('focus', onVisibilityChange)
@@ -242,15 +243,20 @@ async function promptRestart(msg) {
 // 检测序号：并发触发（首次加载 / 重新检测 / 窗口聚焦）时，只允许最新一次的结果上屏
 let _detectSeq = 0
 
-async function runDetect(page, { fresh = true } = {}) {
+async function runDetect(page, { fresh = true, silent = false } = {}) {
   const seq = ++_detectSeq
   const stepsEl = page.querySelector('#setup-steps')
-  stepsEl.innerHTML = `
-    <div class="stat-card loading-placeholder" style="height:48px"></div>
-    <div class="stat-card loading-placeholder" style="height:48px;margin-top:8px"></div>
-    <div class="stat-card loading-placeholder" style="height:48px;margin-top:8px"></div>
-    <div class="stat-card loading-placeholder" style="height:48px;margin-top:8px"></div>
-  `
+  // silent（窗口聚焦触发的后台重检）：保留已渲染的步骤卡片，检测完成后原地更新，
+  // 不再每次聚焦都清成骨架屏，避免"一直在检测"的观感
+  const hasRenderedContent = stepsEl.children.length > 0 && !stepsEl.querySelector('.loading-placeholder')
+  if (!silent || !hasRenderedContent) {
+    stepsEl.innerHTML = `
+      <div class="stat-card loading-placeholder" style="height:48px"></div>
+      <div class="stat-card loading-placeholder" style="height:48px;margin-top:8px"></div>
+      <div class="stat-card loading-placeholder" style="height:48px;margin-top:8px"></div>
+      <div class="stat-card loading-placeholder" style="height:48px;margin-top:8px"></div>
+    `
+  }
   // 首次进入页面（fresh=false）跳过缓存清理：进程刚启动时 PATH 缓存是新鲜的，
   // 还能复用启动流程已缓存的检测结果，让首屏尽快出现；
   // 手动「重新检测」、窗口聚焦重检和安装后的重试仍然完整清理（fresh=true）。
@@ -262,46 +268,58 @@ async function runDetect(page, { fresh = true } = {}) {
     // 必须先调此命令扫描文件系统新装路径，才能让 where/which 找到新二进制。
     try { await api.invalidatePathCache() } catch {}
   }
-  // 版本信息包含 npm registry 网络查询与全盘安装扫描，是最慢的一项；
-  // 步骤卡片的通过/失败判定不依赖它，先用本地检测结果渲染，版本详情返回后再补充
-  const versionPromise = api.getVersionInfo().catch(() => null)
-  // 并行检测 Node.js、Git、OpenClaw CLI、配置文件
-  const [nodeRes, gitRes, clawRes, configRes] = await Promise.allSettled([
-    api.checkNode(),
-    api.checkGit(),
-    api.getServicesStatus(),
-    api.checkInstallation(),
-  ])
-  if (seq !== _detectSeq || !page.isConnected) return
+  try {
+    // 版本信息包含 npm registry 网络查询与全盘安装扫描，是最慢的一项；
+    // 步骤卡片的通过/失败判定不依赖它，先用本地检测结果渲染，版本详情返回后再补充
+    const versionPromise = api.getVersionInfo().catch(() => null)
+    // 并行检测 Node.js、Git、OpenClaw CLI、配置文件
+    const [nodeRes, gitRes, clawRes, configRes] = await Promise.allSettled([
+      api.checkNode(),
+      api.checkGit(),
+      api.getServicesStatus(),
+      api.checkInstallation(),
+    ])
+    if (seq !== _detectSeq || !page.isConnected) return
 
-  const node = nodeRes.status === 'fulfilled' ? nodeRes.value : { installed: false }
-  const git = gitRes.status === 'fulfilled' ? gitRes.value : { installed: false }
-  const cliOk = clawRes.status === 'fulfilled'
-    && clawRes.value?.length > 0
-    && clawRes.value[0]?.cli_installed !== false
-  let config = configRes.status === 'fulfilled' ? configRes.value : { installed: false }
+    const node = nodeRes.status === 'fulfilled' ? nodeRes.value : { installed: false }
+    const git = gitRes.status === 'fulfilled' ? gitRes.value : { installed: false }
+    const cliOk = clawRes.status === 'fulfilled'
+      && clawRes.value?.length > 0
+      && clawRes.value[0]?.cli_installed !== false
+    let config = configRes.status === 'fulfilled' ? configRes.value : { installed: false }
 
-  // Git 已安装时，自动配置 HTTPS 替代 SSH（静默执行）
-  if (git.installed) {
-    api.configureGitHttps().catch(() => {})
+    // Git 已安装时，自动配置 HTTPS 替代 SSH（静默执行）
+    if (git.installed) {
+      api.configureGitHttps().catch(() => {})
+    }
+
+    const nodeOk = node.installed && node.compatible !== false
+    const allOk = nodeOk && cliOk && config.installed
+
+    // 全部通过 → 自动跳转到仪表盘
+    if (allOk) {
+      const engine = getActiveEngine()
+      if (engine?.detect) await engine.detect()
+      window.location.hash = '/dashboard'
+      return
+    }
+
+    renderSteps(page, { node, git, cliOk, config, version: null })
+
+    const version = await versionPromise
+    if (seq !== _detectSeq || !page.isConnected || !version) return
+    renderSteps(page, { node, git, cliOk, config, version })
+  } catch (error) {
+    // 兜底：任何异常都不能让骨架屏永久残留
+    console.error('[setup] 环境检测失败', error)
+    if (seq !== _detectSeq || !page.isConnected) return
+    stepsEl.innerHTML = `
+      <div class="stat-card" style="padding:16px;color:var(--error)">
+        ${escapeHtml(error?.message || String(error))}
+        <div style="margin-top:8px;font-size:12px;color:var(--text-tertiary)">${escapeHtml(t('setup.recheck'))}</div>
+      </div>
+    `
   }
-
-  const nodeOk = node.installed && node.compatible !== false
-  const allOk = nodeOk && cliOk && config.installed
-
-  // 全部通过 → 自动跳转到仪表盘
-  if (allOk) {
-    const engine = getActiveEngine()
-    if (engine?.detect) await engine.detect()
-    window.location.hash = '/dashboard'
-    return
-  }
-
-  renderSteps(page, { node, git, cliOk, config, version: null })
-
-  const version = await versionPromise
-  if (seq !== _detectSeq || !page.isConnected || !version) return
-  renderSteps(page, { node, git, cliOk, config, version })
 }
 
 function stepIcon(ok) {
