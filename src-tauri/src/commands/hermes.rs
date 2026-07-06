@@ -689,6 +689,11 @@ fn hermes_home() -> PathBuf {
     if let Some(ctx) = crate::commands::portable::portable_context() {
         return ctx.hermes_home.clone();
     }
+    local_hermes_home_default()
+}
+
+/// 本机（非便携）Hermes 数据目录默认值；便携模式迁移回本机时也用它定位目标
+pub(crate) fn local_hermes_home_default() -> PathBuf {
     if let Ok(h) = std::env::var("HERMES_HOME") {
         return PathBuf::from(h);
     }

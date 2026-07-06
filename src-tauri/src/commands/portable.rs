@@ -517,6 +517,125 @@ fn migrate_to_portable_impl(
     }))
 }
 
+/// 目录存在且非空才值得备份；空目录直接复用，避免产生噪音备份
+fn needs_backup(path: &Path) -> bool {
+    if path.is_file() {
+        return true;
+    }
+    std::fs::read_dir(path)
+        .map(|mut entries| entries.next().is_some())
+        .unwrap_or(false)
+}
+
+/// 目标已存在时的备份路径（同级、带时间戳），rename 即时完成
+fn backup_sibling_path(path: &Path, timestamp: &str) -> PathBuf {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "data".into());
+    path.with_file_name(format!("{name}.backup-{timestamp}"))
+}
+
+/// 将便携数据迁移回本机默认位置（migrate_to_portable 的反向）。
+/// 语义：以 U 盘数据为准——本机已有数据先整体改名备份（.backup-<时间戳>），
+/// 再全新复制，避免新旧数据合并出难排查的混合状态。
+/// 引擎与运行时不迁移（本机按常规方式安装），只搬用户数据。
+fn migrate_to_local_impl(
+    source_openclaw_dir: &Path,
+    source_hermes_home: &Path,
+    source_panel_config: Option<Value>,
+    target_openclaw_dir: &Path,
+    target_hermes_home: &Path,
+) -> Result<Value, String> {
+    // 防呆：目标不能位于便携源内部或与其相同（自定义路径可能指回 U 盘）
+    if path_is_inside_or_same(target_openclaw_dir, source_openclaw_dir)
+        || path_is_inside_or_same(source_openclaw_dir, target_openclaw_dir)
+    {
+        return Err("本机 OpenClaw 目录与便携目录重叠，无法迁移".into());
+    }
+    if path_is_inside_or_same(target_hermes_home, source_hermes_home)
+        || path_is_inside_or_same(source_hermes_home, target_hermes_home)
+    {
+        return Err("本机 Hermes 目录与便携目录重叠，无法迁移".into());
+    }
+
+    let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+    let mut backups: Vec<String> = Vec::new();
+    let mut warnings: Vec<String> = Vec::new();
+
+    // OpenClaw 数据（含面板级 clawpanel/ 子目录：模型渠道、媒体数据随之带回）
+    let mut copied_openclaw = false;
+    if source_openclaw_dir.is_dir() {
+        if target_openclaw_dir.exists() && needs_backup(target_openclaw_dir) {
+            let bak = backup_sibling_path(target_openclaw_dir, &timestamp);
+            std::fs::rename(target_openclaw_dir, &bak).map_err(|e| {
+                format!("备份本机 OpenClaw 数据失败（若本机 Gateway 正在运行请先停止）: {e}")
+            })?;
+            backups.push(bak.to_string_lossy().to_string());
+        }
+        copy_dir_recursive(source_openclaw_dir, target_openclaw_dir)?;
+        copied_openclaw = true;
+    } else {
+        warnings.push("portable-openclaw-missing".into());
+    }
+
+    // Hermes 数据
+    let mut copied_hermes = false;
+    if source_hermes_home.is_dir() {
+        if target_hermes_home.exists() && needs_backup(target_hermes_home) {
+            let bak = backup_sibling_path(target_hermes_home, &timestamp);
+            std::fs::rename(target_hermes_home, &bak)
+                .map_err(|e| format!("备份本机 Hermes 数据失败: {e}"))?;
+            backups.push(bak.to_string_lossy().to_string());
+        }
+        copy_dir_recursive(source_hermes_home, target_hermes_home)?;
+        copied_hermes = true;
+    }
+
+    // 面板配置：写入本机 openclaw 目录下的 clawpanel.json；
+    // 与正向迁移同理清洗绝对路径字段（便携配置里可能残留指向 U 盘的路径）
+    let (panel, removed_keys) = sanitized_panel_config(source_panel_config);
+    let target_panel_config = target_openclaw_dir.join("clawpanel.json");
+    std::fs::create_dir_all(target_openclaw_dir)
+        .map_err(|e| format!("创建本机数据目录失败: {e}"))?;
+    let panel_text = serde_json::to_string_pretty(&panel)
+        .map_err(|e| format!("序列化 clawpanel.json 失败: {e}"))?;
+    std::fs::write(&target_panel_config, panel_text)
+        .map_err(|e| format!("写入本机 clawpanel.json 失败: {e}"))?;
+
+    Ok(json!({
+        "openclawDir": target_openclaw_dir.to_string_lossy(),
+        "hermesHome": target_hermes_home.to_string_lossy(),
+        "panelConfigPath": target_panel_config.to_string_lossy(),
+        "copiedOpenclaw": copied_openclaw,
+        "copiedHermesHome": copied_hermes,
+        "backups": backups,
+        "removedPanelKeys": removed_keys,
+        // 引擎与运行时不迁移：本机没有安装时需按常规方式安装
+        "enginesNotMigrated": true,
+        "warnings": warnings,
+    }))
+}
+
+/// 便携模式 → 本机：把 U 盘上的用户数据迁移回本机默认位置。
+/// 当前进程仍是便携模式；迁移后请从本机安装的 ClawPanel 启动查看
+#[tauri::command]
+pub fn migrate_to_local() -> Result<Value, String> {
+    let Some(ctx) = portable_context() else {
+        return Err("当前不是便携模式，无需迁移回本机".into());
+    };
+    let target_openclaw = crate::commands::default_openclaw_dir();
+    let target_hermes = crate::commands::hermes::local_hermes_home_default();
+    let panel_config = crate::commands::read_panel_config_from(&ctx.panel_config_path);
+    migrate_to_local_impl(
+        &ctx.openclaw_dir,
+        &ctx.hermes_home,
+        panel_config,
+        &target_openclaw,
+        &target_hermes,
+    )
+}
+
 fn active_standalone_engine_dir() -> Option<PathBuf> {
     let cli_path = crate::utils::resolve_openclaw_cli_path()?;
     if crate::utils::classify_cli_source(&cli_path) != "standalone" {
@@ -783,6 +902,91 @@ mod tests {
         );
         assert!(ctx.warnings.is_empty());
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn migrate_to_local_backs_up_existing_and_copies_portable_data() {
+        let usb_openclaw = temp_root("to-local-src-oc");
+        let usb_hermes = temp_root("to-local-src-hm");
+        let local_openclaw = temp_root("to-local-dst-oc");
+        let local_hermes = temp_root("to-local-dst-hm");
+
+        // U 盘数据
+        std::fs::write(usb_openclaw.join("openclaw.json"), br#"{ "from": "usb" }"#).unwrap();
+        std::fs::create_dir_all(usb_openclaw.join("clawpanel").join("media")).unwrap();
+        std::fs::write(
+            usb_openclaw.join("clawpanel").join("model-channels.json"),
+            br#"{ "version": 1 }"#,
+        )
+        .unwrap();
+        std::fs::write(usb_hermes.join("config.yaml"), b"model: usb\n").unwrap();
+
+        // 本机已有旧数据（应被整体备份而非覆盖合并）
+        std::fs::write(
+            local_openclaw.join("openclaw.json"),
+            br#"{ "from": "local" }"#,
+        )
+        .unwrap();
+        std::fs::write(local_openclaw.join("local-only.txt"), b"keep-in-backup").unwrap();
+
+        let panel = json!({
+            "accessPassword": "usb-pw",
+            "nodePath": "F:\\ClawPanelPortable\\runtimes\\node"
+        });
+
+        let report = migrate_to_local_impl(
+            &usb_openclaw,
+            &usb_hermes,
+            Some(panel),
+            &local_openclaw,
+            &local_hermes,
+        )
+        .unwrap();
+
+        // U 盘数据落到本机
+        let restored = std::fs::read_to_string(local_openclaw.join("openclaw.json")).unwrap();
+        assert!(restored.contains("usb"));
+        assert!(local_openclaw
+            .join("clawpanel")
+            .join("model-channels.json")
+            .is_file());
+        assert!(local_hermes.join("config.yaml").is_file());
+        // 面板配置写入且绝对路径字段被清洗
+        let panel_restored: Value = serde_json::from_str(
+            &std::fs::read_to_string(local_openclaw.join("clawpanel.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(panel_restored["accessPassword"], "usb-pw");
+        assert!(panel_restored.get("nodePath").is_none());
+        // 本机旧数据完整备份
+        let backups = report["backups"].as_array().unwrap();
+        assert_eq!(backups.len(), 1);
+        let backup_dir = PathBuf::from(backups[0].as_str().unwrap());
+        assert!(backup_dir.join("local-only.txt").is_file());
+        let old = std::fs::read_to_string(backup_dir.join("openclaw.json")).unwrap();
+        assert!(old.contains("local"));
+        assert_eq!(report["enginesNotMigrated"], true);
+
+        for dir in [
+            &usb_openclaw,
+            &usb_hermes,
+            &local_openclaw,
+            &local_hermes,
+            &backup_dir,
+        ] {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
+
+    #[test]
+    fn migrate_to_local_rejects_overlapping_paths() {
+        let usb = temp_root("to-local-overlap");
+        let nested = usb.join("data").join("openclaw");
+        std::fs::create_dir_all(&nested).unwrap();
+        let err = migrate_to_local_impl(&nested, &usb.join("hm"), None, &usb, &usb.join("hm2"))
+            .unwrap_err();
+        assert!(err.contains("重叠"));
+        let _ = std::fs::remove_dir_all(&usb);
     }
 
     #[test]

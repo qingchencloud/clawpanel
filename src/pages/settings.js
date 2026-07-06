@@ -509,6 +509,9 @@ function bindEvents(page) {
         case 'migrate-portable':
           await handleMigrateToPortable(page)
           break
+        case 'migrate-local':
+          await handleMigrateToLocal(page)
+          break
       }
     } catch (e) {
       toast(e.toString(), 'error')
@@ -825,6 +828,11 @@ async function loadPortableMigration(page) {
           <code style="font-size:var(--font-size-xs)">${escapeHtml(status.root || '')}</code>
         </div>
         <div class="form-hint" style="margin-top:var(--space-xs)">${t('settings.portableEnabledHint')}</div>
+        <div style="display:flex;align-items:center;gap:var(--space-sm);margin-top:var(--space-sm)">
+          <button class="btn btn-secondary btn-sm" data-action="migrate-local">${t('settings.portableRestoreBtn')}</button>
+        </div>
+        <div class="form-hint" style="margin-top:var(--space-xs)">${t('settings.portableRestoreHint')}</div>
+        <div id="portable-restore-result" style="margin-top:var(--space-sm);display:none"></div>
       `
       return
     }
@@ -868,6 +876,47 @@ function renderPortableMigrationResult(report) {
       ${notes.length ? `<ul style="margin:6px 0 0 18px;padding:0">${notes.map(n => `<li>${n}</li>`).join('')}</ul>` : ''}
     </div>
   `
+}
+
+// 便携模式 → 本机：本机已有数据整体备份后以 U 盘数据替换，引擎不迁移
+async function handleMigrateToLocal(page) {
+  const resultEl = page.querySelector('#portable-restore-result')
+  const ok = await showConfirm({
+    message: t('settings.portableRestoreConfirm'),
+    impact: [
+      t('settings.portableRestoreImpactBackup'),
+      t('settings.portableRestoreImpactEngines'),
+      t('settings.portableRestoreImpactRestart'),
+    ],
+  })
+  if (!ok) return
+  if (resultEl) {
+    resultEl.style.display = 'block'
+    resultEl.innerHTML = `<div style="color:var(--text-tertiary);font-size:var(--font-size-sm)">${t('settings.portableRestoring')}</div>`
+  }
+  let report
+  try {
+    report = await api.migrateToLocal()
+  } catch (e) {
+    // 失败必须把结果框切到错误态，不能停留在"迁移中"
+    if (resultEl) {
+      resultEl.innerHTML = `<div style="color:var(--error);font-size:var(--font-size-sm)">${escapeHtml(e?.message || String(e))}</div>`
+    }
+    throw e
+  }
+  if (resultEl) {
+    const backups = Array.isArray(report?.backups) ? report.backups : []
+    resultEl.innerHTML = `
+      <div style="padding:10px 12px;border:1px solid var(--border-primary);border-radius:var(--radius-sm);background:var(--bg-secondary);font-size:var(--font-size-sm);line-height:1.6">
+        <div style="font-weight:600;color:var(--success);margin-bottom:4px">${t('settings.portableRestoreDone')}</div>
+        <div>${t('settings.portableMigrateOpenclaw')}: <code>${escapeHtml(report?.openclawDir || '')}</code></div>
+        <div>${t('settings.portableMigrateHermes')}: <code>${escapeHtml(report?.hermesHome || '')}</code></div>
+        ${backups.length ? `<div style="margin-top:4px">${t('settings.portableRestoreBackups')}:</div><ul style="margin:2px 0 0 18px;padding:0">${backups.map(b => `<li><code style="font-size:var(--font-size-xs)">${escapeHtml(b)}</code></li>`).join('')}</ul>` : ''}
+        <div style="margin-top:6px;color:var(--text-secondary)">${t('settings.portableRestoreNext')}</div>
+      </div>
+    `
+  }
+  toast(t('settings.portableRestoreDone'), 'success')
 }
 
 async function handleMigrateToPortable(page) {

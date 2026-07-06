@@ -116,6 +116,7 @@ pub fn run() {
             config::write_panel_config,
             portable::get_portable_status,
             portable::migrate_to_portable,
+            portable::migrate_to_local,
             config::test_proxy,
             config::get_npm_registry,
             config::set_npm_registry,

@@ -8784,7 +8784,7 @@ const ALWAYS_LOCAL = new Set([
   'cancel_media_job', 'list_media_jobs', 'delete_media_job',
   'reveal_media_asset', 'reveal_media_output_dir', 'load_media_asset',
   // 便携模式是本进程属性，不能代理到远程实例
-  'get_portable_status', 'migrate_to_portable',
+  'get_portable_status', 'migrate_to_portable', 'migrate_to_local',
 ])
 
 // === 工具函数 ===
@@ -13583,6 +13583,10 @@ const handlers = {
 
   migrate_to_portable() {
     throw new Error('Web 模式不支持迁移为便携式，请使用桌面客户端执行')
+  },
+
+  migrate_to_local() {
+    throw new Error('Web 模式不支持便携迁移，请使用桌面客户端执行')
   },
 
   get_openclaw_dir() {

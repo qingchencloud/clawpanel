@@ -382,6 +382,10 @@ export const api = {
   getOpenclawDir: () => invoke('get_openclaw_dir'),
   // 便携模式状态（启动期固定不变，只读）
   getPortableStatus: () => invoke('get_portable_status'),
+  migrateToLocal: () => {
+    invalidate('get_portable_status', 'read_panel_config', 'check_installation', 'get_version_info')
+    return invoke('migrate_to_local')
+  },
   migrateToPortable: (targetRoot) => {
     invalidate('get_portable_status', 'read_panel_config', 'check_installation', 'get_version_info')
     return invoke('migrate_to_portable', { targetRoot })
