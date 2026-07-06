@@ -448,6 +448,8 @@ fn standalone_archive_ext() -> &'static str {
     }
 }
 
+// 生产路径仅 Windows（zip 解压）调用；Unix 走 tar。test 门控保留跨平台单元测试
+#[cfg(any(target_os = "windows", test))]
 fn promote_nested_standalone_dir(
     install_dir: &std::path::Path,
     node_bin: &str,
