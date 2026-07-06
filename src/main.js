@@ -331,8 +331,11 @@ async function checkAuth() {
       const cfg = await api.readPanelConfig()
       if (!cfg.accessPassword) return { ok: true }
       if (sessionStorage.getItem('clawpanel_authed') === '1') return { ok: true }
-      // 默认密码：直接传给登录页，避免二次读取
-      const defaultPw = (cfg.mustChangePassword && cfg.accessPassword) ? cfg.accessPassword : null
+      // 默认密码：直接传给登录页明文预填提示。判定与 security.js 一致——
+      // 密码为出厂值 123456 即视为默认（U 盘便携包等预置配置可能没有
+      // mustChangePassword 标记，不能只依赖标记）
+      const isDefaultPw = cfg.accessPassword === '123456' || !!cfg.mustChangePassword
+      const defaultPw = isDefaultPw ? cfg.accessPassword : null
       return { ok: false, defaultPw }
     } catch { return { ok: true } }
   }
