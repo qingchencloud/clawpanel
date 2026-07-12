@@ -3112,7 +3112,9 @@ fn replace_hermes_files_transaction(entries: &[(PathBuf, String, bool)]) -> Resu
     );
     let mut staged: Vec<(PathBuf, PathBuf, PathBuf, bool, bool)> = Vec::new();
 
-    for (file, content, _private) in entries {
+    for (file, content, private) in entries {
+        #[cfg(not(unix))]
+        let _ = private;
         if let Some(parent) = file.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| format!("创建 Hermes 配置目录失败: {e}"))?;
@@ -3120,7 +3122,7 @@ fn replace_hermes_files_transaction(entries: &[(PathBuf, String, bool)]) -> Resu
         let temp = file.with_extension(format!("tmp-{suffix}"));
         let backup = file.with_extension(format!("bak-sync-{suffix}"));
         std::fs::write(&temp, content).map_err(|e| format!("写入临时配置失败: {e}"))?;
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(unix)]
         if *private {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&temp, std::fs::Permissions::from_mode(0o600))

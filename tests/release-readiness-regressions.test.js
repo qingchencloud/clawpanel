@@ -39,3 +39,10 @@ test('Hermes Rust 与 Web 关键 Provider 注册表保持一致', () => {
   assert.match(rust, /id:\s*"alibaba",[\s\S]*?name:\s*"Qwen Cloud"/)
   assert.match(web, /hermesProvider\('alibaba',\s*'Qwen Cloud'/)
 })
+
+test('Hermes 配置事务的私密权限标记可跨平台编译', () => {
+  const rust = read('src-tauri/src/commands/hermes.rs')
+  assert.match(rust, /for \(file, content, private\) in entries/)
+  assert.match(rust, /#\[cfg\(unix\)\][\s\S]*?if \*private/)
+  assert.match(rust, /#\[cfg\(not\(unix\)\)\][\s\S]*?let _ = private;/)
+})
