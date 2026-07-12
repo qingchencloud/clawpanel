@@ -7108,11 +7108,16 @@ pub fn write_panel_config(config: Value) -> Result<(), String> {
 }
 
 fn path_without_curdir_string(path: &std::path::Path) -> String {
-    let cleaned: PathBuf = path
-        .components()
-        .filter(|component| !matches!(component, std::path::Component::CurDir))
-        .collect();
-    cleaned.to_string_lossy().to_string()
+    let raw = path.to_string_lossy();
+    let separator = if raw.contains('\\') {
+        '\\'
+    } else {
+        std::path::MAIN_SEPARATOR
+    };
+    raw.split(['/', '\\'])
+        .filter(|component| *component != ".")
+        .collect::<Vec<_>>()
+        .join(&separator.to_string())
 }
 
 fn bind_openclaw_cli_path(cli_path: &std::path::Path) -> Result<(), String> {

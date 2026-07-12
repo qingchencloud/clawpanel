@@ -930,11 +930,19 @@ fn collect_video_urls(value: &Value) -> Vec<String> {
 
 fn is_safe_relative_media_path(raw: &str) -> bool {
     let path = Path::new(raw);
-    if raw.trim().is_empty() || path.is_absolute() {
+    let bytes = raw.as_bytes();
+    let has_windows_drive_prefix =
+        bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':';
+    if raw.trim().is_empty()
+        || path.is_absolute()
+        || raw.starts_with(['/', '\\'])
+        || has_windows_drive_prefix
+    {
         return false;
     }
     path.components()
         .all(|component| matches!(component, Component::Normal(_) | Component::CurDir))
+        && raw.split(['/', '\\']).all(|component| component != "..")
 }
 
 fn path_compare_key(path: &Path) -> String {
@@ -2088,9 +2096,13 @@ mod tests {
     #[test]
     fn media_paths_must_stay_relative_to_media_root() {
         assert!(is_safe_relative_media_path("assets/2026/07/job-1.png"));
+        assert!(is_safe_relative_media_path(r"assets\2026\07\job-1.png"));
         assert!(!is_safe_relative_media_path("../openclaw.json"));
         assert!(!is_safe_relative_media_path("assets/../../openclaw.json"));
+        assert!(!is_safe_relative_media_path(r"assets\..\openclaw.json"));
         assert!(!is_safe_relative_media_path("C:/Users/test/secret.txt"));
+        assert!(!is_safe_relative_media_path(r"C:\Users\test\secret.txt"));
+        assert!(!is_safe_relative_media_path(r"\\server\share\secret.txt"));
     }
 
     #[test]
