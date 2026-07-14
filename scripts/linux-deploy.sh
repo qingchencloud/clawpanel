@@ -12,10 +12,13 @@ REPO_URL="https://github.com/qingchencloud/clawpanel.git"
 REPO_URL_GITEE="https://gitee.com/QtCodeCreators/clawpanel.git"
 NPM_REGISTRY="https://registry.npmmirror.com"
 PANEL_NODE_MIN_VERSION="18.0.0"
-OPENCLAW_RECOMMENDED_VERSION="2026.5.18-zh.1"
-OPENCLAW_NODE_RUNTIME_FLOOR_VERSION="2026.6.5"
-OPENCLAW_NEW_NODE_MIN_VERSION="22.19.0"
+OPENCLAW_RECOMMENDED_VERSION="2026.7.1-zh.2"
+OPENCLAW_NODE_22_19_FLOOR_VERSION="2026.6.5"
+OPENCLAW_NODE_7_1_FLOOR_VERSION="2026.7.1"
+OPENCLAW_NODE_22_19_REQUIREMENT=">=22.19.0"
+OPENCLAW_7_1_NODE_REQUIREMENT=">=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0"
 NODE_MIN_VERSION="$PANEL_NODE_MIN_VERSION"
+NODE_REQUIREMENT=">=${PANEL_NODE_MIN_VERSION}"
 
 # 检测权限模式
 if [ "$(id -u)" = "0" ]; then
@@ -95,13 +98,24 @@ version_ge() {
     [ "$actual_patch" -ge "$min_patch" ]
 }
 
-node_version_ge_min() {
-    version_ge "$1" "$NODE_MIN_VERSION"
+node_version_satisfies_7_1() {
+    local actual="${1#v}"
+    local major
+    actual=$(printf '%s' "$actual" | grep -Eo '[0-9]+(\.[0-9]+){0,2}' | head -1 || true)
+    major=${actual%%.*}
+    case "$major" in
+        22) version_ge "$actual" "22.22.3" && ! version_ge "$actual" "23.0.0" ;;
+        24) version_ge "$actual" "24.15.0" && ! version_ge "$actual" "25.0.0" ;;
+        *) [ "$major" -ge 25 ] 2>/dev/null && version_ge "$actual" "25.9.0" ;;
+    esac
 }
 
-openclaw_version_needs_new_node() {
-    local base_version="${1%%-*}"
-    [ -n "$base_version" ] && version_ge "$base_version" "$OPENCLAW_NODE_RUNTIME_FLOOR_VERSION"
+node_version_satisfies_requirement() {
+    if [ "$NODE_REQUIREMENT" = "$OPENCLAW_7_1_NODE_REQUIREMENT" ]; then
+        node_version_satisfies_7_1 "$1"
+    else
+        version_ge "$1" "$NODE_MIN_VERSION"
+    fi
 }
 
 # 安装 Node.js
@@ -109,15 +123,15 @@ install_node() {
     if command -v node &> /dev/null; then
         local node_version
         node_version=$(node -v)
-        if node_version_ge_min "$node_version"; then
+        if node_version_satisfies_requirement "$node_version"; then
             echo "✅ Node.js $(node -v) 已安装"
             return 0
         else
-            echo "⚠️  Node.js $(node -v) 版本过低，需要 >=${NODE_MIN_VERSION}"
+            echo "⚠️  Node.js $(node -v) 不满足要求 ${NODE_REQUIREMENT}"
         fi
     fi
 
-    echo "📦 安装 Node.js LTS（要求 >=${NODE_MIN_VERSION}）..."
+    echo "📦 安装 Node.js LTS（要求 ${NODE_REQUIREMENT}）..."
     case "$OS" in
         ubuntu|debian|linuxmint|pop)
             curl -fsSL https://deb.nodesource.com/setup_22.x | run_pkg_cmd bash -
@@ -139,9 +153,9 @@ install_node() {
             exit 1
             ;;
     esac
-    if ! node_version_ge_min "$(node -v)"; then
-        echo "❌ Node.js $(node -v) 仍低于 OpenClaw 要求 >=${NODE_MIN_VERSION}"
-        echo "   请手动安装 Node.js ${NODE_MIN_VERSION} 或更高版本后重试"
+    if ! node_version_satisfies_requirement "$(node -v)"; then
+        echo "❌ Node.js $(node -v) 仍不满足 OpenClaw 要求 ${NODE_REQUIREMENT}"
+        echo "   请手动安装满足 ${NODE_REQUIREMENT} 的 Node.js 后重试"
         exit 1
     fi
     echo "✅ Node.js $(node -v) 安装完成"
@@ -149,9 +163,16 @@ install_node() {
 
 ensure_node_for_openclaw_version() {
     local openclaw_version="$1"
-    if openclaw_version_needs_new_node "$openclaw_version"; then
-        NODE_MIN_VERSION="$OPENCLAW_NEW_NODE_MIN_VERSION"
-        echo "ℹ️  OpenClaw ${openclaw_version} 需要 Node.js >=${NODE_MIN_VERSION}"
+    local base_version="${openclaw_version%%-*}"
+    if [ -n "$base_version" ] && version_ge "$base_version" "$OPENCLAW_NODE_7_1_FLOOR_VERSION"; then
+        NODE_MIN_VERSION="22.22.3"
+        NODE_REQUIREMENT="$OPENCLAW_7_1_NODE_REQUIREMENT"
+        echo "ℹ️  OpenClaw ${openclaw_version} 需要 Node.js ${NODE_REQUIREMENT}"
+        install_node
+    elif [ -n "$base_version" ] && version_ge "$base_version" "$OPENCLAW_NODE_22_19_FLOOR_VERSION"; then
+        NODE_MIN_VERSION="22.19.0"
+        NODE_REQUIREMENT="$OPENCLAW_NODE_22_19_REQUIREMENT"
+        echo "ℹ️  OpenClaw ${openclaw_version} 需要 Node.js ${NODE_REQUIREMENT}"
         install_node
     fi
 }
@@ -222,6 +243,7 @@ detect_openclaw_source() {
 
 # 安装 OpenClaw
 install_openclaw() {
+    ensure_node_for_openclaw_version "$OPENCLAW_RECOMMENDED_VERSION"
     local oc_path=$(find_openclaw)
     local oc_ver=""
     if [ -n "$oc_path" ]; then

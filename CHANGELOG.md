@@ -50,7 +50,8 @@
 - **Hermes 0.18.0 资源兼容** — 保留 Dashboard 兼容兜底，但新版已内置 `dashboard_auth` 与 `web_dist` 时会自动使用上游真实资源
 - **Hermes Provider Registry 对齐** — 新增 Google Vertex AI provider 入口，移除上游已撤下的 `google-gemini-cli` OAuth 入口，并在安装向导展示外部凭据 / SDK 类 provider，避免误引导用户填写不存在的静态 API Key
 - **Hermes Provider 补齐** — 跟进上游 `novita` 与 `stepfun` provider，桌面端和 Web/headless 模式的安装向导保持一致
-- **OpenClaw 推荐稳定版更新** — 推荐稳定版切换到官方 `2026.6.11` / 汉化版 `2026.6.11-zh.1`，并保留新版 `tui`、`tools.toolSearch`、`secrets` 与 `auth.profiles` 等高级配置字段，避免校准修复误清理
+- **OpenClaw 2026.7.1 稳定版适配** — 推荐稳定版切换到官方 `2026.7.1` / 汉化修复版 `2026.7.1-zh.2`；桌面端、Web/headless、Linux 部署与 standalone 安装统一使用同一稳定基线
+- **OpenClaw 7.1 Node.js 门槛对齐** — 优先读取安装包 `engines.node`，缺少包元数据时按 `>=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0` 兜底，避免误放行 Node.js 23 或过旧的 24.x
 
 ### 改进 (Improvements)
 

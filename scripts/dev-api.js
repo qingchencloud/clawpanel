@@ -334,8 +334,10 @@ const PANEL_VERSION = (() => {
 })()
 const SITE_BASE_URL = 'https://claw.qt.cool'
 const VERSION_POLICY_PATH = path.join(__dev_dirname, '..', 'openclaw-version-policy.json')
-const OPENCLAW_NODE_REQUIREMENT_VERSION_FLOOR = '2026.6.5'
-const OPENCLAW_NODE_REQUIREMENT_FOR_NEWER_RUNTIME = '>=22.19.0'
+const OPENCLAW_NODE_22_19_VERSION_FLOOR = '2026.6.5'
+const OPENCLAW_NODE_22_19_REQUIREMENT = '>=22.19.0'
+const OPENCLAW_NODE_7_1_VERSION_FLOOR = '2026.7.1'
+const OPENCLAW_NODE_7_1_REQUIREMENT = '>=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0'
 
 function ensureArrayContains(value, required) {
   const current = Array.isArray(value)
@@ -746,9 +748,15 @@ function openclawNodeRequirement() {
     }
   }
   if (!installedVersion && cliPath) installedVersion = readVersionFromInstallation(cliPath)
-  return installedVersion && versionGe(baseVersion(installedVersion), OPENCLAW_NODE_REQUIREMENT_VERSION_FLOOR)
-    ? OPENCLAW_NODE_REQUIREMENT_FOR_NEWER_RUNTIME
-    : null
+  return fallbackOpenclawNodeRequirement(installedVersion)
+}
+
+function fallbackOpenclawNodeRequirement(installedVersion) {
+  if (!installedVersion) return null
+  const version = baseVersion(installedVersion)
+  if (versionGe(version, OPENCLAW_NODE_7_1_VERSION_FLOOR)) return OPENCLAW_NODE_7_1_REQUIREMENT
+  if (versionGe(version, OPENCLAW_NODE_22_19_VERSION_FLOOR)) return OPENCLAW_NODE_22_19_REQUIREMENT
+  return null
 }
 
 function parseNodeVersionTriplet(value) {
@@ -772,9 +780,17 @@ function nodeVersionSatisfiesClause(version, clause) {
     const min = parseNodeVersionTriplet(raw.slice(2))
     return !!min && compareVersionTriplet(version, min) >= 0
   }
+  if (raw.startsWith('<=')) {
+    const max = parseNodeVersionTriplet(raw.slice(2))
+    return !!max && compareVersionTriplet(version, max) <= 0
+  }
   if (raw.startsWith('>')) {
     const min = parseNodeVersionTriplet(raw.slice(1))
     return !!min && compareVersionTriplet(version, min) > 0
+  }
+  if (raw.startsWith('<')) {
+    const max = parseNodeVersionTriplet(raw.slice(1))
+    return !!max && compareVersionTriplet(version, max) < 0
   }
   if (raw.startsWith('^')) {
     const min = parseNodeVersionTriplet(raw.slice(1))
@@ -17665,7 +17681,7 @@ async function _apiMiddleware(req, res, next) {
 }
 
 // 导出供 serve.js 独立部署使用
-export { _initApi, _apiMiddleware }
+export { _initApi, _apiMiddleware, nodeVersionSatisfiesRequirement }
 
 export function devApiPlugin() {
   let _inited = false

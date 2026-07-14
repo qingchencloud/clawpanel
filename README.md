@@ -110,7 +110,7 @@ ClawPanel 提供**纯 Web 版部署模式**（零 GUI 依赖），天然兼容 A
 - **Orange Pi / 树莓派 / RK3588** 等 ARM64 板子 — `npm run serve` 即可运行
 - **Docker ARM64 镜像** — `docker run ghcr.io/qingchencloud/openclaw:latest` 开箱即用
 - **Armbian / Debian / Ubuntu Server** — 一键部署脚本自动检测架构
-- 无需 Rust / Tauri / 图形界面；ClawPanel Web 后端需要 **Node.js 18+**，运行 OpenClaw Gateway 时会按当前 OpenClaw 的 `engines.node` 自动检测（OpenClaw 2026.6.5+ 通常需要 **Node.js 22.19.0+**）
+- 无需 Rust / Tauri / 图形界面；ClawPanel Web 后端需要 **Node.js 18+**，运行 OpenClaw Gateway 时会按当前 OpenClaw 的 `engines.node` 自动检测（OpenClaw 2026.7.1 要求 `>=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0`）
 
 > 📖 详见 [Armbian 部署指南](docs/armbian-deploy.md) | [Web 版开发说明](#web-开发版无需-rusttauri)
 
@@ -757,7 +757,7 @@ Web 版适用于 Linux 服务器（无桌面环境），通过浏览器远程管
 
 ### 环境要求
 
-- **Node.js** >= 18（ClawPanel Web 后端）；运行 OpenClaw Gateway 会按当前 OpenClaw 要求自动检测，OpenClaw 2026.6.5+ 通常需要 **22.19.0+**
+- **Node.js** >= 18（ClawPanel Web 后端）；运行 OpenClaw Gateway 会按当前 OpenClaw 要求自动检测，OpenClaw 2026.7.1 要求 `>=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0`
 - **Git**（用于 OpenClaw 依赖安装）
 - **端口** 1420（ClawPanel）+ 18789（Gateway）
 

@@ -196,8 +196,8 @@ export const KERNEL_TARGET = {
     //   不要与 dev-api.js 中设备签名 payload 字符串前缀 `v3|deviceId|...` 混淆——
     //   后者是 **device signature payload 字符串格式版本**，两者完全独立、互不相关。
     //   即使在 v4 握手协议下，签名 payload 字符串仍以 `v3|` 开头（这是 payload schema 版本）。
-    official: '2026.5.19',
-    chinese: '2026.5.18-zh.1',
+    official: '2026.7.1',
+    chinese: '2026.7.1-zh.2',
   },
   hermes: {
     default: '0.13.x',

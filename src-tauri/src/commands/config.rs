@@ -167,9 +167,19 @@ fn node_version_satisfies_clause(version: [u32; 3], clause: &str) -> bool {
             .map(|min| cmp_version_triplet(version, min).is_ge())
             .unwrap_or(false);
     }
+    if let Some(raw) = clause.strip_prefix("<=") {
+        return parse_node_version_triplet(raw)
+            .map(|max| cmp_version_triplet(version, max).is_le())
+            .unwrap_or(false);
+    }
     if let Some(raw) = clause.strip_prefix('>') {
         return parse_node_version_triplet(raw)
             .map(|min| cmp_version_triplet(version, min).is_gt())
+            .unwrap_or(false);
+    }
+    if let Some(raw) = clause.strip_prefix('<') {
+        return parse_node_version_triplet(raw)
+            .map(|max| cmp_version_triplet(version, max).is_lt())
             .unwrap_or(false);
     }
     if let Some(raw) = clause.strip_prefix('^') {
@@ -210,11 +220,20 @@ fn read_package_json_field(path: &std::path::Path, pointer: &str) -> Option<Stri
         .filter(|v| !v.is_empty())
 }
 
-const OPENCLAW_NODE_REQUIREMENT_VERSION_FLOOR: &str = "2026.6.5";
-const OPENCLAW_NODE_REQUIREMENT_FOR_NEWER_RUNTIME: &str = ">=22.19.0";
+const OPENCLAW_NODE_22_19_VERSION_FLOOR: &str = "2026.6.5";
+const OPENCLAW_NODE_22_19_REQUIREMENT: &str = ">=22.19.0";
+const OPENCLAW_NODE_7_1_VERSION_FLOOR: &str = "2026.7.1";
+const OPENCLAW_NODE_7_1_REQUIREMENT: &str = ">=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0";
 
-fn openclaw_version_requires_node_22_19(version: &str) -> bool {
-    parse_version(&base_version(version)) >= parse_version(OPENCLAW_NODE_REQUIREMENT_VERSION_FLOOR)
+fn fallback_openclaw_node_requirement(version: &str) -> Option<&'static str> {
+    let version = parse_version(&base_version(version));
+    if version >= parse_version(OPENCLAW_NODE_7_1_VERSION_FLOOR) {
+        return Some(OPENCLAW_NODE_7_1_REQUIREMENT);
+    }
+    if version >= parse_version(OPENCLAW_NODE_22_19_VERSION_FLOOR) {
+        return Some(OPENCLAW_NODE_22_19_REQUIREMENT);
+    }
+    None
 }
 
 fn cli_source_prefers_zh_package(cli_source: &str) -> bool {
@@ -271,8 +290,9 @@ pub(crate) fn openclaw_node_requirement() -> Option<String> {
         .and_then(|pkg| read_package_json_field(pkg, "/version"))
         .or_else(|| read_version_from_installation(cli_path_ref));
     installed_version
-        .filter(|version| openclaw_version_requires_node_22_19(version))
-        .map(|_| OPENCLAW_NODE_REQUIREMENT_FOR_NEWER_RUNTIME.to_string())
+        .as_deref()
+        .and_then(fallback_openclaw_node_requirement)
+        .map(str::to_string)
 }
 
 fn standalone_bundled_node_bin(cli_path: &str) -> Option<PathBuf> {
@@ -7707,9 +7727,9 @@ pub fn invalidate_path_cache() -> Result<(), String> {
 mod write_openclaw_config_merge_tests {
     use super::apply_reset_inheritance;
     use super::calibration_richness_score;
+    use super::fallback_openclaw_node_requirement;
     use super::merge_configs_preserving_fields;
     use super::node_version_satisfies_requirement;
-    use super::openclaw_version_requires_node_22_19;
     use super::path_without_curdir_string;
     use super::promote_nested_standalone_dir;
     #[cfg(target_os = "windows")]
@@ -7978,11 +7998,33 @@ mod write_openclaw_config_merge_tests {
     }
 
     #[test]
-    fn openclaw_node_requirement_floor_starts_at_2026_6_5() {
-        assert!(!openclaw_version_requires_node_22_19("2026.6.4"));
-        assert!(openclaw_version_requires_node_22_19("2026.6.5"));
-        assert!(openclaw_version_requires_node_22_19("2026.6.5-zh.1"));
-        assert!(openclaw_version_requires_node_22_19("2026.7.1"));
+    fn openclaw_node_requirement_fallback_tracks_runtime_floors() {
+        assert_eq!(fallback_openclaw_node_requirement("2026.6.4"), None);
+        assert_eq!(
+            fallback_openclaw_node_requirement("2026.6.5-zh.1"),
+            Some(">=22.19.0")
+        );
+        assert_eq!(
+            fallback_openclaw_node_requirement("2026.7.1"),
+            Some(">=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0")
+        );
+        assert_eq!(
+            fallback_openclaw_node_requirement("2026.7.1-zh.1"),
+            Some(">=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0")
+        );
+    }
+
+    #[test]
+    fn openclaw_2026_7_1_node_range_rejects_unsupported_gaps() {
+        let requirement = ">=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0";
+        assert!(!node_version_satisfies_requirement("v22.22.2", requirement));
+        assert!(node_version_satisfies_requirement("v22.22.3", requirement));
+        assert!(!node_version_satisfies_requirement("v23.11.1", requirement));
+        assert!(!node_version_satisfies_requirement("v24.14.9", requirement));
+        assert!(node_version_satisfies_requirement("v24.15.0", requirement));
+        assert!(!node_version_satisfies_requirement("v25.8.9", requirement));
+        assert!(node_version_satisfies_requirement("v25.9.0", requirement));
+        assert!(node_version_satisfies_requirement("v33.0.0", requirement));
     }
 
     #[test]
