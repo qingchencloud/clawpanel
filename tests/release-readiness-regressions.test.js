@@ -65,6 +65,19 @@ test('Rust 锁文件包含 Tauri 与 tar 的安全修复版本', () => {
   assert.doesNotMatch(lock, /name = "tar"\r?\nversion = "0\.4\.45"/)
 })
 
+test('Rust Tauri 与前端 API 锁定在相同主次版本', () => {
+  const cargoLock = read('src-tauri/Cargo.lock')
+  const packageLock = JSON.parse(read('package-lock.json'))
+  const packageJson = JSON.parse(read('package.json'))
+  const rustVersion = cargoLock.match(/name = "tauri"\r?\nversion = "([^"]+)"/)?.[1]
+  const apiVersion = packageLock.packages?.['node_modules/@tauri-apps/api']?.version
+
+  assert.ok(rustVersion, 'Cargo.lock 缺少 tauri 版本')
+  assert.ok(apiVersion, 'package-lock.json 缺少 @tauri-apps/api 版本')
+  assert.equal(rustVersion.split('.').slice(0, 2).join('.'), apiVersion.split('.').slice(0, 2).join('.'))
+  assert.match(packageJson.dependencies?.['@tauri-apps/api'] || '', /^\^2\.11\./)
+})
+
 test('Hermes Rust 与 Web 关键 Provider 注册表保持一致', () => {
   const rust = read('src-tauri/src/commands/hermes_providers.rs')
   const web = read('scripts/dev-api.js')

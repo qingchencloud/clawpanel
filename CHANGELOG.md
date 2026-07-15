@@ -63,10 +63,11 @@
 - **未安装时反复跳回检测页** — 安装失败不再强制重置向导；窗口聚焦只在后台更新检测结果，API Key / 配置错误改为页面内持续展示
 - **默认密码无提示挡住登录** — 使用出厂密码 `123456` 时，桌面与 Web 锁定页均直接提示并预填，登录后引导立即修改
 - **移动端语言菜单点穿** — 关闭状态不再拦截点击，切换语言后同步收起菜单和侧栏并更新 `html lang`
+- **跨平台发布被 Tauri 版本校验拦截** — 前端 `@tauri-apps/api` 与 Rust Tauri 同步到 `2.11` 系列，并增加锁文件主次版本一致性回归测试
 
 ### 测试与验证 (Testing)
 
-- Node.js `24.15.0` 下 `node --test tests/*.test.js`：511 passed
+- Node.js `24.15.0` 下 `node --test tests/*.test.js`：512 passed
 - Node.js `24.15.0` 下 `npm run build`：通过
 - `cargo fmt --all -- --check`：通过
 - `cargo check --locked`：通过

@@ -32,7 +32,7 @@
     "version:set": "node scripts/sync-version.js"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.5.0",
+    "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-autostart": "^2.5.1",
     "@tauri-apps/plugin-shell": "^2.2.1",
     "yaml": "^2.9.0"
