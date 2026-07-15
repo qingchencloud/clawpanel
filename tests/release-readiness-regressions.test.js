@@ -50,6 +50,13 @@ test('OpenClaw 7.1 发布与容器基线不低于 Node.js 22.22.3', () => {
   assert.match(read('Dockerfile'), /FROM node:22\.22\.3-alpine AS production/)
 })
 
+test('macOS Gateway 服务操作保留 launchctl 所需的用户 UID helper', () => {
+  const config = read('src-tauri/src/commands/config.rs')
+  assert.match(config, /fn get_uid\(\) -> Result<u32, String>/)
+  assert.match(config, /Command::new\("id"\)[\s\S]*?\.arg\("-u"\)/)
+  assert.match(config, /format!\("gui\/\{uid\}\/ai\.openclaw\.gateway"\)/)
+})
+
 test('Hermes Rust 与 Web 关键 Provider 注册表保持一致', () => {
   const rust = read('src-tauri/src/commands/hermes_providers.rs')
   const web = read('scripts/dev-api.js')

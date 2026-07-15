@@ -62,7 +62,7 @@
 
 ### 测试与验证 (Testing)
 
-- Node.js `22.22.3` 下 `node --test tests/*.test.js`：503 passed
+- Node.js `22.22.3` 下 `node --test tests/*.test.js`：504 passed
 - Node.js `22.22.3` 下 `npm run build`：通过
 - `cargo fmt --all -- --check`：通过
 - `cargo check --locked`：通过

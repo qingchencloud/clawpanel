@@ -6026,6 +6026,26 @@ pub fn delete_backup(name: String) -> Result<(), String> {
     fs::remove_file(&path).map_err(|e| format!("删除失败: {e}"))
 }
 
+/// 获取当前用户 UID，供 macOS launchctl 的 gui/<uid> 服务域使用。
+#[allow(dead_code)]
+fn get_uid() -> Result<u32, String> {
+    #[cfg(target_os = "windows")]
+    {
+        Ok(0)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let output = Command::new("id")
+            .arg("-u")
+            .output()
+            .map_err(|e| format!("获取 UID 失败: {e}"))?;
+        String::from_utf8_lossy(&output.stdout)
+            .trim()
+            .parse::<u32>()
+            .map_err(|e| format!("解析 UID 失败: {e}"))
+    }
+}
+
 const OPENCLAW_NATIVE_CONFIG_RELOAD_VERSION_FLOOR: &str = "2026.7.1";
 
 fn supports_native_config_reload(version: &str) -> bool {
