@@ -540,6 +540,190 @@ fn ensure_custom_openai_key_alias() -> Result<bool, String> {
     Ok(true)
 }
 
+fn hermes_api_server_key_is_usable(value: &str) -> bool {
+    let cleaned = value.trim();
+    if cleaned.len() < 16 {
+        return false;
+    }
+    !matches!(
+        cleaned.to_ascii_lowercase().as_str(),
+        "*" | "**"
+            | "***"
+            | "changeme"
+            | "your_api_key"
+            | "your_api_key_here"
+            | "your-api-key"
+            | "placeholder"
+            | "example"
+            | "dummy"
+            | "null"
+            | "none"
+    )
+}
+
+fn generate_hermes_api_server_key() -> String {
+    use rand::RngCore;
+
+    let mut bytes = [0u8; 32];
+    rand::rngs::OsRng.fill_bytes(&mut bytes);
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn ensure_hermes_api_server_runtime_env() -> Result<bool, String> {
+    let home = hermes_home();
+    std::fs::create_dir_all(&home).map_err(|e| format!("创建 Hermes 配置目录失败: {e}"))?;
+    let env_path = home.join(".env");
+    let existing = std::fs::read_to_string(&env_path).unwrap_or_default();
+    let current_key = env_file_value(&existing, "API_SERVER_KEY").unwrap_or_default();
+    let api_server_key = if hermes_api_server_key_is_usable(&current_key) {
+        current_key
+    } else {
+        generate_hermes_api_server_key()
+    };
+    let merged = merge_env_file(
+        &existing,
+        &["API_SERVER_ENABLED", "API_SERVER_KEY"],
+        &[
+            ("API_SERVER_ENABLED".into(), "true".into()),
+            ("API_SERVER_KEY".into(), api_server_key),
+        ],
+    );
+    if merged == existing {
+        return Ok(false);
+    }
+    std::fs::write(&env_path, merged).map_err(|e| format!("写入 Hermes .env 失败: {e}"))?;
+    Ok(true)
+}
+
+fn apply_hermes_custom_provider_routing(
+    config: &mut serde_yaml::Value,
+    env_raw: &str,
+) -> Result<bool, String> {
+    let before = config.clone();
+    let root = config
+        .as_mapping()
+        .ok_or("Hermes config.yaml 顶层必须是对象")?;
+    let model = root
+        .get(yaml_key("model"))
+        .and_then(|value| value.as_mapping())
+        .ok_or("Hermes config.yaml 缺少 model 配置")?;
+    let provider = yaml_string_field(model, "provider")
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    if !matches!(
+        provider.as_str(),
+        "custom" | "openrouter" | "custom:clawpanel"
+    ) {
+        return Ok(false);
+    }
+
+    let configured_base_url = yaml_string_field(model, "base_url").unwrap_or_default();
+    if provider == "openrouter" && configured_base_url.trim().is_empty() {
+        return Ok(false);
+    }
+    let base_url = if configured_base_url.trim().is_empty() {
+        env_file_value(env_raw, "CUSTOM_BASE_URL")
+            .or_else(|| env_file_value(env_raw, "OPENAI_BASE_URL"))
+            .unwrap_or_default()
+    } else {
+        configured_base_url
+    };
+    let base_url = base_url.trim().trim_end_matches('/').to_string();
+    if base_url.is_empty()
+        || is_openai_codex_endpoint(&base_url)
+        || normalize_provider_url(&base_url)
+            == normalize_provider_url("https://openrouter.ai/api/v1")
+    {
+        return Ok(false);
+    }
+
+    let model_default = yaml_string_field(model, "default")
+        .or_else(|| yaml_string_field(model, "model"))
+        .unwrap_or_default();
+    let key_env = if env_file_has_value(env_raw, "CUSTOM_API_KEY") {
+        "CUSTOM_API_KEY"
+    } else if env_file_has_value(env_raw, "OPENAI_API_KEY") {
+        "OPENAI_API_KEY"
+    } else {
+        "CUSTOM_API_KEY"
+    };
+
+    let root = ensure_yaml_object(config)?;
+    let mut model = root
+        .get(yaml_key("model"))
+        .and_then(|value| value.as_mapping())
+        .cloned()
+        .unwrap_or_default();
+    model.insert(
+        yaml_key("provider"),
+        serde_yaml::Value::String("custom:clawpanel".into()),
+    );
+    model.insert(
+        yaml_key("base_url"),
+        serde_yaml::Value::String(base_url.clone()),
+    );
+    root.insert(yaml_key("model"), serde_yaml::Value::Mapping(model));
+
+    let mut providers = root
+        .get(yaml_key("providers"))
+        .and_then(|value| value.as_mapping())
+        .cloned()
+        .unwrap_or_default();
+    let mut entry = providers
+        .get(yaml_key("clawpanel"))
+        .and_then(|value| value.as_mapping())
+        .cloned()
+        .unwrap_or_default();
+    entry.insert(
+        yaml_key("name"),
+        serde_yaml::Value::String("ClawPanel Custom".into()),
+    );
+    entry.insert(yaml_key("base_url"), serde_yaml::Value::String(base_url));
+    entry.insert(
+        yaml_key("key_env"),
+        serde_yaml::Value::String(key_env.into()),
+    );
+    if !model_default.trim().is_empty() {
+        entry.insert(
+            yaml_key("default_model"),
+            serde_yaml::Value::String(model_default.trim().into()),
+        );
+    }
+    entry.insert(
+        yaml_key("api_mode"),
+        serde_yaml::Value::String("chat_completions".into()),
+    );
+    providers.insert(yaml_key("clawpanel"), serde_yaml::Value::Mapping(entry));
+    root.insert(yaml_key("providers"), serde_yaml::Value::Mapping(providers));
+
+    Ok(*config != before)
+}
+
+fn repair_hermes_custom_provider_routing_at(
+    config_path: &Path,
+    env_path: &Path,
+) -> Result<bool, String> {
+    if !config_path.exists() {
+        return Ok(false);
+    }
+    let raw = std::fs::read_to_string(config_path)
+        .map_err(|e| format!("读取 Hermes config.yaml 失败: {e}"))?;
+    let env_raw = std::fs::read_to_string(env_path).unwrap_or_default();
+    let mut config: serde_yaml::Value =
+        serde_yaml::from_str(&raw).map_err(|e| format!("config.yaml YAML 格式错误: {e}"))?;
+    if !apply_hermes_custom_provider_routing(&mut config, &env_raw)? {
+        return Ok(false);
+    }
+    let fixed = serde_yaml::to_string(&config)
+        .map_err(|e| format!("序列化 Hermes config.yaml 失败: {e}"))?;
+    let backup = hermes_stable_backup_path(config_path);
+    std::fs::copy(config_path, &backup)
+        .map_err(|e| format!("备份 Hermes config.yaml 失败: {e}"))?;
+    std::fs::write(config_path, fixed).map_err(|e| format!("写入 Hermes config.yaml 失败: {e}"))?;
+    Ok(true)
+}
+
 fn sanitize_hermes_openrouter_custom_mismatch() -> Result<bool, String> {
     let home = hermes_home();
     let config_path = home.join("config.yaml");
@@ -547,6 +731,7 @@ fn sanitize_hermes_openrouter_custom_mismatch() -> Result<bool, String> {
         return Ok(false);
     }
     let changed = sanitize_hermes_openrouter_custom_mismatch_at(&config_path)?;
+    let route_changed = repair_hermes_custom_provider_routing_at(&config_path, &home.join(".env"))?;
     let raw =
         std::fs::read_to_string(config_path).map_err(|e| format!("读取 config.yaml 失败: {e}"))?;
     let fields = read_top_level_hermes_model_fields(&raw)?;
@@ -555,7 +740,7 @@ fn sanitize_hermes_openrouter_custom_mismatch() -> Result<bool, String> {
     } else {
         false
     };
-    Ok(changed || alias_changed)
+    Ok(changed || route_changed || alias_changed)
 }
 
 fn sanitize_hermes_openrouter_custom_mismatch_at(
@@ -592,6 +777,7 @@ fn sanitize_hermes_openrouter_custom_mismatch_at(
 
 /// 重启 Gateway（kill 旧进程 → 启动新进程）
 async fn do_restart_gateway() -> Result<(), String> {
+    ensure_hermes_api_server_runtime_env()?;
     // 1. 杀掉旧进程
     kill_gateway_pid();
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
@@ -985,6 +1171,7 @@ fn append_existing_path(extra: &mut Vec<String>, path: impl AsRef<Path>) {
 
 fn apply_hermes_runtime_env(cmd: &mut Command, path: &str) {
     cmd.env("PATH", path);
+    cmd.env("HERMES_HOME", hermes_home());
     if let Some(ctx) = crate::commands::portable::portable_context() {
         let tool_bin_dir =
             hermes_tool_bin_dir().unwrap_or_else(|| ctx.engines_hermes_dir.join("bin"));
@@ -992,7 +1179,6 @@ fn apply_hermes_runtime_env(cmd: &mut Command, path: &str) {
             .unwrap_or_else(|| ctx.root.join("runtimes").join("uv").join("cache"));
         let python_dir = hermes_uv_python_dir()
             .unwrap_or_else(|| ctx.root.join("runtimes").join("uv").join("python"));
-        cmd.env("HERMES_HOME", &ctx.hermes_home);
         cmd.env("UV_TOOL_DIR", &ctx.engines_hermes_dir);
         cmd.env("UV_TOOL_BIN_DIR", tool_bin_dir);
         cmd.env("UV_CACHE_DIR", cache_dir);
@@ -1003,6 +1189,7 @@ fn apply_hermes_runtime_env(cmd: &mut Command, path: &str) {
 
 fn apply_hermes_runtime_env_tokio(cmd: &mut tokio::process::Command, path: &str) {
     cmd.env("PATH", path);
+    cmd.env("HERMES_HOME", hermes_home());
     if let Some(ctx) = crate::commands::portable::portable_context() {
         let tool_bin_dir =
             hermes_tool_bin_dir().unwrap_or_else(|| ctx.engines_hermes_dir.join("bin"));
@@ -1010,7 +1197,6 @@ fn apply_hermes_runtime_env_tokio(cmd: &mut tokio::process::Command, path: &str)
             .unwrap_or_else(|| ctx.root.join("runtimes").join("uv").join("cache"));
         let python_dir = hermes_uv_python_dir()
             .unwrap_or_else(|| ctx.root.join("runtimes").join("uv").join("python"));
-        cmd.env("HERMES_HOME", &ctx.hermes_home);
         cmd.env("UV_TOOL_DIR", &ctx.engines_hermes_dir);
         cmd.env("UV_TOOL_BIN_DIR", tool_bin_dir);
         cmd.env("UV_CACHE_DIR", cache_dir);
@@ -3044,9 +3230,19 @@ platforms:
     let managed_keys_owned = hermes_providers::all_managed_env_keys();
     let managed_keys: Vec<&str> = managed_keys_owned.to_vec();
 
+    let env_path = home.join(".env");
+    let existing_env = std::fs::read_to_string(&env_path).unwrap_or_default();
+    let current_api_server_key =
+        env_file_value(&existing_env, "API_SERVER_KEY").unwrap_or_default();
+    let api_server_key = if hermes_api_server_key_is_usable(&current_api_server_key) {
+        current_api_server_key
+    } else {
+        generate_hermes_api_server_key()
+    };
     let mut new_pairs: Vec<(String, String)> = vec![
         ("GATEWAY_ALLOW_ALL_USERS".into(), "true".into()),
-        ("API_SERVER_KEY".into(), "clawpanel-local".into()),
+        ("API_SERVER_ENABLED".into(), "true".into()),
+        ("API_SERVER_KEY".into(), api_server_key),
     ];
 
     if let Some(env) = key_env {
@@ -3068,7 +3264,6 @@ platforms:
         }
     }
 
-    let env_path = home.join(".env");
     let env_content = if env_path.exists() {
         let existing = std::fs::read_to_string(&env_path).unwrap_or_default();
         merge_env_file(&existing, &managed_keys, &new_pairs)
@@ -3081,6 +3276,10 @@ platforms:
             + "\n"
     };
     std::fs::write(&env_path, &env_content).map_err(|e| format!("写入 .env 失败: {e}"))?;
+
+    if provider == "custom" {
+        repair_hermes_custom_provider_routing_at(&config_path, &env_path)?;
+    }
 
     // Unix: 设置 .env 文件权限为 600
     #[cfg(not(target_os = "windows"))]
@@ -14153,6 +14352,7 @@ pub async fn hermes_gateway_action(
             // before every start. Auto-heal if missing (with a .bak backup).
             // See `ensure_api_server_enabled` for rationale.
             ensure_api_server_enabled(&app)?;
+            ensure_hermes_api_server_runtime_env()?;
             let _ = sanitize_hermes_openrouter_custom_mismatch()?;
             if gateway_quick_health_check().await {
                 start_guardian(&app);
@@ -18611,8 +18811,8 @@ model:
 #[cfg(test)]
 mod hermes_sanitizer_tests {
     use super::{
-        normalize_hermes_provider_for_base_url, sanitize_hermes_openrouter_custom_mismatch_at,
-        yaml_key,
+        apply_hermes_custom_provider_routing, normalize_hermes_provider_for_base_url,
+        sanitize_hermes_openrouter_custom_mismatch_at, yaml_key,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -18769,6 +18969,59 @@ auxiliary:
 
         assert!(err.contains("config.yaml YAML 格式错误"));
         assert_eq!(fs::read_to_string(&path).unwrap(), raw);
+    }
+
+    #[test]
+    fn legacy_custom_env_route_becomes_named_provider_without_losing_config() {
+        let mut config: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+model:
+  default: gpt-5.5
+  provider: custom
+  context_length: 131072
+hooks:
+  enabled: true
+"#,
+        )
+        .unwrap();
+        let env = "OPENAI_BASE_URL=https://example.test/v1\nCUSTOM_API_KEY=provider-secret\n";
+
+        assert!(apply_hermes_custom_provider_routing(&mut config, env).unwrap());
+        assert_eq!(config["model"]["provider"], "custom:clawpanel");
+        assert_eq!(config["model"]["base_url"], "https://example.test/v1");
+        assert_eq!(config["model"]["context_length"], 131072);
+        assert_eq!(
+            config["providers"]["clawpanel"]["base_url"],
+            "https://example.test/v1"
+        );
+        assert_eq!(
+            config["providers"]["clawpanel"]["key_env"],
+            "CUSTOM_API_KEY"
+        );
+        assert_eq!(config["providers"]["clawpanel"]["default_model"], "gpt-5.5");
+        assert_eq!(
+            config["providers"]["clawpanel"]["api_mode"],
+            "chat_completions"
+        );
+        assert_eq!(config["hooks"]["enabled"], true);
+        assert!(!apply_hermes_custom_provider_routing(&mut config, env).unwrap());
+    }
+
+    #[test]
+    fn normal_openrouter_route_ignores_legacy_custom_env() {
+        let mut config: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+model:
+  default: openai/gpt-5.5
+  provider: openrouter
+"#,
+        )
+        .unwrap();
+        let before = config.clone();
+        let env = "OPENAI_BASE_URL=https://legacy.example.test/v1\nOPENROUTER_API_KEY=openrouter-secret\n";
+
+        assert!(!apply_hermes_custom_provider_routing(&mut config, env).unwrap());
+        assert_eq!(config, before);
     }
 }
 
@@ -21932,6 +22185,23 @@ streaming:
         let err = merge_hermes_approvals_config(&mut config, &json!({ "approvalTimeout": 86401 }))
             .unwrap_err();
         assert!(err.contains("approvals.timeout"));
+    }
+}
+
+#[cfg(test)]
+mod hermes_gateway_runtime_compat_tests {
+    use super::{generate_hermes_api_server_key, hermes_api_server_key_is_usable};
+
+    #[test]
+    fn api_server_key_policy_matches_hermes_startup_guard() {
+        assert!(!hermes_api_server_key_is_usable("clawpanel-local"));
+        assert!(!hermes_api_server_key_is_usable("placeholder"));
+        assert!(hermes_api_server_key_is_usable(
+            "existing-strong-key-1234567890"
+        ));
+        let generated = generate_hermes_api_server_key();
+        assert_eq!(generated.len(), 64);
+        assert!(generated.chars().all(|ch| ch.is_ascii_hexdigit()));
     }
 }
 

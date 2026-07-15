@@ -313,7 +313,6 @@ export default {
   dashGatewayStarted: _('Gateway 已启动', 'Gateway started', 'Gateway 已啟動'),
   dashConfigPatched: _('config.yaml 已自动修复', 'config.yaml was auto-repaired', 'config.yaml 已自動修復'),
   configModelRequired: _('请输入模型名', 'Enter a model name', '請輸入模型名稱'),
-  configSaved: _('配置已保存', 'Config saved', '配置已儲存'),
   envDetectFailed: _('探测失败', 'Detection failed', '探測失敗'),
   connWslGatewayMissing: _('WSL2 Gateway 未运行，请先在 WSL 中启动', 'WSL2 Gateway is not running. Start it in WSL first.', 'WSL2 Gateway 未執行，請先在 WSL 中啟動'),
   connDockerCustomHint: _('请切换到“自定义”模式并输入容器的 Gateway URL', 'Switch to Custom mode and enter the container Gateway URL.', '請切換到「自訂」模式並輸入容器的 Gateway URL'),

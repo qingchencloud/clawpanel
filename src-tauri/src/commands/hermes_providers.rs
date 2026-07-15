@@ -814,7 +814,11 @@ pub fn all_managed_env_keys() -> Vec<&'static str> {
         }
     }
     // ClawPanel-specific keys
-    for extra in &["GATEWAY_ALLOW_ALL_USERS", "API_SERVER_KEY"] {
+    for extra in &[
+        "GATEWAY_ALLOW_ALL_USERS",
+        "API_SERVER_ENABLED",
+        "API_SERVER_KEY",
+    ] {
         if !out.contains(extra) {
             out.push(extra);
         }
@@ -917,6 +921,7 @@ mod tests {
         assert!(keys.contains(&"NOVITA_BASE_URL"));
         assert!(keys.contains(&"STEPFUN_API_KEY"));
         assert!(keys.contains(&"GATEWAY_ALLOW_ALL_USERS"));
+        assert!(keys.contains(&"API_SERVER_ENABLED"));
         assert!(keys.contains(&"API_SERVER_KEY"));
         // No duplicates
         for i in 0..keys.len() {

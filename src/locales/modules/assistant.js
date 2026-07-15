@@ -299,7 +299,6 @@ export default {
   qtcoolInstructions: _('没有 Key？前往 <a>签到页</a> 免费领取', 'No key? Go to <a>check-in page</a> to get one for free', '沒有 Key？前往 <a>簽到頁</a> 免費領取'),
   qtcoolEnterKey: _('请输入 API Key', 'Please enter API Key', '請輸入 API Key'),
   qtcoolFillFirst: _('请先填写 API Key', 'Please fill in API Key first', '請先填寫 API Key'),
-  qtcoolFillFirst: _('请先填写 API Key', 'Please fill in API Key first', '請先填写 API Key'),
   qtcoolConnecting: _('连接中...', 'Connecting...', '連線中...'),
   qtcoolLoadingModels: _('正在获取模型列表...', 'Fetching model list...', '正在取得模型列表...'),
   qtcoolConnectFail: _('连接失败', 'Connection failed', '連線失敗'),

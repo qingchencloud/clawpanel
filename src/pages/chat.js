@@ -1856,7 +1856,7 @@ function handleChatEvent(payload) {
 
     if (payload.state === 'error' && _hostedSessionConfig?.enabled) {
       _hostedRuntime.errorCount = (_hostedRuntime.errorCount || 0) + 1
-      _hostedRuntime.lastError = payload.errorMessage || payload.error?.message || t('common.error')
+      _hostedRuntime.lastError = payload.errorMessage || payload.error?.message || t('common.errorLabel')
       _hostedRuntime.pending = false
       if (_hostedRuntime.errorCount >= _hostedSessionConfig.retryLimit) {
         _hostedRuntime.status = HOSTED_STATUS.ERROR
@@ -2031,7 +2031,7 @@ function handleChatEvent(payload) {
   }
 
   if (state === 'error') {
-    const errMsg = payload.errorMessage || payload.error?.message || t('common.error')
+    const errMsg = payload.errorMessage || payload.error?.message || t('common.errorLabel')
 
     // 连接级错误（origin/pairing/auth）拦截，不作为聊天消息显示
     if (/origin not allowed|NOT_PAIRED|PAIRING_REQUIRED|auth.*fail/i.test(errMsg)) {

@@ -412,40 +412,6 @@
   color: var(--hm-error);
 }
 
-[data-engine="hermes"] .hm-native-dashboard-hint {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  margin: -8px 2px 20px;
-  color: var(--hm-text-muted);
-  font-family: var(--hm-font-mono);
-  font-size: 11px;
-}
-[data-engine="hermes"] .hm-native-dashboard-link {
-  border: 0;
-  background: transparent;
-  color: var(--hm-text-secondary);
-  font: inherit;
-  cursor: pointer;
-  padding: 0;
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, currentColor 30%, transparent);
-  text-underline-offset: 3px;
-}
-[data-engine="hermes"] button.hm-native-dashboard-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0 10px;
-  touch-action: manipulation;
-}
-[data-engine="hermes"] .hm-native-dashboard-link:hover {
-  color: var(--hm-accent);
-}
-
 /* ==========================================================================
  * 4 · Panel — clean section container
  * ==========================================================================

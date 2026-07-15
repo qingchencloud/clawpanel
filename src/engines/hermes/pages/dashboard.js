@@ -220,13 +220,6 @@ export function render() {
         </div>
       </div>
 
-      <div class="hm-native-dashboard-hint">
-        <span>${t('engine.dashNativePanelDesc')}</span>
-        <button class="hm-native-dashboard-link hm-dash-open-native" data-href="${HERMES_DASHBOARD_URL}">
-          ${t('engine.dashNativePanelOpen')}
-        </button>
-      </div>
-
       <div class="hm-panel hm-panel--allow-overflow">
         <div class="hm-panel-header hm-panel-header--toggle hm-cfg-toggle ${modelConfigCollapsed ? '' : 'is-open'}">
           <div class="hm-panel-title">

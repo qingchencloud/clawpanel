@@ -27,7 +27,7 @@ export default {
   offline: _('离线', 'Offline', '離線', 'オフライン', '오프라인', 'Ngoại tuyến', 'Fuera de línea', '', 'Не в сети', 'Hors ligne'),
   running: _('运行中', 'Running', '執行中', '実行中', '실행 중', 'Đang chạy', 'Ejecutando', 'Em execução', 'Работает', 'En cours', 'Läuft'),
   stopped: _('已停止', 'Stopped', '', '停止', '중지됨', 'Đã dừng', 'Detenido', 'Parado', 'Остановлен', 'Arrêté', 'Gestoppt'),
-  error: _('错误', 'Error', '錯誤', 'エラー', '오류', 'Lỗi', '', 'Erro', 'Ошибка', 'Erreur', 'Fehler'),
+  errorLabel: _('错误', 'Error', '錯誤', 'エラー', '오류', 'Lỗi', '', 'Erro', 'Ошибка', 'Erreur', 'Fehler'),
   success: _('成功', 'Success', '', '成功', '성공', 'Thành công', 'Éxito', 'Sucesso', 'Успех', 'Succès', 'Erfolg'),
   warning: _('警告', 'Warning', '', '警告', '경고', 'Cảnh báo', 'Advertencia', 'Aviso', 'Предупреждение', 'Avertissement', 'Warnung'),
   info: _('提示', 'Info', '', '情報', '알림', 'Thông tin', 'Información', 'Informação', 'Информация', 'Information'),

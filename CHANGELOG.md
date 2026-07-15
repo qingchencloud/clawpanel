@@ -7,7 +7,7 @@
 
 ## [未发布 (Unreleased)]
 
-## [0.18.6] - 2026-07-14
+## [0.19.0] - 2026-07-15
 
 ### 新功能 (Features)
 
@@ -53,6 +53,9 @@
 - **模型配置破坏未知字段** — 保存和删除 provider 改为最小补丁及显式墓碑，保留其它 provider、认证资料和上游新增字段；旧模型结构会在写入前安全迁移
 - **模型渠道下拉显示 `[object Object]`** — API 类型选项改为可读名称，未知类型在编辑时仍保留原值供用户确认
 - **Hermes 安装 wheel 元数据无效** — 修复旧 `uv` 缓存冲突导致 `annotated-types` 报 `Metadata field Name not found`；自动升级受管运行时并在缓存异常时透明重试
+- **Hermes 0.18.2 Windows 启动后端口未就绪** — 所有 Hermes 子进程显式继承 ClawPanel 管理的 `HERMES_HOME`，避免新版平台默认目录变化导致读取空配置；启动前自动补齐 API Server 开关和随机强密钥，并保留已有合格密钥与其它环境配置
+- **Hermes 0.18.2 自定义模型无回复** — 旧版裸 `custom` 配置自动迁移为新版命名 Provider，继续使用用户原有 Base URL 和密钥环境变量；迁移前备份 `config.yaml`，保留其它模型及高级配置，避免请求误回退到 OpenRouter 后返回 401
+- **Hermes 仪表盘误导性 9119 入口** — 隐藏默认不运行且当前安装包不提供完整页面的原生 Dashboard 外链；继续保留 ClawPanel 内置仪表盘、实时聊天及内部按需 Dashboard API 能力
 - **创作中心提交后按钮一直禁用** — 后台刷新后重新定位当前表单按钮，生成完成或失败都会正确解锁；图片和视频提交不再阻塞页面等待云端任务结束
 - **视频任务瞬时错误失联** — 429 / 5xx 时保留任务并继续轮询；已有服务商任务 ID 的失败任务可恢复，无法识别任务 ID 时也保留原始响应供排查
 - **媒体历史膨胀与大文件卡顿** — 持久化前裁剪大体积原始响应，预览限制 64MB 并限制缓存数量；跨端视频状态解析保持一致
@@ -63,12 +66,12 @@
 
 ### 测试与验证 (Testing)
 
-- Node.js `22.22.3` 下 `node --test tests/*.test.js`：505 passed
-- Node.js `22.22.3` 下 `npm run build`：通过
+- Node.js `24.15.0` 下 `node --test tests/*.test.js`：511 passed
+- Node.js `24.15.0` 下 `npm run build`：通过
 - `cargo fmt --all -- --check`：通过
 - `cargo check --locked`：通过
 - `cargo clippy --locked --all-targets -- -D warnings`：通过
-- `cargo test --locked`：348 passed
+- `cargo test --locked`：351 passed
 - Hermes Windows 隔离安装 smoke：使用 `uv 0.11.14 --no-cache` 完整安装 72 个依赖，`hermes version` 返回 `v0.18.2 (2026.7.7.2)`
 
 ## [0.18.5] - 2026-06-15

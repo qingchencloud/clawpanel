@@ -967,7 +967,7 @@ async function doUpgradeWithModal(source, page, version = null, method = 'auto')
       // 后台任务失败事件
       unlistenError = await listen('upgrade-error', (e) => {
         cleanup()
-        const errStr = String(e.payload || t('common.error'))
+        const errStr = String(e.payload || t('common.errorLabel'))
         modal.appendLog(errStr)
         const fullLog = modal.getLogText() + '\n' + errStr
         const diagnosis = diagnoseInstallError(fullLog)

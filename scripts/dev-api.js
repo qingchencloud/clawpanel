@@ -171,6 +171,14 @@ function hermesEnhancedPath() {
   return [...extra, current].filter(Boolean).join(sep)
 }
 
+export function buildHermesRuntimeEnv(baseEnv = process.env, home = hermesHome(), enhancedPath = hermesEnhancedPath()) {
+  return {
+    ...baseEnv,
+    PATH: enhancedPath,
+    HERMES_HOME: home,
+  }
+}
+
 function hermesGatewayPort() {
   const configPath = path.join(hermesHome(), 'config.yaml')
   try {
@@ -213,7 +221,7 @@ function isLoopbackGatewayUrl(url) {
 function runHermesSilent(program, args) {
   try {
     const result = spawnSync(program, args, {
-      env: { ...process.env, PATH: hermesEnhancedPath() },
+      env: buildHermesRuntimeEnv(),
       timeout: 15000,
       windowsHide: true,
       encoding: 'utf8',
@@ -268,8 +276,7 @@ function gitMirrorEnv() {
 
 export function buildHermesInstallEnv(config = {}, baseEnv = process.env) {
   const env = {
-    ...baseEnv,
-    PATH: hermesEnhancedPath(),
+    ...buildHermesRuntimeEnv(baseEnv),
     GIT_TERMINAL_PROMPT: '0',
   }
   const pypiMirror = String(config?.pypiMirror || '').trim()
@@ -14799,7 +14806,18 @@ const handlers = {
     const envKey = pcfg?.apiKeyEnvVars?.[0] || ''
     const urlEnv = pcfg?.baseUrlEnvVar || ''
     const managedKeys = handlers._hermesManagedEnvKeys()
-    const newPairs = [['GATEWAY_ALLOW_ALL_USERS', 'true'], ['API_SERVER_KEY', 'clawpanel-local']]
+    const existingEnv = fs.existsSync(path.join(home, '.env'))
+      ? fs.readFileSync(path.join(home, '.env'), 'utf8')
+      : ''
+    const currentApiServerKey = _envValue(existingEnv, 'API_SERVER_KEY')
+    const apiServerKey = _hermesApiServerKeyIsUsable(currentApiServerKey)
+      ? currentApiServerKey
+      : _generateHermesApiServerKey()
+    const newPairs = [
+      ['GATEWAY_ALLOW_ALL_USERS', 'true'],
+      ['API_SERVER_ENABLED', 'true'],
+      ['API_SERVER_KEY', apiServerKey],
+    ]
     if (envKey && apiKey && apiKey.trim()) {
       newPairs.push([envKey, apiKey.trim()])
       if (providerId === 'custom' && envKey !== 'CUSTOM_API_KEY') newPairs.push(['CUSTOM_API_KEY', apiKey.trim()])
@@ -14814,6 +14832,7 @@ const handlers = {
       envContent = newPairs.map(([k, v]) => `${k}=${v}`).join('\n') + '\n'
     }
     fs.writeFileSync(envPath, envContent)
+    if (providerId === 'custom') repairHermesCustomProviderRoutingAt(home)
     return '配置已保存'
   },
 
@@ -14829,6 +14848,7 @@ const handlers = {
       try { _sanitizeHermesOpenrouterCustomMismatch() } catch (e) {
         console.warn('[hermes guardian] provider/base_url sanitize failed:', e.message || e)
       }
+      ensureHermesApiServerRuntimeEnvAt(hermesHome())
       // 检测是否已运行
       const alive = await _tcpProbe('127.0.0.1', port, 300)
       if (alive) return 'Gateway 已在运行'
@@ -14838,7 +14858,7 @@ const handlers = {
         if (aliveAfterWait) return 'Gateway 已在运行'
         // 启动
         const home = hermesHome()
-        const envVars = { ...process.env, PATH: enhanced }
+        const envVars = buildHermesRuntimeEnv(process.env, home, enhanced)
         const envPath = path.join(home, '.env')
         if (fs.existsSync(envPath)) {
           for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
@@ -16285,6 +16305,7 @@ const handlers = {
       add(provider.baseUrlEnvVar)
     }
     add('GATEWAY_ALLOW_ALL_USERS')
+    add('API_SERVER_ENABLED')
     add('API_SERVER_KEY')
     return out
   },
@@ -17518,10 +17539,111 @@ function _mergeEnvFile(existing, managedKeys, newPairs) {
     if (eq > 0 && managedKeys.includes(t.slice(0, eq).trim())) continue
     result.push(line)
   }
+  while (result.length && result[result.length - 1] === '') result.pop()
+  if (result.length && newPairs.length) result.push('')
   for (const [k, v] of newPairs) result.push(`${k}=${v}`)
   let content = result.join('\n')
   if (!content.endsWith('\n')) content += '\n'
   return content
+}
+
+function _hermesApiServerKeyIsUsable(value) {
+  const cleaned = String(value || '').trim()
+  if (cleaned.length < 16) return false
+  return !new Set([
+    '*', '**', '***', 'changeme', 'your_api_key', 'your_api_key_here',
+    'your-api-key', 'placeholder', 'example', 'dummy', 'null', 'none',
+  ]).has(cleaned.toLowerCase())
+}
+
+function _generateHermesApiServerKey() {
+  return crypto.randomBytes(32).toString('hex')
+}
+
+export function ensureHermesApiServerRuntimeEnvAt(home, keyFactory = _generateHermesApiServerKey) {
+  fs.mkdirSync(home, { recursive: true })
+  const envPath = path.join(home, '.env')
+  const existing = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : ''
+  const currentKey = _envValue(existing, 'API_SERVER_KEY')
+  const apiServerKey = _hermesApiServerKeyIsUsable(currentKey) ? currentKey : keyFactory()
+  if (!_hermesApiServerKeyIsUsable(apiServerKey)) {
+    throw new Error('无法生成有效的 Hermes API_SERVER_KEY')
+  }
+  const merged = _mergeEnvFile(
+    existing,
+    ['API_SERVER_ENABLED', 'API_SERVER_KEY'],
+    [['API_SERVER_ENABLED', 'true'], ['API_SERVER_KEY', apiServerKey]],
+  )
+  const changed = merged !== existing
+  if (changed) fs.writeFileSync(envPath, merged)
+  return { changed, apiServerKey }
+}
+
+function _hermesCustomProviderRouting(raw, envRaw) {
+  const doc = YAML.parseDocument(raw)
+  if (doc.errors.length) throw new Error(`config.yaml YAML 格式错误: ${doc.errors[0].message}`)
+  const config = doc.toJS() || {}
+  const model = config.model && typeof config.model === 'object' ? config.model : null
+  if (!model) throw new Error('Hermes config.yaml 缺少 model 配置')
+  const provider = String(model.provider || '').trim().toLowerCase()
+  if (!['custom', 'openrouter', 'custom:clawpanel'].includes(provider)) {
+    return { changed: false, content: raw }
+  }
+  const configuredBaseUrl = String(model.base_url || '').trim()
+  if (provider === 'openrouter' && !configuredBaseUrl) {
+    return { changed: false, content: raw }
+  }
+  const baseUrl = String(
+    configuredBaseUrl || _envValue(envRaw, 'CUSTOM_BASE_URL') || _envValue(envRaw, 'OPENAI_BASE_URL') || '',
+  ).trim().replace(/\/+$/, '')
+  const normalized = _normalizeProviderUrl(baseUrl)
+  if (!baseUrl
+    || normalized === _normalizeProviderUrl('https://openrouter.ai/api/v1')
+    || normalized === _normalizeProviderUrl('https://chatgpt.com/backend-api/codex')) {
+    return { changed: false, content: raw }
+  }
+  const keyEnv = _envHasValue(envRaw, 'CUSTOM_API_KEY')
+    ? 'CUSTOM_API_KEY'
+    : _envHasValue(envRaw, 'OPENAI_API_KEY') ? 'OPENAI_API_KEY' : 'CUSTOM_API_KEY'
+  const desired = {
+    provider: 'custom:clawpanel',
+    baseUrl,
+    name: 'ClawPanel Custom',
+    keyEnv,
+    defaultModel: String(model.default || model.model || '').trim(),
+    apiMode: 'chat_completions',
+  }
+  const current = config.providers?.clawpanel || {}
+  const alreadyCompatible = model.provider === desired.provider
+    && model.base_url === desired.baseUrl
+    && current.name === desired.name
+    && current.base_url === desired.baseUrl
+    && current.key_env === desired.keyEnv
+    && current.default_model === desired.defaultModel
+    && current.api_mode === desired.apiMode
+  if (alreadyCompatible) return { changed: false, content: raw }
+
+  doc.setIn(['model', 'provider'], desired.provider)
+  doc.setIn(['model', 'base_url'], desired.baseUrl)
+  doc.setIn(['providers', 'clawpanel', 'name'], desired.name)
+  doc.setIn(['providers', 'clawpanel', 'base_url'], desired.baseUrl)
+  doc.setIn(['providers', 'clawpanel', 'key_env'], desired.keyEnv)
+  if (desired.defaultModel) doc.setIn(['providers', 'clawpanel', 'default_model'], desired.defaultModel)
+  doc.setIn(['providers', 'clawpanel', 'api_mode'], desired.apiMode)
+  return { changed: true, content: String(doc) }
+}
+
+export function repairHermesCustomProviderRoutingAt(home) {
+  const configPath = path.join(home, 'config.yaml')
+  if (!fs.existsSync(configPath)) return { changed: false }
+  const envPath = path.join(home, '.env')
+  const raw = fs.readFileSync(configPath, 'utf8')
+  const envRaw = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : ''
+  const result = _hermesCustomProviderRouting(raw, envRaw)
+  if (!result.changed) return { changed: false }
+  fs.copyFileSync(configPath, `${configPath}.bak`)
+  fs.writeFileSync(configPath, result.content)
+  return { changed: true }
 }
 
 function _normalizeProviderUrl(raw) {
@@ -17601,8 +17723,12 @@ function _sanitizeHermesOpenrouterCustomMismatch() {
   const expected = _normalizeProviderUrl('https://openrouter.ai/api/v1')
   const usesCustomEndpoint = base && base !== expected
   const aliasChanged = (!provider || provider === 'custom' || usesCustomEndpoint) ? _ensureCustomOpenAIKeyAlias() : false
-  if (!usesCustomEndpoint) return aliasChanged
-  if (provider === 'custom') return aliasChanged
+  if (!usesCustomEndpoint) {
+    return aliasChanged || repairHermesCustomProviderRoutingAt(home).changed
+  }
+  if (provider === 'custom') {
+    return aliasChanged || repairHermesCustomProviderRoutingAt(home).changed
+  }
   const out = []
   inModel = false
   let providerWritten = false
@@ -17635,6 +17761,7 @@ function _sanitizeHermesOpenrouterCustomMismatch() {
   let fixed = out.join('\n')
   if (!fixed.endsWith('\n')) fixed += '\n'
   fs.writeFileSync(configPath, fixed)
+  repairHermesCustomProviderRoutingAt(home)
   return true
 }
 
