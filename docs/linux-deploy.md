@@ -319,19 +319,38 @@ sudo firewall-cmd --reload
 
 ### 更新 ClawPanel
 
+推荐直接重新运行部署脚本。必须与原安装权限保持一致：
+
+```bash
+# 系统级安装（/opt/clawpanel）
+curl -fsSL https://raw.githubusercontent.com/qingchencloud/clawpanel/main/scripts/linux-deploy.sh | sudo bash
+
+# 普通用户安装（~/.local/share/clawpanel）
+curl -fsSL https://raw.githubusercontent.com/qingchencloud/clawpanel/main/scripts/linux-deploy.sh | bash
+```
+
+脚本会自动读取 systemd 服务的 `WorkingDirectory`，更新实际运行的目录，并在构建后重启对应服务。拉取失败、存在未提交修改或权限模式不匹配时，脚本会停止并显示具体原因。
+
+手动升级：
+
 ```bash
 cd /opt/clawpanel        # root 部署路径
 # 或 ~/.local/share/clawpanel  # 普通用户路径
 
-git pull origin main
+git status --short       # 有输出时先处理本地修改
+git pull --ff-only origin main
 npm install --registry https://registry.npmmirror.com
+npm run build
+node -p "require('./package.json').version"  # 核对实际源码版本
 sudo systemctl restart clawpanel  # 或 pm2 restart clawpanel
 ```
+
+普通用户 systemd 服务使用 `systemctl --user restart clawpanel`。升级后浏览器仍显示旧页面时，使用 `Ctrl+F5` 强制刷新。
 
 > 国内拉不到 GitHub？可切换到 AtomGit 镜像：
 > ```bash
 > git remote set-url origin https://atomgit.com/qingchencloud/clawpanel.git
-> git pull origin main
+> git pull --ff-only origin main
 > ```
 
 ### 更新 OpenClaw

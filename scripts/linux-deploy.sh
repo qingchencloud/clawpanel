@@ -10,6 +10,7 @@ echo ""
 PANEL_PORT=1420
 REPO_URL="https://github.com/qingchencloud/clawpanel.git"
 REPO_URL_GITEE="https://gitee.com/QtCodeCreators/clawpanel.git"
+DEPLOY_SCRIPT_URL="https://raw.githubusercontent.com/qingchencloud/clawpanel/main/scripts/linux-deploy.sh"
 NPM_REGISTRY="https://registry.npmmirror.com"
 PANEL_NODE_MIN_VERSION="18.0.0"
 OPENCLAW_RECOMMENDED_VERSION="2026.7.1-zh.2"
@@ -25,13 +26,60 @@ if [ "$(id -u)" = "0" ]; then
     IS_ROOT=true
     INSTALL_DIR="/opt/clawpanel"
     SYSTEMD_DIR="/etc/systemd/system"
-    echo "🔑 以 root 身份运行，安装到 $INSTALL_DIR"
+    SERVICE_SCOPE="system"
 else
     IS_ROOT=false
     INSTALL_DIR="$HOME/.local/share/clawpanel"
     SYSTEMD_DIR="$HOME/.config/systemd/user"
-    echo "👤 以普通用户身份运行，安装到 $INSTALL_DIR"
+    SERVICE_SCOPE="user"
 fi
+
+# 优先沿用已有 systemd 服务的工作目录，避免用不同权限重复安装两套面板
+select_install_context() {
+    local system_install_dir=""
+    local user_install_dir=""
+
+    if command -v systemctl &> /dev/null; then
+        system_install_dir=$(systemctl show clawpanel --property=WorkingDirectory --value 2>/dev/null || true)
+        if [ "$IS_ROOT" = false ]; then
+            user_install_dir=$(systemctl --user show clawpanel --property=WorkingDirectory --value 2>/dev/null || true)
+        fi
+    fi
+
+    if [ -z "$system_install_dir" ] && [ -f "/etc/systemd/system/clawpanel.service" ]; then
+        system_install_dir=$(sed -n 's/^WorkingDirectory=//p' /etc/systemd/system/clawpanel.service | head -1)
+    fi
+    if [ "$IS_ROOT" = false ] && [ -z "$user_install_dir" ] && [ -f "$HOME/.config/systemd/user/clawpanel.service" ]; then
+        user_install_dir=$(sed -n 's/^WorkingDirectory=//p' "$HOME/.config/systemd/user/clawpanel.service" | head -1)
+    fi
+
+    if [ "$IS_ROOT" = false ] && [ -n "$user_install_dir" ] && [ -f "$user_install_dir/package.json" ]; then
+        INSTALL_DIR="$user_install_dir"
+        SYSTEMD_DIR="$HOME/.config/systemd/user"
+        SERVICE_SCOPE="user"
+    elif [ -n "$system_install_dir" ] && [ -f "$system_install_dir/package.json" ]; then
+        if [ "$IS_ROOT" = false ]; then
+            echo "❌ 检测到系统级 ClawPanel 安装: $system_install_dir"
+            echo "   请使用 root 权限升级，避免在用户目录重复安装："
+            echo "   curl -fsSL $DEPLOY_SCRIPT_URL | sudo bash"
+            exit 1
+        fi
+        INSTALL_DIR="$system_install_dir"
+        SYSTEMD_DIR="/etc/systemd/system"
+        SERVICE_SCOPE="system"
+    elif [ "$IS_ROOT" = false ] && [ -f "/opt/clawpanel/package.json" ]; then
+        echo "❌ 检测到系统级 ClawPanel 安装: /opt/clawpanel"
+        echo "   请使用 root 权限升级，避免在用户目录重复安装："
+        echo "   curl -fsSL $DEPLOY_SCRIPT_URL | sudo bash"
+        exit 1
+    fi
+
+    if [ "$SERVICE_SCOPE" = "system" ]; then
+        echo "🔑 使用系统级安装目录: $INSTALL_DIR"
+    else
+        echo "👤 使用用户级安装目录: $INSTALL_DIR"
+    fi
+}
 
 # 带权限执行（安装系统包时需要）
 run_pkg_cmd() {
@@ -313,7 +361,22 @@ install_clawpanel() {
     if [ -d "$INSTALL_DIR" ] && [ -f "$INSTALL_DIR/package.json" ]; then
         echo "📦 ClawPanel 已存在，更新中..."
         cd "$INSTALL_DIR"
-        git pull origin main 2>/dev/null || true
+        if [ ! -d ".git" ]; then
+            echo "❌ ClawPanel 源码更新失败：$INSTALL_DIR 不是 Git 仓库"
+            echo "   请保留 ~/.openclaw 数据后重新执行安装脚本"
+            exit 1
+        fi
+        if ! git diff --quiet || ! git diff --cached --quiet; then
+            echo "❌ ClawPanel 源码更新失败：检测到未提交的本地修改"
+            echo "   请先执行 git status 并处理这些修改，脚本不会自动覆盖"
+            git status --short
+            exit 1
+        fi
+        if ! git pull --ff-only origin main; then
+            echo "❌ ClawPanel 源码更新失败，请检查上方 Git 错误、网络和远程仓库地址"
+            echo "   当前远程: $(git remote get-url origin 2>/dev/null || echo '未知')"
+            exit 1
+        fi
         # 清理可能损坏的 node_modules（上次 npm install 失败残留）
         if [ -d "node_modules" ] && [ ! -f "node_modules/.package-lock.json" ]; then
             echo "⚠️  检测到不完整的 node_modules，清理后重新安装..."
@@ -342,7 +405,9 @@ install_clawpanel() {
     echo "📦 构建生产版本..."
     cd "$INSTALL_DIR"
     npx vite build
+    PANEL_VERSION=$(node -p "require('./package.json').version")
     echo "✅ ClawPanel 安装完成: $INSTALL_DIR"
+    echo "✅ ClawPanel 版本: $PANEL_VERSION"
     echo "✅ 启动命令: npm run serve"
 }
 
@@ -357,7 +422,7 @@ setup_systemd() {
     echo "🔧 创建 systemd 服务..."
     mkdir -p "$SYSTEMD_DIR"
 
-    if [ "$IS_ROOT" = true ]; then
+    if [ "$SERVICE_SCOPE" = "system" ]; then
         cat > "$SYSTEMD_DIR/clawpanel.service" << EOF
 [Unit]
 Description=ClawPanel Web - OpenClaw Management Panel
@@ -379,7 +444,7 @@ WantedBy=multi-user.target
 EOF
         systemctl daemon-reload
         systemctl enable clawpanel
-        systemctl start clawpanel
+        systemctl restart clawpanel
     else
         cat > "$SYSTEMD_DIR/clawpanel.service" << EOF
 [Unit]
@@ -401,11 +466,11 @@ WantedBy=default.target
 EOF
         systemctl --user daemon-reload
         systemctl --user enable clawpanel
-        systemctl --user start clawpanel
+        systemctl --user restart clawpanel
         # 允许用户服务在未登录时继续运行
         loginctl enable-linger "$(whoami)" 2>/dev/null || true
     fi
-    echo "✅ systemd 服务已创建并启动"
+    echo "✅ systemd 服务已更新并重启"
 }
 
 # 获取本机 IP
@@ -443,6 +508,7 @@ EOF
 
 # 主流程
 main() {
+    select_install_context
     detect_os
     echo ""
     install_git
@@ -454,7 +520,7 @@ main() {
 
     local ip=$(get_local_ip)
 
-    if [ "$IS_ROOT" = true ]; then
+    if [ "$SERVICE_SCOPE" = "system" ]; then
         local ctl_cmd="systemctl"
     else
         local ctl_cmd="systemctl --user"
@@ -477,7 +543,7 @@ main() {
     echo "  常用命令："
     echo "    $ctl_cmd status clawpanel    # 查看状态"
     echo "    $ctl_cmd restart clawpanel   # 重启面板"
-    if [ "$IS_ROOT" = true ]; then
+    if [ "$SERVICE_SCOPE" = "system" ]; then
         echo "    journalctl -u clawpanel -f    # 查看日志"
     else
         echo "    journalctl --user -u clawpanel -f    # 查看日志"
