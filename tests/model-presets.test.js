@@ -50,7 +50,7 @@ test('MiniMax provider preset uses correct API base URL', () => {
 
 test('MiniMax provider preset has site and description', () => {
   const minimax = PROVIDER_PRESETS.find(p => p.key === 'minimax')
-  assert.ok(minimax.site, 'MiniMax should have a site URL')
+  assert.equal(minimax.site, 'https://platform.minimax.io/docs/api-reference/api-overview')
   assert.ok(minimax.desc, 'MiniMax should have a description')
 })
 
@@ -99,17 +99,15 @@ test('MiniMax model presets have required fields', () => {
   }
 })
 
-test('MiniMax M2.7 models have 1M context window', () => {
+test('MiniMax models use current context windows and metadata', () => {
   const m27 = MODEL_PRESETS.minimax.find(m => m.id === 'MiniMax-M2.7')
-  assert.equal(m27.contextWindow, 1000000)
-  const m27hs = MODEL_PRESETS.minimax.find(m => m.id === 'MiniMax-M2.7-highspeed')
-  assert.equal(m27hs.contextWindow, 1000000)
-})
-
-test('MiniMax M3 has 524K context window', () => {
+  assert.equal(m27.contextWindow, 204800)
+  assert.deepEqual(m27.input, ['text'])
+  assert.deepEqual(m27.cost, { input: 0.3, output: 1.2, cacheRead: 0.06, cacheWrite: 0.375 })
   const m3 = MODEL_PRESETS.minimax.find(m => m.id === 'MiniMax-M3')
-  assert.ok(m3, 'should include MiniMax-M3')
-  assert.equal(m3.contextWindow, 524288)
+  assert.equal(m3.contextWindow, 1000000)
+  assert.deepEqual(m3.input, ['text', 'image', 'video'])
+  assert.deepEqual(m3.cost, { input: 0.6, output: 2.4, cacheRead: 0.12 })
 })
 
 test('all model preset groups have valid structure', () => {
