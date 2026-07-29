@@ -44,9 +44,15 @@ export function modelApiTypeOptions(value) {
   return [{ value: normalized, label: `${normalized} (OpenClaw)` }, ...API_TYPES]
 }
 
+export function splitModelReference(value) {
+  const [provider, ...modelParts] = String(value || '').split('/')
+  return [provider, modelParts.join('/')]
+}
+
 // 服务商快捷预设
 export const PROVIDER_PRESETS = [
   { key: 'qtcool', label: '晴辰云', badge: '免费测试', baseUrl: 'https://gpt.qt.cool/v1', api: 'openai-completions', site: 'https://gpt.qt.cool/', desc: 'ClawPanel 配套免费签到测试平台，适合体验和功能验证' },
+  { key: 'atlascloud', label: 'Atlas Cloud', baseUrl: 'https://api.atlascloud.ai/v1', api: 'openai-completions', site: 'https://www.atlascloud.ai/', desc: 'OpenAI-compatible model API' },
   { key: 'ciyapi', label: '词元 API', badge: '赞助', sponsored: true, baseUrl: 'https://ciyapi.79tian.com/v1', api: 'openai-completions', site: 'https://ciyapi.79tian.com/', desc: '支持 GPT、Claude 等主流前沿模型；充值 ¥1 到账 $1 平台额度，部分线路按折扣计费' },
   { key: 'shengsuanyun', label: '胜算云', baseUrl: 'https://router.shengsuanyun.com/api/v1', api: 'openai-completions', site: 'https://www.shengsuanyun.com/?from=CH_4BVI0BM2', desc: '国内知名 AI 模型聚合平台，支持多种主流模型' },
   { key: 'siliconflow', label: '硅基流动', baseUrl: 'https://api.siliconflow.cn/v1', api: 'openai-completions', site: 'https://cloud.siliconflow.cn/i/PFrw2an5', desc: '高性价比推理平台，支持 DeepSeek、Qwen 等开源模型' },
@@ -108,6 +114,9 @@ export const SHENGSUANYUN = {
 
 // 常用模型预设（按服务商分组）
 export const MODEL_PRESETS = {
+  atlascloud: [
+    { id: 'deepseek-ai/deepseek-v4-pro', name: 'DeepSeek V4 Pro', reasoning: true },
+  ],
   openai: [
     { id: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000 },
     { id: 'gpt-4o-mini', name: 'GPT-4o Mini', contextWindow: 128000 },
