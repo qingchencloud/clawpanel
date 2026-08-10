@@ -79,11 +79,9 @@ test('MODEL_PRESETS contains MiniMax models', () => {
   assert.ok(MODEL_PRESETS.minimax.length >= 2, 'should have at least 2 MiniMax models')
 })
 
-test('MiniMax model presets include M3 and M2.7 variants', () => {
+test('MiniMax model presets match the supported model list', () => {
   const ids = MODEL_PRESETS.minimax.map(m => m.id)
-  assert.ok(ids.includes('MiniMax-M3'), 'should include MiniMax-M3')
-  assert.ok(ids.includes('MiniMax-M2.7'), 'should include MiniMax-M2.7')
-  assert.ok(ids.includes('MiniMax-M2.7-highspeed'), 'should include MiniMax-M2.7-highspeed')
+  assert.deepEqual(ids, ['MiniMax-M3', 'MiniMax-M2.7'])
 })
 
 test('MiniMax M3 is listed as the new default (first entry)', () => {

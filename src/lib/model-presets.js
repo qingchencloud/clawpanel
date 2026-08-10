@@ -109,7 +109,6 @@ export const MODEL_PRESETS = {
   minimax: [
     { id: 'MiniMax-M3', name: 'MiniMax M3', contextWindow: 1000000, reasoning: true, input: ['text', 'image', 'video'], cost: { input: 0.6, output: 2.4, cacheRead: 0.12 } },
     { id: 'MiniMax-M2.7', name: 'MiniMax M2.7', contextWindow: 204800, reasoning: true, input: ['text'], cost: { input: 0.3, output: 1.2, cacheRead: 0.06, cacheWrite: 0.375 } },
-    { id: 'MiniMax-M2.7-highspeed', name: 'MiniMax M2.7 Highspeed', contextWindow: 1000000 },
   ],
   moonshot: [
     { id: 'kimi-k2.5', name: 'Kimi K2.5', contextWindow: 131072 },
