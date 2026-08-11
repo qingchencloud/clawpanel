@@ -226,7 +226,7 @@ const P_MINIMAX: HermesProvider = HermesProvider {
     api_key_env_vars: &["MINIMAX_API_KEY"],
     transport: TRANSPORT_ANTHROPIC,
     models_probe: PROBE_ANTHROPIC,
-    models: &["MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed"],
+    models: &["MiniMax-M3", "MiniMax-M2.7"],
     is_aggregator: false,
     cli_auth_hint: "",
 };
@@ -240,7 +240,7 @@ const P_MINIMAX_CN: HermesProvider = HermesProvider {
     api_key_env_vars: &["MINIMAX_CN_API_KEY"],
     transport: TRANSPORT_ANTHROPIC,
     models_probe: PROBE_ANTHROPIC,
-    models: &["MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed"],
+    models: &["MiniMax-M3", "MiniMax-M2.7"],
     is_aggregator: false,
     cli_auth_hint: "",
 };
@@ -254,7 +254,7 @@ const P_MINIMAX_OAUTH: HermesProvider = HermesProvider {
     api_key_env_vars: &[],
     transport: TRANSPORT_ANTHROPIC,
     models_probe: PROBE_NONE,
-    models: &["MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed"],
+    models: &["MiniMax-M3", "MiniMax-M2.7"],
     is_aggregator: false,
     cli_auth_hint: "hermes auth login minimax-oauth",
 };
