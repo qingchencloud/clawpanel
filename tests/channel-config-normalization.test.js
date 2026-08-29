@@ -7,6 +7,7 @@ import {
   listPlatformAccounts,
   mergeOpenClawMessagingPlatformConfig,
   resolveMessagingCredentialValueForSave,
+  resolvePlatformConfigEntry,
   normalizeMessagingPlatformForm,
 } from '../scripts/dev-api.js'
 
@@ -1026,6 +1027,15 @@ test('渠道读取会把 SecretRef 密钥显示为安全占位并携带原始对
 
   assert.equal(values.botToken, 'SecretRef(env:default:TELEGRAM_BOT_TOKEN)')
   assert.deepEqual(values.__secretRefs, { botToken: secretRef })
+})
+
+test('未知账号标识不会回落到渠道根配置', () => {
+  const root = {
+    enabled: true,
+    botToken: { source: 'env', provider: 'default', id: 'TELEGRAM_BOT_TOKEN' },
+    accounts: { default: { botToken: 'default-token' } },
+  }
+  assert.equal(resolvePlatformConfigEntry(root, 'telegram', 'work'), null)
 })
 
 test('渠道保存时用户未改动 SecretRef 占位会保留原始密钥引用', () => {

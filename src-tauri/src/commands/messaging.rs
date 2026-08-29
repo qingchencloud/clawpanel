@@ -1426,10 +1426,9 @@ fn resolve_platform_config_entry(
         if let Some(value) = root.get("accounts").and_then(|a| a.get(acct)) {
             return Some(value.clone());
         }
-        if platform_storage_key(platform) == "qqbot" && !qqbot_channel_has_credentials(root) {
-            return None;
-        }
-        return Some(root.clone());
+        // Missing account must not fall back to root: preserve_messaging_credential_refs
+        // would copy the default account's SecretRefs into a new accounts.<id> entry.
+        None
     }
 
     if platform_storage_key(platform) == "qqbot" && !qqbot_channel_has_credentials(root) {
@@ -7590,6 +7589,27 @@ mod tests {
                 .and_then(|v| v.get("botToken"))
                 .cloned(),
             saved.get("botToken").cloned()
+        );
+    }
+
+    #[test]
+    fn resolve_platform_config_entry_missing_account_does_not_fallback_to_root() {
+        let root = json!({
+            "enabled": true,
+            "botToken": {
+                "source": "env",
+                "provider": "default",
+                "id": "TELEGRAM_BOT_TOKEN"
+            },
+            "accounts": {
+                "default": { "botToken": "default-token" }
+            }
+        });
+        let resolved =
+            resolve_platform_config_entry(Some(&root), "telegram", Some("work"));
+        assert!(
+            resolved.is_none(),
+            "unknown account id must not resolve to root credentials"
         );
     }
 
