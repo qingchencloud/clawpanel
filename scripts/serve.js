@@ -16,7 +16,8 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import { homedir } from 'os'
 import net from 'net'
-import { _initApi, _apiMiddleware } from './dev-api.js'
+import { _initApi, _apiMiddleware, _handleDshUpgrade, _handleOpenCodeUpgrade, _isWebSocketAuthorized } from './dev-api.js'
+import { serializeGatewayWebSocketHeaders } from './gateway-ws-proxy.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DIST_DIR = path.resolve(__dirname, '..', 'dist')
@@ -160,16 +161,22 @@ async function main() {
   } catch {}
 
   server.on('upgrade', (req, socket, head) => {
+    if (_handleOpenCodeUpgrade(req, socket, head)) return
+    if (_handleDshUpgrade(req, socket, head)) return
     if (!req.url?.startsWith('/ws')) {
       socket.destroy()
       return
     }
 
+    // WebSocket upgrade 不经过普通 HTTP API 中间件，必须单独校验面板 Session。
+    if (!_isWebSocketAuthorized(req)) {
+      socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')
+      return
+    }
+
     const target = net.createConnection(gatewayPort, '127.0.0.1', () => {
       const reqLine = `${req.method} ${req.url} HTTP/${req.httpVersion}\r\n`
-      const headers = Object.entries(req.headers)
-        .map(([k, v]) => `${k}: ${v}`)
-        .join('\r\n')
+      const headers = serializeGatewayWebSocketHeaders(req.headers, gatewayPort)
       target.write(reqLine + headers + '\r\n\r\n')
       if (head.length) target.write(head)
       socket.pipe(target)

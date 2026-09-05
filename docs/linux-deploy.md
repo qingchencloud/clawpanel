@@ -64,10 +64,12 @@ curl -fsSL https://raw.githubusercontent.com/qingchencloud/clawpanel/main/script
 
 脚本自动完成：
 1. 检测系统、安装 Node.js（如果缺少）
-2. 安装 OpenClaw 汉化版（如果缺少）
+2. 安装 OpenClaw 官方稳定版（如果缺少；可用 `OPENCLAW_SOURCE=chinese` 显式选择汉化版）
 3. 克隆 ClawPanel 仓库、安装依赖
 4. 创建 systemd 服务、开机自启
 5. 启动 ClawPanel Web，输出访问地址
+
+如需离线/压缩包部署，请从 GitHub Release 下载 `web-x.y.z.zip` 完整 Web 服务端包。`frontend-hot-update-x.y.z.zip` 仅包含桌面端热更新前端，不能替代 Web 后端。
 
 部署完成后访问 `http://服务器IP:1420`。
 
@@ -109,7 +111,13 @@ npm -v    # 10.x.x
 ClawPanel 是 OpenClaw 的管理工具，需要先安装 OpenClaw：
 
 ```bash
-npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com
+npm install -g openclaw@2026.8.2 --registry https://registry.npmmirror.com
+```
+
+如需汉化版：
+
+```bash
+npm install -g @qingchencloud/openclaw-zh@2026.7.1-2-zh.1 --registry https://registry.npmmirror.com
 ```
 
 初始化配置（首次）：
@@ -346,6 +354,8 @@ sudo systemctl restart clawpanel  # 或 pm2 restart clawpanel
 ```
 
 普通用户 systemd 服务使用 `systemctl --user restart clawpanel`。升级后浏览器仍显示旧页面时，使用 `Ctrl+F5` 强制刷新。
+
+> **不要只替换 `dist/`**：Web 版的页面、Node API 与 WebSocket 代理必须同步升级。完整 Web 包内含 `scripts/`、`src/lib/`、版本策略和依赖清单；启动时 `/__api/health` 会核对前后端版本。
 
 > 国内拉不到 GitHub？可切换到 AtomGit 镜像：
 > ```bash

@@ -7,6 +7,213 @@
 
 ## [未发布 (Unreleased)]
 
+## [0.21.6] - 2026-09-02
+
+### 兼容性 (Compatibility)
+
+- **官方 OpenClaw 稳定基线升级到 2026.8.2** — 安装向导、Linux 一键部署与 Docker 镜像默认使用官方 `openclaw@2026.8.2`；继续保留 8.1 起的 `agents.entries`、模型策略和 Gateway challenge 时间戳兼容逻辑，并保持对旧版内核的协议范围兼容
+
+### 修复 (Fixes)
+
+- **仪表盘实时刷新 WebSocket 状态** — Gateway 握手完成后立即把“握手中”更新为“已连接”，无需切页或手动刷新
+
+### 测试与验证 (Testing)
+
+- 官方 npm `openclaw@2026.8.2` 隔离运行时通过配置 schema、Agent 注册表、协议 4 Gateway 握手、health/status、消息渠道、路由地图、梦境模式与真实本地模型对话回归
+
+## [0.21.5] - 2026-09-01
+
+### 修复 (Fixes)
+
+- **修复 OpenClaw 2026.8.1 WebSocket 远程 Origin 拒绝** — Web/Ubuntu 代理不再把浏览器公网或局域网 Origin 直接传给本机 Gateway，统一使用受面板 Session 保护的 loopback 上游来源，实时聊天、路由地图、渠道运行态与梦境模式恢复连接
+- **阻止 Web 前后端混装** — `/__api/health` 返回后端版本和 API 契约版本；浏览器检测到只替换 `dist/` 导致版本不一致时停止加载，并明确提示安装完整 Web 包
+
+### 改进 (Improvements)
+
+- **区分完整 Web 包与桌面热更新包** — Release 中 `web-x.y.z.zip` 改为可独立运行的完整 Node Web 服务端包，`frontend-hot-update-x.y.z.zip` 仅保留给桌面端前端热更新，避免用户误装
+
+## [0.21.4] - 2026-09-01
+
+### 修复 (Fixes)
+
+- **兼容 OpenClaw 2026.8.1 Gateway 新握手** — Web、桌面端、实时聊天和聊天诊断统一复用 `connect.challenge.ts` 完成 Ed25519 设备签名，修复官方 8.1 运行正常但 ClawPanel 报“设备签名失败/内核过旧”的问题
+- **继续兼容旧版 Gateway** — 旧版 challenge 未提供时间戳时回退客户端当前时间，并保持 `3..4` 协议协商范围；Token 与 Password 认证按 7.1/8.1 共同签名契约处理
+- **纠正连接错误诊断** — 设备签名、Nonce、Public Key 错误不再误判为协议版本过旧，只有明确的协议协商错误才提示升级内核
+
+### 改进 (Improvements)
+
+- **稳定版默认使用官方原版** — 安装向导、未知来源升级、Linux 一键部署和 Docker 镜像默认使用官方 `openclaw@2026.8.1`；汉化版 `2026.7.1-2-zh.1` 继续作为明确选项，已有汉化安装不会被强制切换
+- **增加真实 Gateway 握手回归工具** — 新增隔离设备密钥的 smoke 脚本，可分别验证官方/汉化版以及 Token/Password 认证，不读取或输出用户密钥
+
+### 测试与验证 (Testing)
+
+- 官方 `openclaw@2026.8.1` 完成 Token 与 Password 两种真实 Gateway 握手；汉化版 `@qingchencloud/openclaw-zh@2026.7.1-2-zh.1` 完成 Token 握手，三组均协商到协议版本 4
+- Node 全量测试、Rust 单元测试、生产构建、格式检查、编译检查、Clippy 严格门禁和 Linux 部署脚本语法检查通过
+
+## [0.21.3] - 2026-08-31
+
+### 兼容性 (Compatibility)
+
+- **适配 OpenClaw 2026.8.1 Agent 注册表** — Web 与桌面端同时支持旧版 `agents.list[]` 和新版 `agents.entries.{id}`，Agent 列表、增删改、身份、模型、Workspace、Memory 与 Skills 均按当前内核配置形状读写，并为多 Agent 配置维护 `ownership: "explicit"`
+- **清理 8.1 退役配置字段** — 校准、普通保存、Docker 节点同步和已有配置回读会按已安装内核版本移除 `commands.ownerDisplay*` 与 `gateway.controlUi.allowInsecureAuth`；旧汉化内核继续保留原字段，避免两套严格 schema 互相污染
+- **适配 8.1 模型策略语义** — 保留 `agents.defaults.models` 作为模型元数据；仅在用户已经启用显式 `modelPolicy.allow` 时同步白名单，避免把新版默认的 allow-any 配置意外收紧
+- **Web 端补齐 OpenClaw Doctor** — Web/Ubuntu 可直接执行当前绑定 CLI 的诊断与修复；8.1 自动使用非交互迁移参数，Web 改为异步子进程并将迁移超时提升至 120 秒，桌面端同步提升超时
+- **官方稳定版基线更新** — 官方 OpenClaw 推荐版本更新为 `2026.8.1`；汉化版继续保持当前已发布的 `2026.7.1-2-zh.1`，避免向旧内核写入新版配置形状
+
+### 测试与验证 (Testing)
+
+- 官方 npm `openclaw@2026.8.1` 隔离运行时完成旧 `agents.list` → 新 `agents.entries` Doctor 迁移、配置回读、Gateway 启动、HTTP 200、CLI health 与 RPC status 验证；ClawPanel 直接生成的 8.1 keyed 配置通过官方 schema 校验
+- 当前本机汉化版 `2026.7.1-zh.2` 隔离配置继续通过旧 `agents.list` schema 校验
+- `node --test tests/*.test.js`：597 项，596 passed、1 项 POSIX 用例在 Windows 跳过；Rust `cargo test --locked`：363 passed；生产构建、格式检查、编译检查和 Clippy 严格门禁通过
+
+## [0.21.2] - 2026-08-26
+
+### 修复 (Fixes)
+
+- **Gateway 缺失依赖可直接定位** — 启动诊断会识别 `Cannot find package` / `MODULE_NOT_FOUND`，明确显示缺失的 OpenClaw 运行依赖，不再让用户把 npm 安装损坏误判为模型、端口或 API Key 问题
+- **OpenClaw 安装完成后校验运行依赖** — Web 与桌面安装器除版本检查外，还会核对主包声明的全部直接运行依赖；镜像源返回不完整安装时自动切换 npm 官方源重装，避免“安装成功但 Gateway 无法启动”
+
+### 改进 (Improvements)
+
+- **诊断窗口支持一键修复** — 对可修复的运行依赖缺失提供“一键修复 OpenClaw”，保留现有配置、强制重装当前稳定版、完成依赖校验并自动重新启动 Gateway
+- **修复流程保持安装模式** — 自动识别官方版、汉化版以及 npm/standalone 来源，优先沿用当前运行模式和 ClawPanel 绑定的稳定版本
+
+### 测试与验证 (Testing)
+
+- 使用用户实际反馈的 `@openclaw/ai` 缺失日志补充诊断回归；Web 与 Rust 后端均覆盖不完整 npm 依赖树拒绝、完整依赖树通过和镜像失败切换官方源
+- `node --test`：589 项，588 passed、1 项 POSIX 用例在 Windows 跳过；Rust `cargo test --lib`：360 passed；生产构建、格式检查和 Clippy 严格门禁通过
+
+## [0.21.1] - 2026-08-25
+
+### 修复 (Fixes)
+
+- **启动卡顿与重复拉起保护** — 首屏改为按需加载当前语言、合并仪表盘并发刷新，Windows 僵尸 Gateway 扫描移至后台；Web 与桌面端统一串行化 Gateway 启停操作，避免多个入口同时唤起 OpenClaw
+- **Gateway 启动错误可见** — 启动失败、超时和自动修复失败会保留本次新增的 stderr，并在仪表盘、服务页和设置页展示可复制的诊断信息；用户启动失败后守护进程保持停机，避免后台反复重试
+
+### 改进 (Improvements)
+
+- **Hermes 稳定版升级到 0.20.5 / v2026.8.19** — 安装与更新改用官方源码安装器，并固定发布标签、提交 SHA 和安装脚本校验值，避免继续使用新版已经禁止的 `uv tool install git+...` 构建路径
+- **Hermes 生命周期更可控** — Web 与桌面端统一管理源码目录、虚拟环境和安装缓存；更新继续跟随 ClawPanel 选定的稳定版，卸载只清理由面板创建的进程和运行时，默认保留用户配置、会话与数据
+
+### 兼容性 (Compatibility)
+
+- **适配 Hermes 0.20.5 CLI 与 Profile 输出** — 版本检测兼容新版 `hermes --version`，Profile 列表支持显示名、canonical id 和 Distribution 列
+- **模型渠道与 Provider 对齐上游** — 更新内置 Provider 注册表，并补充 Gemini Native、OpenAI API、Fireworks、Tencent TokenHub、xAI OAuth 等新版接入方式
+- **保护新版配置模板** — 模型同步只修改顶层模型路由，不再误改 `stt.local.model` 等嵌套字段；Dashboard 使用外置兼容资源，避免污染受管源码目录
+
+### 测试与验证 (Testing)
+
+- Hermes 0.20.5 隔离环境完成安装、重复更新、版本检测、Profile 增删改查、Dashboard/API、模型同步、Gateway 健康检查、保留数据卸载和完整卸载闭环
+- 安装结果固定到提交 `fcbd1076a93841fa88855acce810e342a5b78101`，源码工作区保持干净；前端、Node 测试及 Rust 质量门禁均纳入回归验证
+
+## [0.21.0] - 2026-08-24
+
+### 新功能 (Features)
+
+- **OpenCode 第四引擎** — 新增 OpenCode 管理入口、独立工作台和受管本地运行时，支持安装、启动、停止、状态检测、在线更新与一键卸载
+- **面板内置 OpenCode Web 工作台** — 左侧可直接在“运行与配置”和“工作台”之间切换，用户无需单独打开 OpenCode 页面即可管理项目、会话、模型和实际编码任务
+- **统一模型渠道同步到 OpenCode** — 模型渠道可同步 Provider 地址、API Key、模型列表、默认模型、上下文窗口和最大输出长度，并与 OpenClaw、Hermes、DeepSeek Harness 和助手共用同一配置入口
+
+### 改进 (Improvements)
+
+- **运行中无感更新** — 检测 npm 最新版本后，先在 staging 目录完成安装和校验，再备份并原子切换运行时；更新前正在运行的服务会自动停止并在成功后恢复
+- **失败自动回滚** — OpenCode 更新安装、切换或重启失败时会恢复旧运行时，避免升级中断后留下不可用状态
+- **Web/headless 安全集成** — OpenCode 仅监听回环地址，ClawPanel 使用短期能力令牌代理 HTTP/WebSocket；兼容 Ubuntu Web 部署和 Tauri 桌面端
+- **Windows 命令兼容** — npm 安装与升级统一经 `cmd.exe` 启动，避免 Windows Node 子进程直接调用 npm 时出现 `EINVAL`
+
+### 安全 (Security)
+
+- **凭据与配置隔离** — OpenCode 凭据独立保存并限制文件权限，代理会剥离 ClawPanel Cookie、Authorization 和来源头，内嵌页面使用受限 sandbox
+- **受管卸载边界** — 卸载会先安全停止由面板启动的 OpenCode 进程，只移除 ClawPanel 专用运行目录，并保留用户配置、凭据与工作区数据
+
+### 测试与验证 (Testing)
+
+- `node --test tests/*.test.js`：572 项，571 passed、1 项 POSIX 用例在 Windows 跳过
+- `npm run build`：通过
+- `cargo fmt --all -- --check`、`cargo check --locked`、`cargo clippy --locked --all-targets -- -D warnings`、`cargo test --locked`：357 passed
+- 本地真实生命周期：OpenCode `1.18.20 → 1.18.21` 运行中更新、自动重启、运行中卸载、配置保留和重新安装全部通过
+- 本地 Web Playwright：桌面端及 390px 移动端管理页/工作台通过，横向溢出与浏览器控制台错误均为 0
+
+## [0.20.1] - 2026-08-24
+
+### 修复 (Fixes)
+
+- **Linux/Web 配置文件权限不再被锁死** — ClawPanel 以 root 运行并原子保存 `openclaw.json` 时，会保留原文件的 UID、GID 和权限，不再把配置替换为 `root:root + 0600`，避免 OpenClaw 原生面板和普通用户进程失去读写权限
+- **桌面端与模型渠道写入保持一致** — Tauri 配置写入及模型渠道 JSON 原子替换同步保留已有 POSIX 文件元数据，新建敏感配置仍默认使用安全的 `0600`
+
+### 兼容性 (Compatibility)
+
+- **OpenClaw 修正版基线对齐** — 推荐稳定版更新为官方 `2026.7.1-2` / 汉化版 `2026.7.1-2-zh.1`，Linux 部署、版本策略和功能目录使用同一稳定基线
+
+### 安全 (Security)
+
+- **nanoid 构建依赖升级** — 锁定到 `3.3.18`，修复自定义生成器在长度为零时可能无限循环导致拒绝服务的问题；`npm audit` 当前为 0 vulnerabilities
+
+### 测试与验证 (Testing)
+
+- `node --test tests/*.test.js`：555 项，554 passed、1 项 POSIX 用例在 Windows 跳过；同一权限用例在 Linux 容器通过
+- `npm run build`：通过
+- `cargo fmt --all -- --check`、`cargo check --locked`、`cargo clippy --locked --all-targets -- -D warnings`、`cargo test --locked`：354 passed
+- Linux Tauri 依赖环境：`cargo check --locked` 及 POSIX 元数据保留单测通过
+
+## [0.20.0] - 2026-08-23
+
+### 新功能 (Features)
+
+- **DeepSeek Harness 第三引擎** — 新增 DeepSeek Harness 管理入口，固定安装已验收的 `@deepseek-ai/dsh 0.1.1-rc.2`，支持本地受管运行时安装、启动、停止、卸载、版本检测和端口配置
+- **独立 Harness 工作台** — 左侧导航拆分为“运行与配置”和“工作台”；管理页专注运行时与 Provider 状态，工作台独立承载完整原生 Web 界面，可直接进行对话、工作区选择、模型切换和会话管理
+- **统一模型渠道同步到 DSH** — 模型渠道可写入 Harness Provider、凭据引用、模型列表、上下文窗口、最大输出长度和默认模型，并通过 Harness RPC 回读确认同步结果
+
+### 改进 (Improvements)
+
+- **Web/headless 无需额外开放 DSH 端口** — Harness 只监听 `127.0.0.1`，ClawPanel 使用短期专用令牌代理 HTTP、WebSocket、插件和静态资源，Ubuntu Web 部署可直接在面板内使用完整工作台
+- **Harness 工作台状态持久化** — 沙箱内的工作区和界面偏好通过受限存储桥接保存，重新加载 iframe 或刷新短期令牌后继续保留
+- **工作台响应式布局** — 桌面端使用接近全屏的独立操作区，移动端工具栏自动换行并保留触控空间；Harness 未启动时提供明确的配置页入口
+
+### 安全 (Security)
+
+- **内嵌代理凭据隔离** — 代理请求会剥离 ClawPanel Cookie、Authorization、转发来源和浏览器来源头；Web iframe 使用不含 `allow-same-origin` 的沙箱，专用令牌不能调用 ClawPanel API 或访问父页面 DOM
+- **受管进程边界** — 安装和卸载限制在 ClawPanel 专用运行目录，停止操作只处理面板启动且身份核对一致的进程，不会终止端口上的其它服务
+
+### 测试与验证 (Testing)
+
+- `node --test tests/*.test.js`：554 passed
+- `npm run build`：通过
+- `cargo fmt --all -- --check`、`cargo check --locked`、`cargo clippy --locked --all-targets -- -D warnings`、`cargo test --locked`：354 passed
+- 本地 Web Playwright：管理页/工作台左侧切换、完整 DSH 页面、HTTP/WebSocket 代理、Provider 同步、LM Studio 上下文窗口覆盖、存储持久化、桌面及 390px 移动布局均通过，浏览器控制台错误为 0
+
+## [0.19.2] - 2026-08-05
+
+### 兼容性 (Compatibility)
+
+- **OpenClaw 新版 Web 配置同步恢复** — Web/headless 保存模型 Provider 后，会同步更新 `openclaw.json` 与每个 Agent 的 `models.json`，连接信息、模型能力、上下文长度和结构化密钥保持一致；运行中的 Gateway 会在回读确认后重启加载新配置
+- **Hermes Agent 新版 Profile 适配** — 同时兼容新版纯名称列表和旧版状态表格，Profile 页面可直接配置 Provider/模型，聊天页可在 Gateway 停止时直接启动
+
+### 改进 (Improvements)
+
+- **LM Studio 上下文长度可编辑** — 模型编辑器新增 `contextTokens` 字段，不再固定为 `50000`；保存后同步到主配置和所有 Agent，并在刷新后正确回显
+- **Linux Web 自定义端口** — 原生部署支持 `CLAWPANEL_PORT` / `PANEL_PORT`，Docker 与 Compose 的监听端口和健康检查会跟随 `PORT` 配置
+- **Hermes Profile 移动端布局** — Profile 操作区支持自动换行，按钮满足移动端触控高度并消除横向溢出
+
+### 修复 (Fixes)
+
+- **Web Gateway 探测返回 HTTP 500** — 移除 ESM 运行时残留的 `require('net')`，端口关闭时稳定返回 `false`，不再污染控制台或阻断模型保存流程
+- **Docker 镜像构建和运行失败** — 复用官方 Node 镜像内置用户，避免 Alpine UID/GID 1000 冲突；补齐 Web API、运行时模块和 `public` 静态资源，生产镜像可完整构建并加载页面资源
+- **Hermes Profile 信息缺失** — 修复新版 `profile list` 输出被旧表格解析器过滤的问题，并保持桌面端与 Web 端解析行为一致
+
+### 安全 (Security)
+
+- **PostCSS 构建依赖升级** — 锁定到 `8.5.25`，修复受控 `sourceMappingURL` 在缺少 `from` 时可能读取任意 `.map` 文件的问题；`npm audit` 当前为 0 vulnerabilities
+- **Rust 网络与序列化依赖升级** — `quinn-proto` 更新到 `0.11.15`，修复乱序流重组可能造成的远程内存耗尽；`serde_with` 更新到 `3.21.0`，修复空序列或 Map 条目序列化 panic
+
+### 测试与验证 (Testing)
+
+- `node --test tests/*.test.js`：537 passed
+- `npm run build`：通过
+- `cargo fmt --all -- --check`、`cargo check --locked`、`cargo clippy --locked --all-targets -- -D warnings`、`cargo test --locked`：通过
+- 本地生产 Web Playwright：OpenClaw 核心路由、LM Studio 配置同步、Hermes Gateway/Profile 和移动端布局全部通过，页面错误、HTTP 500、失败请求和控制台错误均为 0
+- Linux Docker 实测：镜像构建、OpenClaw CLI、LM Studio `50000 → 196608` 写入/Agent 同步/刷新回读、自定义端口及健康检查全部通过
+
 ## [0.19.1] - 2026-07-24
 
 ### 改进 (Improvements)

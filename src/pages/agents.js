@@ -132,7 +132,8 @@ function renderAgents(page, state) {
   }
 
   container.innerHTML = state.agents.map(a => {
-    const isDefault = a.isDefault || a.id === 'main'
+    const isDefault = a.isDefault === true
+    const isProtected = isDefault || a.id === 'main'
     const name = a.identityName ? a.identityName.split(',')[0].trim() : t('agents.noDesc')
     return `
       <div class="agent-card" data-id="${a.id}">
@@ -145,7 +146,7 @@ function renderAgents(page, state) {
             <button class="btn btn-sm btn-primary" data-action="detail" data-id="${a.id}">${t('agents.detail')}</button>
             <button class="btn btn-sm btn-secondary" data-action="backup" data-id="${a.id}">${t('agents.backup')}</button>
             <button class="btn btn-sm btn-secondary" data-action="edit" data-id="${a.id}">${t('agents.edit')}</button>
-            ${!isDefault ? `<button class="btn btn-sm btn-danger" data-action="delete" data-id="${a.id}">${t('agents.delete')}</button>` : ''}
+            ${!isProtected ? `<button class="btn btn-sm btn-danger" data-action="delete" data-id="${a.id}">${t('agents.delete')}</button>` : ''}
           </div>
         </div>
         <div class="agent-card-body">

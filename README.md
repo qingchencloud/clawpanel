@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  内置 AI 助手的 OpenClaw & Hermes Agent 管理面板 — 多引擎 AI 框架管理
+  内置 AI 助手的 OpenClaw、Hermes Agent 与 DeepSeek Harness 管理面板
 </p>
 
 <p align="center">
@@ -37,9 +37,16 @@
   </a>
 </p>
 
-ClawPanel 是支持多 AI Agent 框架的可视化管理面板，目前支持 [OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation) 和 [Hermes Agent](https://github.com/nousresearch/hermes-agent) 双引擎。**内置智能 AI 助手**，帮你一键安装、自动诊断配置、排查问题、修复错误。8 大工具 + 4 种模式 + 交互式问答，从新手到老手都能轻松管理。
+ClawPanel 是支持多 AI Agent 框架的可视化管理面板，目前支持 [OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation)、[Hermes Agent](https://github.com/nousresearch/hermes-agent) 和 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 三引擎。**内置智能 AI 助手**，帮你一键安装、自动诊断配置、排查问题、修复错误。8 大工具 + 4 种模式 + 交互式问答，从新手到老手都能轻松管理。
 
 > 🌐 **官网**: [claw.qt.cool](https://claw.qt.cool/)  |  📦 **下载**: [官网下载中心](https://claw.qt.cool/download)  |  备用: [GitHub Releases](https://github.com/qingchencloud/clawpanel/releases/latest)  |  国内镜像: [AtomGit](https://atomgit.com/qingchencloud/clawpanel)
+
+## 🧪 DeepSeek Harness 第三引擎：面板内完成配置与实际操作
+
+- **受管运行时** — 在“运行与配置”页面安装、启动、停止和卸载固定验收版本，不污染全局 npm 环境。
+- **独立工作台** — 通过左侧“工作台”进入完整 DSH Web 界面，直接对话、选择工作区、切换模型和管理会话。
+- **统一模型渠道** — 将 Provider、API Key、上下文窗口、输出上限和默认模型从 ClawPanel 同步到 DSH，并回读确认结果。
+- **Web/headless 安全内嵌** — DSH 保持回环监听，远程 Web 版通过短期令牌和沙箱代理使用完整界面，无需额外开放公网端口。
 
 ## ✨ Hermes Agent 第二引擎：会话、记忆、人格与工具全景管理
 
@@ -206,7 +213,11 @@ ClawPanel 提供**纯 Web 版部署模式**（零 GUI 依赖），天然兼容 A
 curl -fsSL https://raw.githubusercontent.com/qingchencloud/clawpanel/main/scripts/linux-deploy.sh | bash
 ```
 
+部署脚本的新安装默认使用官方稳定版 OpenClaw；如需汉化版可显式执行
+`curl -fsSL https://raw.githubusercontent.com/qingchencloud/clawpanel/main/scripts/linux-deploy.sh | OPENCLAW_SOURCE=chinese bash`。
 部署完成后访问 `http://服务器IP:1420`，功能与桌面版一致。
+
+也可以从 GitHub Release 下载 `web-x.y.z.zip` 完整 Web 服务端包。升级时必须整体替换前端与 Node 后端并重启服务；`frontend-hot-update-x.y.z.zip` 只供桌面端热更新，不能用于 Web 服务器部署。
 
 📖 详细教程见 [Linux 部署指南](docs/linux-deploy.md)
 
@@ -217,7 +228,7 @@ docker run -d --name clawpanel --restart unless-stopped \
   -p 1420:1420 -v clawpanel-data:/root/.openclaw \
   node:22.22.3-slim \
   sh -c "apt-get update && apt-get install -y git && \
-    npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com && \
+    npm install -g openclaw@2026.8.2 --registry https://registry.npmmirror.com && \
     git clone https://github.com/qingchencloud/clawpanel.git /app && \
     cd /app && npm install && npm run build && npm run serve"
 ```
@@ -279,10 +290,13 @@ sudo systemctl restart clawpanel
 
 普通用户服务将最后一行替换为 `systemctl --user restart clawpanel`。升级后如果浏览器仍显示旧版本，请使用 `Ctrl+F5` 强制刷新。
 
+> **重要**：Web 版不能只覆盖 `dist/`。页面前端、`scripts/dev-api.js` 和 WebSocket 代理必须保持同一版本；新版会在 `/__api/health` 自动核对前后端版本，不一致时会停止加载并提示安装完整 Web 包。
+
 > **升级 OpenClaw**：面板和 OpenClaw 版本需要匹配。可在「服务管理」页面一键升级，或手动执行：
 > ```bash
-> sudo npm install -g @qingchencloud/openclaw-zh@latest --registry https://registry.npmmirror.com
+> sudo npm install -g openclaw@2026.8.2 --registry https://registry.npmmirror.com
 > ```
+> 汉化版仍可显式安装：`sudo npm install -g @qingchencloud/openclaw-zh@2026.7.1-2-zh.1 --registry https://registry.npmmirror.com`。
 
 ### Docker 升级
 
@@ -431,11 +445,12 @@ docker rmi $(docker images --filter "reference=*clawpanel*" -q) 2>/dev/null
 </p>
 
 - **🤖 AI 助手（全新·重磅）** — 内置独立 AI 助手，4 种操作模式 + 8 大工具 + 交互式问答，详见下方 [AI 助手亮点](#-ai-助手亮点)
-- **🧩 多引擎架构** — 同时支持 OpenClaw 和 Hermes Agent 双引擎，自由切换，各自独立管理
+- **🧩 多引擎架构** — 同时支持 OpenClaw、Hermes Agent 和 DeepSeek Harness 三引擎，自由切换，各自独立管理
+- **🧪 DeepSeek Harness 工作台** — 面板内完成受管安装、模型渠道同步和完整 DSH Web 操作，无需另开页面或额外开放端口
 - **🤖 Hermes Agent 对话** — 内置 Hermes Agent 聊天界面，支持工具调用可视化、文件系统访问开关、SSE 流式输出
 - **🖼️ 图片识别** — 粘贴截图或拖拽图片，AI 自动识别分析，支持多模态图文混排对话
 - **仪表盘** — 系统概览，服务状态实时监控，快捷操作
-- **服务管理** — OpenClaw / Hermes Gateway 启停控制、版本检测与一键升级、配置备份与还原
+- **服务管理** — OpenClaw / Hermes Gateway 与 DeepSeek Harness 受管运行时启停控制、版本检测、配置备份与还原
 - **模型配置** — 多服务商管理、模型增删改查、批量连通性测试、延迟检测、拖拽排序、自动保存+撤销
 - **网关配置** — 端口、访问权限（本机/局域网）、认证 Token、Tailscale 组网
 - **消息渠道** — 统一管理 Telegram、Discord、飞书、钉钉、QQ 等消息接入，支持同平台多 Agent 绑定
@@ -997,6 +1012,8 @@ Remove-Item -Recurse -Force "$env:USERPROFILE\.openclaw\clawpanel\web-update"
 | 项目 | 说明 |
 |------|------|
 | [OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation) | AI Agent 框架 |
+| [Hermes Agent](https://github.com/nousresearch/hermes-agent) | 多渠道智能体与长期运行框架 |
+| [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) | DeepSeek Agent Harness 与原生 Web 工作台 |
 | [ClawApp](https://github.com/qingchencloud/clawapp) | 跨平台移动聊天客户端 |
 | [cftunnel](https://github.com/qingchencloud/cftunnel) | Cloudflare Tunnel 内网穿透工具 |
 

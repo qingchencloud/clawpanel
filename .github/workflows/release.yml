@@ -250,7 +250,7 @@ jobs:
           compression-level: 0
 
   build-web:
-    name: 构建 Web 热更新包
+    name: 构建 Web 完整包与前端热更新包
     needs: [validate-release, test-release]
     runs-on: ubuntu-latest
     steps:
@@ -269,19 +269,30 @@ jobs:
       - name: 构建前端
         run: npm run build
 
-      - name: 打包 Web 热更新产物
+      - name: 打包前端热更新产物
         shell: bash
         run: |
           VERSION="${{ needs.validate-release.outputs.version }}"
           cd dist
-          zip -r "../web-${VERSION}.zip" .
+          zip -r "../frontend-hot-update-${VERSION}.zip" .
           cd ..
+
+      - name: 打包完整 Web 服务端产物
+        shell: bash
+        run: |
+          VERSION="${{ needs.validate-release.outputs.version }}"
+          node scripts/prepare-web-bundle.mjs --output .tmp/web-bundle
+          cd .tmp/web-bundle
+          zip -r "../../web-${VERSION}.zip" .
+          cd ../..
 
       - name: 上传 Web workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: release-web
-          path: web-${{ needs.validate-release.outputs.version }}.zip
+          path: |
+            frontend-hot-update-${{ needs.validate-release.outputs.version }}.zip
+            web-${{ needs.validate-release.outputs.version }}.zip
           if-no-files-found: error
           compression-level: 0
 
@@ -426,6 +437,12 @@ jobs:
             echo "| DEB（Debian/Ubuntu） | [ClawPanel_${VERSION}_amd64.deb](${DL}/ClawPanel_${VERSION}_amd64.deb) |"
             echo "| RPM（Fedora/RHEL） | [ClawPanel-${VERSION}-1.x86_64.rpm](${DL}/ClawPanel-${VERSION}-1.x86_64.rpm) |"
             echo ""
+            echo "### Web / Ubuntu Server"
+            echo "| 类型 | 下载 | 说明 |"
+            echo "|------|------|------|"
+            echo "| 完整 Web 服务端包 | [web-${VERSION}.zip](${DL}/web-${VERSION}.zip) | 包含前端、Node 后端与版本策略；解压后执行 \`npm ci --omit=dev\` 并重启服务 |"
+            echo "| 桌面端前端热更新包 | [frontend-hot-update-${VERSION}.zip](${DL}/frontend-hot-update-${VERSION}.zip) | 仅供 ClawPanel 桌面端热更新，不可作为 Web 服务端安装包 |"
+            echo ""
             echo "---"
             echo ""
             echo "## 🚀 首次使用"
@@ -463,15 +480,15 @@ jobs:
       - name: 写入本次热更新清单
         shell: bash
         run: |
-          WEB_PACKAGE=$(find release-assets -type f -name "web-${VERSION}.zip" -print -quit)
+          WEB_PACKAGE=$(find release-assets -type f -name "frontend-hot-update-${VERSION}.zip" -print -quit)
           if [ -z "$WEB_PACKAGE" ]; then
-            echo "缺少 web-${VERSION}.zip" >&2
+            echo "缺少 frontend-hot-update-${VERSION}.zip" >&2
             exit 1
           fi
 
           HASH=$(sha256sum "$WEB_PACKAGE" | cut -d' ' -f1)
           SIZE=$(stat -c%s "$WEB_PACKAGE")
-          DL_URL="https://github.com/${{ github.repository }}/releases/download/${TAG_NAME}/web-${VERSION}.zip"
+          DL_URL="https://github.com/${{ github.repository }}/releases/download/${TAG_NAME}/frontend-hot-update-${VERSION}.zip"
 
           git fetch origin main
           git checkout -B release-manifest origin/main

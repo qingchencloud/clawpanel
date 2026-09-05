@@ -2,7 +2,7 @@
 use crate::utils::openclaw_command_async;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::fs;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
@@ -91,6 +91,247 @@ const WORKSPACE_TEXT_BASENAMES: &[&str] = &[
 
 const WORKSPACE_PREVIEW_EXTENSIONS: &[&str] = &["md", "markdown", "mdx"];
 const MAX_WORKSPACE_FILE_SIZE: u64 = 1024 * 1024;
+
+fn uses_agent_entries(config: &Value) -> bool {
+    let agents = config.get("agents").and_then(Value::as_object);
+    if agents
+        .and_then(|value| value.get("entries"))
+        .and_then(Value::as_object)
+        .is_some()
+    {
+        return true;
+    }
+    if agents
+        .and_then(|value| value.get("list"))
+        .and_then(Value::as_array)
+        .is_some()
+    {
+        return false;
+    }
+    super::config::installed_openclaw_supports_agent_entries()
+}
+
+fn has_canonical_agent_entries(config: &Value) -> bool {
+    config
+        .get("agents")
+        .and_then(|value| value.get("entries"))
+        .and_then(Value::as_object)
+        .is_some()
+}
+
+/// 将 7.x list 与 8.1 entries 统一投影为带 id 的对象数组。
+pub(crate) fn list_agent_configs(config: &Value) -> Vec<Value> {
+    if let Some(entries) = config
+        .get("agents")
+        .and_then(|value| value.get("entries"))
+        .and_then(Value::as_object)
+    {
+        return entries
+            .iter()
+            .filter_map(|(id, entry)| {
+                let mut projected = entry.as_object()?.clone();
+                projected.insert("id".to_string(), Value::String(id.clone()));
+                Some(Value::Object(projected))
+            })
+            .collect();
+    }
+    config
+        .get("agents")
+        .and_then(|value| value.get("list"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+}
+
+pub(crate) fn find_agent_config(config: &Value, id: &str) -> Option<Value> {
+    list_agent_configs(config).into_iter().find(|entry| {
+        entry
+            .get("id")
+            .and_then(Value::as_str)
+            .map(|candidate| candidate.eq_ignore_ascii_case(id))
+            .unwrap_or(false)
+    })
+}
+
+fn normalize_entries_ownership(agents: &mut Map<String, Value>) {
+    let count = agents
+        .get_mut("entries")
+        .and_then(Value::as_object_mut)
+        .map(|entries| {
+            for entry in entries.values_mut() {
+                if let Some(object) = entry.as_object_mut() {
+                    object.remove("id");
+                    object.remove("default");
+                }
+            }
+            entries.values().filter(|entry| entry.is_object()).count()
+        })
+        .unwrap_or(0);
+    if count > 1 {
+        agents.insert(
+            "ownership".to_string(),
+            Value::String("explicit".to_string()),
+        );
+    } else if count == 0 {
+        agents.remove("ownership");
+    }
+}
+
+fn prune_agent_references(config: &mut Value, id: &str) {
+    if let Some(bindings) = config.get_mut("bindings").and_then(Value::as_array_mut) {
+        bindings.retain(|binding| {
+            !binding
+                .get("agentId")
+                .and_then(Value::as_str)
+                .map(|candidate| candidate.eq_ignore_ascii_case(id))
+                .unwrap_or(false)
+        });
+    }
+
+    let Some(defaults) = config
+        .get_mut("agents")
+        .and_then(Value::as_object_mut)
+        .and_then(|agents| agents.get_mut("defaults"))
+        .and_then(Value::as_object_mut)
+    else {
+        return;
+    };
+    for key in ["heartbeat", "systemAgent"] {
+        let matches = defaults
+            .get(key)
+            .and_then(Value::as_object)
+            .and_then(|owner| owner.get("agentId"))
+            .and_then(Value::as_str)
+            .map(|candidate| candidate.eq_ignore_ascii_case(id))
+            .unwrap_or(false);
+        if !matches {
+            continue;
+        }
+        let remove_owner = defaults
+            .get_mut(key)
+            .and_then(Value::as_object_mut)
+            .map(|owner| {
+                owner.remove("agentId");
+                owner.is_empty()
+            })
+            .unwrap_or(false);
+        if remove_owner {
+            defaults.remove(key);
+        }
+    }
+}
+
+fn ensure_agent_config_mut<'a>(
+    config: &'a mut Value,
+    id: &str,
+    create: bool,
+) -> Result<Option<&'a mut Map<String, Value>>, String> {
+    let use_entries = uses_agent_entries(config);
+    let root = config.as_object_mut().ok_or("配置格式错误")?;
+    let agents_value = root
+        .entry("agents".to_string())
+        .or_insert_with(|| json!({}));
+    let agents = agents_value.as_object_mut().ok_or("agents 格式错误")?;
+
+    if use_entries {
+        if !agents.get("entries").map(Value::is_object).unwrap_or(false) {
+            agents.insert("entries".to_string(), json!({}));
+        }
+        agents.remove("list");
+        let key = agents
+            .get("entries")
+            .and_then(Value::as_object)
+            .and_then(|entries| {
+                entries
+                    .keys()
+                    .find(|candidate| candidate.eq_ignore_ascii_case(id))
+                    .cloned()
+            });
+        let key = match key {
+            Some(key) => key,
+            None if create => {
+                let normalized = id.trim().to_ascii_lowercase();
+                agents
+                    .get_mut("entries")
+                    .and_then(Value::as_object_mut)
+                    .ok_or("agents.entries 格式错误")?
+                    .insert(normalized.clone(), json!({}));
+                normalized
+            }
+            None => return Ok(None),
+        };
+        normalize_entries_ownership(agents);
+        return agents
+            .get_mut("entries")
+            .and_then(Value::as_object_mut)
+            .and_then(|entries| entries.get_mut(&key))
+            .and_then(Value::as_object_mut)
+            .map(Some)
+            .ok_or_else(|| "Agent 格式错误".to_string());
+    }
+
+    if !agents.get("list").map(Value::is_array).unwrap_or(false) {
+        agents.insert("list".to_string(), json!([]));
+    }
+    let list = agents
+        .get_mut("list")
+        .and_then(Value::as_array_mut)
+        .ok_or("agents.list 格式错误")?;
+    let index = list.iter().position(|entry| {
+        entry
+            .get("id")
+            .and_then(Value::as_str)
+            .map(|candidate| candidate.eq_ignore_ascii_case(id))
+            .unwrap_or(false)
+    });
+    let index = match index {
+        Some(index) => index,
+        None if create => {
+            list.push(json!({ "id": id.trim().to_ascii_lowercase() }));
+            list.len() - 1
+        }
+        None => return Ok(None),
+    };
+    list[index]
+        .as_object_mut()
+        .map(Some)
+        .ok_or_else(|| "Agent 格式错误".to_string())
+}
+
+fn remove_agent_config(config: &mut Value, id: &str) -> bool {
+    let removed = {
+        let Some(agents) = config.get_mut("agents").and_then(Value::as_object_mut) else {
+            return false;
+        };
+        if let Some(entries) = agents.get_mut("entries").and_then(Value::as_object_mut) {
+            let key = entries
+                .keys()
+                .find(|candidate| candidate.eq_ignore_ascii_case(id))
+                .cloned();
+            let removed = key.and_then(|key| entries.remove(&key)).is_some();
+            if removed {
+                normalize_entries_ownership(agents);
+            }
+            removed
+        } else if let Some(list) = agents.get_mut("list").and_then(Value::as_array_mut) {
+            let before = list.len();
+            list.retain(|entry| {
+                !entry
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .map(|candidate| candidate.eq_ignore_ascii_case(id))
+                    .unwrap_or(false)
+            });
+            list.len() != before
+        } else {
+            false
+        }
+    };
+    if removed {
+        prune_agent_references(config, id);
+    }
+    removed
+}
 
 /// Workspace 状态信息
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -181,13 +422,7 @@ fn check_workspace_status(path: &std::path::Path) -> WorkspaceCheckResult {
 #[tauri::command]
 pub async fn list_agents() -> Result<Value, String> {
     let config = super::config::load_openclaw_json()?;
-
-    let agents_list = config
-        .get("agents")
-        .and_then(|a| a.get("list"))
-        .and_then(|l| l.as_array())
-        .cloned()
-        .unwrap_or_default();
+    let agents_list = list_agent_configs(&config);
 
     // 补全 main agent 的 workspace（config 中可能没有显式指定）
     let default_workspace = config
@@ -203,11 +438,11 @@ pub async fn list_agents() -> Result<Value, String> {
                 .to_string()
         });
 
-    // main agent 是隐式的（不在 agents.list 中），始终插入
+    // 旧 list 配置保留隐式 main；8.1 entries 是完整显式注册表，不额外伪造 main。
     let has_main = agents_list
         .iter()
         .any(|a| a.get("id").and_then(|v| v.as_str()) == Some("main"));
-    let all_agents = if has_main {
+    let all_agents = if has_main || has_canonical_agent_entries(&config) {
         agents_list
     } else {
         let mut v = vec![serde_json::json!({
@@ -219,6 +454,7 @@ pub async fn list_agents() -> Result<Value, String> {
         v
     };
 
+    let canonical_entries = has_canonical_agent_entries(&config);
     let enriched: Vec<Value> = all_agents
         .into_iter()
         .map(|mut agent| {
@@ -284,6 +520,11 @@ pub async fn list_agents() -> Result<Value, String> {
                     .as_object_mut()
                     .map(|o| o.insert("identityName".to_string(), Value::String(identity_name)));
             }
+            let is_default = !canonical_entries
+                && (agent.get("default").and_then(Value::as_bool) == Some(true) || id == "main");
+            agent
+                .as_object_mut()
+                .map(|object| object.insert("isDefault".to_string(), Value::Bool(is_default)));
             agent
         })
         .collect();
@@ -306,16 +547,12 @@ pub async fn get_agent_detail(id: String) -> Result<Value, String> {
         .cloned()
         .unwrap_or_default();
 
-    let mut agent = config
-        .get("agents")
-        .and_then(|a| a.get("list"))
-        .and_then(|l| l.as_array())
-        .and_then(|list| {
-            list.iter()
-                .find(|a| a.get("id").and_then(|v| v.as_str()) == Some(id.as_str()))
-                .cloned()
-        })
-        .unwrap_or_else(|| json!({ "id": id.clone(), "default": id == "main" }));
+    let canonical_entries = has_canonical_agent_entries(&config);
+    let mut agent = match find_agent_config(&config, &id) {
+        Some(agent) => agent,
+        None if id == "main" && !canonical_entries => json!({ "id": id.clone(), "default": true }),
+        None => return Err(format!("Agent「{id}」不存在")),
+    };
 
     let workspace = resolve_agent_workspace_path(&id, &config)
         .to_string_lossy()
@@ -326,10 +563,11 @@ pub async fn get_agent_detail(id: String) -> Result<Value, String> {
         .filter(|b| b.get("agentId").and_then(|v| v.as_str()).unwrap_or("main") == id)
         .collect();
 
-    let is_default = agent
-        .get("default")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(id == "main");
+    let is_default = !canonical_entries
+        && agent
+            .get("default")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(id == "main");
 
     if let Some(obj) = agent.as_object_mut() {
         obj.insert("workspace".to_string(), Value::String(workspace));
@@ -534,36 +772,8 @@ pub async fn update_agent_config(
     config: Value,
 ) -> Result<Value, String> {
     let mut root = super::config::load_openclaw_json()?;
-    if root.get("agents").is_none() {
-        root.as_object_mut()
-            .ok_or("配置格式错误")?
-            .insert("agents".to_string(), json!({}));
-    }
-    if root["agents"].get("list").is_none() {
-        root["agents"]
-            .as_object_mut()
-            .ok_or("agents 格式错误")?
-            .insert("list".to_string(), json!([]));
-    }
-
-    let list = root["agents"]["list"]
-        .as_array_mut()
-        .ok_or("agents.list 格式错误")?;
-
-    let index = list
-        .iter()
-        .position(|agent| agent.get("id").and_then(|v| v.as_str()) == Some(id.as_str()));
-
-    let idx = match index {
-        Some(idx) => idx,
-        None if id == "main" => {
-            list.insert(0, json!({ "id": "main" }));
-            0
-        }
-        None => return Err(format!("Agent「{id}」不存在")),
-    };
-
-    let agent = list[idx].as_object_mut().ok_or("Agent 格式错误")?;
+    let agent = ensure_agent_config_mut(&mut root, &id, id == "main")?
+        .ok_or_else(|| format!("Agent「{id}」不存在"))?;
 
     if let Some(identity) = config.get("identity").and_then(|v| v.as_object()) {
         let identity_obj = agent
@@ -733,43 +943,18 @@ pub async fn add_agent(
 /// 直接写 openclaw.json 创建 agent（CLI 不可用时的兜底方案）
 fn add_agent_to_config(id: &str, model: &str, workspace: &std::path::Path) -> Result<(), String> {
     let mut config = super::config::load_openclaw_json()?;
-    // 确保 agents.list 存在
-    if config.get("agents").is_none() {
-        config
-            .as_object_mut()
-            .ok_or("配置格式错误")?
-            .insert("agents".to_string(), serde_json::json!({}));
-    }
-    if config["agents"].get("list").is_none() {
-        config["agents"]
-            .as_object_mut()
-            .ok_or("agents 格式错误")?
-            .insert("list".to_string(), serde_json::json!([]));
-    }
-
-    let list = config["agents"]["list"]
-        .as_array_mut()
-        .ok_or("agents.list 格式错误")?;
-
-    // 检查是否已存在同名 agent
-    let exists = list
-        .iter()
-        .any(|a| a.get("id").and_then(|v| v.as_str()) == Some(id));
-    if exists {
+    if find_agent_config(&config, id).is_some() {
         return Err(format!("Agent「{id}」已存在"));
     }
-
-    let mut agent = serde_json::json!({
-        "id": id,
-        "workspace": workspace.to_string_lossy(),
-    });
+    let agent = ensure_agent_config_mut(&mut config, id, true)?
+        .ok_or_else(|| "创建 Agent 配置失败".to_string())?;
+    agent.insert(
+        "workspace".to_string(),
+        Value::String(workspace.to_string_lossy().to_string()),
+    );
     if !model.is_empty() {
-        agent
-            .as_object_mut()
-            .unwrap()
-            .insert("model".to_string(), serde_json::json!({ "primary": model }));
+        agent.insert("model".to_string(), json!({ "primary": model }));
     }
-    list.push(agent);
 
     super::config::save_openclaw_json(&config)?;
 
@@ -783,15 +968,9 @@ pub async fn delete_agent(app: tauri::AppHandle, id: String) -> Result<String, S
         return Err("不能删除默认 Agent".into());
     }
 
-    // 1. 从 openclaw.json 的 agents.list 中移除
+    // 1. 从当前内核的 Agent 注册表中移除
     let mut config = super::config::load_openclaw_json()?;
-    if let Some(list) = config
-        .get_mut("agents")
-        .and_then(|a| a.get_mut("list"))
-        .and_then(|l| l.as_array_mut())
-    {
-        list.retain(|a| a.get("id").and_then(|v| v.as_str()) != Some(&id));
-    }
+    remove_agent_config(&mut config, &id);
     // 同时清理 agents.profiles 中的配置
     if let Some(profiles) = config
         .get_mut("agents")
@@ -825,23 +1004,12 @@ pub async fn update_agent_identity(
     emoji: Option<String>,
 ) -> Result<String, String> {
     let mut config = super::config::load_openclaw_json()?;
-    let agents_list = config
-        .get_mut("agents")
-        .and_then(|a| a.get_mut("list"))
-        .and_then(|l| l.as_array_mut())
-        .ok_or("配置格式错误")?;
-
-    let agent = agents_list
-        .iter_mut()
-        .find(|a| a.get("id").and_then(|v| v.as_str()) == Some(&id))
-        .ok_or(format!("Agent「{id}」不存在"))?;
+    let agent = ensure_agent_config_mut(&mut config, &id, id == "main")?
+        .ok_or_else(|| format!("Agent「{id}」不存在"))?;
 
     // 确保 identity 字段存在且为对象
     if agent.get("identity").and_then(|i| i.as_object()).is_none() {
-        agent
-            .as_object_mut()
-            .ok_or("Agent 格式错误")?
-            .insert("identity".to_string(), serde_json::json!({}));
+        agent.insert("identity".to_string(), serde_json::json!({}));
     }
 
     let identity = agent
@@ -950,22 +1118,11 @@ pub async fn update_agent_model(
     model: String,
 ) -> Result<String, String> {
     let mut config = super::config::load_openclaw_json()?;
-    let agents_list = config
-        .get_mut("agents")
-        .and_then(|a| a.get_mut("list"))
-        .and_then(|l| l.as_array_mut())
-        .ok_or("配置格式错误")?;
-
-    let agent = agents_list
-        .iter_mut()
-        .find(|a| a.get("id").and_then(|v| v.as_str()) == Some(&id))
-        .ok_or(format!("Agent「{id}」不存在"))?;
+    let agent = ensure_agent_config_mut(&mut config, &id, id == "main")?
+        .ok_or_else(|| format!("Agent「{id}」不存在"))?;
 
     let model_obj = serde_json::json!({ "primary": model });
-    agent
-        .as_object_mut()
-        .ok_or("Agent 格式错误")?
-        .insert("model".to_string(), model_obj);
+    agent.insert("model".to_string(), model_obj);
 
     super::config::save_openclaw_json(&config)?;
 
@@ -976,18 +1133,14 @@ pub async fn update_agent_model(
 }
 
 fn resolve_agent_workspace(id: &str, config: &Value) -> String {
-    config
-        .get("agents")
-        .and_then(|a| a.get("list"))
-        .and_then(|l| l.as_array())
-        .and_then(|list| {
-            list.iter()
-                .find(|a| a.get("id").and_then(|v| v.as_str()) == Some(id))
-                .and_then(|a| a.get("workspace"))
-                .and_then(|v| v.as_str())
+    find_agent_config(config, id)
+        .and_then(|agent| {
+            agent
+                .get("workspace")
+                .and_then(Value::as_str)
                 .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(|s| s.to_string())
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
         })
         .unwrap_or_else(|| {
             if id == "main" {
@@ -1123,5 +1276,67 @@ fn bootstrap_file_desc(name: &str) -> &'static str {
         "BOOTSTRAP.md" => "初始化引导",
         "MEMORY.md" => "记忆存储",
         _ => "",
+    }
+}
+
+#[cfg(test)]
+mod agent_roster_compat_tests {
+    use super::*;
+
+    #[test]
+    fn keyed_entries_project_ids_and_keep_explicit_ownership() {
+        let mut config = json!({
+            "agents": {
+                "entries": {
+                    "main": { "name": "Main" }
+                }
+            }
+        });
+
+        let worker = ensure_agent_config_mut(&mut config, "Worker", true)
+            .expect("entries registry should be writable")
+            .expect("worker should be created");
+        worker.insert(
+            "workspace".to_string(),
+            Value::String("/tmp/worker".to_string()),
+        );
+
+        assert_eq!(config["agents"]["ownership"], "explicit");
+        assert!(config["agents"]["entries"]["worker"].get("id").is_none());
+        let projected = list_agent_configs(&config);
+        assert_eq!(projected.len(), 2);
+        assert_eq!(projected[1]["id"], "worker");
+    }
+
+    #[test]
+    fn removing_last_secondary_entry_preserves_explicit_ownership() {
+        let mut config = json!({
+            "agents": {
+                "ownership": "explicit",
+                "defaults": {
+                    "heartbeat": { "agentId": "worker", "every": "30m" },
+                    "systemAgent": { "agentId": "WORKER" }
+                },
+                "entries": {
+                    "main": {},
+                    "worker": {}
+                }
+            },
+            "bindings": [
+                { "agentId": "worker", "match": { "channel": "telegram" } },
+                { "agentId": "main", "match": { "channel": "discord" } }
+            ]
+        });
+
+        assert!(remove_agent_config(&mut config, "WORKER"));
+        assert_eq!(config["agents"]["entries"], json!({ "main": {} }));
+        assert_eq!(config["agents"]["ownership"], "explicit");
+        assert_eq!(config["agents"]["defaults"]["heartbeat"]["every"], "30m");
+        assert!(config["agents"]["defaults"]["heartbeat"]
+            .get("agentId")
+            .is_none());
+        assert!(config["agents"]["defaults"].get("systemAgent").is_none());
+        assert_eq!(config["bindings"].as_array().unwrap().len(), 1);
+        assert_eq!(config["bindings"][0]["agentId"], "main");
     }
 }

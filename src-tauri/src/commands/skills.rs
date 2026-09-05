@@ -463,17 +463,13 @@ fn resolve_agent_skills_dir(agent_id: Option<&str>) -> Option<std::path::PathBuf
         .filter(|s| !s.is_empty() && *s != "main")?;
     // 读取 openclaw.json 获取 agent workspace
     let config = super::config::load_openclaw_json().ok()?;
-    let workspace = config
-        .get("agents")
-        .and_then(|a| a.get("list"))
-        .and_then(|l| l.as_array())
-        .and_then(|list| {
-            list.iter()
-                .find(|a| a.get("id").and_then(|v| v.as_str()) == Some(id))
-                .and_then(|a| a.get("workspace"))
-                .and_then(|v| v.as_str())
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
+    let workspace = super::agent::find_agent_config(&config, id)
+        .and_then(|agent| {
+            agent
+                .get("workspace")
+                .and_then(|value| value.as_str())
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
         })
         .unwrap_or_else(|| {
             // 默认：~/.openclaw/agents/{id}/workspace

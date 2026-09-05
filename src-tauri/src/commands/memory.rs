@@ -71,12 +71,9 @@ async fn agent_workspace(agent_id: &str) -> Result<PathBuf, String> {
     // main agent 使用默认 workspace
     new_map.insert("main".to_string(), default_workspace);
 
-    if let Some(arr) = config
-        .get("agents")
-        .and_then(|a| a.get("list"))
-        .and_then(|l| l.as_array())
     {
-        for a in arr {
+        let agents = super::agent::list_agent_configs(&config);
+        for a in &agents {
             let id = a.get("id").and_then(|v| v.as_str()).unwrap_or("");
             if id.is_empty() {
                 continue;

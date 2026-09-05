@@ -44,6 +44,8 @@ docs/
 !src-tauri/icons/*.ico
 *.icns
 !src-tauri/icons/*.icns
+!public/
+!public/**
 
 # -----------------------------------------------------------------------------
 # 测试文件
@@ -76,6 +78,10 @@ docs/
 scripts/*.js
 scripts/*.sh
 !scripts/serve.js
+!scripts/dev-api.js
+!scripts/media-background-queue.js
+!scripts/lib/
+!scripts/lib/**
 
 # -----------------------------------------------------------------------------
 # CI/CD 配置

@@ -5,6 +5,8 @@
 
 import { t } from './i18n.js'
 
+const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0'
+
 export function isTauriRuntime() {
   return !!window.__TAURI_INTERNALS__ || !!window.__TAURI__ || window.location?.hostname === 'tauri.localhost'
 }
@@ -215,6 +217,7 @@ async function webStreamInvoke(cmd, args, onEvent, options = {}) {
 
 // 后端连接状态
 let _backendOnline = null // null=未检测, true=在线, false=离线
+let _backendHealth = null
 const _backendListeners = []
 
 export function onBackendStatusChange(fn) {
@@ -223,6 +226,7 @@ export function onBackendStatusChange(fn) {
 }
 
 export function isBackendOnline() { return _backendOnline }
+export function getBackendHealth() { return _backendHealth ? { ..._backendHealth } : null }
 
 function _setBackendOnline(v) {
   if (_backendOnline !== v) {
@@ -233,7 +237,11 @@ function _setBackendOnline(v) {
 
 // 后端健康检查
 export async function checkBackendHealth() {
-  if (isTauriRuntime()) { _setBackendOnline(true); return true }
+  if (isTauriRuntime()) {
+    _backendHealth = { ok: true, backendVersion: APP_VERSION, apiContractVersion: 1, compatible: true }
+    _setBackendOnline(true)
+    return true
+  }
   try {
     const resp = await fetch('/__api/health', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
     const ct = (resp.headers.get('content-type') || '').toLowerCase()
@@ -242,10 +250,13 @@ export async function checkBackendHealth() {
       return false
     }
     const data = await resp.json().catch(() => null)
-    const ok = !!data?.ok
+    const compatible = data?.backendVersion === APP_VERSION && data?.apiContractVersion === 1
+    _backendHealth = data && typeof data === 'object' ? { ...data, compatible } : null
+    const ok = !!data?.ok && compatible
     _setBackendOnline(ok)
     return ok
   } catch {
+    _backendHealth = null
     _setBackendOnline(false)
     return false
   }
@@ -299,10 +310,10 @@ export const api = {
   restartGateway: () => { invalidate('get_services_status'); return invoke('restart_gateway').finally(() => invalidate('get_services_status')) },
   doctorCheck: () => invoke('doctor_check'),
   doctorFix: () => invoke('doctor_fix'),
-  listOpenclawVersions: (source = 'chinese') => invoke('list_openclaw_versions', { source }),
+  listOpenclawVersions: (source = 'official') => invoke('list_openclaw_versions', { source }),
   // #Compat-4: 升级/卸载后 CLI 路径/版本/服务状态都可能变，一次性清掉相关前端缓存；
   //           Rust 端已经在命令内部调用 refresh_enhanced_path + invalidate_cli_detection_cache。
-  upgradeOpenclaw: (source = 'chinese', version = null, method = 'auto') => {
+  upgradeOpenclaw: (source = 'official', version = null, method = 'auto') => {
     invalidate('check_installation', 'check_node', 'check_git', 'get_services_status', 'get_status_summary', 'get_version_info')
     return invoke('upgrade_openclaw', { source, version, method })
   },
@@ -326,6 +337,32 @@ export const api = {
     return invoke('write_model_channels', { config })
   },
   revealModelChannelKey: (channelId) => invoke('reveal_model_channel_key', { channelId }),
+
+  // DeepSeek Harness（回环服务；Web 与 Tauri 使用同名后端命令）
+  dshStatus: (port = 3080) => cachedInvoke('dsh_status', { port }, 2000),
+  dshInstall: () => { invalidate('dsh_status'); return invoke('dsh_install') },
+  dshUninstall: () => { invalidate('dsh_status'); return invoke('dsh_uninstall') },
+  dshEmbedSession: (port = 3080, storage = {}) => invoke('dsh_embed_session', { port, storage }),
+  dshStart: (port = 3080) => { invalidate('dsh_status'); return invoke('dsh_start', { port }) },
+  dshStop: (port = 3080) => { invalidate('dsh_status'); return invoke('dsh_stop', { port }) },
+  dshSyncProvider: ({ channelId, setDefault = false, port = 3080 }) => {
+    invalidate('dsh_status')
+    return invoke('dsh_sync_provider', { channelId, setDefault, port })
+  },
+
+  // OpenCode（Web/Tauri 双运行时同名命令）
+  openCodeStatus: (port = 4096) => cachedInvoke('opencode_status', { port }, 2000),
+  openCodeInstall: () => { invalidate('opencode_status'); return invoke('opencode_install') },
+  openCodeCheckUpdate: () => invoke('opencode_check_update'),
+  openCodeUpdate: () => { invalidate('opencode_status'); return invoke('opencode_update') },
+  openCodeUninstall: () => { invalidate('opencode_status'); return invoke('opencode_uninstall') },
+  openCodeEmbedSession: (port = 4096) => invoke('opencode_embed_session', { port }),
+  openCodeStart: (port = 4096) => { invalidate('opencode_status'); return invoke('opencode_start', { port }) },
+  openCodeStop: (port = 4096) => { invalidate('opencode_status'); return invoke('opencode_stop', { port }) },
+  openCodeSyncProvider: ({ channelId, setDefault = false }) => {
+    invalidate('opencode_status')
+    return invoke('opencode_sync_provider', { channelId, setDefault })
+  },
 
   // Agent 管理
   listAgents: () => cachedInvoke('list_agents'),
@@ -438,7 +475,12 @@ export const api = {
   deleteBackup: (name) => { invalidate('list_backups'); return invoke('delete_backup', { name }) },
 
   // 设备密钥 + Gateway 握手
-  createConnectFrame: (nonce, gatewayToken, gatewayPassword) => invoke('create_connect_frame', { nonce, gatewayToken, gatewayPassword: gatewayPassword || null }),
+  createConnectFrame: (nonce, gatewayToken, gatewayPassword, challengeTs = null) => invoke('create_connect_frame', {
+    nonce,
+    gatewayToken,
+    gatewayPassword: gatewayPassword || null,
+    challengeTs,
+  }),
 
   // 设备配对
   autoPairDevice: (origin = window.location.origin) => invoke('auto_pair_device', { origin: origin || null }),

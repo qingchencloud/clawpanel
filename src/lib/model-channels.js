@@ -2,16 +2,20 @@
  * 统一模型渠道 — 共享逻辑
  *
  * 渠道是唯一维护入口（Base URL + API Key + 模型列表），通过显式同步推送到
- * OpenClaw / Hermes / 晴辰助手。同步全部组合现有 API 完成：
+ * OpenClaw / Hermes / DeepSeek Harness / OpenCode / 晴辰助手。同步全部组合现有 API 完成：
  * - OpenClaw：read/write_openclaw_config（后端自带备份，合并保留未知字段）
  * - Hermes：hermes_sync_provider（事务更新 .env + config.yaml）
+ * - DeepSeek Harness：dsh_sync_provider（后端读取渠道密钥并通过回环 RPC 回读核对）
+ * - OpenCode：opencode_sync_provider（后端写独立凭据文件和 opencode.json 并回读核对）
  * - 助手：一次性拷贝到 localStorage（clawpanel-assistant）
  * 本模块自身不直接写任何引擎配置文件。
  */
-import { api } from './tauri-api.js'
+import { api, isTauriRuntime } from './tauri-api.js'
 import { normalizeModelApiType } from './model-presets.js'
 
 export const ASSISTANT_STORAGE_KEY = 'clawpanel-assistant'
+export const DSH_PORT_STORAGE_KEY = 'clawpanel-dsh-port'
+export const OPENCODE_PORT_STORAGE_KEY = 'clawpanel-opencode-port'
 
 /**
  * 渠道 apiType → Hermes 回退 provider id（已按内核注册表逐一核对）：
@@ -32,12 +36,64 @@ export const ASSISTANT_SUPPORTED_API_TYPES = [
   'openai-completions', 'anthropic-messages', 'google-generative-ai', 'ollama',
 ]
 
+const DSH_SUPPORTED_API_TYPES = new Set([
+  'openai-completions', 'ollama', 'openai-responses', 'anthropic-messages',
+])
+
+const OPENCODE_SUPPORTED_API_TYPES = new Set([
+  'openai-completions', 'ollama', 'openai-responses', 'anthropic-messages',
+])
+
 export function hermesSyncSupported(channel) {
   return !channel?.apiKeyRef && Boolean(HERMES_TARGET_MAP[channel?.apiType])
 }
 
 export function assistantSyncSupported(channel) {
   return !channel?.apiKeyRef && ASSISTANT_SUPPORTED_API_TYPES.includes(channel?.apiType)
+}
+
+export function dshSyncSupported(channel) {
+  return !channel?.apiKeyRef && DSH_SUPPORTED_API_TYPES.has(normalizeModelApiType(channel?.apiType))
+}
+
+export function openCodeSyncSupported(channel) {
+  return !channel?.apiKeyRef && OPENCODE_SUPPORTED_API_TYPES.has(normalizeModelApiType(channel?.apiType))
+}
+
+export function getDshPort() {
+  try {
+    const port = Number(localStorage.getItem(DSH_PORT_STORAGE_KEY) || 3080)
+    return Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : 3080
+  } catch {
+    return 3080
+  }
+}
+
+export function setDshPort(port) {
+  const normalized = Number(port)
+  if (!Number.isInteger(normalized) || normalized < 1024 || normalized > 65535) {
+    throw new Error('DeepSeek Harness 端口必须是 1024-65535 的整数')
+  }
+  localStorage.setItem(DSH_PORT_STORAGE_KEY, String(normalized))
+  return normalized
+}
+
+export function getOpenCodePort() {
+  try {
+    const port = Number(localStorage.getItem(OPENCODE_PORT_STORAGE_KEY) || 4096)
+    return Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : 4096
+  } catch {
+    return 4096
+  }
+}
+
+export function setOpenCodePort(port) {
+  const normalized = Number(port)
+  if (!Number.isInteger(normalized) || normalized < 1024 || normalized > 65535) {
+    throw new Error('OpenCode 端口必须是 1024-65535 的整数')
+  }
+  localStorage.setItem(OPENCODE_PORT_STORAGE_KEY, String(normalized))
+  return normalized
 }
 
 /**
@@ -90,6 +146,18 @@ function matchesSubset(expected, actual) {
   return Object.is(expected, actual)
 }
 
+async function applyOpenclawModelConfig() {
+  if (isTauriRuntime()) {
+    await api.reloadGateway()
+    return
+  }
+
+  // Web 版没有 Tauri 的 native config reload；同步 models.json 后，
+  // 运行中的 Gateway 需要完整重启才能重新加载 Agent 模型注册表。
+  const running = await api.probeGatewayPort().catch(() => false)
+  if (running) await api.restartGateway()
+}
+
 /**
  * 同步到 OpenClaw：只 upsert 渠道对应的 models.providers.{key}，
  * 展开旧对象保留未知字段；渠道模型为准但保留目标已有模型的测试元数据。
@@ -135,7 +203,7 @@ export async function syncChannelToOpenclaw(channel, { setDefault = false } = {}
     patch.agents = { defaults: { model: { primary: `${providerKey}/${channel.defaultModel}` } } }
   }
 
-  await api.writeOpenclawConfig(patch)
+  await api.writeOpenclawConfig(patch, { noReload: true })
   const readback = asObject(await api.readOpenclawConfig())
   const savedProvider = asObject(asObject(readback.models).providers)[providerKey]
   const expectedProvider = {
@@ -154,6 +222,7 @@ export async function syncChannelToOpenclaw(channel, { setDefault = false } = {}
       throw new Error(`OpenClaw 默认模型写入后回读核对失败: ${providerKey}/${channel.defaultModel}`)
     }
   }
+  await applyOpenclawModelConfig()
   return { providerKey, modelCount: models.length, verified: true }
 }
 
@@ -195,6 +264,20 @@ export async function syncChannelToHermes(channel, { setDefault = false } = {}) 
     model: channel.defaultModel || '',
     setDefault: Boolean(setDefault && channel.defaultModel),
   })
+}
+
+/** 同步到 DeepSeek Harness：由后端通过回环 RPC 写入并执行三源回读核对。 */
+export async function syncChannelToDsh(channel, { setDefault = false, port = getDshPort() } = {}) {
+  if (!dshSyncSupported(channel)) throw new Error('unsupported-dsh')
+  if (!channel?.apiKeySaved) throw new Error('no-key')
+  return api.dshSyncProvider({ channelId: channel.id, setDefault, port })
+}
+
+/** 同步到 OpenCode：后端写独立凭据文件和 opencode.json，并执行回读核对。 */
+export async function syncChannelToOpenCode(channel, { setDefault = false } = {}) {
+  if (!openCodeSyncSupported(channel)) throw new Error('unsupported-opencode')
+  if (!channel?.apiKeySaved) throw new Error('no-key')
+  return api.openCodeSyncProvider({ channelId: channel.id, setDefault })
 }
 
 /**

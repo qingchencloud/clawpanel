@@ -8,10 +8,15 @@ import {
   channelFingerprint,
   channelProviderKey,
   hermesSyncSupported,
+  dshSyncSupported,
+  openCodeSyncSupported,
   assistantSyncSupported,
+  getDshPort,
   resolveHermesTarget,
   syncChannelToOpenclaw,
   syncChannelToHermes,
+  syncChannelToDsh,
+  syncChannelToOpenCode,
   syncChannelToAssistant,
   importChannelsFromOpenclaw,
 } from '../lib/model-channels.js'
@@ -44,6 +49,8 @@ function renderCompatHint(apiType) {
   const targets = [
     { label: t('modelChannels.targetOpenclaw'), ok: true, hint: '' },
     { label: t('modelChannels.targetHermes'), ok: hermesSyncSupported(fake), hint: t('modelChannels.syncHermesUnsupported') },
+    { label: t('modelChannels.targetDsh'), ok: dshSyncSupported(fake), hint: t('modelChannels.syncDshUnsupported') },
+    { label: t('modelChannels.targetOpenCode'), ok: openCodeSyncSupported(fake), hint: t('modelChannels.syncOpenCodeUnsupported') },
     { label: t('modelChannels.targetAssistant'), ok: assistantSyncSupported(fake), hint: t('modelChannels.syncAssistantUnsupported') },
   ]
   const parts = targets.map(item => item.ok
@@ -208,6 +215,8 @@ function renderChannelCard(state, channel) {
         <div style="font-size:11px;font-weight:600;color:var(--text-tertiary);letter-spacing:0.3px">${t('modelChannels.bindings')}</div>
         ${renderSyncLine(state, channel, 'openclaw', t('modelChannels.targetOpenclaw'), true, '', t('modelChannels.syncOpenclaw'))}
         ${renderSyncLine(state, channel, 'hermes', t('modelChannels.targetHermes'), hermesSyncSupported(channel), t('modelChannels.syncHermesUnsupported'), t('modelChannels.syncHermes'))}
+        ${renderSyncLine(state, channel, 'dsh', t('modelChannels.targetDsh'), dshSyncSupported(channel), t('modelChannels.syncDshUnsupported'), t('modelChannels.syncDsh'))}
+        ${renderSyncLine(state, channel, 'opencode', t('modelChannels.targetOpenCode'), openCodeSyncSupported(channel), t('modelChannels.syncOpenCodeUnsupported'), t('modelChannels.syncOpenCode'))}
         ${renderSyncLine(state, channel, 'assistant', t('modelChannels.targetAssistant'), assistantSyncSupported(channel), t('modelChannels.syncAssistantUnsupported'), t('modelChannels.syncAssistant'))}
       </div>
       <div class="mch-actions">
@@ -226,6 +235,12 @@ function renderEditor(state) {
   ].join('')
   const modelLines = (draft.models || []).map(m => m.id).join('\n')
   const modelIds = (draft.models || []).map(m => m.id)
+  const uniformValue = key => {
+    const values = [...new Set((draft.models || []).map(model => Number(model?.[key]) || 0).filter(Boolean))]
+    return values.length === 1 ? values[0] : ''
+  }
+  const contextWindow = uniformValue('contextWindow') || uniformValue('contextTokens')
+  const maxTokens = uniformValue('maxTokens')
   return `
     <div class="modal-overlay" id="mch-editor-overlay">
       <div class="modal" style="max-width:640px;max-height:86vh;overflow:auto">
@@ -274,6 +289,16 @@ function renderEditor(state) {
               ${modelIds.map(id => `<option value="${attr(id)}" ${id === draft.defaultModel ? 'selected' : ''}>${esc(id)}</option>`).join('')}
             </select>
           </div>
+          <div class="form-group">
+            <label class="form-label" for="mch-context-window">${t('modelChannels.contextWindow')}</label>
+            <input class="form-input" id="mch-context-window" type="number" min="1" step="1" value="${attr(contextWindow)}" placeholder="131072">
+            <div class="form-hint">${t('modelChannels.contextWindowHint')}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="mch-max-tokens">${t('modelChannels.maxTokens')}</label>
+            <input class="form-input" id="mch-max-tokens" type="number" min="1" step="1" value="${attr(maxTokens)}" placeholder="8192">
+            <div class="form-hint">${t('modelChannels.maxTokensHint')}</div>
+          </div>
         </form>
         <div class="modal-actions" style="margin-top:14px">
           <button class="btn btn-secondary" type="button" data-action="editor-cancel">${t('common.cancel')}</button>
@@ -300,6 +325,14 @@ function collectDraft(page, state) {
   draft.models = lines
     .filter(id => (seen.has(id) ? false : seen.add(id)))
     .map(id => ({ ...(previousModels.get(id) || {}), id }))
+  const contextWindow = Number(page.querySelector('#mch-context-window')?.value || 0)
+  const maxTokens = Number(page.querySelector('#mch-max-tokens')?.value || 0)
+  if (Number.isInteger(contextWindow) && contextWindow > 0) {
+    draft.models = draft.models.map(model => ({ ...model, contextWindow }))
+  }
+  if (Number.isInteger(maxTokens) && maxTokens > 0) {
+    draft.models = draft.models.map(model => ({ ...model, maxTokens }))
+  }
   draft.defaultModel = page.querySelector('#mch-default-model')?.value || ''
   return draft
 }
@@ -443,7 +476,7 @@ async function deleteChannel(page, state, channelId) {
   const ok = await showConfirm(t('modelChannels.deleteConfirm', { name: channel.name }))
   if (!ok) return
   state.doc = { ...state.doc, channels: (state.doc.channels || []).filter(c => c.id !== channelId) }
-  for (const target of ['openclaw', 'hermes', 'assistant']) {
+  for (const target of ['openclaw', 'hermes', 'dsh', 'opencode', 'assistant']) {
     if (state.doc.syncState?.[target]) delete state.doc.syncState[target][channelId]
   }
   await persistDoc(state)
@@ -506,6 +539,31 @@ async function syncChannel(page, state, channelId, target) {
       recordSync(state, target, channel, { providerId: result.providerId, verified: result.verified })
       await persistDoc(state)
       toast(t('modelChannels.syncDone', { target: t('modelChannels.targetHermes') }), 'success')
+    } else if (target === 'dsh') {
+      if (!dshSyncSupported(channel)) { toast(t('modelChannels.syncDshUnsupported'), 'warning'); return }
+      const port = getDshPort()
+      const ok = await showConfirm(t('modelChannels.syncDshConfirm', { port, count: (channel.models || []).length }), { variant: 'primary' })
+      if (!ok) return
+      let setDefault = false
+      if (channel.defaultModel) {
+        setDefault = await showConfirm(t('modelChannels.syncSetDefaultAsk', { model: channel.defaultModel }), { variant: 'primary' })
+      }
+      const result = await syncChannelToDsh(channel, { setDefault, port })
+      recordSync(state, target, channel, { providerId: result.providerId, verified: result.verified })
+      await persistDoc(state)
+      toast(t('modelChannels.syncDone', { target: t('modelChannels.targetDsh') }), 'success')
+    } else if (target === 'opencode') {
+      if (!openCodeSyncSupported(channel)) { toast(t('modelChannels.syncOpenCodeUnsupported'), 'warning'); return }
+      const ok = await showConfirm(t('modelChannels.syncOpenCodeConfirm', { count: (channel.models || []).length }), { variant: 'primary' })
+      if (!ok) return
+      let setDefault = false
+      if (channel.defaultModel) {
+        setDefault = await showConfirm(t('modelChannels.syncSetDefaultAsk', { model: channel.defaultModel }), { variant: 'primary' })
+      }
+      const result = await syncChannelToOpenCode(channel, { setDefault })
+      recordSync(state, target, channel, { providerId: result.providerId, verified: result.verified })
+      await persistDoc(state)
+      toast(t('modelChannels.syncDone', { target: t('modelChannels.targetOpenCode') }), 'success')
     } else if (target === 'assistant') {
       const model = channel.defaultModel || channel.models?.[0]?.id || ''
       const ok = await showConfirm(t('modelChannels.syncAssistantConfirm', { model: model || '-' }), { variant: 'primary' })
@@ -519,6 +577,8 @@ async function syncChannel(page, state, channelId, target) {
     }
   } catch (error) {
     if (error?.message === 'unsupported') toast(t('modelChannels.syncHermesUnsupported'), 'warning')
+    else if (error?.message === 'unsupported-dsh') toast(t('modelChannels.syncDshUnsupported'), 'warning')
+    else if (error?.message === 'unsupported-opencode') toast(t('modelChannels.syncOpenCodeUnsupported'), 'warning')
     else if (error?.message === 'no-key') toast(t('modelChannels.noKeyForSync'), 'warning')
     else throw error
   } finally {

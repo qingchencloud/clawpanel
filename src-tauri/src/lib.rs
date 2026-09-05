@@ -4,9 +4,9 @@ mod tray;
 mod utils;
 
 use commands::{
-    agent, assistant, cli_conflict, config, device, diagnose, extensions, hermes, hermes_providers,
-    logs, media, memory, messaging, model_channels, pairing, portable, service, site_api, skills,
-    update,
+    agent, assistant, cli_conflict, config, deepseek_harness, device, diagnose, extensions, hermes,
+    hermes_providers, logs, media, memory, messaging, model_channels, opencode, pairing, portable,
+    service, site_api, skills, update,
 };
 
 pub fn run() {
@@ -206,6 +206,22 @@ pub fn run() {
             model_channels::read_model_channels,
             model_channels::write_model_channels,
             model_channels::reveal_model_channel_key,
+            // DeepSeek Harness 回环服务与模型同步
+            deepseek_harness::dsh_status,
+            deepseek_harness::dsh_install,
+            deepseek_harness::dsh_uninstall,
+            deepseek_harness::dsh_start,
+            deepseek_harness::dsh_stop,
+            deepseek_harness::dsh_sync_provider,
+            // OpenCode 回环服务与模型同步
+            opencode::opencode_status,
+            opencode::opencode_install,
+            opencode::opencode_check_update,
+            opencode::opencode_update,
+            opencode::opencode_uninstall,
+            opencode::opencode_start,
+            opencode::opencode_stop,
+            opencode::opencode_sync_provider,
             // 云端媒体生成
             media::read_media_config,
             media::write_media_config,

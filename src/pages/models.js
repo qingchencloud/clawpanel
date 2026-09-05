@@ -22,6 +22,7 @@ import {
 import { t } from '../lib/i18n.js'
 import { scheduleGatewayRestart, fireRestartNow, cancelPendingRestart, onRestartState } from '../lib/gateway-restart-queue.js'
 import { termHelpHtml, attachTermTooltips } from '../lib/term-tooltip.js'
+import { syncExplicitModelPolicyAllow } from '../lib/openclaw-model-policy.js'
 
 // HTML 转义，防止错误信息中的特殊字符破坏页面或被注入
 function escapeHtml(str) {
@@ -219,7 +220,7 @@ function normalizeDefaultModelMap(config, validModels, primary, fallbacks) {
   }
   const changed = JSON.stringify(current) !== JSON.stringify(next)
   defaults.models = next
-  return changed
+  return syncExplicitModelPolicyAllow(defaults) || changed
 }
 
 function dedupeValidFallbacks(fallbacks, validModels, primary) {
@@ -1618,6 +1619,7 @@ function addModel(page, state, providerKey) {
     { name: 'id', label: t('models.modelId'), placeholder: t('models.modelIdPlaceholder'), hint: t('models.modelIdHint') },
     { name: 'name', label: t('models.displayName'), placeholder: t('models.displayNamePlaceholder'), hint: t('models.displayNameHint') },
     { name: 'contextWindow', label: t('models.contextLength'), placeholder: t('models.contextLengthPlaceholder'), hint: t('models.contextLengthHint') },
+    { name: 'contextTokens', label: t('models.contextTokensLabel'), placeholder: t('models.contextTokensPlaceholder'), hint: t('models.contextTokensHint') },
     { name: 'reasoning', label: t('models.isReasoning'), type: 'checkbox', value: false, hint: t('models.reasoningHint') },
   ]
 
@@ -1738,9 +1740,19 @@ function doAddModel(state, providerKey, vals) {
     reasoning: !!vals.reasoning,
     input: ['text', 'image'],
   }
-  if (vals.contextWindow) model.contextWindow = parseInt(vals.contextWindow) || 0
+  const contextWindow = parseOptionalPositiveInteger(vals.contextWindow)
+  const contextTokens = parseOptionalPositiveInteger(vals.contextTokens)
+  if (contextWindow) model.contextWindow = contextWindow
+  if (contextTokens) model.contextTokens = contextTokens
   state.config.models.providers[providerKey].models.push(model)
   toast(t('models.modelAdded', { name: model.name }), 'success')
+}
+
+function parseOptionalPositiveInteger(value) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return null
+  const parsed = Number(raw)
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null
 }
 
 // 编辑模型
@@ -1752,6 +1764,7 @@ function editModel(page, state, providerKey, idx) {
       { name: 'id', label: t('models.modelId'), value: m.id || '', hint: t('models.modelIdHint') },
       { name: 'name', label: t('models.displayNameLabel'), value: m.name || '', hint: t('models.displayNameHint') },
       { name: 'contextWindow', label: t('models.contextLengthLabel'), value: String(m.contextWindow || ''), hint: t('models.contextLengthHint') },
+      { name: 'contextTokens', label: t('models.contextTokensLabel'), value: String(m.contextTokens || ''), hint: t('models.contextTokensHint') },
       { name: 'reasoning', label: t('models.isReasoningLabel'), type: 'checkbox', value: !!m.reasoning, hint: t('models.reasoningHint') },
     ],
     onConfirm: (vals) => {
@@ -1760,7 +1773,12 @@ function editModel(page, state, providerKey, idx) {
       m.id = vals.id.trim()
       m.name = vals.name?.trim() || vals.id.trim()
       m.reasoning = !!vals.reasoning
-      if (vals.contextWindow) m.contextWindow = parseInt(vals.contextWindow) || 0
+      const contextWindow = parseOptionalPositiveInteger(vals.contextWindow)
+      const contextTokens = parseOptionalPositiveInteger(vals.contextTokens)
+      if (contextWindow) m.contextWindow = contextWindow
+      else delete m.contextWindow
+      if (contextTokens) m.contextTokens = contextTokens
+      else delete m.contextTokens
       renderProviders(page, state)
       renderDefaultBar(page, state)
       updateUndoBtn(page, state)

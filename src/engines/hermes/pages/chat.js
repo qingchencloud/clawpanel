@@ -287,6 +287,7 @@ export function render() {
   let showSlash = false
   let slashFilter = ''
   let gwOnline = false
+  let gatewayStarting = false
   // null = 仍在加载首次 check，先不显示 banner 防首屏闪烁
   let hermesInstalled = null
   let currentModel = ''
@@ -774,7 +775,7 @@ export function render() {
     `
   }
 
-  // 健康状态 banner：未装/未启动 → 在输入区上方显示一条警告 + 「去仪表盘」按钮。
+  // 健康状态 banner：未装/未启动 → 在输入区上方显示警告和可执行操作。
   // 首次 fetch 完成前返回空字符串，避免首屏闪烁。
   function renderHealthBanner() {
     if (hermesInstalled === null) return ''
@@ -792,6 +793,9 @@ export function render() {
         <div class="hm-chat-health-banner is-warn">
           <span class="hm-chat-health-icon" aria-hidden="true">${svgIcon('alert-triangle', { size: 14 })}</span>
           <span class="hm-chat-health-msg">${escHtml(t('engine.chatHealthGatewayDown'))}</span>
+          <button type="button" class="hm-chat-health-action" id="hm-chat-start-gateway" ${gatewayStarting ? 'disabled' : ''}>
+            ${escHtml(gatewayStarting ? t('engine.gatewayStarting') : t('engine.chatHealthStartGateway'))}
+          </button>
           <a class="hm-chat-health-action" href="#/h/dashboard">${escHtml(t('engine.chatHealthGoDashboard'))}</a>
         </div>
       `
@@ -874,6 +878,27 @@ export function render() {
 
   // ----------------------------------------------------------- event binding
 
+  async function startGateway() {
+    if (gatewayStarting) return
+    gatewayStarting = true
+    draw()
+    try {
+      await api.hermesGatewayAction('start')
+      invalidate('check_hermes')
+      const info = await api.checkHermes()
+      if (!info?.gatewayRunning) throw new Error(t('engine.gatewayStartFailed'))
+      hermesInstalled = !!info?.installed
+      gwOnline = true
+      currentModel = info?.model || currentModel
+      toast(t('engine.gatewayRunning', { port: info?.gatewayPort || 8642 }), 'success')
+    } catch (e) {
+      toast(humanizeError(e, t('engine.gatewayStartFailed')), 'error')
+    } finally {
+      gatewayStarting = false
+      draw()
+    }
+  }
+
   function toggleSelected(sid) {
     if (!sid) return
     if (selected.has(sid)) selected.delete(sid)
@@ -882,6 +907,7 @@ export function render() {
   }
 
   function bind() {
+    el.querySelector('#hm-chat-start-gateway')?.addEventListener('click', startGateway)
     // --- Sidebar header ---
     el.querySelector('.hm-chat-new-btn')?.addEventListener('click', () => {
       store.newChat()

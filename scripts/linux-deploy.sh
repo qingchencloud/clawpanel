@@ -7,13 +7,25 @@ echo "  在 Linux 上通过浏览器管理 OpenClaw"
 echo "=========================================="
 echo ""
 
-PANEL_PORT=1420
+# 可通过 CLAWPANEL_PORT 或 PANEL_PORT 为 Web 面板选择未占用端口。
+PANEL_PORT="${CLAWPANEL_PORT:-${PANEL_PORT:-1420}}"
 REPO_URL="https://github.com/qingchencloud/clawpanel.git"
 REPO_URL_GITEE="https://gitee.com/QtCodeCreators/clawpanel.git"
 DEPLOY_SCRIPT_URL="https://raw.githubusercontent.com/qingchencloud/clawpanel/main/scripts/linux-deploy.sh"
 NPM_REGISTRY="https://registry.npmmirror.com"
 PANEL_NODE_MIN_VERSION="18.0.0"
-OPENCLAW_RECOMMENDED_VERSION="2026.7.1-zh.2"
+# 新安装默认官方稳定版；显式 OPENCLAW_SOURCE=chinese 时仍安装汉化稳定版。
+OPENCLAW_SOURCE="${OPENCLAW_SOURCE:-official}"
+OPENCLAW_OFFICIAL_RECOMMENDED_VERSION="2026.8.2"
+OPENCLAW_CHINESE_RECOMMENDED_VERSION="2026.7.1-2-zh.1"
+case "$OPENCLAW_SOURCE" in
+    official) OPENCLAW_RECOMMENDED_VERSION="$OPENCLAW_OFFICIAL_RECOMMENDED_VERSION" ;;
+    chinese) OPENCLAW_RECOMMENDED_VERSION="$OPENCLAW_CHINESE_RECOMMENDED_VERSION" ;;
+    *)
+        echo "❌ OPENCLAW_SOURCE 仅支持 official 或 chinese，当前值: $OPENCLAW_SOURCE"
+        exit 1
+        ;;
+esac
 OPENCLAW_NODE_22_19_FLOOR_VERSION="2026.6.5"
 OPENCLAW_NODE_7_1_FLOOR_VERSION="2026.7.1"
 OPENCLAW_NODE_22_19_REQUIREMENT=">=22.19.0"
@@ -308,8 +320,13 @@ install_openclaw() {
             echo "ℹ️  已将 $(dirname "$oc_path") 加入 PATH"
         fi
     else
-        echo "📦 安装 OpenClaw 汉化版稳定版 ${OPENCLAW_RECOMMENDED_VERSION}..."
-        local openclaw_spec="@qingchencloud/openclaw-zh@${OPENCLAW_RECOMMENDED_VERSION}"
+        local openclaw_spec="openclaw@${OPENCLAW_RECOMMENDED_VERSION}"
+        local source_label="官方稳定版"
+        if [ "$OPENCLAW_SOURCE" = "chinese" ]; then
+            openclaw_spec="@qingchencloud/openclaw-zh@${OPENCLAW_RECOMMENDED_VERSION}"
+            source_label="汉化稳定版"
+        fi
+        echo "📦 安装 OpenClaw ${source_label} ${OPENCLAW_RECOMMENDED_VERSION}..."
         if [ "$IS_ROOT" = true ]; then
             npm install -g "$openclaw_spec" --registry "$NPM_REGISTRY" || \
             npm install -g "$openclaw_spec" --registry https://registry.npmjs.org

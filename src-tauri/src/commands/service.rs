@@ -153,7 +153,7 @@ fn parse_lsof_pid_output(text: &str) -> Option<u32> {
 #[cfg(test)]
 mod gateway_pid_parse_tests {
     use super::{
-        parse_lsof_pid_output, parse_ss_listen_pid_output,
+        parse_lsof_pid_output, parse_ss_listen_pid_output, read_file_excerpt_since,
         should_preserve_plugin_config_on_generic_strip,
     };
 
@@ -178,6 +178,28 @@ LISTEN 0      511        127.0.0.1:18789      0.0.0.0:*    users:((\"node\",pid=
         assert!(!should_preserve_plugin_config_on_generic_strip(
             "legacy-plugin"
         ));
+    }
+
+    #[test]
+    fn reads_only_new_gateway_error_log_content() {
+        let path = std::env::temp_dir().join(format!(
+            "clawpanel-gateway-log-{}-{}.txt",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&path, "old error\nnew error\n").unwrap();
+
+        assert_eq!(read_file_excerpt_since(&path, 10, 8192), "new error");
+        // 旧偏移超过轮转后文件长度时，应读取新文件而不是返回空字符串。
+        assert_eq!(
+            read_file_excerpt_since(&path, 9999, 8192),
+            "old error\nnew error"
+        );
+
+        let _ = std::fs::remove_file(path);
     }
 }
 
@@ -257,11 +279,17 @@ fn ensure_owned_gateway_or_err(pid: Option<u32>) -> Result<(), String> {
 async fn current_gateway_runtime(label: &str) -> (bool, Option<u32>) {
     #[cfg(target_os = "windows")]
     {
-        platform::check_service_status(0, label)
+        let label = label.to_string();
+        tokio::task::spawn_blocking(move || platform::check_service_status(0, &label))
+            .await
+            .unwrap_or((false, None))
     }
     #[cfg(target_os = "macos")]
     {
-        platform::check_service_status(0, label)
+        let label = label.to_string();
+        tokio::task::spawn_blocking(move || platform::check_service_status(0, &label))
+            .await
+            .unwrap_or((false, None))
     }
     #[cfg(target_os = "linux")]
     {
@@ -269,7 +297,11 @@ async fn current_gateway_runtime(label: &str) -> (bool, Option<u32>) {
     }
 }
 
-async fn wait_for_gateway_running(label: &str, timeout: Duration) -> Result<(), String> {
+async fn wait_for_gateway_running(
+    label: &str,
+    timeout: Duration,
+    error_log_offset: u64,
+) -> Result<(), String> {
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
         let (running, pid) = current_gateway_runtime(label).await;
@@ -279,13 +311,14 @@ async fn wait_for_gateway_running(label: &str, timeout: Duration) -> Result<(), 
         }
         tokio::time::sleep(Duration::from_millis(300)).await;
     }
-    Err(format!(
+    let reason = format!(
         "Gateway 启动超时，请查看 {}",
         crate::commands::openclaw_dir()
             .join("logs")
             .join("gateway.err.log")
             .display()
-    ))
+    );
+    Err(append_gateway_error_excerpt(reason, error_log_offset))
 }
 
 async fn wait_for_gateway_stopped(label: &str, timeout: Duration) -> Result<(), String> {
@@ -307,20 +340,54 @@ fn gateway_err_log_path() -> std::path::PathBuf {
         .join("gateway.err.log")
 }
 
-fn read_gateway_error_log_excerpt(max_bytes: usize) -> String {
-    let bytes = match std::fs::read(gateway_err_log_path()) {
-        Ok(content) => content,
+fn gateway_error_log_len() -> u64 {
+    std::fs::metadata(gateway_err_log_path())
+        .map(|meta| meta.len())
+        .unwrap_or(0)
+}
+
+fn read_file_excerpt_since(path: &std::path::Path, offset: u64, max_bytes: usize) -> String {
+    use std::io::{Read as _, Seek as _};
+
+    let mut file = match std::fs::File::open(path) {
+        Ok(file) => file,
         Err(_) => return String::new(),
     };
-    if bytes.is_empty() {
+    let len = match file.metadata() {
+        Ok(meta) => meta.len(),
+        Err(_) => return String::new(),
+    };
+    if len == 0 {
         return String::new();
     }
-    let tail = if bytes.len() > max_bytes {
-        &bytes[bytes.len() - max_bytes..]
+    // 日志被轮转/截断时从新文件开始读，不能沿用旧文件偏移。
+    let safe_offset = if offset <= len { offset } else { 0 };
+    let start = safe_offset.max(len.saturating_sub(max_bytes.max(1) as u64));
+    if start >= len || file.seek(std::io::SeekFrom::Start(start)).is_err() {
+        return String::new();
+    }
+    let mut bytes = Vec::with_capacity((len - start).min(max_bytes as u64) as usize);
+    if file.read_to_end(&mut bytes).is_err() {
+        return String::new();
+    }
+    String::from_utf8_lossy(&bytes).trim().to_string()
+}
+
+fn read_gateway_error_log_excerpt_since(offset: u64, max_bytes: usize) -> String {
+    read_file_excerpt_since(&gateway_err_log_path(), offset, max_bytes)
+}
+
+fn read_gateway_error_log_excerpt(max_bytes: usize) -> String {
+    read_gateway_error_log_excerpt_since(0, max_bytes)
+}
+
+fn append_gateway_error_excerpt(reason: String, offset: u64) -> String {
+    let excerpt = read_gateway_error_log_excerpt_since(offset, 8192);
+    if excerpt.is_empty() {
+        reason
     } else {
-        &bytes[..]
-    };
-    String::from_utf8_lossy(tail).to_string()
+        format!("{reason}\n\n最近一次启动错误：\n{excerpt}")
+    }
 }
 
 fn looks_like_gateway_config_mismatch(reason: &str) -> bool {
@@ -430,8 +497,27 @@ fn try_direct_config_strip() -> Result<bool, String> {
 
 static GUARDIAN_STATE: OnceLock<Arc<Mutex<GuardianRuntimeState>>> = OnceLock::new();
 static GUARDIAN_STARTED: AtomicBool = AtomicBool::new(false);
+static GATEWAY_LIFECYCLE_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 static GATEWAY_CONFIG_AUTO_FIX_STATE: OnceLock<Arc<Mutex<GatewayConfigAutoFixState>>> =
     OnceLock::new();
+
+const GATEWAY_LIFECYCLE_BUSY_ERROR: &str =
+    "Gateway 正在执行启动、停止或重启操作，请等待当前操作完成";
+
+fn gateway_lifecycle_lock() -> &'static tokio::sync::Mutex<()> {
+    GATEWAY_LIFECYCLE_LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
+}
+
+fn try_gateway_lifecycle_lock(
+    action: &str,
+) -> Result<tokio::sync::MutexGuard<'static, ()>, String> {
+    gateway_lifecycle_lock().try_lock().map_err(|_| {
+        guardian_log(&format!(
+            "合并重复的 Gateway {action} 请求：已有生命周期操作正在执行"
+        ));
+        GATEWAY_LIFECYCLE_BUSY_ERROR.to_string()
+    })
+}
 
 fn gateway_config_auto_fix_state() -> &'static Arc<Mutex<GatewayConfigAutoFixState>> {
     GATEWAY_CONFIG_AUTO_FIX_STATE
@@ -600,6 +686,16 @@ pub(crate) fn guardian_mark_manual_start() {
     guardian_log("用户主动启动/恢复 Gateway，后端守护已重置自动重启状态");
 }
 
+fn guardian_mark_manual_start_failure() {
+    let mut state = guardian_state().lock().unwrap();
+    state.last_seen_running = Some(false);
+    state.running_since = None;
+    state.manual_hold = true;
+    state.auto_restart_count = 0;
+    state.last_restart_time = None;
+    guardian_log("用户触发的 Gateway 启动失败，后端守护保持停机，等待用户查看错误后重试");
+}
+
 pub(crate) fn guardian_pause(reason: &str) {
     let mut state = guardian_state().lock().unwrap();
     state.pause_reason = Some(reason.to_string());
@@ -760,6 +856,14 @@ async fn start_service_impl_internal(
     label: &str,
     app: Option<&tauri::AppHandle>,
 ) -> Result<(), String> {
+    let _operation = try_gateway_lifecycle_lock("启动")?;
+    start_service_impl_internal_locked(label, app).await
+}
+
+async fn start_service_impl_internal_locked(
+    label: &str,
+    app: Option<&tauri::AppHandle>,
+) -> Result<(), String> {
     match start_service_impl_internal_once(label).await {
         Ok(()) => Ok(()),
         Err(err) => match try_auto_fix_gateway_config(&err, app).await {
@@ -846,18 +950,28 @@ async fn start_service_impl_internal(
 }
 
 async fn start_service_impl_internal_once(label: &str) -> Result<(), String> {
+    let error_log_offset = gateway_error_log_len();
     #[cfg(target_os = "macos")]
     {
-        platform::start_service_impl(label)?;
+        if let Err(err) = platform::start_service_impl(label) {
+            return Err(append_gateway_error_excerpt(err, error_log_offset));
+        }
     }
     #[cfg(not(target_os = "macos"))]
     {
-        platform::start_service_impl(label).await?;
+        if let Err(err) = platform::start_service_impl(label).await {
+            return Err(append_gateway_error_excerpt(err, error_log_offset));
+        }
     }
-    wait_for_gateway_running(label, Duration::from_secs(15)).await
+    wait_for_gateway_running(label, Duration::from_secs(15), error_log_offset).await
 }
 
 async fn stop_service_impl_internal(label: &str) -> Result<(), String> {
+    let _operation = try_gateway_lifecycle_lock("停止")?;
+    stop_service_impl_internal_locked(label).await
+}
+
+async fn stop_service_impl_internal_locked(label: &str) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         platform::stop_service_impl(label)?;
@@ -873,8 +987,9 @@ async fn restart_service_impl_internal(
     label: &str,
     app: Option<&tauri::AppHandle>,
 ) -> Result<(), String> {
-    stop_service_impl_internal(label).await?;
-    start_service_impl_internal(label, app).await
+    let _operation = try_gateway_lifecycle_lock("重启")?;
+    stop_service_impl_internal_locked(label).await?;
+    start_service_impl_internal_locked(label, app).await
 }
 
 pub fn start_backend_guardian(app: tauri::AppHandle) {
@@ -882,14 +997,14 @@ pub fn start_backend_guardian(app: tauri::AppHandle) {
         return;
     }
 
-    // Windows 重启后清理残留的僵尸 Gateway 进程（防止多进程堆积）
-    #[cfg(target_os = "windows")]
-    {
-        platform::cleanup_zombie_gateway_processes();
-    }
-
     guardian_log("后端守护循环已启动");
     tauri::async_runtime::spawn(async move {
+        // Windows 的僵尸进程清理会执行 netstat、进程查询和最多数秒的健康探测。
+        // 放到后台阻塞线程，避免 ClawPanel 窗口初始化被同步扫描卡住。
+        #[cfg(target_os = "windows")]
+        {
+            let _ = tokio::task::spawn_blocking(platform::cleanup_zombie_gateway_processes).await;
+        }
         loop {
             guardian_tick(&app).await;
             tokio::time::sleep(GUARDIAN_INTERVAL).await;
@@ -979,18 +1094,20 @@ mod platform {
             Ok(a) => a,
             Err(_) => return (false, None),
         };
-        // 两次尝试：第一次 1 秒，失败后短暂等待再用 2 秒重试，避免瞬态超时误判
-        let connected =
-            std::net::TcpStream::connect_timeout(&socket_addr, std::time::Duration::from_secs(1))
+        // 本机端口拒绝通常会立即返回；限制最坏等待约 1 秒，避免拖慢整个面板。
+        let connected = std::net::TcpStream::connect_timeout(
+            &socket_addr,
+            std::time::Duration::from_millis(350),
+        )
+        .is_ok()
+            || {
+                std::thread::sleep(std::time::Duration::from_millis(75));
+                std::net::TcpStream::connect_timeout(
+                    &socket_addr,
+                    std::time::Duration::from_millis(650),
+                )
                 .is_ok()
-                || {
-                    std::thread::sleep(std::time::Duration::from_millis(300));
-                    std::net::TcpStream::connect_timeout(
-                        &socket_addr,
-                        std::time::Duration::from_secs(2),
-                    )
-                    .is_ok()
-                };
+            };
         if connected {
             let pid = get_pid_by_lsof(port);
             (true, pid)
@@ -1627,12 +1744,14 @@ mod platform {
             Ok(a) => a,
             Err(_) => return (false, None),
         };
-        // 两次尝试：第一次 1 秒，失败后短暂等待再用 2 秒重试，避免瞬态超时误判
+        // 本机端口拒绝通常会立即返回；限制最坏等待约 1 秒，避免拖慢整个面板。
         let connected =
-            std::net::TcpStream::connect_timeout(&socket_addr, Duration::from_secs(1)).is_ok() || {
-                std::thread::sleep(Duration::from_millis(300));
-                std::net::TcpStream::connect_timeout(&socket_addr, Duration::from_secs(2)).is_ok()
-            };
+            std::net::TcpStream::connect_timeout(&socket_addr, Duration::from_millis(350)).is_ok()
+                || {
+                    std::thread::sleep(Duration::from_millis(75));
+                    std::net::TcpStream::connect_timeout(&socket_addr, Duration::from_millis(650))
+                        .is_ok()
+                };
         if !connected {
             // 端口不通，先清空已知的僵死 PID
             let mut known = LAST_KNOWN_GATEWAY_PID.lock().unwrap();
@@ -1663,8 +1782,7 @@ mod platform {
             .output();
     }
 
-    #[allow(dead_code)]
-    fn create_gateway_log_files() -> Result<(std::fs::File, std::fs::File), String> {
+    fn create_gateway_log_files() -> Result<(), String> {
         let log_dir = crate::commands::openclaw_dir().join("logs");
         fs::create_dir_all(&log_dir).map_err(|e| format!("创建日志目录失败: {e}"))?;
 
@@ -1686,7 +1804,8 @@ mod platform {
             chrono::Local::now().to_rfc3339()
         );
 
-        Ok((stdout_log, stderr_log))
+        drop(stderr_log);
+        Ok(())
     }
 
     const GATEWAY_WINDOW_TITLE: &str = "OpenClaw Gateway";
@@ -1712,9 +1831,15 @@ mod platform {
     fn write_gateway_terminal_runner(openclaw_dir: &Path, cli: &str) -> Result<PathBuf, String> {
         fs::create_dir_all(openclaw_dir).map_err(|e| format!("创建 OpenClaw 目录失败: {e}"))?;
         let runner_path = openclaw_dir.join("clawpanel-gateway.cmd");
+        let log_dir = openclaw_dir.join("logs");
+        let stdout_log = quote_batch_path(&log_dir.join("gateway.log").to_string_lossy());
+        let stderr_log = quote_batch_path(&log_dir.join("gateway.err.log").to_string_lossy());
         let content = format!(
-            "@echo off\r\ntitle {GATEWAY_WINDOW_TITLE}\r\necho Starting OpenClaw Gateway. Keep this window open after it starts.\r\necho Close this window to stop Gateway.\r\necho.\r\n{}\r\nexit /b %errorlevel%\r\n",
-            gateway_terminal_command(cli)
+            "@echo off\r\ntitle {GATEWAY_WINDOW_TITLE}\r\necho Starting OpenClaw Gateway. Logs are available in ClawPanel.\r\necho Close this window to stop Gateway.\r\necho.\r\n{} 1>>{} 2>>{}\r\nset \"CLAWPANEL_EXIT_CODE=%errorlevel%\"\r\nif not \"%CLAWPANEL_EXIT_CODE%\"==\"0\" (\r\n  echo [ClawPanel] Gateway exited with code %CLAWPANEL_EXIT_CODE%>>{}\r\n  echo Gateway failed with exit code %CLAWPANEL_EXIT_CODE%. Open ClawPanel diagnostics for details.\r\n)\r\nexit /b %CLAWPANEL_EXIT_CODE%\r\n",
+            gateway_terminal_command(cli),
+            stdout_log,
+            stderr_log,
+            stderr_log,
         );
         fs::write(&runner_path, content).map_err(|e| format!("写入 Gateway 启动脚本失败: {e}"))?;
         Ok(runner_path)
@@ -1754,6 +1879,7 @@ mod platform {
         let cli = crate::utils::resolve_openclaw_cli_path().unwrap_or_else(|| "openclaw".into());
         let openclaw_dir = crate::commands::openclaw_dir();
         let config_path = openclaw_dir.join("openclaw.json");
+        create_gateway_log_files()?;
         let runner_path = write_gateway_terminal_runner(&openclaw_dir, &cli)?;
         let runner_path_str = runner_path.to_string_lossy().to_string();
         let openclaw_dir_str = openclaw_dir.to_string_lossy().to_string();
@@ -2398,7 +2524,14 @@ pub async fn start_service(app: tauri::AppHandle, label: String) -> Result<(), S
         return Ok(());
     }
     guardian_mark_manual_start();
-    start_service_impl_internal(&label, Some(&app)).await
+    let result = start_service_impl_internal(&label, Some(&app)).await;
+    if result
+        .as_ref()
+        .is_err_and(|err| err != GATEWAY_LIFECYCLE_BUSY_ERROR)
+    {
+        guardian_mark_manual_start_failure();
+    }
+    result
 }
 
 #[tauri::command]
@@ -2421,6 +2554,12 @@ pub async fn restart_service(app: tauri::AppHandle, label: String) -> Result<(),
     guardian_mark_manual_start();
     let result = restart_service_impl_internal(&label, Some(&app)).await;
     guardian_resume("manual restart");
+    if result
+        .as_ref()
+        .is_err_and(|err| err != GATEWAY_LIFECYCLE_BUSY_ERROR)
+    {
+        guardian_mark_manual_start_failure();
+    }
     result
 }
 

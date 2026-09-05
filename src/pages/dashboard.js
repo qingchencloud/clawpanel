@@ -11,9 +11,13 @@ import { t } from '../lib/i18n.js'
 import { wsClient } from '../lib/ws-client.js'
 import { attachCliConflictBanner } from '../components/cli-conflict-banner.js'
 import { icon } from '../lib/icons.js'
+import { showGatewayStartDiagnostics } from '../lib/gateway-start-diagnostics.js'
+import { syncExplicitModelPolicyAllow } from '../lib/openclaw-model-policy.js'
 
 let _unsubGw = null
-let _dashboardLoadChain = Promise.resolve()
+let _unsubWsStatus = null
+let _dashboardLoadPromise = null
+let _dashboardPendingLoad = null
 let _lastGwChangeLoad = 0
 let _detachCliConflict = null
 let _dashboardRuntimeRefreshHandler = null
@@ -87,6 +91,10 @@ export async function render() {
     loadDashboardData(page)
   })
 
+  // WebSocket 握手完成通常晚于仪表盘首屏数据；只重绘连接状态，避免页面一直停在“握手中”。
+  if (_unsubWsStatus) _unsubWsStatus()
+  _unsubWsStatus = wsClient.onStatusChange(() => refreshDashboardWsStatus(page))
+
   if (_dashboardRuntimeRefreshHandler) window.removeEventListener('openclaw:runtime-changed', _dashboardRuntimeRefreshHandler)
   _dashboardRuntimeRefreshHandler = () => {
     _dashboardInitialized = false
@@ -101,11 +109,15 @@ export async function render() {
 
 export function cleanup() {
   if (_unsubGw) { _unsubGw(); _unsubGw = null }
+  if (_unsubWsStatus) { _unsubWsStatus(); _unsubWsStatus = null }
   if (_detachCliConflict) { try { _detachCliConflict() } catch (_) {} _detachCliConflict = null }
   if (_dashboardRuntimeRefreshHandler) {
     window.removeEventListener('openclaw:runtime-changed', _dashboardRuntimeRefreshHandler)
     _dashboardRuntimeRefreshHandler = null
   }
+  // 使仍在执行的旧页面请求失效，并丢弃尚未开始的刷新。
+  _dashboardPendingLoad = null
+  _dashboardLoadSeq++
 }
 
 function openclawInstallationIdentity(installation) {
@@ -146,6 +158,8 @@ async function handleGatewayStartError(page, err, fallbackText) {
   toast(humanizeError(err, fallbackText), isCliMissingError(err) ? 'warning' : 'error')
   if (isCliMissingError(err)) {
     await showInstallationCleanup({ onRefresh: () => loadDashboardData(page, true) })
+  } else {
+    await showGatewayStartDiagnostics(err)
   }
 }
 
@@ -204,6 +218,7 @@ function normalizeDefaultModelConfig(config) {
     modelConfig.primary = ''
     modelConfig.fallbacks = []
     config.agents.defaults.models = {}
+    syncExplicitModelPolicyAllow(config.agents.defaults)
     return ''
   }
   if (!validModels.has(modelConfig.primary || '')) {
@@ -229,14 +244,39 @@ function normalizeDefaultModelConfig(config) {
     }
   }
   config.agents.defaults.models = nextMap
+  syncExplicitModelPolicyAllow(config.agents.defaults)
   return modelConfig.primary
 }
 
 async function loadDashboardData(page, fullRefresh = false) {
-  // 将多次触发串行化到同一链上；_dashboardLoadSeq 在排队时就会递增，供 inner 丢弃过期结果
+  // 同一时刻只执行一次加载。执行期间的新触发只保留“最新一次”，并合并 fullRefresh，
+  // 避免慢机器上 Gateway 状态事件把多个 5~10 秒请求全部排队执行。
   const loadSeq = ++_dashboardLoadSeq
-  _dashboardLoadChain = _dashboardLoadChain.catch(() => {}).then(() => _loadDashboardDataInner(page, fullRefresh, loadSeq))
-  return _dashboardLoadChain
+  if (_dashboardPendingLoad?.page === page) {
+    _dashboardPendingLoad.fullRefresh ||= fullRefresh
+    _dashboardPendingLoad.loadSeq = loadSeq
+  } else {
+    _dashboardPendingLoad = { page, fullRefresh, loadSeq }
+  }
+  if (_dashboardLoadPromise) return _dashboardLoadPromise
+
+  _dashboardLoadPromise = (async () => {
+    let latestError = null
+    while (_dashboardPendingLoad) {
+      const next = _dashboardPendingLoad
+      _dashboardPendingLoad = null
+      try {
+        await _loadDashboardDataInner(next.page, next.fullRefresh, next.loadSeq)
+        latestError = null
+      } catch (error) {
+        if (next.loadSeq === _dashboardLoadSeq) latestError = error
+      }
+    }
+    if (latestError) throw latestError
+  })().finally(() => {
+    _dashboardLoadPromise = null
+  })
+  return _dashboardLoadPromise
 }
 
 async function _loadDashboardDataInner(page, fullRefresh, loadSeq) {
@@ -253,9 +293,8 @@ async function _loadDashboardDataInner(page, fullRefresh, loadSeq) {
   }
   // 每个请求独立超时：避免单个慢请求拖垮整体渲染
   const coreP = Promise.allSettled([
-    // Windows 后端在端口未监听时最多会做 1s + 300ms + 2s 的 TCP 检测；
-    // 这里留出余量，避免 Gateway 停止时被误报为“服务状态加载失败”。
-    withTimeout(api.getServicesStatus(), 4500),
+    // 后端状态探测已限制在约 1 秒内；这里留出 IPC/低性能设备余量。
+    withTimeout(api.getServicesStatus(), 2500),
     withTimeout(api.readOpenclawConfig(), 2000),
     withTimeout(api.readPanelConfig(), 2000),
   ])
@@ -659,13 +698,19 @@ function renderWsStatus() {
   }
 
   return `
-    <div class="config-section" style="margin-top:16px">
+    <div class="config-section" data-dashboard-ws-status style="margin-top:16px">
       <div class="config-section-title" style="display:flex;align-items:center;gap:8px">
         <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${statusColor}"></span>
         WebSocket ${statusLabel}
         ${statusDetail ? `<span style="font-weight:normal;color:var(--text-tertiary);font-size:var(--font-size-xs)">${escapeHtml(statusDetail)}</span>` : ''}
       </div>
     </div>`
+}
+
+function refreshDashboardWsStatus(page) {
+  if (!page?.isConnected) return
+  const current = page.querySelector('[data-dashboard-ws-status]')
+  if (current) current.outerHTML = renderWsStatus()
 }
 
 const CHANNEL_ICONS = { qqbot: 'message-square', qq: 'message-circle', feishu: 'message-square', dingtalk: 'message-square', telegram: 'send', discord: 'hash', slack: 'hash', weixin: 'message-circle', wechat: 'message-circle', webchat: 'globe', whatsapp: 'phone', line: 'message-circle', teams: 'users', msteams: 'users', matrix: 'globe' }
@@ -857,6 +902,7 @@ function bindActions(page) {
       await new Promise(r => setTimeout(r, 1500))
     }
     toast(t('dashboard.restartTimeout'), 'warning')
+    await showGatewayStartDiagnostics(new Error(t('dashboard.restartTimeout')))
     btnRestart.disabled = false
     btnRestart.classList.remove('btn-loading')
     btnRestart.textContent = t('dashboard.restartGw')

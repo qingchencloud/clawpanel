@@ -37,6 +37,7 @@ const CN_PROVIDER_IDS = new Set([
   'alibaba-coding-plan',
   'minimax-cn',
   'xiaomi',
+  'tencent-tokenhub',
 ])
 
 // Aggregator ids (also tagged via `isAggregator` on the data).

@@ -3,7 +3,7 @@
  *
  * 协议流程（直连模式）：
  * 1. 连接 ws://host/ws?token=xxx
- * 2. Gateway 发 connect.challenge（带 nonce）
+ * 2. Gateway 发 connect.challenge（带 nonce，新版另带 ts）
  * 3. 客户端调用 Tauri 后端生成 Ed25519 签名的 connect frame
  * 4. Gateway 返回 connect 响应（带 snapshot）
  * 5. 从 snapshot.sessionDefaults.mainSessionKey 获取 sessionKey
@@ -12,6 +12,12 @@
 import { api, isTauriRuntime } from './tauri-api.js'
 import { t } from './i18n.js'
 import { KERNEL_TARGET } from './feature-catalog.js'
+import {
+  isDeviceAuthDetailCode,
+  isDeviceAuthReason,
+  isProtocolIncompatDetailCode,
+  isProtocolIncompatReason,
+} from './openclaw-gateway-compat.js'
 
 export function uuid() {
   if (crypto.randomUUID) return crypto.randomUUID()
@@ -56,24 +62,19 @@ function isMethodUnsupportedError(err) {
 }
 
 /**
- * 判断 Gateway 关闭原因是否暗示 v3 协议 / 签名 payload 不被支持。
- * 老内核（仅 v1/v2 签名 payload，minProtocol < 3）会用类似 `device signature invalid`
- * 或 `protocol mismatch` 关闭，字面对小白用户毫无意义，需要替换为人话。
- */
-function isProtocolIncompatReason(reason) {
-  return /signature\s+invalid|invalid\s+signature|protocol\s+mismatch|unsupported\s+protocol|min(imum)?\s*protocol|max(imum)?\s*protocol/i.test(reason || '')
-}
-
-/**
  * 构造「Gateway 内核过旧、不支持当前握手协议」的友好提示文案。
  * 直接读 feature-catalog 的 KERNEL_TARGET 常量，避免循环依赖 kernel.js。
  */
 function kernelTooOldMessage() {
   const recommended =
-    KERNEL_TARGET?.openclaw?.chinese ||
     KERNEL_TARGET?.openclaw?.official ||
+    KERNEL_TARGET?.openclaw?.chinese ||
     '2026.5.x'
   return t('kernel.tooOldForProtocol', { recommended })
+}
+
+function deviceAuthFailedMessage(detail = '') {
+  return t('kernel.deviceAuthFailed', { detail: detail || 'DEVICE_AUTH_INVALID' })
 }
 
 export class WsClient {
@@ -338,7 +339,7 @@ export class WsClient {
           this._setConnected(false, 'error', '设备配对失败，请手动执行 openclaw pairing approve')
           return
         }
-        if (/device identity required/i.test(reason) || /device auth/i.test(reason)) {
+        if (isDeviceAuthReason(reason) || /device identity required/i.test(reason) || /device auth/i.test(reason)) {
           // 设备认证问题 → 重新配对
           if (this._autoPairAttempts < 1) {
             console.log('[ws] 设备认证问题，尝试重新配对:', e.reason)
@@ -358,10 +359,10 @@ export class WsClient {
           }, 30000)
           return
         }
-        // Gateway 内核过旧：不支持 ClawPanel 0.15+ 使用的 v3 签名 payload / minProtocol=3
-        // 关闭 reason 通常是 'device signature invalid' / 'protocol mismatch'
+        // 只有明确的协议协商错误才判定为内核协议不兼容。
+        // `device signature invalid` 是签名参数/时间戳错误，不能再误报为“内核过旧”。
         if (isProtocolIncompatReason(reason)) {
-          console.warn('[ws] Gateway 协议/签名不兼容（内核过旧）:', e.reason)
+          console.warn('[ws] Gateway 协议不兼容（内核过旧）:', e.reason)
           this._intentionalClose = true
           this._flushPending()
           this._setConnected(false, 'error', kernelTooOldMessage())
@@ -397,7 +398,8 @@ export class WsClient {
       console.log('[ws] 收到 connect.challenge')
       this._clearChallengeTimer()
       const nonce = msg.payload?.nonce || ''
-      this._sendConnectFrame(nonce)
+      const challengeTs = msg.payload?.ts
+      this._sendConnectFrame(nonce, challengeTs)
       return
     }
 
@@ -499,15 +501,22 @@ export class WsClient {
           return
         }
 
-        // Gateway 内核过旧：自动配对后仍签名失败，或上游已明确返回协议不兼容
-        // → 大概率是老 Gateway 不识别 v3 payload / minProtocol=3，给「内核过旧」提示
-        if (!handled && (
-          detailCode === 'DEVICE_AUTH_SIGNATURE_INVALID' ||
-          detailCode === 'DEVICE_AUTH_INVALID' ||
-          detailCode === 'PROTOCOL_VERSION_MISMATCH' ||
-          detailCode === 'UNSUPPORTED_PROTOCOL'
-        )) {
+        // 仅上游明确返回协议不兼容时才提示升级。
+        if (!handled && isProtocolIncompatDetailCode(detailCode)) {
           const friendly = kernelTooOldMessage()
+          this._intentionalClose = true
+          this._flushPending()
+          this._setConnected(false, 'error', friendly)
+          this._readyCallbacks.forEach(fn => {
+            try { fn(null, null, { error: true, message: friendly, detailCode, nextStep }) } catch {}
+          })
+          return
+        }
+
+        // 设备签名失败与内核版本无关。新版 Gateway 会精确校验 challenge.ts；
+        // 自动修复重试后仍失败时保留真实诊断，而不是引导用户降级/换版本。
+        if (!handled && isDeviceAuthDetailCode(detailCode)) {
+          const friendly = deviceAuthFailedMessage(detailCode)
           this._intentionalClose = true
           this._flushPending()
           this._setConnected(false, 'error', friendly)
@@ -638,10 +647,10 @@ export class WsClient {
     }
   }
 
-  async _sendConnectFrame(nonce) {
+  async _sendConnectFrame(nonce, challengeTs = null) {
     this._handshaking = true
     try {
-      const frame = await api.createConnectFrame(nonce, this._token, this._password)
+      const frame = await api.createConnectFrame(nonce, this._token, this._password, challengeTs)
       if (this._ws && this._ws.readyState === WebSocket.OPEN) {
         console.log('[ws] 发送 connect frame')
         this._ws.send(JSON.stringify(frame))

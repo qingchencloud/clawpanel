@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as devApiModule from '../scripts/dev-api.js'
 
-const { replaceStandaloneInstall } = devApiModule
+const { replaceStandaloneInstall, verifyInstalledOpenclawRuntimeDependencies } = devApiModule
 
 const setup = readFileSync(new URL('../src/pages/setup.js', import.meta.url), 'utf8')
 const tauriApi = readFileSync(new URL('../src/lib/tauri-api.js', import.meta.url), 'utf8')
@@ -63,6 +63,49 @@ test('standalone installation validates a staging directory before replacing the
     rustInstall.indexOf('verify_standalone_install') < rustInstall.indexOf('replace_standalone_install'),
     'Desktop standalone archive must be verified before activation',
   )
+})
+
+test('npm installation validation rejects missing runtime dependencies and accepts a complete tree', () => {
+  const root = mkdtempSync(join(tmpdir(), 'clawpanel-npm-runtime-'))
+  const cliName = process.platform === 'win32' ? 'openclaw.cmd' : 'openclaw'
+  const cliPath = join(root, cliName)
+  const packageDir = join(root, 'node_modules', '@qingchencloud', 'openclaw-zh')
+  const dependencyDir = join(root, 'node_modules', '@openclaw', 'ai')
+  try {
+    mkdirSync(packageDir, { recursive: true })
+    writeFileSync(cliPath, '')
+    writeFileSync(join(packageDir, 'package.json'), JSON.stringify({
+      name: '@qingchencloud/openclaw-zh',
+      version: '2026.7.1-2-zh.1',
+      dependencies: { '@openclaw/ai': '2026.7.1-2' },
+    }))
+
+    assert.throws(
+      () => verifyInstalledOpenclawRuntimeDependencies(cliPath),
+      /OpenClaw.*缺少运行时依赖.*@openclaw\/ai/i,
+    )
+
+    mkdirSync(dependencyDir, { recursive: true })
+    writeFileSync(join(dependencyDir, 'package.json'), JSON.stringify({
+      name: '@openclaw/ai',
+      version: '2026.7.1-2',
+    }))
+    assert.equal(verifyInstalledOpenclawRuntimeDependencies(cliPath).dependencyCount, 1)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('npm installation falls back to the official registry when dependency validation fails', () => {
+  const webUpgrade = sliceFunction(devApi, 'async upgrade_openclaw(', '// 设备配对 + Gateway 握手')
+  assert.match(webUpgrade, /verifyInstalledOpenclawRuntimeDependencies\(npmCli\)/)
+  assert.match(webUpgrade, /镜像源安装完整性校验失败/)
+  assert.match(webUpgrade, /runInstall\('https:\/\/registry\.npmjs\.org'\)/)
+
+  const rustUpgrade = sliceFunction(rustConfig, 'async fn upgrade_openclaw_inner(', '#[tauri::command]\npub async fn uninstall_openclaw')
+  assert.match(rustUpgrade, /verify_installed_openclaw_runtime_dependencies\(&npm_cli\)/)
+  assert.match(rustUpgrade, /镜像源安装完整性校验失败/)
+  assert.match(rustUpgrade, /"https:\/\/registry\.npmjs\.org"/)
 })
 
 test('standalone validation rejects a version-matching archive with missing runtime dependencies', () => {

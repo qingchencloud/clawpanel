@@ -11,15 +11,18 @@ const desktopConfig = readFileSync(new URL('../src-tauri/src/commands/config.rs'
 const desktopService = readFileSync(new URL('../src-tauri/src/commands/service.rs', import.meta.url), 'utf8')
 const chatPage = readFileSync(new URL('../src/pages/chat.js', import.meta.url), 'utf8')
 
-test('ClawPanel recommends the matching official and Chinese 2026.7.1 stable builds', () => {
-  assert.equal(policy.default.official.recommended, '2026.7.1')
-  assert.equal(policy.default.chinese.recommended, '2026.7.1-zh.2')
-  assert.match(featureCatalog, /official: '2026\.7\.1'/)
-  assert.match(featureCatalog, /chinese: '2026\.7\.1-zh\.2'/)
+test('ClawPanel recommends official 2026.8.2 while Chinese stays on its latest published correction', () => {
+  assert.equal(policy.default.official.recommended, '2026.8.2')
+  assert.equal(policy.default.chinese.recommended, '2026.7.1-2-zh.1')
+  assert.match(featureCatalog, /official: '2026\.8\.2'/)
+  assert.match(featureCatalog, /chinese: '2026\.7\.1-2-zh\.1'/)
 })
 
-test('Linux deployment installs the Chinese 2026.7.1 stable build', () => {
-  assert.match(linuxDeploy, /OPENCLAW_RECOMMENDED_VERSION="2026\.7\.1-zh\.2"/)
+test('Linux deployment keeps the Chinese 2026.7.1 correction as an explicit option', () => {
+  assert.match(linuxDeploy, /OPENCLAW_SOURCE="\$\{OPENCLAW_SOURCE:-official\}"/)
+  assert.match(linuxDeploy, /OPENCLAW_CHINESE_RECOMMENDED_VERSION="2026\.7\.1-2-zh\.1"/)
+  assert.match(linuxDeploy, /OPENCLAW_SOURCE" = "chinese"/)
+  assert.match(linuxDeploy, /@qingchencloud\/openclaw-zh@\$\{OPENCLAW_RECOMMENDED_VERSION\}/)
   assert.match(linuxDeploy, /\[ "\$major" -ge 25 \]/)
   assert.match(
     linuxDeploy,
@@ -34,9 +37,10 @@ test('Linux deployment installs the Chinese 2026.7.1 stable build', () => {
 })
 
 test('Gateway connect frames retain a range that overlaps OpenClaw 2026.7.1 protocol v4', () => {
-  assert.match(webBackend, /minProtocol: 3, maxProtocol: 4/)
-  assert.match(desktopDevice, /"minProtocol": 3/)
-  assert.match(desktopDevice, /"maxProtocol": 4/)
+  assert.match(webBackend, /minProtocol: OPENCLAW_PROTOCOL_RANGE\.min/)
+  assert.match(webBackend, /maxProtocol: OPENCLAW_PROTOCOL_RANGE\.max/)
+  assert.match(desktopDevice, /const MIN_GATEWAY_PROTOCOL: u8 = 3/)
+  assert.match(desktopDevice, /const MAX_GATEWAY_PROTOCOL: u8 = 4/)
 })
 
 test('OpenClaw 2026.7.1 config reload uses the kernel watcher without probing panel ports', () => {

@@ -591,6 +591,22 @@ mark {
   justify-content: flex-end;
 }
 
+@media (max-width: 640px) {
+  .lazy-deps-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lazy-deps-card-actions {
+    flex-wrap: wrap;
+    justify-content: stretch;
+  }
+
+  .lazy-deps-card-actions .btn {
+    flex: 1 1 auto;
+    min-height: 40px;
+  }
+}
+
 .lazy-deps-badge {
   font-size: 11px;
   padding: 2px 8px;

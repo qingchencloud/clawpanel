@@ -70,6 +70,8 @@ services:
       - TZ=Asia/Shanghai
       # 确保 HOME 环境变量正确
       - HOME=/root
+      # Web 监听端口；可在启动前设置 CLAWPANEL_PORT 覆盖
+      - PORT=${CLAWPANEL_PORT:-1420}
 
     # -------------------------------------------------------------------------
     # 重启策略
@@ -80,7 +82,7 @@ services:
     # 健康检查
     # -------------------------------------------------------------------------
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:1420/"]
+      test: ["CMD-SHELL", "curl -f \"http://localhost:$${PORT:-1420}/__api/health\" || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -135,7 +137,7 @@ services:
   #     - TZ=Asia/Shanghai
   #   restart: unless-stopped
   #   command: >
-  #     sh -c "npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com &&
+  #     sh -c "npm install -g openclaw@2026.8.2 --registry https://registry.npmmirror.com &&
   #            openclaw init 2>/dev/null || true &&
   #            openclaw gateway start --foreground"
   #   healthcheck:

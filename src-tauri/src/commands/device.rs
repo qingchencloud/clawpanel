@@ -5,6 +5,8 @@ use sha2::{Digest, Sha256};
 use std::fs;
 
 const DEVICE_KEY_FILE: &str = "clawpanel-device-key.json";
+const MIN_GATEWAY_PROTOCOL: u8 = 3;
+const MAX_GATEWAY_PROTOCOL: u8 = 4;
 const SCOPES: &[&str] = &[
     "operator.admin",
     "operator.approvals",
@@ -90,27 +92,28 @@ mod hex {
 /// 生成 Gateway connect 帧（含 Ed25519 签名）
 /// gateway_token: token 模式认证凭据（可为空）
 /// gateway_password: password 模式认证凭据（可为空，新增）
+/// challenge_ts: 2026.8.1+ Gateway challenge 提供的签名时间；旧版无此字段时回退本机时间
 #[tauri::command]
 pub fn create_connect_frame(
     nonce: String,
     gateway_token: String,
     gateway_password: Option<String>,
+    challenge_ts: Option<u64>,
 ) -> Result<Value, String> {
     let (device_id, pub_b64, signing_key) = get_or_create_key()?;
-    let signed_at = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis();
+    let signed_at = challenge_ts.filter(|value| *value > 0).unwrap_or_else(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64
+    });
 
     let platform = std::env::consts::OS; // "windows" | "macos" | "linux"
     let device_family = "desktop";
 
-    // v3 签名 payload 中 token 字段：优先 token，其次 password，最后空串
-    let auth_secret = if !gateway_token.is_empty() {
-        &gateway_token
-    } else {
-        gateway_password.as_deref().unwrap_or("")
-    };
+    // v3 签名 payload 的 token 字段只包含 token/deviceToken/bootstrapToken。
+    // OpenClaw 7.1 与 8.1 的服务端都不会把 password 放进签名 payload。
+    let signature_token = gateway_token.as_str();
 
     let scopes_str = SCOPES.join(",");
     // v3 格式：v3|deviceId|clientId|clientMode|role|scopes|signedAt|token|nonce|platform|deviceFamily
@@ -122,7 +125,7 @@ pub fn create_connect_frame(
     // （v3 / v4）是两套独立的版本号。即使在 v4 握手协议下，签名 payload 仍以 `v3|` 开头。
     // 详见 src/lib/feature-catalog.js KERNEL_TARGET 注释。
     let payload_str = format!(
-        "v3|{device_id}|openclaw-control-ui|ui|operator|{scopes_str}|{signed_at}|{auth_secret}|{nonce}|{platform}|{device_family}"
+        "v3|{device_id}|openclaw-control-ui|ui|operator|{scopes_str}|{signed_at}|{signature_token}|{nonce}|{platform}|{device_family}"
     );
 
     let signature = signing_key.sign(payload_str.as_bytes());
@@ -144,8 +147,8 @@ pub fn create_connect_frame(
         "method": "connect",
         "params": {
             // 协议握手范围声明：下限 3 用于继续兼容历史内核，上限 4 启用新版增量 delta 协议。
-            "minProtocol": 3,
-            "maxProtocol": 4,
+            "minProtocol": MIN_GATEWAY_PROTOCOL,
+            "maxProtocol": MAX_GATEWAY_PROTOCOL,
             "client": {
                 "id": "openclaw-control-ui",
                 "version": env!("CARGO_PKG_VERSION"),
@@ -160,7 +163,7 @@ pub fn create_connect_frame(
             "device": {
                 "id": device_id,
                 "publicKey": pub_b64,
-                "signedAt": signed_at as u64,
+                "signedAt": signed_at,
                 "nonce": nonce,
                 "signature": sig_b64,
             },
@@ -170,4 +173,29 @@ pub fn create_connect_frame(
     });
 
     Ok(frame)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn protocol_range_keeps_old_and_new_gateways_compatible() {
+        assert_eq!(MIN_GATEWAY_PROTOCOL, 3);
+        assert_eq!(MAX_GATEWAY_PROTOCOL, 4);
+    }
+
+    #[test]
+    fn password_is_not_part_of_device_signature_payload() {
+        let device_id = "device";
+        let scopes = SCOPES.join(",");
+        let signed_at = 1_800_000_000_123_u64;
+        let nonce = "nonce";
+        let platform = "windows";
+        let payload = format!(
+            "v3|{device_id}|openclaw-control-ui|ui|operator|{scopes}|{signed_at}||{nonce}|{platform}|desktop"
+        );
+        assert!(payload.contains("|1800000000123||nonce|"));
+        assert!(!payload.contains("gateway-password"));
+    }
 }

@@ -3,6 +3,7 @@ import { devApiPlugin, readJsonFileRelaxed } from './scripts/dev-api.js'
 import fs from 'fs'
 import path from 'path'
 import { homedir } from 'os'
+import { gatewayWebSocketUpstreamHeaders } from './scripts/gateway-ws-proxy.js'
 
 // 读取 package.json 版本号，构建时注入前端
 const pkg = JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
@@ -43,6 +44,10 @@ export default defineConfig({
         timeout: 30000,
         configure: (proxy, options) => {
           proxy.on('proxyReqWs', (proxyReq, req, socket) => {
+            const upstreamHeaders = gatewayWebSocketUpstreamHeaders(req.headers, gatewayPort)
+            for (const [name, value] of Object.entries(upstreamHeaders)) {
+              proxyReq.setHeader(name, value)
+            }
             socket.setTimeout(30000)
             socket.on('timeout', () => {
               console.warn('[vite/ws] WebSocket 超时，关闭连接')

@@ -44,6 +44,8 @@ import kernel from './modules/kernel.js'
 import siteMessages from './modules/siteMessages.js'
 import media from './modules/media.js'
 import modelChannels from './modules/model-channels.js'
+import deepseekHarness from './modules/deepseek-harness.js'
+import openCode from './modules/opencode.js'
 
 const MODULES = {
   common, sidebar, instance, dashboard, services, settings,
@@ -51,7 +53,7 @@ const MODULES = {
   memory, dreaming, cron, usage, skills, chat, chatDebug, setup, about,
   ext, logs, assistant, toast, modal, engagement, diagnose, routeMap, extensions,
   engine, ciaoBug, cliConflict, glossary, hermesLazyDeps, notifications, kernel, siteMessages, media,
-  modelChannels,
+  modelChannels, deepseekHarness, openCode,
 }
 
 /** 判断是否是 _() 调用产生的翻译对象（有 'zh-CN' 字符串字段） */

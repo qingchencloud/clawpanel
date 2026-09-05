@@ -592,14 +592,14 @@ function renderInstallSection() {
       </p>
       <div style="display:flex;gap:var(--space-sm);margin-bottom:var(--space-sm)">
         <label class="setup-source-option" style="flex:1;cursor:pointer">
-          <input type="radio" name="install-source" value="chinese" checked style="margin-right:6px">
+          <input type="radio" name="install-source" value="chinese" style="margin-right:6px">
           <div>
             <div style="font-weight:600;font-size:var(--font-size-sm)">${t('setup.sourceChineseLabel')}</div>
             <div style="font-size:var(--font-size-xs);color:var(--text-tertiary)">@qingchencloud/openclaw-zh</div>
           </div>
         </label>
         <label class="setup-source-option" style="flex:1;cursor:pointer">
-          <input type="radio" name="install-source" value="official" style="margin-right:6px">
+          <input type="radio" name="install-source" value="official" checked style="margin-right:6px">
           <div>
             <div style="font-weight:600;font-size:var(--font-size-sm)">${t('setup.sourceOfficialLabel')}</div>
             <div style="font-size:var(--font-size-xs);color:var(--text-tertiary)">openclaw</div>
@@ -1148,7 +1148,7 @@ function bindEvents(page, detectState) {
   }
 
   function updateMethodVisibility() {
-    const source = page.querySelector('input[name="install-source"]:checked')?.value || 'chinese'
+    const source = page.querySelector('input[name="install-source"]:checked')?.value || 'official'
     if (source === 'official') {
       if (methodSection) methodSection.style.display = 'none'
       if (registrySection) registrySection.style.display = ''
@@ -1169,7 +1169,7 @@ function bindEvents(page, detectState) {
   if (!installBtn) return
 
   installBtn.addEventListener('click', async () => {
-    const source = page.querySelector('input[name="install-source"]:checked')?.value || 'chinese'
+    const source = page.querySelector('input[name="install-source"]:checked')?.value || 'official'
     const method = (source === 'official') ? 'npm' : (page.querySelector('#install-method')?.value || 'auto')
     const registry = page.querySelector('#registry-select')?.value
     const modal = showUpgradeModal(t('setup.installOpenclaw'))

@@ -17,7 +17,17 @@ const originalApi = {
   readOpenclawConfig: api.readOpenclawConfig,
   writeOpenclawConfig: api.writeOpenclawConfig,
   revealModelChannelKey: api.revealModelChannelKey,
+  probeGatewayPort: api.probeGatewayPort,
+  restartGateway: api.restartGateway,
+  reloadGateway: api.reloadGateway,
 }
+
+test.beforeEach(() => {
+  // 运行时应用动作由专门测试覆盖；其余同步测试保持纯配置回读。
+  api.probeGatewayPort = async () => false
+  api.restartGateway = async () => true
+  api.reloadGateway = async () => true
+})
 
 function restoreApi() {
   Object.assign(api, originalApi)
@@ -136,6 +146,23 @@ test('同步旧 Codex 渠道时写入 7.1 正式 API 类型', async () => {
   })
 
   assert.equal(written.models.providers.legacy.api, 'openai-chatgpt-responses')
+})
+
+test('Web 模型渠道同步后会重启运行中的 Gateway 以加载 Agent 模型注册表', async () => {
+  let written = null
+  let restartCount = 0
+  api.probeGatewayPort = async () => true
+  api.restartGateway = async () => { restartCount += 1 }
+  api.revealModelChannelKey = async () => 'sk-test'
+  api.readOpenclawConfig = async () => written || ({ models: { providers: {} } })
+  api.writeOpenclawConfig = async config => { written = config }
+
+  await channels.syncChannelToOpenclaw({
+    id: 'lmstudio', name: 'LM Studio', baseUrl: 'http://127.0.0.1:1234/v1',
+    apiType: 'openai-completions', models: [{ id: 'qwen-local' }], defaultModel: 'qwen-local',
+  })
+
+  assert.equal(restartCount, 1)
 })
 
 test('OpenClaw 同步必须通过目标配置回读核对', async () => {

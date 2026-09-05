@@ -21,6 +21,18 @@ const PRIMARY_OPTIONS = [
 
 const SECONDARY_OPTIONS = [
   {
+    id: 'opencode',
+    activeEngineId: 'opencode',
+    enabledEngineIds: ['opencode'],
+    targetRoute: '/opencode/dashboard',
+  },
+  {
+    id: 'deepseek-harness',
+    activeEngineId: 'deepseek-harness',
+    enabledEngineIds: ['deepseek-harness'],
+    targetRoute: '/dsh/dashboard',
+  },
+  {
     id: 'both',
     activeEngineId: 'openclaw',
     enabledEngineIds: ['openclaw', 'hermes'],
@@ -67,6 +79,10 @@ export async function render() {
       ${renderContent('hermes')}
 
       <div class="es-secondary">
+        <button type="button" class="es-secondary-link" data-secondary="opencode">${esc(t('engine.choiceSecondaryOpenCode'))}</button>
+        <span class="es-secondary-sep" aria-hidden="true">·</span>
+        <button type="button" class="es-secondary-link" data-secondary="deepseek-harness">${esc(t('engine.choiceSecondaryDsh'))}</button>
+        <span class="es-secondary-sep" aria-hidden="true">·</span>
         <button type="button" class="es-secondary-link" data-secondary="both">${esc(t('engine.choiceSecondaryBoth'))}</button>
         <span class="es-secondary-sep" aria-hidden="true">·</span>
         <button type="button" class="es-secondary-link" data-secondary="later">${esc(t('engine.choiceSecondaryLater'))}</button>
@@ -159,7 +175,7 @@ function bindClick(page) {
     })
   })
 
-  // 次级链接：两个都要 / 稍后再说（无对角线动画，直接走选择）
+  // 次级链接：OpenCode / Harness / 两个都要 / 稍后再说（无对角线动画，直接走选择）
   page.querySelectorAll('[data-secondary]').forEach(btn => {
     btn.addEventListener('click', async (event) => {
       event.stopPropagation()

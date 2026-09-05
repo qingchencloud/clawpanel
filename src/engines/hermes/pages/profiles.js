@@ -6,6 +6,7 @@
  *   - POST   /api/profiles { name, clone_from_default, no_skills } - 创建
  *   - PATCH  /api/profiles/{name} { new_name } - 重命名
  *   - DELETE /api/profiles/{name}            - 删除
+ *   - PUT    /api/profiles/{name}/model { provider, model } - 配置模型
  *
  * 切换 active profile 仍走现有 chat-store.switchProfile（CLI 实现），
  * 因为 dashboard server 绑定的 active profile 改变后还需要重启 dashboard。
@@ -80,14 +81,20 @@ export function render() {
   function renderProfileCard(p) {
     const isActive = !!p.active
     const desc = p.description ? `<div class="lazy-deps-card-meta" title="${escAttr(p.description)}">${escHtml(p.description)}</div>` : ''
+    const provider = p.raw?.provider || ''
+    const model = p.raw?.model || ''
+    const modelText = model ? `${provider ? `${provider}/` : ''}${model}` : t('engine.hermesProfileModelUnset')
+    const modelMeta = `<div class="lazy-deps-card-meta" title="${escAttr(modelText)}">${escHtml(t('engine.hermesProfileModelLabel'))}: ${escHtml(modelText)}</div>`
     return `
       <div class="lazy-deps-card">
         <div class="lazy-deps-card-head">
           <div class="lazy-deps-card-title" title="${escAttr(p.name)}">${escHtml(p.name)}</div>
           ${isActive ? `<span class="lazy-deps-badge ok">${escHtml(t('engine.hermesProfileActive'))}</span>` : ''}
         </div>
+        ${modelMeta}
         ${desc}
         <div class="lazy-deps-card-actions" style="gap:6px">
+          <button class="btn btn-secondary btn-sm" data-action="configure" data-name="${escAttr(p.name)}">${escHtml(t('engine.hermesProfileConfigure'))}</button>
           ${isActive ? '' : `<button class="btn btn-secondary btn-sm" data-action="switch" data-name="${escAttr(p.name)}">${escHtml(t('engine.hermesProfileSwitch'))}</button>`}
           <button class="btn btn-secondary btn-sm" data-action="rename" data-name="${escAttr(p.name)}">${escHtml(t('engine.hermesProfileRename'))}</button>
           ${isActive ? '' : `<button class="btn btn-secondary btn-sm" data-action="delete" data-name="${escAttr(p.name)}" style="color:var(--error)">${escHtml(t('engine.hermesProfileDelete'))}</button>`}
@@ -104,6 +111,7 @@ export function render() {
       const name = btn.dataset.name
       btn.addEventListener('click', () => {
         if (action === 'switch') onSwitch(name)
+        else if (action === 'configure') onConfigure(name)
         else if (action === 'rename') onRename(name)
         else if (action === 'delete') onDelete(name)
       })
@@ -165,6 +173,33 @@ export function render() {
           await load()
         } catch (e) {
           toast(humanizeError(e, t('engine.hermesProfileCreateFailed')), 'error')
+        }
+      },
+    })
+  }
+
+  function onConfigure(name) {
+    const profile = profiles.find(item => item.name === name)
+    const raw = profile?.raw || {}
+    showModal({
+      title: t('engine.hermesProfileConfigureTitle', { name }),
+      fields: [
+        { name: 'provider', label: t('engine.hermesProfileProviderLabel'), value: raw.provider || '', placeholder: 'lmstudio, anthropic, openai, ...' },
+        { name: 'model', label: t('engine.hermesProfileModelLabel'), value: raw.model || '', placeholder: 'model-name' },
+      ],
+      onConfirm: async (data) => {
+        const provider = (data.provider || '').trim()
+        const model = (data.model || '').trim()
+        if (!provider || !model) {
+          toast(t('engine.hermesProfileModelRequired'), 'error')
+          return
+        }
+        try {
+          await api.hermesDashboardApi('PUT', `/api/profiles/${encodeURIComponent(name)}/model`, { provider, model })
+          toast(t('engine.hermesProfileModelSaved', { name }), 'success')
+          await load()
+        } catch (e) {
+          toast(humanizeError(e, t('engine.hermesProfileModelSaveFailed')), 'error')
         }
       },
     })

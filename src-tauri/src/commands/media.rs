@@ -376,6 +376,11 @@ pub(super) fn write_json_atomic(path: &Path, value: &Value) -> Result<(), String
         .parent()
         .ok_or_else(|| "JSON 路径缺少父目录".to_string())?;
     std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
+    #[cfg(unix)]
+    let existing_metadata = std::fs::metadata(path).ok().map(|metadata| {
+        use std::os::unix::fs::MetadataExt;
+        (metadata.mode() & 0o777, metadata.uid(), metadata.gid())
+    });
     let content = serde_json::to_string_pretty(value).map_err(|e| format!("序列化失败: {e}"))?;
     let parsed: Value =
         serde_json::from_str(&content).map_err(|e| format!("候选 JSON 校验失败: {e}"))?;
@@ -407,8 +412,23 @@ pub(super) fn write_json_atomic(path: &Path, value: &Value) -> Result<(), String
     drop(file);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        if let Err(error) = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600)) {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let desired_mode = existing_metadata.map(|(mode, _, _)| mode).unwrap_or(0o600);
+        if let Some((_, uid, gid)) = existing_metadata {
+            let tmp_metadata = std::fs::metadata(&tmp).map_err(|error| {
+                let _ = std::fs::remove_file(&tmp);
+                format!("读取临时文件元数据失败: {error}")
+            })?;
+            if tmp_metadata.uid() != uid || tmp_metadata.gid() != gid {
+                if let Err(error) = std::os::unix::fs::chown(&tmp, Some(uid), Some(gid)) {
+                    let _ = std::fs::remove_file(&tmp);
+                    return Err(format!("保留临时文件所有者失败: {error}"));
+                }
+            }
+        }
+        if let Err(error) =
+            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(desired_mode))
+        {
             let _ = std::fs::remove_file(&tmp);
             return Err(format!("设置临时文件权限失败: {error}"));
         }
@@ -458,7 +478,8 @@ pub(super) fn write_json_atomic(path: &Path, value: &Value) -> Result<(), String
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        let desired_mode = existing_metadata.map(|(mode, _, _)| mode).unwrap_or(0o600);
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(desired_mode));
     }
     Ok(())
 }

@@ -336,7 +336,7 @@ export function renderSidebar(el) {
   // 事件委托：只绑定一次，避免重复绑定
   if (!_delegated) {
     _delegated = true
-    el.addEventListener('click', (e) => {
+    el.addEventListener('click', async (e) => {
       // 导航点击
       const navItem = e.target.closest('.nav-item[data-route]')
       if (navItem) {
@@ -400,7 +400,7 @@ export function renderSidebar(el) {
           const shouldCloseMobile = window.matchMedia?.('(max-width: 768px)').matches
             && document.getElementById('sidebar')?.classList.contains('sidebar-open')
           _closeLangDropdown()
-          setLang(code)
+          await setLang(code)
           renderSidebar(el)
           reloadCurrentRoute()
           if (shouldCloseMobile) _closeMobileSidebar()

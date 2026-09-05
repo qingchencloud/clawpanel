@@ -2,13 +2,14 @@
 //!
 //! 用户只维护一份「渠道 = Base URL + API Key + 可用模型列表」配置，
 //! 由前端组合现有命令（write_openclaw_config / hermes_env_set /
-//! hermes_model_config_save / localStorage）显式同步到 OpenClaw、Hermes 与晴辰助手。
+//! hermes_model_config_save / DeepSeek Harness 回环 RPC / localStorage）显式同步到
+//! OpenClaw、Hermes、DeepSeek Harness 与晴辰助手。
 //!
 //! 本模块只负责渠道存储：
 //! - 读取接口对 API Key 永远只返回掩码（apiKeySaved + apiKeyMask）；
 //! - 写入支持 `__KEEP__` / 空值哨兵保留旧 Key（与创作中心一致）；
-//! - 明文 Key 仅通过 reveal_model_channel_key 在同步时按渠道单独取出
-//!   （先例：hermes_env_reveal）。
+//! - 明文 Key 仅由后端同步命令或 reveal_model_channel_key 按渠道单独取出
+//!   （先例：hermes_env_reveal），不会进入 Harness 的前端命令参数。
 //!
 //! 存储位置：openclaw_dir/clawpanel/model-channels.json —— 跟随 OpenClaw
 //! 数据目录，便携迁移整体复制后自动生效（与媒体数据同一决策）。
@@ -241,6 +242,17 @@ fn read_channels_private() -> Value {
     normalize_channels_doc(&parsed, None)
 }
 
+/// 供同一后端内的同步命令读取单个完整渠道；不得直接暴露给前端。
+pub(super) fn read_model_channel_private(channel_id: &str) -> Result<Value, String> {
+    let id = channel_id.trim();
+    let doc = read_channels_private();
+    doc.get("channels")
+        .and_then(Value::as_array)
+        .and_then(|channels| channels.iter().find(|channel| str_of(channel, "id") == id))
+        .cloned()
+        .ok_or_else(|| format!("模型渠道不存在: {channel_id}"))
+}
+
 /// 对外读取：API Key 只回掩码
 fn sanitize_doc_for_read(doc: &Value) -> Value {
     let mut out = doc.clone();
@@ -305,19 +317,11 @@ pub fn write_model_channels(config: Value) -> Result<Value, String> {
 /// 明文 Key 仅在同步 / 助手拷贝时按渠道取出，不进入常规读取链路
 #[tauri::command]
 pub fn reveal_model_channel_key(channel_id: String) -> Result<String, String> {
-    let doc = read_channels_private();
-    let channels = doc
-        .get("channels")
-        .and_then(Value::as_array)
-        .ok_or_else(|| "渠道配置格式错误".to_string())?;
-    let channel = channels
-        .iter()
-        .find(|c| str_of(c, "id") == channel_id.trim())
-        .ok_or_else(|| format!("模型渠道不存在: {channel_id}"))?;
+    let channel = read_model_channel_private(&channel_id)?;
     if normalize_api_key_ref(channel.get("apiKeyRef")).is_some() {
         return Err("该渠道使用 OpenClaw SecretRef，只能原样同步到 OpenClaw".into());
     }
-    Ok(str_of(channel, "apiKey"))
+    Ok(str_of(&channel, "apiKey"))
 }
 
 #[cfg(test)]

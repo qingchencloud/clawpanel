@@ -68,6 +68,11 @@ export const FEATURE_CATALOG = {
     minVersion: '2026.4.15',
     desc: 'agents.list[].skillsLimits.maxSkillsPromptChars',
   },
+  'agents.keyedEntries': {
+    engine: 'openclaw',
+    minVersion: '2026.8.1',
+    desc: '持久化 Agent 注册表改为 agents.entries.{id} + explicit ownership',
+  },
 
   // ===== Models =====
   'models.probeStatus': {
@@ -84,6 +89,11 @@ export const FEATURE_CATALOG = {
     engine: 'openclaw',
     minVersion: '2026.5.5',
     desc: 'doctor 自动迁移 openai-codex/* → openai/* + agentRuntime: codex',
+  },
+  'models.explicitPolicy': {
+    engine: 'openclaw',
+    minVersion: '2026.8.1',
+    desc: '模型元数据 agents.defaults.models 与 modelPolicy.allow 显式分离',
   },
 
   // ===== Memory =====
@@ -130,6 +140,11 @@ export const FEATURE_CATALOG = {
     engine: 'openclaw',
     minVersion: '2026.5.3',
     desc: 'Gateway 启动 fail-closed 无效配置，由 doctor --fix 修复',
+  },
+  'doctor.startupConfigRepair': {
+    engine: 'openclaw',
+    minVersion: '2026.8.1',
+    desc: 'Gateway 启动阶段原子应用可证明安全的单文件配置迁移',
   },
 
   // ===== Channels =====
@@ -196,8 +211,8 @@ export const KERNEL_TARGET = {
     //   不要与 dev-api.js 中设备签名 payload 字符串前缀 `v3|deviceId|...` 混淆——
     //   后者是 **device signature payload 字符串格式版本**，两者完全独立、互不相关。
     //   即使在 v4 握手协议下，签名 payload 字符串仍以 `v3|` 开头（这是 payload schema 版本）。
-    official: '2026.7.1',
-    chinese: '2026.7.1-zh.2',
+    official: '2026.8.2',
+    chinese: '2026.7.1-2-zh.1',
   },
   hermes: {
     default: '0.13.x',

@@ -33,12 +33,9 @@ pub const TRANSPORT_CODEX: &str = "codex_responses";
 
 /// `/models` probe strategy used by `hermes_fetch_models`.
 ///
-/// Note: all OpenAI-compatible providers (including Gemini via its OpenAI
-/// adapter) use `PROBE_OPENAI`. A separate `PROBE_GOOGLE` was considered for
-/// native Google Gemini API probing, but in practice every provider we
-/// support uses one of these three strategies.
 pub const PROBE_OPENAI: &str = "openai";
 pub const PROBE_ANTHROPIC: &str = "anthropic";
+pub const PROBE_GOOGLE: &str = "google";
 pub const PROBE_NONE: &str = "none";
 
 #[derive(Debug, Clone, Serialize)]
@@ -78,7 +75,7 @@ const P_ANTHROPIC: HermesProvider = HermesProvider {
     name: "Anthropic",
     auth_type: AUTH_API_KEY,
     base_url: "https://api.anthropic.com",
-    base_url_env_var: "",
+    base_url_env_var: "ANTHROPIC_BASE_URL",
     api_key_env_vars: &[
         "ANTHROPIC_API_KEY",
         "ANTHROPIC_TOKEN",
@@ -104,11 +101,11 @@ const P_GEMINI: HermesProvider = HermesProvider {
     id: "gemini",
     name: "Google AI Studio",
     auth_type: AUTH_API_KEY,
-    base_url: "https://generativelanguage.googleapis.com/v1beta/openai",
+    base_url: "https://generativelanguage.googleapis.com/v1beta",
     base_url_env_var: "GEMINI_BASE_URL",
     api_key_env_vars: &["GOOGLE_API_KEY", "GEMINI_API_KEY"],
-    transport: TRANSPORT_OPENAI_CHAT,
-    models_probe: PROBE_OPENAI,
+    transport: TRANSPORT_GOOGLE,
+    models_probe: PROBE_GOOGLE,
     models: &[
         "gemini-3.1-pro-preview",
         "gemini-3-flash-preview",
@@ -127,12 +124,55 @@ const P_DEEPSEEK: HermesProvider = HermesProvider {
     id: "deepseek",
     name: "DeepSeek",
     auth_type: AUTH_API_KEY,
-    base_url: "https://api.deepseek.com",
+    base_url: "https://api.deepseek.com/v1",
     base_url_env_var: "DEEPSEEK_BASE_URL",
     api_key_env_vars: &["DEEPSEEK_API_KEY"],
     transport: TRANSPORT_OPENAI_CHAT,
     models_probe: PROBE_OPENAI,
-    models: &["deepseek-chat", "deepseek-reasoner"],
+    models: &["deepseek-v4-pro", "deepseek-v4-flash"],
+    is_aggregator: false,
+    cli_auth_hint: "",
+};
+
+const P_OPENAI_API: HermesProvider = HermesProvider {
+    id: "openai-api",
+    name: "OpenAI API",
+    auth_type: AUTH_API_KEY,
+    base_url: "https://api.openai.com/v1",
+    base_url_env_var: "OPENAI_BASE_URL",
+    api_key_env_vars: &["OPENAI_API_KEY"],
+    transport: TRANSPORT_OPENAI_CHAT,
+    models_probe: PROBE_OPENAI,
+    models: &[
+        "gpt-5.5",
+        "gpt-5.5-pro",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.4-nano",
+        "gpt-5-mini",
+        "gpt-5.3-codex",
+        "gpt-4.1",
+        "gpt-4o",
+        "gpt-4o-mini",
+    ],
+    is_aggregator: false,
+    cli_auth_hint: "",
+};
+
+const P_FIREWORKS: HermesProvider = HermesProvider {
+    id: "fireworks",
+    name: "Fireworks AI",
+    auth_type: AUTH_API_KEY,
+    base_url: "https://api.fireworks.ai/inference/v1",
+    base_url_env_var: "",
+    api_key_env_vars: &["FIREWORKS_API_KEY"],
+    transport: TRANSPORT_OPENAI_CHAT,
+    models_probe: PROBE_OPENAI,
+    models: &[
+        "accounts/fireworks/models/kimi-k2p6",
+        "accounts/fireworks/models/glm-5p2",
+        "accounts/fireworks/models/kimi-k2p7-code",
+    ],
     is_aggregator: false,
     cli_auth_hint: "",
 };
@@ -180,15 +220,18 @@ const P_KIMI_CODING: HermesProvider = HermesProvider {
     auth_type: AUTH_API_KEY,
     base_url: "https://api.moonshot.ai/v1",
     base_url_env_var: "KIMI_BASE_URL",
-    api_key_env_vars: &["KIMI_API_KEY"],
+    api_key_env_vars: &["KIMI_API_KEY", "KIMI_CODING_API_KEY"],
     transport: TRANSPORT_OPENAI_CHAT,
     models_probe: PROBE_OPENAI,
     models: &[
+        "kimi-k3",
         "kimi-k2.7-code",
-        "kimi-for-coding",
         "kimi-k2.6",
         "kimi-k2.5",
+        "kimi-for-coding",
+        "kimi-for-coding-highspeed",
         "kimi-k2-thinking",
+        "kimi-k2-thinking-turbo",
         "kimi-k2-turbo-preview",
         "kimi-k2-0905-preview",
     ],
@@ -235,12 +278,18 @@ const P_MINIMAX: HermesProvider = HermesProvider {
     id: "minimax",
     name: "MiniMax (International)",
     auth_type: AUTH_API_KEY,
-    base_url: "https://api.minimax.io/anthropic/v1",
+    base_url: "https://api.minimax.io/anthropic",
     base_url_env_var: "MINIMAX_BASE_URL",
     api_key_env_vars: &["MINIMAX_API_KEY"],
     transport: TRANSPORT_ANTHROPIC,
     models_probe: PROBE_ANTHROPIC,
-    models: &["MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed"],
+    models: &[
+        "MiniMax-M3",
+        "MiniMax-M2.7",
+        "MiniMax-M2.5",
+        "MiniMax-M2.1",
+        "MiniMax-M2",
+    ],
     is_aggregator: false,
     cli_auth_hint: "",
 };
@@ -249,12 +298,18 @@ const P_MINIMAX_CN: HermesProvider = HermesProvider {
     id: "minimax-cn",
     name: "MiniMax (China)",
     auth_type: AUTH_API_KEY,
-    base_url: "https://api.minimaxi.com/v1",
+    base_url: "https://api.minimaxi.com/anthropic",
     base_url_env_var: "MINIMAX_CN_BASE_URL",
     api_key_env_vars: &["MINIMAX_CN_API_KEY"],
     transport: TRANSPORT_ANTHROPIC,
     models_probe: PROBE_ANTHROPIC,
-    models: &["MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed"],
+    models: &[
+        "MiniMax-M3",
+        "MiniMax-M2.7",
+        "MiniMax-M2.5",
+        "MiniMax-M2.1",
+        "MiniMax-M2",
+    ],
     is_aggregator: false,
     cli_auth_hint: "",
 };
@@ -360,11 +415,25 @@ const P_STEPFUN: HermesProvider = HermesProvider {
     name: "StepFun",
     auth_type: AUTH_API_KEY,
     base_url: "https://api.stepfun.ai/step_plan/v1",
-    base_url_env_var: "",
+    base_url_env_var: "STEPFUN_BASE_URL",
     api_key_env_vars: &["STEPFUN_API_KEY"],
     transport: TRANSPORT_OPENAI_CHAT,
     models_probe: PROBE_OPENAI,
-    models: &["step-3.5-flash"],
+    models: &["step-3.5-flash", "step-3.5-flash-2603"],
+    is_aggregator: false,
+    cli_auth_hint: "",
+};
+
+const P_TENCENT_TOKENHUB: HermesProvider = HermesProvider {
+    id: "tencent-tokenhub",
+    name: "Tencent TokenHub",
+    auth_type: AUTH_API_KEY,
+    base_url: "https://tokenhub.tencentmaas.com/v1",
+    base_url_env_var: "TOKENHUB_BASE_URL",
+    api_key_env_vars: &["TOKENHUB_API_KEY"],
+    transport: TRANSPORT_OPENAI_CHAT,
+    models_probe: PROBE_OPENAI,
+    models: &["hy3-preview"],
     is_aggregator: false,
     cli_auth_hint: "",
 };
@@ -608,19 +677,24 @@ const P_COPILOT: HermesProvider = HermesProvider {
     name: "GitHub Copilot (PAT)",
     auth_type: AUTH_API_KEY,
     base_url: "https://api.githubcopilot.com",
-    base_url_env_var: "",
+    base_url_env_var: "COPILOT_API_BASE_URL",
     api_key_env_vars: &["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"],
     transport: TRANSPORT_OPENAI_CHAT,
     models_probe: PROBE_NONE,
     models: &[
-        "gpt-4o",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5-mini",
+        "gpt-5.3-codex",
+        "gpt-5.2-codex",
         "gpt-4.1",
-        "claude-3.5-sonnet",
-        "claude-3.7-sonnet",
-        "claude-sonnet-4-5",
-        "o1",
-        "o1-mini",
-        "gemini-2.5-pro",
+        "gpt-4o",
+        "gpt-4o-mini",
+        "claude-sonnet-4.6",
+        "claude-sonnet-5",
+        "claude-haiku-4.5",
+        "gemini-3.1-pro-preview",
+        "gemini-3-flash-preview",
     ],
     is_aggregator: false,
     cli_auth_hint: "",
@@ -688,6 +762,20 @@ const P_OPENAI_CODEX: HermesProvider = HermesProvider {
     cli_auth_hint: "hermes auth login openai-codex",
 };
 
+const P_XAI_OAUTH: HermesProvider = HermesProvider {
+    id: "xai-oauth",
+    name: "xAI Grok OAuth",
+    auth_type: AUTH_OAUTH_EXTERNAL,
+    base_url: "https://api.x.ai/v1",
+    base_url_env_var: "",
+    api_key_env_vars: &[],
+    transport: TRANSPORT_CODEX,
+    models_probe: PROBE_NONE,
+    models: &["grok-4.20-reasoning", "grok-4-1-fast-reasoning"],
+    is_aggregator: false,
+    cli_auth_hint: "hermes auth login xai-oauth",
+};
+
 const P_QWEN_OAUTH: HermesProvider = HermesProvider {
     id: "qwen-oauth",
     name: "Qwen OAuth",
@@ -744,6 +832,8 @@ pub const ALL_PROVIDERS: &[HermesProvider] = &[
     P_GEMINI,
     P_DEEPSEEK,
     P_ATLASCLOUD,
+    P_OPENAI_API,
+    P_FIREWORKS,
     P_XAI,
     P_MINIMAX,
     P_HUGGINGFACE,
@@ -764,6 +854,7 @@ pub const ALL_PROVIDERS: &[HermesProvider] = &[
     P_MINIMAX_CN,
     P_XIAOMI,
     P_STEPFUN,
+    P_TENCENT_TOKENHUB,
     // SDK-backed providers
     P_BEDROCK,
     P_VERTEX,
@@ -776,6 +867,7 @@ pub const ALL_PROVIDERS: &[HermesProvider] = &[
     // OAuth / external-process
     P_NOUS,
     P_OPENAI_CODEX,
+    P_XAI_OAUTH,
     P_QWEN_OAUTH,
     P_MINIMAX_OAUTH,
     P_COPILOT_ACP,
@@ -895,7 +987,7 @@ mod tests {
 
     #[test]
     fn registry_has_expected_providers() {
-        assert_eq!(ALL_PROVIDERS.len(), 36);
+        assert_eq!(ALL_PROVIDERS.len(), 40);
         assert!(get_provider("anthropic").is_some());
         assert!(get_provider("gemini").is_some());
         assert!(get_provider("atlascloud").is_some());
@@ -904,6 +996,10 @@ mod tests {
         assert!(get_provider("vertex").is_some());
         assert!(get_provider("novita").is_some());
         assert!(get_provider("stepfun").is_some());
+        assert!(get_provider("openai-api").is_some());
+        assert!(get_provider("fireworks").is_some());
+        assert!(get_provider("tencent-tokenhub").is_some());
+        assert!(get_provider("xai-oauth").is_some());
         assert!(get_provider("google-gemini-cli").is_none());
         assert!(get_provider("lmstudio").is_some());
         assert!(get_provider("nous").is_some());
@@ -977,7 +1073,7 @@ mod tests {
 
     #[test]
     fn find_provider_by_model_is_unambiguous() {
-        assert_eq!(find_provider_by_model("deepseek-chat"), Some("deepseek"));
+        assert_eq!(find_provider_by_model("deepseek-v4-pro"), Some("deepseek"));
         assert_eq!(
             find_provider_by_model("deepseek-ai/deepseek-v4-pro"),
             Some("atlascloud")

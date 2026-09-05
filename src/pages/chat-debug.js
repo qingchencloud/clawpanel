@@ -391,6 +391,8 @@ async function testWebSocketAdv(page) {
     const port = config?.gateway?.port || 18789
     const rawToken = config?.gateway?.auth?.token
     const token = (typeof rawToken === 'string') ? rawToken : ''
+    const rawPassword = config?.gateway?.auth?.password
+    const password = (typeof rawPassword === 'string') ? rawPassword : ''
     const wsHost = isTauriRuntime() ? `127.0.0.1:${port}` : location.host
     const wsScheme = location.protocol === 'https:' ? 'wss' : 'ws'
     const url = `${wsScheme}://${wsHost}/ws?token=${encodeURIComponent(token)}`
@@ -403,7 +405,12 @@ async function testWebSocketAdv(page) {
         const msg = JSON.parse(evt.data)
         log('← ' + JSON.stringify(msg, null, 2))
         if (msg.type === 'event' && msg.event === 'connect.challenge') {
-          api.createConnectFrame(msg.payload?.nonce || '', token).then(frame => {
+          api.createConnectFrame(
+            msg.payload?.nonce || '',
+            token,
+            password,
+            msg.payload?.ts,
+          ).then(frame => {
             ws.send(JSON.stringify(frame))
             log('→ connect frame sent')
           }).catch(e => log('❌ frame: ' + e))

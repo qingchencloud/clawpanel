@@ -71,6 +71,7 @@ test('结构化模型 SecretRef 不会被编辑器或渠道同步转成字符串
 test('同步与删除必须经过确认弹窗', () => {
   assert.match(page, /showConfirm\(t\('modelChannels\.syncOpenclawConfirm'/, '同步 OpenClaw 前必须确认')
   assert.match(page, /showConfirm\(t\('modelChannels\.syncHermesConfirm'/, '同步 Hermes 前必须确认')
+  assert.match(page, /showConfirm\(t\('modelChannels\.syncOpenCodeConfirm'/, '同步 OpenCode 前必须确认')
   assert.match(page, /showConfirm\(t\('modelChannels\.syncAssistantConfirm'/, '同步助手前必须确认')
   assert.match(page, /showConfirm\(t\('modelChannels\.deleteConfirm'/, '删除渠道前必须确认')
 })

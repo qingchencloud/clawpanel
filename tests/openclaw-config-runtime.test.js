@@ -46,6 +46,28 @@ test('Web JSON 原子写入保留最后有效备份并完成回读', () => {
   }
 })
 
+test('Web JSON 原子写入在 POSIX 上保留现有所有者和权限', {
+  skip: process.platform === 'win32',
+}, () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clawpanel-config-permission-'))
+  const target = path.join(root, 'openclaw.json')
+  try {
+    fs.writeFileSync(target, JSON.stringify({ keep: 'old' }))
+    fs.chmodSync(target, 0o640)
+    if (process.getuid?.() === 0) fs.chownSync(target, 65534, 65534)
+    const before = fs.statSync(target)
+
+    writeJsonAtomic(target, { keep: 'new' }, { backup: true })
+
+    const after = fs.statSync(target)
+    assert.equal(after.uid, before.uid)
+    assert.equal(after.gid, before.gid)
+    assert.equal(after.mode & 0o777, before.mode & 0o777)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('Web 保存无关配置时不阻断未改动的外部环境变量引用', () => {
   const previous = {
     models: { providers: { external: { apiKey: '${CLAWPANEL_TEST_EXTERNAL_ONLY}' } } },

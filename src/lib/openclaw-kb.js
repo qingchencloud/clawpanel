@@ -104,7 +104,7 @@ OpenClaw 是开源个人 AI 助手平台，核心组件：
 - **agents.defaults.workspace** — 默认工作区路径
 - **agents.defaults.model.primary** — 默认模型（格式 "provider/model"）
 - **agents.defaults.sandbox** — 沙箱配置（mode: "off"|"non-main"|"all"）
-- **agents.list[]** — 多 Agent 配置（id, name, workspace, model, identity, groupChat, sandbox）
+- **agents.list[] / agents.entries{}** — 多 Agent 配置（7.x 数组 / 8.1+ keyed 注册表；含 name, workspace, model, identity, groupChat, sandbox）
 - **channels.whatsapp** — WhatsApp（allowFrom, groups, dmPolicy, accounts）
 - **channels.telegram** — Telegram Bot
 - **channels.discord** — Discord Bot

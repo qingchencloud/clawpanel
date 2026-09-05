@@ -1005,8 +1005,8 @@ function loadLanguageSwitcher(page) {
     <div class="form-hint" style="margin-top:var(--space-xs)">${t('settings.languageHint')}</div>
   `
   const select = bar.querySelector('#lang-select')
-  select.onchange = () => {
-    setLang(select.value)
+  select.onchange = async () => {
+    await setLang(select.value)
     // Re-render sidebar + current page
     const sidebarEl = document.getElementById('sidebar')
     if (sidebarEl) renderSidebar(sidebarEl)

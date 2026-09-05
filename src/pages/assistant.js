@@ -1785,7 +1785,7 @@ function createOpenClawFindings(ctx, component = 'all') {
     }
   }
   if (want('agents')) {
-    if (!ctx.agents.length) findings.push({ level: 'warn', component: 'agents', title: '未读取到 Agent 列表', evidence: 'list_agents 为空', suggestion: '检查 agents.list 与 ~/.openclaw/agents 目录是否正常。' })
+    if (!ctx.agents.length) findings.push({ level: 'warn', component: 'agents', title: '未读取到 Agent 列表', evidence: 'list_agents 为空', suggestion: '检查 agents.list（7.x）/ agents.entries（8.1+）与 ~/.openclaw/agents 目录是否正常。' })
   }
   if (want('channels')) {
     const agentIds = new Set(ctx.agents.map(a => a.id).concat(['main', 'default']))
@@ -1935,7 +1935,8 @@ const OPENCLAW_SCHEMA_GRAPH_SEEDS = [
   { path: 'agents.defaults', type: 'object', description: '默认 Agent 配置。' },
   { path: 'agents.defaults.model.primary', type: 'string', description: '默认主模型，通常格式为 provider/model-id。', risks: ['provider 必须存在于 models.providers；model-id 应存在于该 provider 的 models 列表中。'] },
   { path: 'agents.defaults.model.fallbacks', type: 'array', description: '默认备用模型链。' },
-  { path: 'agents.list', type: 'array', description: '显式 Agent 列表；main Agent 可能是隐式存在的。' },
+  { path: 'agents.list', type: 'array', description: 'OpenClaw 7.x 显式 Agent 列表；main Agent 可能是隐式存在的。' },
+  { path: 'agents.entries', type: 'object', description: 'OpenClaw 2026.8.1+ keyed Agent 注册表；键名即 Agent ID。' },
   { path: 'agents.list[].id', type: 'string', description: 'Agent ID，用于 bindings.agentId 引用。' },
   { path: 'agents.list[].workspace', type: 'string', description: 'Agent 工作目录。' },
   { path: 'channels', type: 'object', description: '消息渠道配置根节点，例如 feishu、telegram、discord、qqbot、dingtalk。' },
@@ -1956,7 +1957,7 @@ const OPENCLAW_SCHEMA_GRAPH_EDGES = [
   { from: 'agents.defaults.model.primary', to: 'models.providers', relation: 'references provider/model-id' },
   { from: 'agents.defaults.model.fallbacks', to: 'models.providers', relation: 'references provider/model-id' },
   { from: 'models.providers.*.apiKey', to: 'env', relation: 'may reference ${ENV_VAR}' },
-  { from: 'bindings[].agentId', to: 'agents.list[].id', relation: 'routes message to agent' },
+  { from: 'bindings[].agentId', to: 'agents.list[].id / agents.entries.{id}', relation: 'routes message to agent' },
   { from: 'bindings[].match.channel', to: 'channels', relation: 'matches channel config key' },
   { from: 'bindings[].match.accountId', to: 'channels.*.accounts', relation: 'matches channel account' },
   { from: 'gateway.controlUi.allowedOrigins', to: 'ClawPanel WebSocket origin', relation: 'allows browser control connection' },

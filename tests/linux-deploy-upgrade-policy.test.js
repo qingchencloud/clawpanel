@@ -28,6 +28,10 @@ test('Linux Web 构建后必须重启已有服务并输出实际版本', () => {
   assert.match(script, /ClawPanel 版本:.*PANEL_VERSION/)
 })
 
+test('Linux Web 部署允许通过环境变量切换到未占用端口', () => {
+  assert.match(script, /PANEL_PORT="\$\{CLAWPANEL_PORT:-\$\{PANEL_PORT:-1420\}\}"/)
+})
+
 test('Linux Web 升级文档必须区分 system 与 user 服务并提供可诊断命令', () => {
   for (const [name, content] of [
     ['README.md', readme],
