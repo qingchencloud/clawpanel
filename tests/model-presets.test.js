@@ -34,7 +34,25 @@ test('编辑未知 OpenClaw API 类型时保留原值供用户选择', () => {
   assert.ok(options.some(item => item.value === 'openai-completions'))
 })
 
+test('模型引用保留 provider 后带斜杠的完整模型 ID', () => {
+  assert.deepEqual(
+    presets.splitModelReference('atlascloud/deepseek-ai/deepseek-v4-pro'),
+    ['atlascloud', 'deepseek-ai/deepseek-v4-pro'],
+  )
+})
+
 // ===== Provider Presets =====
+
+test('Atlas Cloud 预设使用 OpenAI-compatible 端点和嵌套模型 ID', () => {
+  const atlascloud = PROVIDER_PRESETS.find(p => p.key === 'atlascloud')
+  assert.ok(atlascloud)
+  assert.equal(atlascloud.label, 'Atlas Cloud')
+  assert.equal(atlascloud.baseUrl, 'https://api.atlascloud.ai/v1')
+  assert.equal(atlascloud.api, 'openai-completions')
+  assert.deepEqual(MODEL_PRESETS.atlascloud.map(m => m.id), [
+    'deepseek-ai/deepseek-v4-pro',
+  ])
+})
 
 test('词元 API 赞助预设使用独立 provider 与大陆加速地址', () => {
   const ciyapi = PROVIDER_PRESETS.find(p => p.key === 'ciyapi')
