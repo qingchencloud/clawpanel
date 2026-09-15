@@ -17,6 +17,7 @@ import {
   API_TYPES as SHARED_API_TYPES,
   fetchQtcoolModels,
   fetchCiyapiModels,
+  splitModelReference,
 } from '../lib/model-presets.js'
 import { t } from '../lib/i18n.js'
 import { getActiveEngineId } from '../lib/engine-manager.js'
@@ -1760,7 +1761,7 @@ function createOpenClawFindings(ctx, component = 'all') {
   const providers = ctx.providers || []
   const providerMap = new Map(providers.map(p => [p.key, p]))
   const primary = ctx.primaryModel || ''
-  const [primaryProvider, primaryModel] = primary.split('/')
+  const [primaryProvider, primaryModel] = splitModelReference(primary)
   if (want('gateway')) {
     if (!ctx.gateway) findings.push({ level: 'warn', component: 'gateway', title: '无法读取 Gateway 服务状态', evidence: 'get_services_status 未返回可识别的 Gateway 项', suggestion: '在服务管理页或使用 openclaw gateway status --deep 进一步确认。' })
     else if (!ctx.gateway.running) findings.push({ level: 'warn', component: 'gateway', title: 'Gateway 当前未运行', evidence: `${ctx.gateway.label}: ${ctx.gateway.status || 'not running'}`, suggestion: '可在服务管理页启动 Gateway，或先检查端口/日志定位启动失败原因。' })

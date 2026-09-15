@@ -177,6 +177,20 @@ const P_FIREWORKS: HermesProvider = HermesProvider {
     cli_auth_hint: "",
 };
 
+const P_ATLASCLOUD: HermesProvider = HermesProvider {
+    id: "atlascloud",
+    name: "Atlas Cloud",
+    auth_type: AUTH_API_KEY,
+    base_url: "https://api.atlascloud.ai/v1",
+    base_url_env_var: "",
+    api_key_env_vars: &["ATLASCLOUD_API_KEY"],
+    transport: TRANSPORT_OPENAI_CHAT,
+    models_probe: PROBE_OPENAI,
+    models: &["deepseek-ai/deepseek-v4-pro"],
+    is_aggregator: true,
+    cli_auth_hint: "",
+};
+
 const P_ZAI: HermesProvider = HermesProvider {
     id: "zai",
     name: "Z.AI / GLM",
@@ -817,6 +831,7 @@ pub const ALL_PROVIDERS: &[HermesProvider] = &[
     P_ANTHROPIC,
     P_GEMINI,
     P_DEEPSEEK,
+    P_ATLASCLOUD,
     P_OPENAI_API,
     P_FIREWORKS,
     P_XAI,
@@ -972,9 +987,10 @@ mod tests {
 
     #[test]
     fn registry_has_expected_providers() {
-        assert_eq!(ALL_PROVIDERS.len(), 39);
+        assert_eq!(ALL_PROVIDERS.len(), 40);
         assert!(get_provider("anthropic").is_some());
         assert!(get_provider("gemini").is_some());
+        assert!(get_provider("atlascloud").is_some());
         assert!(get_provider("alibaba-coding-plan").is_some());
         assert!(get_provider("bedrock").is_some());
         assert!(get_provider("vertex").is_some());
@@ -998,6 +1014,10 @@ mod tests {
         assert_eq!(primary_api_key_env("zai"), Some("GLM_API_KEY"));
         assert_eq!(primary_api_key_env("novita"), Some("NOVITA_API_KEY"));
         assert_eq!(primary_api_key_env("stepfun"), Some("STEPFUN_API_KEY"));
+        assert_eq!(
+            primary_api_key_env("atlascloud"),
+            Some("ATLASCLOUD_API_KEY")
+        );
         assert_eq!(primary_api_key_env("bedrock"), None);
         assert_eq!(primary_api_key_env("vertex"), None);
         assert_eq!(primary_api_key_env("nous"), None);
@@ -1016,6 +1036,7 @@ mod tests {
         assert!(keys.contains(&"NOVITA_API_KEY"));
         assert!(keys.contains(&"NOVITA_BASE_URL"));
         assert!(keys.contains(&"STEPFUN_API_KEY"));
+        assert!(keys.contains(&"ATLASCLOUD_API_KEY"));
         assert!(keys.contains(&"GATEWAY_ALLOW_ALL_USERS"));
         assert!(keys.contains(&"API_SERVER_ENABLED"));
         assert!(keys.contains(&"API_SERVER_KEY"));
@@ -1038,6 +1059,9 @@ mod tests {
         let keys = vec!["DEEPSEEK_API_KEY"];
         assert_eq!(infer_provider_from_env_keys(&keys), Some("deepseek"));
 
+        let keys = vec!["ATLASCLOUD_API_KEY"];
+        assert_eq!(infer_provider_from_env_keys(&keys), Some("atlascloud"));
+
         // Secondary anthropic env var still matches.
         let keys = vec!["ANTHROPIC_TOKEN"];
         assert_eq!(infer_provider_from_env_keys(&keys), Some("anthropic"));
@@ -1050,6 +1074,10 @@ mod tests {
     #[test]
     fn find_provider_by_model_is_unambiguous() {
         assert_eq!(find_provider_by_model("deepseek-v4-pro"), Some("deepseek"));
+        assert_eq!(
+            find_provider_by_model("deepseek-ai/deepseek-v4-pro"),
+            Some("atlascloud")
+        );
         assert_eq!(find_provider_by_model("kimi-for-coding"), None);
         assert_eq!(find_provider_by_model("nonexistent"), None);
     }
