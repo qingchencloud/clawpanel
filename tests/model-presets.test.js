@@ -99,6 +99,24 @@ test('MiniMax provider preset has site and description', () => {
   assert.ok(minimax.desc, 'MiniMax should have a description')
 })
 
+test('Requesty 预设使用 OpenAI 兼容接口与官方 Key 页面', () => {
+  const requesty = PROVIDER_PRESETS.find(p => p.key === 'requesty')
+  assert.ok(requesty, 'Requesty provider preset should exist')
+  assert.equal(requesty.label, 'Requesty')
+  assert.equal(requesty.baseUrl, 'https://router.requesty.ai/v1')
+  assert.equal(requesty.api, 'openai-completions')
+  assert.equal(requesty.site, 'https://app.requesty.ai/api-keys')
+  assert.ok(requesty.desc, 'Requesty should have a description')
+})
+
+test('Requesty 预设不带静态模型，也不进入赞助或免费推荐位', () => {
+  const requesty = PROVIDER_PRESETS.find(p => p.key === 'requesty')
+  assert.equal(MODEL_PRESETS.requesty, undefined)
+  assert.equal(requesty.badge, undefined)
+  assert.equal(requesty.sponsored, undefined)
+  assert.equal(requesty.hidden, undefined)
+})
+
 test('all provider presets have required fields', () => {
   for (const p of PROVIDER_PRESETS) {
     assert.ok(p.key, `preset missing key`)
