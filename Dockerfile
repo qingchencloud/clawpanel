@@ -29,6 +29,7 @@ WORKDIR /build
 
 # 复制项目文件
 COPY package*.json ./
+COPY openclaw-version-policy.json ./
 COPY vite.config.js ./
 COPY index.html ./
 COPY public/ ./public/
@@ -42,7 +43,7 @@ RUN npm ci --prefer-offline --registry https://registry.npmmirror.com && \
 # -----------------------------------------------------------------------------
 # 阶段 2: 生产阶段 (production)
 # -----------------------------------------------------------------------------
-FROM node:22.22.3-alpine AS production
+FROM node:24.16.0-alpine AS production
 
 # 安装运行时依赖
 RUN apk add --no-cache \
@@ -65,12 +66,13 @@ WORKDIR /app
 COPY --from=builder --chown=node:node /build/dist ./dist
 COPY --from=builder --chown=node:node /build/scripts ./scripts
 COPY --from=builder --chown=node:node /build/package*.json ./
+COPY --from=builder --chown=node:node /build/openclaw-version-policy.json ./
 COPY --from=builder --chown=node:node /build/node_modules ./node_modules
-COPY --from=builder --chown=node:node /build/src/lib/model-presets.js ./src/lib/model-presets.js
+COPY --from=builder --chown=node:node /build/src/lib ./src/lib
 
 # 安装 OpenClaw CLI（默认官方稳定版；构建参数仍可切换汉化版）
 ARG OPENCLAW_PACKAGE=openclaw
-ARG OPENCLAW_VERSION=2026.8.2
+ARG OPENCLAW_VERSION=2026.9.8
 RUN npm install -g "${OPENCLAW_PACKAGE}@${OPENCLAW_VERSION}" --registry https://registry.npmmirror.com || \
     npm install -g "${OPENCLAW_PACKAGE}@${OPENCLAW_VERSION}" --registry https://registry.npmjs.org
 

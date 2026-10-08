@@ -86,7 +86,7 @@ test('新版受管工作台固定网页选目录，叠加层同时包含在 Web 
 
 test('安装链固定 DSH 与 pnpm 版本，并显式允许所需原生构建', () => {
   for (const source of [adapter, rustModule]) {
-    assert.match(source, /0\.1\.5-rc\.2/)
+    assert.match(source, /0\.2\.0-rc\.2/)
   }
   for (const source of [devApi, rustModule]) {
     assert.match(source, /11\.7\.0/)

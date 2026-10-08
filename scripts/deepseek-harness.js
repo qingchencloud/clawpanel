@@ -6,7 +6,7 @@
  */
 
 export const DSH_PACKAGE_NAME = '@deepseek-ai/dsh'
-export const DSH_PACKAGE_VERSION = '0.1.5-rc.2'
+export const DSH_PACKAGE_VERSION = '0.2.0-rc.2'
 export const DSH_DEFAULT_PORT = 3080
 export const DSH_SETTINGS_NAMESPACE = 'llm-pi-ai'
 export const DSH_DEFAULT_MODEL_NAMESPACE = 'agent-default-model'

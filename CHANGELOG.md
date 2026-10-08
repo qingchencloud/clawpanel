@@ -5,6 +5,31 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [未发布 (Unreleased)]
+
+## [0.21.9] - 2026-10-08
+
+### 兼容性 (Compatibility)
+
+- 官方 OpenClaw 稳定基线更新至 2026.9.8；默认安装、部署脚本与 Docker 镜像同步，保留旧版协议及汉化版选择，不自动升级现有运行时。
+- Hermes 稳定安装目标更新至 0.21.5（v2026.9.24），固定源码提交和安装器校验；适配新版受管 Python/Node 与安装阶段顺序。
+- DeepSeek Harness 更新目标为 npm 推荐的 0.2.0-rc.2，仍标记为预发布版；不默认切换到 OpenClaw beta 或 DSH alpha。
+
+### 修复 (Fixes)
+
+- 修复 Hermes 能力接口认证与 Web handler 方法绑定，恢复启动和聊天链路。
+- Hermes 原生 YAML 端口、环境变量端口按正确优先级探测；旧面板端口别名迁移为原生字段，保留原字段及备份。启动守护保留 host、port、嵌套选项和其他平台配置。
+- 多 Gateway 看板识别新共享宿主及命名 Profile 的宿主记录，使用实际监听端口，避免重复启动和按进程名批量结束其他实例。
+- 修复 DSH 新版登录的相对根目录跳转识别，继续限制认证 Cookie 和跳转目标；验证内嵌工作台模型切换及刷新保留选择。
+- 修复 Docker 构建输入遗漏引擎后端模块、共享库和版本策略，排除本机测试运行时与依赖缓存。生产 Node 升至 OpenClaw 要求的 24.16.0。
+
+### 测试与验证 (Testing)
+
+- 增加端口环境回退、旧端口迁移、共享宿主发现、认证、Web 方法绑定及 Docker 打包回归。
+- 实际 OpenClaw Gateway 握手和配置读回、Hermes Profile/共享宿主/模型对话/服务启停、DSH 内嵌模型切换及流式对话通过隔离验证；聊天使用本地测试模型。
+- 新增独立的手动 Runtime Compatibility 工作流，验证实际 Docker 镜像的 Web 健康、配置校验与 Gateway 握手。现有三平台 CI 门禁保持不变。
+- 版本与验证范围见 `docs/compatibility-2026-10-07.md`；真实渠道账户、真实付费模型和预发布 beta/alpha 不纳入本次端到端验收。
+
 ## [0.21.8] - 2026-09-15
 
 ### 修复 (Fixes)

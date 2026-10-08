@@ -1417,7 +1417,7 @@ export default {
   chatProfileSwitchFailed: _('切换 Profile 失败', 'Switch profile failed', '切換 Profile 失敗'),
   // Batch 2 §G: 多 Gateway 看板
   hermesGatewaysTitle: _('多 Gateway 看板', 'Multi Gateway', '多 Gateway 看板'),
-  hermesGatewaysDesc: _('同时运行多个 Hermes Gateway（每个绑不同 Profile），方便切换工作环境', 'Run multiple Hermes Gateways simultaneously (each bound to its own profile)', '同時執行多個 Hermes Gateway（每個綁不同 Profile），方便切換工作環境'),
+  hermesGatewaysDesc: _('管理不同 Profile 的 Gateway；新版由共享宿主提供服务，旧版保留独立实例', 'Manage profile Gateways: shared host on newer versions, independent instances on older versions', '管理不同 Profile 的 Gateway；新版由共用宿主提供服務，舊版保留獨立實例'),
   hermesGatewaysEmpty: _('尚未配置任何 Gateway', 'No gateways configured', '尚未設定任何 Gateway'),
   hermesGatewaysEmptyHint: _('点击「+ 添加」给一个 Profile 配置 Gateway 实例', 'Click "+ Add" to configure a gateway instance for a profile', '點擊「+ 新增」給一個 Profile 設定 Gateway 實例'),
   hermesGatewayAdd: _('添加', 'Add', '新增'),
@@ -1432,6 +1432,7 @@ export default {
   hermesGatewayRunning: _('运行中', 'Running', '執行中'),
   hermesGatewayStopped: _('已停止', 'Stopped', '已停止'),
   hermesGatewayForeign: _('端口已被外部进程占用（非 ClawPanel spawn）', 'Port owned by external process (not spawned by ClawPanel)', '埠號已被外部行程佔用'),
+  hermesGatewayShared: _('由 Hermes 共享 Gateway 提供服务，请在服务管理中操作宿主，不单独终止本 Profile 的宿主进程', 'Served by the shared Hermes Gateway. Manage its host in Services rather than terminate it for this profile.', '由 Hermes 共用 Gateway 提供服務，請在服務管理中操作宿主，不單獨終止本 Profile 的宿主程序'),
   hermesGatewayForeignTip: _('只能停止 ClawPanel spawn 的实例', 'Can only stop instances spawned by ClawPanel', '只能停止 ClawPanel spawn 的實例'),
   hermesGatewayStarted: _('Gateway "{name}" 已启动', 'Gateway "{name}" started', 'Gateway "{name}" 已啟動'),
   hermesGatewayStartedWarning: _('已启动，但 {warning}', 'Started, but {warning}', '已啟動，但 {warning}'),

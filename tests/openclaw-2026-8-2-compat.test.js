@@ -13,13 +13,14 @@ const dockerCompose = readFileSync(new URL('../docker-compose.yml', import.meta.
 const dashboard = readFileSync(new URL('../src/pages/dashboard.js', import.meta.url), 'utf8')
 const webBackend = readFileSync(new URL('../scripts/dev-api.js', import.meta.url), 'utf8')
 
-test('OpenClaw 2026.8.2 is the official stable baseline across install paths', () => {
-  assert.equal(policy.default.official.recommended, '2026.8.2')
-  assert.match(featureCatalog, /official: '2026\.8\.2'/)
-  assert.match(linuxDeploy, /OPENCLAW_OFFICIAL_RECOMMENDED_VERSION="2026\.8\.2"/)
+test('OpenClaw 2026.9.8 is the official stable baseline across install paths', () => {
+  assert.equal(policy.default.official.recommended, '2026.9.8')
+  assert.match(featureCatalog, /official: '2026\.9\.8'/)
+  assert.match(linuxDeploy, /OPENCLAW_OFFICIAL_RECOMMENDED_VERSION="2026\.9\.8"/)
   assert.match(dockerfile, /ARG OPENCLAW_PACKAGE=openclaw/)
-  assert.match(dockerfile, /ARG OPENCLAW_VERSION=2026\.8\.2/)
-  assert.match(dockerCompose, /openclaw@2026\.8\.2/)
+  assert.match(dockerfile, /ARG OPENCLAW_VERSION=2026\.9\.8/)
+  assert.match(dockerfile, /FROM node:24\.16\.0-alpine AS production/)
+  assert.match(dockerCompose, /openclaw@2026\.9\.8/)
 })
 
 test('OpenClaw 2026.8.2 keeps the 8.1 agent shape and protocol-4 handshake contract', () => {

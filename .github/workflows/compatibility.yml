@@ -1,0 +1,24 @@
+name: Runtime Compatibility
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker-runtime:
+    name: Docker 与官方 OpenClaw 运行验证
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.16.0
+          cache: npm
+      - run: npm ci
+      - name: 构建实际发行镜像
+        run: docker build --progress=plain --tag clawpanel-compat:${{ github.sha }} .
+      - name: 验证 Web 健康、模型配置与 Gateway 握手
+        run: node scripts/smoke-docker-runtime.mjs clawpanel-compat:${{ github.sha }}

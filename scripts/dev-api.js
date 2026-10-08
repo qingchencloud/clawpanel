@@ -116,15 +116,15 @@ export function readFileExcerptSince(filePath, offset = 0, maxBytes = 8192) {
 // ---------------------------------------------------------------------------
 const HERMES_HOME = path.join(homedir(), '.hermes')
 const HERMES_DEFAULT_PORT = 8642
-const HERMES_STABLE_VERSION = '0.20.5'
-const HERMES_STABLE_TAG = 'v2026.8.19'
-const HERMES_STABLE_COMMIT = 'fcbd1076a93841fa88855acce810e342a5b78101'
+const HERMES_STABLE_VERSION = '0.21.5'
+const HERMES_STABLE_TAG = 'v2026.9.24'
+const HERMES_STABLE_COMMIT = 'f97608f178d1ffeca59860195ab7da295f7c8e5f'
 const HERMES_REPO_URL = 'https://github.com/NousResearch/hermes-agent.git'
 const HERMES_GIT_URL = `git+${HERMES_REPO_URL}@${HERMES_STABLE_TAG}`
 const HERMES_INSTALLER_BASE_URL = `https://raw.githubusercontent.com/NousResearch/hermes-agent/${HERMES_STABLE_COMMIT}/scripts`
 const HERMES_INSTALLER_SHA256 = {
-  windows: '74225bf244253bfa5bc2b1d16fa3bb8618e199a53d1c0344b37ab9930696d3ba',
-  posix: '0582d9b1562efcb6e0ac62f4451021667830b830a72ce7d91eaea9fee8b6c09b',
+  windows: '0a80dfeb7434229933bac32e73140d10086dff81bd84b156e71be9abc87cddf2',
+  posix: '2017ddf0cc7bc6cfb70d40dc9fba1d916f47dbcccf5fe73bdee2cf93a11262af',
 }
 const HERMES_DASHBOARD_FALLBACK_INDEX_HTML = `<!doctype html>
 <html lang="en">
@@ -332,6 +332,8 @@ function hermesEnhancedPath() {
   // 0.20.5 起上游不再支持从 Git 构建 wheel/sdist，ClawPanel 改用官方
   // source installer。把源码 venv 放在旧 uv-tool 路径前，升级迁移后立刻生效。
   const extra = [hermesSourceVenvBinDir(), path.join(hermesHome(), 'bin'), uvBinDir()]
+  // 新安装器把 Node 放在 Hermes Home 内，运行工具时也优先使用受管版本。
+  extra.push(path.join(hermesHome(), 'node', ...(isWindows ? [] : ['bin'])))
   if (isWindows) {
     const appdata = process.env.APPDATA || ''
     if (appdata) extra.push(path.join(appdata, 'uv', 'tools', 'bin'))
@@ -354,16 +356,37 @@ export function buildHermesRuntimeEnv(baseEnv = process.env, home = hermesHome()
   }
 }
 
+function parseHermesGatewayPort(value) {
+  if (typeof value !== 'number' && typeof value !== 'string') return null
+  if (typeof value === 'string' && !/^\d+$/.test(value.trim())) return null
+  const port = Number(value)
+  return Number.isInteger(port) && port > 0 && port <= 65535 ? port : null
+}
+
+function legacyHermesGatewayPort(config) {
+  if (config?.platforms?.api_server?.port != null) return null
+  return parseHermesGatewayPort(config?.api_server_port)
+}
+
+export function resolveHermesGatewayPort(config = {}, envPort) {
+  // 与原生优先级一致：配置端口 > 环境端口；旧面板别名只作兼容回退。
+  for (const value of [config?.platforms?.api_server?.port, envPort, config?.api_server_port]) {
+    const port = parseHermesGatewayPort(value)
+    if (port !== null) return port
+  }
+  return HERMES_DEFAULT_PORT
+}
+
 function hermesGatewayPort() {
   const configPath = path.join(hermesHome(), 'config.yaml')
+  let config = {}
   try {
     const content = fs.readFileSync(configPath, 'utf8')
-    for (const line of content.split('\n')) {
-      const m = line.trim().match(/^api_server_port:\s*(\d+)/)
-      if (m) { const p = parseInt(m[1], 10); if (p > 0) return p }
-    }
+    config = YAML.parse(content) || {}
   } catch {}
-  return HERMES_DEFAULT_PORT
+  let envPort = process.env.API_SERVER_PORT
+  try { envPort = readHermesEnvValues().API_SERVER_PORT ?? envPort } catch {}
+  return resolveHermesGatewayPort(config, envPort)
 }
 
 function hermesGatewayUrl() {
@@ -464,7 +487,9 @@ function hermesInstallerPlan(home = hermesHome()) {
       sourcePath: 'scripts/install.ps1',
       scriptPath: path.join(cacheDir, `install-${HERMES_STABLE_TAG}.ps1`),
       program: 'powershell.exe',
-      stages: ['uv', 'python', 'git', 'repository', 'venv', 'dependencies', 'config-templates', 'platform-sdks', 'bootstrap-marker'],
+      // 0.21.5 的受管 Python 位于 checkout 内，repository 必须先于 python。
+      // 不运行全局 PATH 写入、系统软件安装或交互配置阶段。
+      stages: ['uv', 'git', 'node', 'repository', 'python', 'venv', 'dependencies', 'node-deps', 'config-templates', 'platform-sdks', 'bootstrap-marker'],
       argsForStage: (scriptPath, stage) => [
         '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath,
         '-HermesHome', home, '-InstallDir', installDir,
@@ -480,7 +505,7 @@ function hermesInstallerPlan(home = hermesHome()) {
     sourcePath: 'scripts/install.sh',
     scriptPath: path.join(cacheDir, `install-${HERMES_STABLE_TAG}.sh`),
     program: 'bash',
-    stages: ['repository', 'venv', 'python-deps', 'config', 'complete'],
+    stages: ['repository', 'venv', 'python-deps', 'node-deps', 'config', 'complete'],
     argsForStage: (scriptPath, stage) => [
       scriptPath,
       '--hermes-home', home, '--dir', installDir,
@@ -16962,9 +16987,8 @@ const handlers = {
     if (action === 'stop') {
       if (_hermesGwProcess) { try { _hermesGwProcess.kill() } catch {} _hermesGwProcess = null }
       const r = runHermesSilent('hermes', ['gateway', 'stop'])
-      if (isWindows) {
-        try { spawnSync('taskkill', ['/F', '/IM', 'hermes.exe'], { windowsHide: true, timeout: 5000 }) } catch {}
-      }
+      // 原生 CLI 负责当前宿主的身份核验，不按进程名终止其他 Profile/安装目录。
+      if (!r.ok) throw new Error(`Gateway 停止失败: ${r.stderr || '请检查 Gateway 运行状态'}`)
       return 'Gateway 已停止'
     }
     if (action === 'status') {
@@ -17003,10 +17027,8 @@ const handlers = {
   },
 
   async hermes_capabilities() {
-    const url = `${hermesGatewayUrl()}/v1/capabilities`
-    const resp = await globalThis.fetch(url, { signal: AbortSignal.timeout(5000), headers: { 'User-Agent': 'ClawPanel-Web' } })
-    if (!resp.ok) throw new Error(`Gateway 返回 HTTP ${resp.status}`)
-    return await resp.json()
+    // 新版将能力描述纳入认证，复用代理的本机密钥注入，不把密钥交给浏览器。
+    return handlers.hermes_api_proxy({ method: 'GET', path: '/v1/capabilities' })
   },
 
   async hermes_api_proxy({ method, path: reqPath, body, headers: customHeaders } = {}) {
@@ -18309,7 +18331,9 @@ const handlers = {
   },
 
   _hermesPatchYamlEnsureApiServer(raw) {
-    if (this._hermesConfigHasApiServerEnabled(raw)) return raw
+    let legacyPort = null
+    try { legacyPort = legacyHermesGatewayPort(YAML.parse(raw)) } catch {}
+    if (this._hermesConfigHasApiServerEnabled(raw) && legacyPort === null) return raw
     const lines = raw.split('\n')
     const out = []
     let platformsFound = false
@@ -18324,17 +18348,30 @@ const handlers = {
         i++
         const accumulated = []
         let skipping = false
+        let apiServerFound = false
         while (i < lines.length) {
           const l = lines[i]
           const t = l.replace(/\s+$/, '')
           const ind = t.length - t.trimStart().length
           if (ind === 0 && t !== '') break
-          if (ind <= 2) skipping = t.trimStart().startsWith('api_server:')
-          if (!skipping) accumulated.push(l)
+          if (ind <= 2 && t && !t.trimStart().startsWith('#')) {
+            skipping = t.trimStart().startsWith('api_server:')
+            if (skipping) {
+              apiServerFound = true
+              accumulated.push(l, '    enabled: true')
+              if (legacyPort !== null) accumulated.push(`    port: ${legacyPort}`)
+              i++
+              continue
+            }
+          }
+          // 只替换 enabled，保留新版原生 host/port、认证和其他未知字段。
+          if (!(skipping && ind === 4 && t.trimStart().startsWith('enabled:'))) accumulated.push(l)
           i++
         }
-        out.push('  api_server:')
-        out.push('    enabled: true')
+        if (!apiServerFound) {
+          out.push('  api_server:', '    enabled: true')
+          if (legacyPort !== null) out.push(`    port: ${legacyPort}`)
+        }
         out.push(...accumulated)
         continue
       }
@@ -18346,6 +18383,7 @@ const handlers = {
       out.push('platforms:')
       out.push('  api_server:')
       out.push('    enabled: true')
+      if (legacyPort !== null) out.push(`    port: ${legacyPort}`)
     }
     let content = out.join('\n')
     if (!content.endsWith('\n')) content += '\n'
@@ -18356,11 +18394,10 @@ const handlers = {
     const configPath = path.join(hermesHome(), 'config.yaml')
     if (!fs.existsSync(configPath)) return
     const raw = fs.readFileSync(configPath, 'utf8')
-    if (this._hermesConfigHasApiServerEnabled(raw)) return
-    const ts = Math.floor(Date.now() / 1000)
-    const backupPath = configPath + `.bak-${ts}`
-    try { fs.writeFileSync(backupPath, raw) } catch {}
     const patched = this._hermesPatchYamlEnsureApiServer(raw)
+    if (patched === raw) return
+    const backupPath = configPath + `.bak-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`
+    try { fs.writeFileSync(backupPath, raw) } catch {}
     fs.writeFileSync(configPath, patched)
     console.warn(`[hermes guardian] patched config.yaml (api_server.enabled). Backup: ${backupPath}`)
   },
@@ -20427,7 +20464,8 @@ async function _apiMiddleware(req, res, next) {
 
   try {
     const args = await readBody(req)
-    const result = await handler(args)
+    // Hermes 启动/聊天等 handler 会调用同表方法，保持对象方法的 this 绑定。
+    const result = await handler.call(handlers, args)
     res.setHeader('Content-Type', 'application/json')
     res.end(JSON.stringify(result))
   } catch (e) {

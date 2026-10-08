@@ -15,10 +15,9 @@ test('Docker 生产镜像复用官方 node 用户，避免 Alpine UID/GID 1000 �
 test('Docker 构建上下文和生产镜像包含 Web API 运行时依赖', () => {
   assert.match(dockerignore, /!public\/\*\*/)
   assert.match(dockerfile, /COPY public\/ \.\/public\//)
-  assert.match(dockerignore, /!scripts\/dev-api\.js/)
-  assert.match(dockerignore, /!scripts\/media-background-queue\.js/)
-  assert.match(dockerignore, /!scripts\/lib\/\*\*/)
-  assert.match(dockerfile, /\/build\/src\/lib\/model-presets\.js/)
+  assert.doesNotMatch(dockerignore, /^scripts\/(?:\*|\*\.js|lib\/\*\*)$/m)
+  assert.match(dockerfile, /COPY --from=builder --chown=node:node \/build\/scripts \.\/scripts/)
+  assert.match(dockerfile, /COPY --from=builder --chown=node:node \/build\/src\/lib \.\/src\/lib/)
 })
 
 test('Docker 健康检查跟随 Web 自定义端口', () => {

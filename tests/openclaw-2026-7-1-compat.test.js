@@ -11,10 +11,10 @@ const desktopConfig = readFileSync(new URL('../src-tauri/src/commands/config.rs'
 const desktopService = readFileSync(new URL('../src-tauri/src/commands/service.rs', import.meta.url), 'utf8')
 const chatPage = readFileSync(new URL('../src/pages/chat.js', import.meta.url), 'utf8')
 
-test('ClawPanel recommends official 2026.8.2 while Chinese stays on its latest published correction', () => {
-  assert.equal(policy.default.official.recommended, '2026.8.2')
+test('ClawPanel recommends official 2026.9.8 while preserving the Chinese correction baseline', () => {
+  assert.equal(policy.default.official.recommended, '2026.9.8')
   assert.equal(policy.default.chinese.recommended, '2026.7.1-2-zh.1')
-  assert.match(featureCatalog, /official: '2026\.8\.2'/)
+  assert.match(featureCatalog, /official: '2026\.9\.8'/)
   assert.match(featureCatalog, /chinese: '2026\.7\.1-2-zh\.1'/)
 })
 

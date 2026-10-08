@@ -30,7 +30,8 @@ export function createDshAuth(portValue, { fetchImpl = globalThis.fetch } = {}) 
           redirect: 'manual', signal: AbortSignal.timeout(8000),
         })
         const received = (response.headers.get('set-cookie') || '').split(';')[0]
-        if (response.status !== 303 || response.headers.get('location') !== '/' || !/^dsh-auth-[A-Za-z0-9_-]+=[A-Za-z0-9_.-]+$/.test(received)) {
+        // 0.2+ 改用 ./，只接受新旧两种根跳转，不放宽到任意跳转地址。
+        if (response.status !== 303 || !['/', './'].includes(response.headers.get('location')) || !/^dsh-auth-[A-Za-z0-9_-]+=[A-Za-z0-9_.-]+$/.test(received)) {
           throw new Error(`DeepSeek Harness 会话认证失败: HTTP ${response.status}`)
         }
         cookie = received

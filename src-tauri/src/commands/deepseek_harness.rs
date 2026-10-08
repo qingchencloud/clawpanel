@@ -11,7 +11,7 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 const DSH_PACKAGE_NAME: &str = "@deepseek-ai/dsh";
-const DSH_PACKAGE_VERSION: &str = "0.1.5-rc.2";
+const DSH_PACKAGE_VERSION: &str = "0.2.0-rc.2";
 const DSH_DEFAULT_PORT: u16 = 3080;
 const DSH_NODE_REQUIREMENT: &str = "^22.19.0 || >=24.0.0";
 const DSH_PNPM_VERSION: &str = "11.7.0";
@@ -74,6 +74,11 @@ fn observe_dsh_line(line: &str, pid: u32, port: u16) {
     }
 }
 
+fn dsh_auth_redirect_is_root(location: Option<&str>) -> bool {
+    // 新版改用 ./；仍只接受已验证的根跳转，不跟随外部地址。
+    matches!(location, Some("/" | "./"))
+}
+
 async fn dsh_auth_cookie(port: u16) -> Result<String, String> {
     let state = DSH_AUTH
         .lock()
@@ -105,11 +110,12 @@ async fn dsh_auth_cookie(port: u16) -> Result<String, String> {
         .unwrap_or_default()
         .to_string();
     if response.status().as_u16() != 303
-        || response
-            .headers()
-            .get("location")
-            .and_then(|v| v.to_str().ok())
-            != Some("/")
+        || !dsh_auth_redirect_is_root(
+            response
+                .headers()
+                .get("location")
+                .and_then(|v| v.to_str().ok()),
+        )
         || !regex::Regex::new(r"^dsh-auth-[A-Za-z0-9_-]+=[A-Za-z0-9_.-]+$")
             .unwrap()
             .is_match(&cookie)
@@ -1257,11 +1263,34 @@ mod tests {
     }
 
     #[test]
+    fn authentication_supports_new_root_redirect_without_accepting_other_targets() {
+        for location in ["/", "./"] {
+            assert!(dsh_auth_redirect_is_root(Some(location)));
+        }
+        for location in [
+            "https://example.test/",
+            "//example.test/",
+            "/other",
+            "./?token=leak",
+            "./#leak",
+        ] {
+            assert!(!dsh_auth_redirect_is_root(Some(location)));
+        }
+        assert!(!dsh_auth_redirect_is_root(None));
+    }
+
+    #[test]
     fn update_does_not_downgrade_stable_or_newer_rc() {
-        for v in ["0.1.1-rc.2", "0.1.5-rc.1", "0.1.5-alpha.2"] {
+        for v in [
+            "0.1.1-rc.2",
+            "0.1.5-rc.2",
+            "0.1.7-rc.2",
+            "0.2.0-rc.1",
+            "0.2.0-alpha.2",
+        ] {
             assert!(dsh_has_update(v), "{v}");
         }
-        for v in ["", "0.1.5-rc.2", "0.1.5-rc.3", "0.1.5", "0.1.6-alpha.1"] {
+        for v in ["", "0.2.0-rc.2", "0.2.0-rc.3", "0.2.0", "0.2.1-alpha.1"] {
             assert!(!dsh_has_update(v), "{v}");
         }
     }

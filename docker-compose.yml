@@ -127,7 +127,7 @@ services:
   # OpenClaw Gateway 服务（可选，取消注释以启用）
   # ---------------------------------------------------------------------------
   # gateway:
-  #   image: node:22.22.3-alpine
+  #   image: node:24.16.0-alpine
   #   container_name: openclaw-gateway
   #   hostname: openclaw-gateway
   #   network_mode: host
@@ -137,7 +137,7 @@ services:
   #     - TZ=Asia/Shanghai
   #   restart: unless-stopped
   #   command: >
-  #     sh -c "npm install -g openclaw@2026.8.2 --registry https://registry.npmmirror.com &&
+  #     sh -c "npm install -g openclaw@2026.9.8 --registry https://registry.npmmirror.com &&
   #            openclaw init 2>/dev/null || true &&
   #            openclaw gateway start --foreground"
   #   healthcheck:
