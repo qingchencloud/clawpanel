@@ -7,10 +7,16 @@
 
 ## [未发布 (Unreleased)]
 
+## [0.22.1] - 2026-10-09
+
 ### 文档 (Documentation)
 
 - 重整多引擎、模型渠道、OpenCode、Pi 与 Linux/Docker/ARM 部署文档，明确官方 OpenClaw 默认基线、显式同步、服务器端运行边界及实验版能力范围。
 - 新增文档导航与英文 Pi 指南，更新贡献、发版和安全政策说明。
+
+### 兼容性 (Compatibility)
+
+- DeepSeek Harness 保持 `0.2.0-rc.2` 稳定版默认目标，同时加入 `0.2.1-alpha.2` 显式测试通道；Web 与 Tauri 安装链均支持安装、版本回读和切回稳定版。
 
 ## [0.22.0] - 2026-10-09
 

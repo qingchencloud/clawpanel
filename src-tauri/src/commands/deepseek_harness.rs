@@ -4,6 +4,7 @@
 //! 后端命令，不直接暴露 Harness 配置面和凭据接口。
 
 use serde_json::{json, Map, Value};
+use std::cmp::Ordering;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
@@ -11,10 +12,13 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 const DSH_PACKAGE_NAME: &str = "@deepseek-ai/dsh";
-const DSH_PACKAGE_VERSION: &str = "0.2.0-rc.2";
+const DSH_STABLE_VERSION: &str = "0.2.0-rc.2";
+const DSH_PREVIEW_VERSION: &str = "0.2.1-alpha.2";
+const DSH_PACKAGE_VERSION: &str = DSH_STABLE_VERSION;
 const DSH_DEFAULT_PORT: u16 = 3080;
 const DSH_NODE_REQUIREMENT: &str = "^22.19.0 || >=24.0.0";
-const DSH_PNPM_VERSION: &str = "11.7.0";
+const DSH_STABLE_PNPM_VERSION: &str = "11.7.0";
+const DSH_PREVIEW_PNPM_VERSION: &str = "11.28.5";
 const DSH_BUILD_PACKAGES: &[&str] = &[
     "@deepseek-ai/dsh-subprocess-local",
     "@google/genai",
@@ -199,29 +203,50 @@ fn parse_version(value: &str) -> Option<[u64; 3]> {
     ])
 }
 
-fn dsh_has_update(current: &str) -> bool {
-    let (Some(a), Some(b)) = (parse_version(current), parse_version(DSH_PACKAGE_VERSION)) else {
+fn dsh_release(channel: Option<&str>) -> Result<(&'static str, &'static str), String> {
+    match channel.unwrap_or("stable").trim() {
+        "stable" => Ok((DSH_STABLE_VERSION, DSH_STABLE_PNPM_VERSION)),
+        "preview" => Ok((DSH_PREVIEW_VERSION, DSH_PREVIEW_PNPM_VERSION)),
+        value => Err(format!("DeepSeek Harness 发行通道无效: {}", value.trim())),
+    }
+}
+
+fn dsh_prerelease(value: &str) -> Option<Vec<&str>> {
+    value
+        .split_once('-')
+        .map(|(_, raw)| raw.split('+').next().unwrap_or(raw).split('.').collect())
+}
+
+fn compare_dsh_prerelease(a: &[&str], b: &[&str]) -> Ordering {
+    for (left, right) in a.iter().zip(b.iter()) {
+        if left == right {
+            continue;
+        }
+        let left_number = left.parse::<u64>();
+        let right_number = right.parse::<u64>();
+        return match (left_number, right_number) {
+            (Ok(left), Ok(right)) => left.cmp(&right),
+            (Ok(_), Err(_)) => Ordering::Less,
+            (Err(_), Ok(_)) => Ordering::Greater,
+            (Err(_), Err(_)) => left.cmp(right),
+        };
+    }
+    a.len().cmp(&b.len())
+}
+
+fn dsh_has_update(current: &str, target: &str) -> bool {
+    let (Some(a), Some(b)) = (parse_version(current), parse_version(target)) else {
         return false;
     };
     if a != b {
         return a < b;
     }
-    // 当前目标是 rc.2；同一核心版本的正式版或更高 RC 不提示降级。
-    let Some(pre) = current
-        .split_once('-')
-        .map(|(_, p)| p.split('+').next().unwrap_or(p))
-    else {
-        return false;
-    };
-    if let Some(rc) = pre.strip_prefix("rc.").and_then(|v| v.parse::<u64>().ok()) {
-        return rc
-            < DSH_PACKAGE_VERSION
-                .split("-rc.")
-                .nth(1)
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0);
+    match (dsh_prerelease(current), dsh_prerelease(target)) {
+        (None, Some(_)) => false,
+        (Some(_), None) => true,
+        (Some(left), Some(right)) => compare_dsh_prerelease(&left, &right) == Ordering::Less,
+        (None, None) => false,
     }
-    pre.starts_with("alpha.") || pre.starts_with("beta.")
 }
 
 fn node_compatible(version: &str) -> bool {
@@ -550,6 +575,11 @@ pub async fn dsh_status(port: Option<u16>) -> Result<Value, String> {
     } else {
         (false, None, String::new())
     };
+    let version = if managed_installed {
+        managed_version()
+    } else {
+        String::new()
+    };
     Ok(json!({
         "installed": managed_installed || global.is_some(),
         "managedInstalled": managed_installed,
@@ -560,9 +590,12 @@ pub async fn dsh_status(port: Option<u16>) -> Result<Value, String> {
         "foreignPort": is_port_open && !running && !owned,
         "port": port,
         "url": format!("http://127.0.0.1:{port}"),
-        "version": if managed_installed { managed_version() } else { String::new() },
+        "version": version.clone(),
         "targetVersion": DSH_PACKAGE_VERSION,
-        "updateAvailable": dsh_has_update(&managed_version()),
+        "previewVersion": DSH_PREVIEW_VERSION,
+        "installedChannel": if version == DSH_PREVIEW_VERSION { "preview" } else if version == DSH_PACKAGE_VERSION { "stable" } else if version.is_empty() { "" } else { "custom" },
+        "updateAvailable": dsh_has_update(&version, DSH_PACKAGE_VERSION),
+        "previewAvailable": managed_installed && dsh_has_update(&version, DSH_PREVIEW_VERSION),
         "packageName": DSH_PACKAGE_NAME,
         "path": if managed_installed { entry.to_string_lossy().to_string() } else { global.as_ref().map(|value| value.to_string_lossy().to_string()).unwrap_or_default() },
         "runtimeDir": runtime_dir().to_string_lossy(),
@@ -576,7 +609,8 @@ pub async fn dsh_status(port: Option<u16>) -> Result<Value, String> {
     }))
 }
 
-async fn run_install_command(runtime: PathBuf) -> Result<(), String> {
+async fn run_install_command(runtime: PathBuf, channel: Option<&str>) -> Result<(), String> {
+    let (version, pnpm_version) = dsh_release(channel)?;
     let path = super::enhanced_path();
     let mut command = if cfg!(windows) {
         let mut command = tokio::process::Command::new("cmd.exe");
@@ -587,13 +621,13 @@ async fn run_install_command(runtime: PathBuf) -> Result<(), String> {
             "npm",
             "exec",
             "--yes",
-            &format!("pnpm@{DSH_PNPM_VERSION}"),
+            &format!("pnpm@{pnpm_version}"),
             "--",
         ]);
         command
     } else {
         let mut command = tokio::process::Command::new("npm");
-        command.args(["exec", "--yes", &format!("pnpm@{DSH_PNPM_VERSION}"), "--"]);
+        command.args(["exec", "--yes", &format!("pnpm@{pnpm_version}"), "--"]);
         command
     };
     command.args(["add", "--dir"]);
@@ -602,7 +636,7 @@ async fn run_install_command(runtime: PathBuf) -> Result<(), String> {
     for package in DSH_BUILD_PACKAGES {
         command.arg(format!("--allow-build={package}"));
     }
-    command.arg(format!("{DSH_PACKAGE_NAME}@{DSH_PACKAGE_VERSION}"));
+    command.arg(format!("{DSH_PACKAGE_NAME}@{version}"));
     command.env("PATH", path);
     #[cfg(windows)]
     {
@@ -632,7 +666,8 @@ async fn run_install_command(runtime: PathBuf) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn dsh_install() -> Result<Value, String> {
+pub async fn dsh_install(channel: Option<String>) -> Result<Value, String> {
+    let (expected_version, _pnpm_version) = dsh_release(channel.as_deref())?;
     let _guard = INSTALL_MUTEX
         .try_lock()
         .map_err(|_| "DeepSeek Harness 安装任务正在运行".to_string())?;
@@ -642,7 +677,7 @@ pub async fn dsh_install() -> Result<Value, String> {
     let node = node_version();
     if !node_compatible(&node) {
         return Err(format!(
-            "DeepSeek Harness {DSH_PACKAGE_VERSION} 要求 Node.js {DSH_NODE_REQUIREMENT}，当前为 {}",
+            "DeepSeek Harness {expected_version} 要求 Node.js {DSH_NODE_REQUIREMENT}，当前为 {}",
             if node.is_empty() {
                 "未检测到"
             } else {
@@ -651,13 +686,15 @@ pub async fn dsh_install() -> Result<Value, String> {
         ));
     }
     fs::create_dir_all(runtime_dir()).map_err(|e| format!("创建 Harness 运行目录失败: {e}"))?;
-    run_install_command(runtime_dir()).await?;
+    run_install_command(runtime_dir(), channel.as_deref()).await?;
     if !managed_entry().is_file() {
         return Err("pnpm 安装完成，但未找到 DeepSeek Harness 入口文件".into());
     }
-    let version = managed_version();
-    if version != DSH_PACKAGE_VERSION {
-        return Err(format!("DeepSeek Harness 安装版本回读不一致: {version}"));
+    let installed_version = managed_version();
+    if installed_version != expected_version {
+        return Err(format!(
+            "DeepSeek Harness 安装版本回读不一致: {installed_version}，期望 {expected_version}"
+        ));
     }
     dsh_status(Some(DSH_DEFAULT_PORT)).await
 }
@@ -1288,11 +1325,27 @@ mod tests {
             "0.2.0-rc.1",
             "0.2.0-alpha.2",
         ] {
-            assert!(dsh_has_update(v), "{v}");
+            assert!(dsh_has_update(v, DSH_PACKAGE_VERSION), "{v}");
         }
         for v in ["", "0.2.0-rc.2", "0.2.0-rc.3", "0.2.0", "0.2.1-alpha.1"] {
-            assert!(!dsh_has_update(v), "{v}");
+            assert!(!dsh_has_update(v, DSH_PACKAGE_VERSION), "{v}");
         }
+    }
+
+    #[test]
+    fn release_channels_keep_stable_default_and_allow_explicit_preview() {
+        assert_eq!(
+            dsh_release(None).unwrap(),
+            (DSH_STABLE_VERSION, DSH_STABLE_PNPM_VERSION)
+        );
+        assert_eq!(
+            dsh_release(Some("preview")).unwrap(),
+            (DSH_PREVIEW_VERSION, DSH_PREVIEW_PNPM_VERSION)
+        );
+        assert!(dsh_release(Some("nightly")).is_err());
+        assert!(dsh_has_update(DSH_PACKAGE_VERSION, DSH_PREVIEW_VERSION));
+        assert!(!dsh_has_update(DSH_PREVIEW_VERSION, DSH_PREVIEW_VERSION));
+        assert!(!dsh_has_update("0.2.1", DSH_PACKAGE_VERSION));
     }
 
     #[test]

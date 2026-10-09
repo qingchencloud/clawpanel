@@ -1,7 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createDshAuth, redactDshOutput } from '../scripts/deepseek-harness-auth.js'
-import { dshRpc, dshWireRequest, dshHasUpdate, normalizeDshRpcValue } from '../scripts/deepseek-harness.js'
+import {
+  DSH_PACKAGE_VERSION,
+  DSH_PREVIEW_VERSION,
+  DSH_RELEASE_CHANNELS,
+  dshRpc,
+  dshWireRequest,
+  dshHasUpdate,
+  dshReleaseChannel,
+  normalizeDshRpcValue,
+} from '../scripts/deepseek-harness.js'
 
 const fixtureToken = 'A'.repeat(43)
 
@@ -74,4 +83,16 @@ test('401 明确提示受管服务认证，而非非 JSON 错误或反复重试�
 test('候选版更新提示不把正式版或更高版本降级到 RC', () => {
   for (const version of ['0.1.1-rc.2', '0.1.5-rc.2', '0.1.7-rc.2', '0.2.0-rc.1', '0.2.0-alpha.2']) assert.equal(dshHasUpdate(version), true, version)
   for (const version of ['', '0.2.0-rc.2', '0.2.0-rc.3', '0.2.0', '0.2.1-alpha.1']) assert.equal(dshHasUpdate(version), false, version)
+})
+
+test('DSH 稳定版默认不变，Alpha 候选版必须显式选择', () => {
+  assert.equal(DSH_PACKAGE_VERSION, '0.2.0-rc.2')
+  assert.equal(DSH_RELEASE_CHANNELS.stable.version, DSH_PACKAGE_VERSION)
+  assert.equal(DSH_RELEASE_CHANNELS.preview.version, DSH_PREVIEW_VERSION)
+  assert.equal(dshReleaseChannel(), 'stable')
+  assert.equal(dshReleaseChannel('preview'), 'preview')
+  assert.throws(() => dshReleaseChannel('nightly'), /发行通道无效/)
+  assert.equal(dshHasUpdate(DSH_PACKAGE_VERSION, DSH_PREVIEW_VERSION), true)
+  assert.equal(dshHasUpdate(DSH_PREVIEW_VERSION, DSH_PREVIEW_VERSION), false)
+  assert.equal(dshHasUpdate('0.2.1', DSH_PREVIEW_VERSION), false)
 })

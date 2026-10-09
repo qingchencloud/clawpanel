@@ -350,7 +350,7 @@ export const api = {
 
   // DeepSeek Harness（回环服务；Web 与 Tauri 使用同名后端命令）
   dshStatus: (port = 3080) => cachedInvoke('dsh_status', { port }, 2000),
-  dshInstall: () => { invalidate('dsh_status'); return invoke('dsh_install') },
+  dshInstall: (channel = 'stable') => { invalidate('dsh_status'); return invoke('dsh_install', { channel }) },
   dshUninstall: () => { invalidate('dsh_status'); return invoke('dsh_uninstall') },
   dshEmbedSession: (port = 3080, storage = {}) => invoke('dsh_embed_session', { port, storage }),
   dshStart: (port = 3080) => { invalidate('dsh_status'); return invoke('dsh_start', { port }) },

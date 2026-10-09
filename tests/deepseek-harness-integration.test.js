@@ -29,7 +29,9 @@ test('DeepSeek Harness 引擎、页面和语言包注册完整', () => {
   assert.match(engine, /path:\s*'\/dsh\/dashboard'/)
   assert.match(engine, /path:\s*'\/dsh\/workspace'/)
   assert.match(engine, /route:\s*'\/dsh\/workspace'/)
-  assert.match(dashboard, /api\.dshInstall\(\)/)
+  assert.match(dashboard, /api\.dshInstall\(isPreview \? 'preview' : 'stable'\)/)
+  assert.match(dashboard, /data-action="preview"/)
+  assert.match(dashboard, /data-action="stable"/)
   assert.match(dashboard, /api\.dshUninstall\(\)/)
   assert.doesNotMatch(dashboard, /dsh-workspace-frame/)
   assert.match(workspace, /api\.dshEmbedSession\(state\.status\.port, readDshWebStorage\(\)\)/)
@@ -87,14 +89,21 @@ test('新版受管工作台固定网页选目录，叠加层同时包含在 Web 
 test('安装链固定 DSH 与 pnpm 版本，并显式允许所需原生构建', () => {
   for (const source of [adapter, rustModule]) {
     assert.match(source, /0\.2\.0-rc\.2/)
+    assert.match(source, /0\.2\.1-alpha\.2/)
+  }
+  for (const source of [adapter, rustModule]) {
+    assert.match(source, /11\.7\.0/)
+    assert.match(source, /11\.28\.5/)
   }
   for (const source of [devApi, rustModule]) {
-    assert.match(source, /11\.7\.0/)
     for (const dependency of ['dsh-subprocess-local', 'koffi', 'node-pty', 'protobufjs']) {
       assert.match(source, new RegExp(dependency))
     }
     assert.match(source, /allow-build/)
   }
+  assert.match(tauriApi, /dshInstall: \(channel = 'stable'\)/)
+  assert.match(devApi, /dsh_install\(\{ channel = 'stable' \} = \{\}\)/)
+  assert.match(rustModule, /pub async fn dsh_install\(channel: Option<String>\)/)
 })
 
 test('Harness 服务只绑定回环地址且不会终止非受管进程', () => {

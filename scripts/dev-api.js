@@ -40,8 +40,11 @@ import {
   DSH_DEFAULT_PORT,
   DSH_PACKAGE_NAME,
   DSH_PACKAGE_VERSION,
+  DSH_PREVIEW_VERSION,
+  DSH_RELEASE_CHANNELS,
   dshRpc,
   dshHasUpdate,
+  dshReleaseChannel,
   normalizeDshPort,
   readDshSummary,
   syncDshProvider,
@@ -11522,7 +11525,6 @@ function recoverMediaQueue() {
 
 // === DeepSeek Harness（只允许回环监听，由 ClawPanel 认证层代管） ===
 const DSH_NODE_REQUIREMENT = '^22.19.0 || >=24.0.0'
-const DSH_PNPM_VERSION = '11.7.0'
 const DSH_BUILD_PACKAGES = [
   '@deepseek-ai/dsh-subprocess-local',
   '@google/genai',
@@ -11918,6 +11920,7 @@ async function dshStatus(portValue = DSH_DEFAULT_PORT) {
   const globalCommand = managedInstalled ? '' : findGlobalDshCommand()
   const record = readDshPidRecord()
   const managed = isManagedDshProcess(record)
+  const version = managedInstalled ? readDshManagedVersion() : ''
   const nodeCompatible = nodeVersionSatisfiesRequirement(process.version, DSH_NODE_REQUIREMENT)
   const portOpen = await probeTcpPort(port, '127.0.0.1', 700)
   let running = false
@@ -11941,9 +11944,12 @@ async function dshStatus(portValue = DSH_DEFAULT_PORT) {
     foreignPort: portOpen && !running && !managed,
     port,
     url: `http://127.0.0.1:${port}`,
-    version: managedInstalled ? readDshManagedVersion() : '',
+    version,
     targetVersion: DSH_PACKAGE_VERSION,
-    updateAvailable: dshHasUpdate(readDshManagedVersion()),
+    previewVersion: DSH_PREVIEW_VERSION,
+    installedChannel: version === DSH_PREVIEW_VERSION ? 'preview' : version === DSH_PACKAGE_VERSION ? 'stable' : version ? 'custom' : '',
+    updateAvailable: dshHasUpdate(version, DSH_PACKAGE_VERSION),
+    previewAvailable: managedInstalled && dshHasUpdate(version, DSH_PREVIEW_VERSION),
     packageName: DSH_PACKAGE_NAME,
     path: managedInstalled ? entry : globalCommand,
     runtimeDir: dshRuntimeDir(),
@@ -11982,13 +11988,14 @@ function commandAvailable(command) {
   }
 }
 
-function dshInstallCommandSpec(runtimeDir) {
+function dshInstallCommandSpec(runtimeDir, channel = 'stable') {
+  const release = DSH_RELEASE_CHANNELS[dshReleaseChannel(channel)]
   const args = [
     'add', '--dir', runtimeDir, '--save-exact', '--prod',
     ...DSH_BUILD_PACKAGES.map(packageName => `--allow-build=${packageName}`),
-    `${DSH_PACKAGE_NAME}@${DSH_PACKAGE_VERSION}`,
+    `${DSH_PACKAGE_NAME}@${release.version}`,
   ]
-  return npmCommandSpec(['exec', '--yes', `pnpm@${DSH_PNPM_VERSION}`, '--', ...args])
+  return npmCommandSpec(['exec', '--yes', `pnpm@${release.pnpmVersion}`, '--', ...args])
 }
 
 function runCaptured(command, args, { timeoutMs = 20 * 60 * 1000 } = {}) {
@@ -12015,20 +12022,22 @@ function runCaptured(command, args, { timeoutMs = 20 * 60 * 1000 } = {}) {
   })
 }
 
-async function installDsh() {
+async function installDsh(channel = 'stable') {
+  const releaseChannel = dshReleaseChannel(channel)
+  const release = DSH_RELEASE_CHANNELS[releaseChannel]
   if (_dshInstallRunning) throw new Error('DeepSeek Harness 安装任务正在运行')
   if (!nodeVersionSatisfiesRequirement(process.version, DSH_NODE_REQUIREMENT)) {
-    throw new Error(`DeepSeek Harness ${DSH_PACKAGE_VERSION} 要求 Node.js ${DSH_NODE_REQUIREMENT}，当前为 ${process.version}`)
+    throw new Error(`DeepSeek Harness ${release.version} 要求 Node.js ${DSH_NODE_REQUIREMENT}，当前为 ${process.version}`)
   }
   if (isManagedDshProcess(readDshPidRecord())) throw new Error('请先停止 ClawPanel 管理的 DeepSeek Harness，再更新运行时')
   _dshInstallRunning = true
   try {
     fs.mkdirSync(dshRuntimeDir(), { recursive: true })
-    const spec = dshInstallCommandSpec(dshRuntimeDir())
+    const spec = dshInstallCommandSpec(dshRuntimeDir(), releaseChannel)
     await runCaptured(spec.command, spec.args)
     if (!fs.existsSync(dshManagedEntry())) throw new Error('pnpm 安装完成，但未找到 DeepSeek Harness 入口文件')
     const version = readDshManagedVersion()
-    if (version !== DSH_PACKAGE_VERSION) throw new Error(`DeepSeek Harness 安装版本回读不一致: ${version || '-'}`)
+    if (version !== release.version) throw new Error(`DeepSeek Harness 安装版本回读不一致: ${version || '-'}，期望 ${release.version}`)
     return dshStatus(DSH_DEFAULT_PORT)
   } finally {
     _dshInstallRunning = false
@@ -15996,8 +16005,8 @@ const handlers = {
     return dshStatus(port)
   },
 
-  dsh_install() {
-    return installDsh()
+  dsh_install({ channel = 'stable' } = {}) {
+    return installDsh(channel)
   },
 
   dsh_uninstall() {

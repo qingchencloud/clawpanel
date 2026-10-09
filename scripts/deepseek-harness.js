@@ -6,10 +6,25 @@
  */
 
 export const DSH_PACKAGE_NAME = '@deepseek-ai/dsh'
-export const DSH_PACKAGE_VERSION = '0.2.0-rc.2'
+export const DSH_STABLE_VERSION = '0.2.0-rc.2'
+export const DSH_PREVIEW_VERSION = '0.2.1-alpha.2'
+export const DSH_PACKAGE_VERSION = DSH_STABLE_VERSION
+export const DSH_STABLE_PNPM_VERSION = '11.7.0'
+export const DSH_PREVIEW_PNPM_VERSION = '11.28.5'
+export const DSH_RELEASE_CHANNELS = Object.freeze({
+  stable: Object.freeze({ channel: 'stable', version: DSH_STABLE_VERSION, pnpmVersion: DSH_STABLE_PNPM_VERSION }),
+  preview: Object.freeze({ channel: 'preview', version: DSH_PREVIEW_VERSION, pnpmVersion: DSH_PREVIEW_PNPM_VERSION }),
+})
 export const DSH_DEFAULT_PORT = 3080
 export const DSH_SETTINGS_NAMESPACE = 'llm-pi-ai'
 export const DSH_DEFAULT_MODEL_NAMESPACE = 'agent-default-model'
+
+/** 只允许面板声明过的发行通道，默认始终保持稳定版。 */
+export function dshReleaseChannel(value = 'stable') {
+  const channel = String(value || 'stable').trim().toLowerCase()
+  if (!Object.hasOwn(DSH_RELEASE_CHANNELS, channel)) throw new Error(`DeepSeek Harness 发行通道无效: ${channel || '-'}`)
+  return channel
+}
 
 export function dshHasUpdate(current, target = DSH_PACKAGE_VERSION) {
   const parse = value => String(value || '').match(/^(\d+)\.(\d+)\.(\d+)(?:-([\w.-]+))?(?:\+[\w.-]+)?$/)

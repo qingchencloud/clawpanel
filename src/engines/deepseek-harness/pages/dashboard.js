@@ -57,6 +57,8 @@ export function render() {
           <button class="btn btn-secondary btn-sm" data-action="refresh" ${state.busy ? 'disabled' : ''}>${esc(t('deepseekHarness.refresh'))}</button>
           ${!status.installed ? `<button class="btn btn-primary btn-sm" data-action="install" ${state.busy || status.nodeCompatible === false ? 'disabled' : ''}>${esc(state.busy === 'install' ? t('deepseekHarness.installing') : t('deepseekHarness.install'))}</button>` : ''}
           ${status.managedInstalled && status.updateAvailable && !status.managed && !status.running ? `<button class="btn btn-primary btn-sm" data-action="update" ${state.busy ? 'disabled' : ''}>${esc(state.busy === 'update' ? t('deepseekHarness.updating') : t('deepseekHarness.update', { version: status.targetVersion }))}</button>` : ''}
+          ${status.managedInstalled && status.installedChannel === 'preview' && !status.managed && !status.running ? `<button class="btn btn-secondary btn-sm" data-action="stable" ${state.busy ? 'disabled' : ''}>${esc(state.busy === 'stable' ? t('deepseekHarness.updating') : t('deepseekHarness.restoreStable', { version: status.targetVersion }))}</button>` : ''}
+          ${(!status.installed || status.previewAvailable) && !status.managed && !status.running ? `<button class="btn btn-secondary btn-sm" data-action="preview" ${state.busy || status.nodeCompatible === false ? 'disabled' : ''}>${esc(state.busy === 'preview' ? t('deepseekHarness.previewInstalling') : t('deepseekHarness.previewInstall', { version: status.previewVersion || '—' }))}</button>` : ''}
           ${status.installed && !status.running && !status.managed ? `<button class="btn btn-primary btn-sm" data-action="start" ${state.busy ? 'disabled' : ''}>${esc(state.busy === 'start' ? t('deepseekHarness.starting') : t('deepseekHarness.start'))}</button>` : ''}
           ${status.managed ? `<button class="btn btn-danger btn-sm" data-action="stop" ${state.busy ? 'disabled' : ''}>${esc(state.busy === 'stop' ? t('deepseekHarness.stopping') : t('deepseekHarness.stop'))}</button>` : ''}
           ${status.managedInstalled && !status.managed && !status.running ? `<button class="btn btn-secondary btn-sm" data-action="uninstall" ${state.busy ? 'disabled' : ''}>${esc(state.busy === 'uninstall' ? t('deepseekHarness.uninstalling') : t('deepseekHarness.uninstall'))}</button>` : ''}
@@ -87,6 +89,7 @@ export function render() {
           <div class="dsh-details">
             ${detail(t('deepseekHarness.port'), status.url || `http://127.0.0.1:${state.port}`)}
             ${detail(t('deepseekHarness.targetVersion'), status.targetVersion)}
+            ${detail(t('deepseekHarness.previewVersion'), status.previewVersion)}
             ${detail(t('deepseekHarness.nodeVersion'), `${status.nodeVersion || '—'} · ${status.nodeRequirement || ''}`)}
             ${detail(t('deepseekHarness.runtimePath'), status.path || status.runtimeDir || '—')}
             ${detail(t('deepseekHarness.logPath'), status.logPath || '—')}
@@ -133,12 +136,15 @@ export function render() {
         state.port = setDshPort(page.querySelector('#dsh-port')?.value)
         return refresh()
       }
-      if (action === 'install' || action === 'update') {
-        const ok = await showConfirm(t('deepseekHarness.installConfirm', { version: state.status?.targetVersion || '—' }), { variant: 'primary' })
+      if (action === 'install' || action === 'update' || action === 'stable' || action === 'preview') {
+        const isPreview = action === 'preview'
+        const version = isPreview ? state.status?.previewVersion : state.status?.targetVersion
+        const confirmKey = isPreview ? 'deepseekHarness.previewInstallConfirm' : action === 'stable' ? 'deepseekHarness.restoreStableConfirm' : 'deepseekHarness.installConfirm'
+        const ok = await showConfirm(t(confirmKey, { version: version || '—' }), { variant: 'primary' })
         if (!ok) return
         state.busy = action; draw()
-        await api.dshInstall()
-        toast(t('deepseekHarness.installedDone'), 'success')
+        await api.dshInstall(isPreview ? 'preview' : 'stable')
+        toast(t(isPreview ? 'deepseekHarness.previewInstalledDone' : action === 'stable' ? 'deepseekHarness.restoreStableDone' : 'deepseekHarness.installedDone'), 'success')
       } else if (action === 'start') {
         state.busy = 'start'; draw()
         await api.dshStart(state.port)
