@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  AI アシスタント内蔵の OpenClaw & Hermes Agent 管理パネル — マルチエンジン AI フレームワーク管理
+  AI アシスタント内蔵のマルチエンジン管理パネル — OpenClaw、Hermes、DSH、OpenCode、Pi
 </p>
 
 <p align="center">
@@ -28,7 +28,7 @@
   <img src="docs/feature-showcase.gif" width="800" alt="ClawPanel 機能ショーケース">
 </p>
 
-ClawPanel は複数の AI Agent フレームワークをサポートするビジュアル管理パネルで、現在 [OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation) と [Hermes Agent](https://github.com/nousresearch/hermes-agent) のデュアルエンジンをサポートしています。**インテリジェント AI アシスタントを内蔵**し、ワンクリックインストール、設定の自動診断、問題の特定と修復をサポートします。8 つのツール + 4 つのモード + インタラクティブ Q&A で、初心者からエキスパートまで簡単に管理できます。
+ClawPanel は複数の AI Agent フレームワークを管理するビジュアルパネルです。[OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation)、[Hermes Agent](https://github.com/nousresearch/hermes-agent)、[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)、[OpenCode](https://github.com/anomalyco/opencode)、実験版 [Pi](https://github.com/earendil-works/pi) に対応しています。**インテリジェント AI アシスタントを内蔵**し、インストール、設定診断、問題解決を支援します。
 
 > 🌐 **ウェブサイト**: [claw.qt.cool](https://claw.qt.cool/) | 📦 **ダウンロード**: [公式ダウンロードセンター](https://claw.qt.cool/download) | 予備: [GitHub Releases](https://github.com/qingchencloud/clawpanel/releases/latest)
 
@@ -56,7 +56,7 @@ ClawPanel は複数の AI Agent フレームワークをサポートするビジ
 - **Orange Pi / Raspberry Pi / RK3588** — `npm run serve` で実行
 - **Docker ARM64** — `docker run ghcr.io/qingchencloud/openclaw:latest`
 - **Armbian / Debian / Ubuntu Server** — アーキテクチャ自動検出
-- Rust / Tauri / GUI 不要。ClawPanel Web は **Node.js 18+** が必要です。OpenClaw Gateway はインストール済み OpenClaw の `engines.node` 要件に従って検出され、**Node.js 22.19.0+** を推奨します。
+- Rust / Tauri / GUI は不要です。基本 Web 版は **Node.js 18+**、全エンジンの検証には Node.js 24.16.0+（24.x）を推奨します。OpenClaw はインストール済み版の `engines.node` 要件で検証されます。
 
 ## コミュニティ
 
@@ -75,7 +75,7 @@ AI Agent に情熱を持つ開発者とユーザーのコミュニティ — ぜ
 ## 機能
 
 - **🤖 AI アシスタント（新機能）** — 内蔵 AI アシスタント、4 モード + 8 ツール + インタラクティブ Q&A
-- **🧩 マルチエンジンアーキテクチャ** — OpenClaw と Hermes Agent のデュアルエンジンをサポート、自由に切り替え、それぞれ独立管理
+- **🧩 マルチエンジンアーキテクチャ** — OpenClaw、Hermes Agent、DeepSeek Harness、OpenCode、実験版 Pi に対応し、自由に切り替えて個別に管理できます
 - **🤖 Hermes Agent チャット** — 内蔵 Hermes Agent チャットインターフェース、ツール呼び出しの可視化、ファイルアクセス切り替え、SSE ストリーミング
 - **🖼️ 画像認識** — スクリーンショットの貼り付けや画像のドラッグで AI が自動分析
 - **ダッシュボード** — システム概要、リアルタイムサービス監視、クイックアクション
@@ -116,11 +116,11 @@ curl -fsSL https://raw.githubusercontent.com/qingchencloud/clawpanel/main/script
 ```bash
 docker run -d --name clawpanel --restart unless-stopped \
   -p 1420:1420 -v clawpanel-data:/root/.openclaw \
-  node:22-slim \
+  node:24.16.0-slim \
   sh -c "apt-get update && apt-get install -y git && \
-    npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com && \
+    npm install -g openclaw@2026.9.8 --registry https://registry.npmmirror.com && \
     git clone https://github.com/qingchencloud/clawpanel.git /app && \
-    cd /app && npm install && npm run build && npm run serve"
+    cd /app && npm ci && npm run build && npm run serve"
 ```
 
 ## クイックスタート

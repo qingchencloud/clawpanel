@@ -1,16 +1,16 @@
 # Armbian / ARM 设备部署指南
 
-ClawPanel 支持在 ARM 开发板（如 Orange Pi、Raspberry Pi、RK3588 等）上运行，通过 **Web 模式** 或 **Docker 模式** 部署，无需图形界面。
+ClawPanel 支持在 ARM 开发板（如 Orange Pi、Raspberry Pi、RK3588 等）上运行，通过 **Web 模式** 或 **Docker 模式** 部署，无需图形界面。Web 端可从左侧选择 OpenClaw、Hermes Agent、DeepSeek Harness、OpenCode 或实验版 Pi；各引擎的运行时和资源要求不同。
 
 ## 系统要求
 
 | 项目 | 最低要求 | 推荐 |
 |------|---------|------|
 | 架构 | ARM64 (aarch64) | ARM64 |
-| 内存 | 1GB | 2GB+ |
+| 内存 | 1GB（仅面板） | 2GB+；同时运行 Agent 建议更多 |
 | 存储 | 2GB 可用空间 | 4GB+ |
 | 系统 | Armbian / Debian / Ubuntu | Armbian 24+ |
-| Node.js | 18+ | ClawPanel Web 后端；运行 OpenClaw Gateway 时按当前 OpenClaw `engines.node` 检测 |
+| Node.js | 18+ | 基础 Web 后端；完整引擎部署推荐 24.16.0+（24.x），OpenClaw 再按当前版本 `engines.node` 检测 |
 
 > ⚠️ 当前不支持 ARM 32 位 (armv7) 的 Docker 镜像。Web 模式在 armv7 上可用（只要 Node.js 支持）。
 
@@ -33,8 +33,8 @@ curl -fsSL https://gitee.com/QtCodeCreators/clawpanel/raw/main/scripts/linux-dep
 ### 手动部署
 
 ```bash
-# 1. 安装 Node.js 22 LTS
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo bash -
+# 1. 安装 Node.js 24 LTS
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo bash -
 sudo apt-get install -y nodejs git
 
 # 2. 克隆项目
@@ -84,32 +84,22 @@ sudo systemctl enable --now clawpanel
 
 ## 方式二：Docker 模式
 
-我们的 Docker 镜像已构建 `linux/arm64` 架构，ARM64 板子可直接拉取。
+仓库 Dockerfile 使用多架构 Node 基础镜像；ARM64 板子可以本地构建。当前文档不把第三方或旧的一体镜像当作 ClawPanel 官方多引擎镜像。
 
 ```bash
 # 安装 Docker（如果还没有）
 curl -fsSL https://get.docker.com | sh
 
-# 一键启动（OpenClaw + ClawPanel 一体）
+# 构建并启动 ClawPanel Web（默认包含 OpenClaw 官方稳定版）
+git clone https://github.com/qingchencloud/clawpanel.git /opt/clawpanel
+cd /opt/clawpanel
+docker build --platform linux/arm64 -t clawpanel:local .
 docker run -d \
-  --name openclaw \
-  -p 1420:1420 \
-  -p 18789:18789 \
+  --name clawpanel \
   -v openclaw-data:/root/.openclaw \
   --restart unless-stopped \
-  ghcr.io/qingchencloud/openclaw:latest
-```
-
-国内拉取慢可使用腾讯云镜像：
-
-```bash
-docker run -d \
-  --name openclaw \
-  -p 1420:1420 \
-  -p 18789:18789 \
-  -v openclaw-data:/root/.openclaw \
-  --restart unless-stopped \
-  ccr.ccs.tencentyun.com/qingchencloud/openclaw:latest
+  --network host \
+  clawpanel:local
 ```
 
 ## 性能优化建议
@@ -136,7 +126,7 @@ docker run -d \
 A: 不建议。Tauri 需要 WebKitGTK + 图形界面，ARM 板通常是 headless 环境。请使用 Web 模式。
 
 **Q: armv7 (32位) 板子能用吗？**
-A: Web 模式可以（ClawPanel Web 后端需要 Node.js 18+；运行 OpenClaw Gateway 时按当前 OpenClaw `engines.node` 检测）。Docker 模式目前只提供 arm64 镜像。
+A: 仅基础 Web 面板是否能运行取决于 Node.js 和依赖的架构支持；OpenClaw、Pi 等引擎还要满足各自运行时要求。本文的 Docker 构建目标是 arm64，不把 armv7 作为完整引擎验收目标。
 
 **Q: 树莓派 Zero / Pi 1 能跑吗？**
 A: 这些是 armv6，内存也只有 256-512MB，不推荐。建议至少树莓派 3B+ 或更新的 ARM64 板子。

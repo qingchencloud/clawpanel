@@ -1,10 +1,10 @@
 # ClawPanel Linux 部署指南
 
-本文介绍如何在 Linux 服务器上部署 **ClawPanel Web 版**，通过浏览器远程管理 OpenClaw。
+本文介绍如何在 Linux 服务器上部署 **ClawPanel Web 版**，通过浏览器远程管理 OpenClaw、Hermes Agent、DeepSeek Harness、OpenCode 和实验版 Pi。
 
 适用场景：云服务器、NAS、家庭 HomeLab、无 GUI 的 Linux 主机。
 
-> **ClawPanel** 有 Win/Mac 桌面客户端，但 Linux 没有桌面版。Web 版通过 Vite + Node.js 后端运行，功能与桌面版一致。
+> **ClawPanel** 的 Linux 服务器部署使用 Web 模式，不需要图形界面或 Tauri。桌面端与 Web 端共享前端和 API 契约，但受管引擎、系统权限和安装方式仍以部署环境为准。
 
 ---
 
@@ -27,21 +27,22 @@
 ## 架构说明
 
 ```
-浏览器 ──HTTP──▶ ClawPanel Web (Vite + dev-api 后端, :1420)
+浏览器 ──HTTP──▶ ClawPanel Web (Node.js 后端, :1420)
                         │
                         ├── /__api/*  读写 ~/.openclaw/ 配置文件
                         ├── /ws       WebSocket 代理 → Gateway
-                        └── 管理 Gateway 进程 (启动/停止/重启)
+                        └── 管理 Gateway 及受管引擎进程
                               │
                               ▼
-                    OpenClaw Gateway (:18789)
+                     OpenClaw Gateway (:18789，可选)
 ```
 
-**ClawPanel Web 版** = Vite 开发服务器 + `dev-api.js` 后端中间件，提供：
+**ClawPanel Web 版** = 构建后的前端 + `serve.js` / `dev-api.js` Node.js 后端，提供：
 - 配置读写（`openclaw.json`、`mcp.json`）
 - Gateway 服务管理（启动/停止/重启/状态检测）
 - 设备配对、模型测试、日志查看、备份管理
 - WebSocket 代理到 Gateway
+- 独立引擎的安装、状态和工作台代理（按引擎能力提供）
 
 ---
 
@@ -49,10 +50,10 @@
 
 | 依赖 | 最低版本 | 说明 |
 |------|----------|------|
-| Node.js | 18+ | ClawPanel Web 后端；运行 OpenClaw Gateway 时按当前 OpenClaw `engines.node` 检测，OpenClaw 2026.7.1 要求 `>=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0` |
+| Node.js | 18+ | 基础 Web 后端；完整引擎部署推荐 24.16.0+（24.x），OpenClaw 再按已安装版本的 `engines.node` 检测 |
 | npm | 随 Node.js | 包管理器 |
 | Git | 任意 | 克隆仓库 |
-| OpenClaw | 最新 | ClawPanel 管理的对象 |
+| OpenClaw | 可选 | 使用 OpenClaw 引擎或 Gateway 时安装；新安装默认官方稳定版 |
 
 ---
 
@@ -71,7 +72,7 @@ curl -fsSL https://raw.githubusercontent.com/qingchencloud/clawpanel/main/script
 
 如需离线/压缩包部署，请从 GitHub Release 下载 `web-x.y.z.zip` 完整 Web 服务端包。`frontend-hot-update-x.y.z.zip` 仅包含桌面端热更新前端，不能替代 Web 后端。
 
-部署完成后访问 `http://服务器IP:1420`。
+部署完成后访问 `http://服务器IP:1420`，然后在左侧选择需要使用的引擎。Pi、OpenCode 和 DSH 的运行时可从各自「运行与配置」页安装；Docker 预装 OpenClaw 不代表其他引擎已安装。
 
 ---
 
@@ -82,14 +83,14 @@ curl -fsSL https://raw.githubusercontent.com/qingchencloud/clawpanel/main/script
 **Ubuntu / Debian：**
 
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
 sudo apt-get install -y nodejs
 ```
 
 **CentOS / RHEL / Fedora：**
 
 ```bash
-curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash -
+curl -fsSL https://rpm.nodesource.com/setup_24.x | sudo bash -
 sudo yum install -y nodejs
 ```
 
@@ -102,16 +103,16 @@ apk add nodejs npm git
 验证安装：
 
 ```bash
-node -v   # v22.x.x
+node -v   # v24.x.x
 npm -v    # 10.x.x
 ```
 
 ### 2. 安装 OpenClaw
 
-ClawPanel 是 OpenClaw 的管理工具，需要先安装 OpenClaw：
+使用 OpenClaw 引擎时需要安装并初始化 OpenClaw；只使用其他独立引擎时可跳过此步骤：
 
 ```bash
-npm install -g openclaw@2026.8.2 --registry https://registry.npmmirror.com
+npm install -g openclaw@2026.9.8 --registry https://registry.npmmirror.com
 ```
 
 如需汉化版：
@@ -133,7 +134,7 @@ cd /opt
 sudo git clone https://github.com/qingchencloud/clawpanel.git
 sudo chown -R $(whoami) clawpanel
 cd clawpanel
-npm install
+npm ci
 ```
 
 国内网络可使用 AtomGit 镜像：
@@ -181,11 +182,11 @@ docker run -d \
   --restart unless-stopped \
   -p 1420:1420 \
   -v clawpanel-data:/root/.openclaw \
-  node:22.22.3-slim \
+  node:24.16.0-slim \
   sh -c "apt-get update && apt-get install -y git && \
-    npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com && \
+    npm install -g openclaw@2026.9.8 --registry https://registry.npmmirror.com && \
     git clone https://github.com/qingchencloud/clawpanel.git /app && \
-    cd /app && npm install && npm run build && npm run serve"
+    cd /app && npm ci && npm run build && npm run serve"
 ```
 
 ---
@@ -347,7 +348,7 @@ cd /opt/clawpanel        # root 部署路径
 
 git status --short       # 有输出时先处理本地修改
 git pull --ff-only origin main
-npm install --registry https://registry.npmmirror.com
+npm ci --registry https://registry.npmmirror.com
 npm run build
 node -p "require('./package.json').version"  # 核对实际源码版本
 sudo systemctl restart clawpanel  # 或 pm2 restart clawpanel
@@ -374,14 +375,14 @@ sudo systemctl restart clawpanel  # 或 pm2 restart clawpanel
 **方式二：命令行手动升级**
 
 ```bash
-# 汉化优化版（示例：ClawPanel 0.9.0 推荐版）
-sudo npm install -g @qingchencloud/openclaw-zh@2026.3.7-zh.2 --registry https://registry.npmmirror.com
+# 官方原版（当前新安装默认）
+sudo npm install -g openclaw@2026.9.8 --registry https://registry.npmmirror.com
 
-# 官方原版（示例：ClawPanel 0.9.0 推荐版）
-sudo npm install -g openclaw@2026.3.11 --registry https://registry.npmjs.org
+# 汉化版（按策略文件中的兼容版本）
+sudo npm install -g @qingchencloud/openclaw-zh@2026.7.1-2-zh.1 --registry https://registry.npmmirror.com
 
 # 国内镜像失败时，再切 npm 官方源重试
-sudo npm install -g @qingchencloud/openclaw-zh@2026.3.7-zh.2 --registry https://registry.npmjs.org
+sudo npm install -g openclaw@2026.9.8 --registry https://registry.npmjs.org
 ```
 
 > **维护说明**：如果你是 ClawPanel 维护者，后续只需要更新仓库根目录的 `openclaw-version-policy.json`，即可统一调整不同面板版本对应的推荐 OpenClaw 版本。桌面端程序版本以 `package.json` 为唯一真相源，运行 `npm run version:sync` 同步到 Tauri 配置；`docs/update/latest.json` 仅保留给旧版前端热更新兼容链路。
@@ -391,7 +392,8 @@ sudo npm install -g @qingchencloud/openclaw-zh@2026.3.7-zh.2 --registry https://
 ### 更新频率
 
 - **ClawPanel**：`git pull` 获取最新代码，无需重新安装依赖（除非 package.json 变了）
-- **OpenClaw**：优先通过面板切换到推荐稳定版；如需尝试其它版本，请在「关于」页手动切换
+- **OpenClaw**：优先通过面板切换到策略文件中的推荐稳定版；如需尝试其它版本，请在「关于」页手动切换并验证 Gateway
+- **其他引擎**：在各自「运行与配置」页检查版本、更新或卸载；模型渠道需要重新显式同步
 - **ClawPanel 桌面版**：通过官网版本接口发现新版本，下载推荐完整安装包后覆盖安装
 - **前端热更新**：仅保留旧版本兼容和回滚目录处理，新版用户界面不再作为主更新入口展示
 
@@ -413,10 +415,10 @@ systemd 服务也需要改 ExecStart 中的端口。
 
 ### Q: 打开面板显示 "openclaw.json 不存在"？
 
-需要先安装 OpenClaw 并初始化：
+使用 OpenClaw 引擎时需要先安装并初始化 OpenClaw；只使用其他独立引擎时不需要为它们额外安装 OpenClaw：
 
 ```bash
-npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com
+npm install -g openclaw@2026.9.8 --registry https://registry.npmmirror.com
 openclaw init
 ```
 

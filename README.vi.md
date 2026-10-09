@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  Bảng quản lý OpenClaw & Hermes Agent với Trợ lý AI tích hợp — Quản lý đa động cơ AI Framework
+  Bảng quản lý AI Agent đa động cơ với Trợ lý AI tích hợp — OpenClaw, Hermes, DSH, OpenCode và Pi
 </p>
 
 <p align="center">
@@ -28,7 +28,7 @@
   <img src="docs/feature-showcase.gif" width="800" alt="ClawPanel Showcase">
 </p>
 
-ClawPanel là bảng quản lý trực quan hỗ trợ nhiều AI Agent framework, hiện tại hỗ trợ [OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation) và [Hermes Agent](https://github.com/nousresearch/hermes-agent) động cơ kép. Tích hợp **trợ lý AI thông minh**, giúp bạn cài đặt, tự động chẩn đoán cấu hình, xử lý sự cố và sửa lỗi. 8 công cụ + 4 chế độ + hỏi đáp tương tác — dễ dàng quản lý cho cả người mới và chuyên gia.
+ClawPanel là bảng quản lý trực quan cho nhiều AI Agent framework: [OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation), [Hermes Agent](https://github.com/nousresearch/hermes-agent), [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), [OpenCode](https://github.com/anomalyco/opencode) và [Pi](https://github.com/earendil-works/pi) thử nghiệm. Tích hợp **trợ lý AI thông minh** để cài đặt, chẩn đoán cấu hình và xử lý sự cố.
 
 > 🌐 **Website**: [claw.qt.cool](https://claw.qt.cool/) | 📦 **Tải xuống**: [Trung tâm tải xuống chính thức](https://claw.qt.cool/download) | Dự phòng: [GitHub Releases](https://github.com/qingchencloud/clawpanel/releases/latest)
 
@@ -56,7 +56,7 @@ ClawPanel là bảng quản lý trực quan hỗ trợ nhiều AI Agent framewor
 - **Orange Pi / Raspberry Pi / RK3588** — `npm run serve` để chạy
 - **Docker ARM64** — `docker run ghcr.io/qingchencloud/openclaw:latest`
 - **Armbian / Debian / Ubuntu Server** — Tự động phát hiện kiến trúc
-- Không cần Rust / Tauri / GUI. ClawPanel Web cần **Node.js 18+**; OpenClaw Gateway được kiểm tra theo `engines.node` của bản OpenClaw đã cài, khuyến nghị **Node.js 22.19.0+**.
+- Không cần Rust / Tauri / GUI. Web cơ bản cần **Node.js 18+**; để kiểm tra đầy đủ các engine nên dùng Node.js 24.16.0+ (24.x). OpenClaw được kiểm tra theo yêu cầu `engines.node` của phiên bản đã cài.
 
 ## Cộng đồng
 
@@ -75,7 +75,7 @@ Cộng đồng các nhà phát triển và người dùng đam mê AI Agent — 
 ## Tính năng
 
 - **🤖 Trợ lý AI (Mới)** — Trợ lý AI tích hợp, 4 chế độ + 8 công cụ + hỏi đáp tương tác
-- **🧩 Kiến trúc đa động cơ** — Hỗ trợ cả OpenClaw và Hermes Agent, chuyển đổi tự do, quản lý độc lập
+- **🧩 Kiến trúc đa động cơ** — Hỗ trợ OpenClaw, Hermes Agent, DeepSeek Harness, OpenCode và Pi thử nghiệm, chuyển đổi tự do và quản lý độc lập
 - **🤖 Hermes Agent Chat** — Giao diện chat Hermes Agent tích hợp, hiển thị công cụ, chuyển đổi truy cập tệp, SSE streaming
 - **🖼️ Nhận dạng hình ảnh** — Dán ảnh chụp màn hình hoặc kéo thả hình ảnh, AI tự động phân tích
 - **Bảng điều khiển** — Tổng quan hệ thống, giám sát dịch vụ thời gian thực
@@ -116,11 +116,11 @@ curl -fsSL https://raw.githubusercontent.com/qingchencloud/clawpanel/main/script
 ```bash
 docker run -d --name clawpanel --restart unless-stopped \
   -p 1420:1420 -v clawpanel-data:/root/.openclaw \
-  node:22-slim \
+  node:24.16.0-slim \
   sh -c "apt-get update && apt-get install -y git && \
-    npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com && \
+    npm install -g openclaw@2026.9.8 --registry https://registry.npmmirror.com && \
     git clone https://github.com/qingchencloud/clawpanel.git /app && \
-    cd /app && npm install && npm run build && npm run serve"
+    cd /app && npm ci && npm run build && npm run serve"
 ```
 
 ## Bắt đầu nhanh

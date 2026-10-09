@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  內建 AI 助手的 OpenClaw & Hermes Agent 管理面板 — 多引擎 AI 框架管理
+  內建 AI 助手的多引擎 Agent 管理面板 — OpenClaw、Hermes、DSH、OpenCode 與 Pi
 </p>
 
 <p align="center">
@@ -28,7 +28,7 @@
   <img src="docs/feature-showcase.gif" width="800" alt="ClawPanel 功能展示">
 </p>
 
-ClawPanel 是支援多 AI Agent 框架的視覺化管理面板，目前支援 [OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation) 和 [Hermes Agent](https://github.com/nousresearch/hermes-agent) 雙引擎。**內建智慧 AI 助手**，幫你一鍵安裝、自動診斷設定、排查問題、修復錯誤。8 大工具 + 4 種模式 + 互動式問答，從新手到老手都能輕鬆管理。
+ClawPanel 是支援多 AI Agent 框架的視覺化管理面板，目前支援 [OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation)、[Hermes Agent](https://github.com/nousresearch/hermes-agent)、[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)、[OpenCode](https://github.com/anomalyco/opencode) 和實驗版 [Pi](https://github.com/earendil-works/pi)。**內建智慧 AI 助手**，協助安裝、診斷設定與排除問題。
 
 > 🌐 **官網**: [claw.qt.cool](https://claw.qt.cool/) | 📦 **下載**: [官網下載中心](https://claw.qt.cool/download) | 備用: [GitHub Releases](https://github.com/qingchencloud/clawpanel/releases/latest) | 國內鏡像: [AtomGit](https://atomgit.com/qingchencloud/clawpanel)
 
@@ -56,7 +56,7 @@ ClawPanel 是支援多 AI Agent 框架的視覺化管理面板，目前支援 [O
 - **Orange Pi / 樹莓派 / RK3588** — `npm run serve` 即可執行
 - **Docker ARM64** — `docker run ghcr.io/qingchencloud/openclaw:latest`
 - **Armbian / Debian / Ubuntu Server** — 自動偵測架構
-- 無需 Rust / Tauri / GUI；ClawPanel Web 後端需要 **Node.js 18+**，執行 OpenClaw Gateway 時會按目前 OpenClaw 的 `engines.node` 自動檢測，建議 **Node.js 22.19.0+**
+- 無需 Rust / Tauri / GUI；基礎 Web 後端需要 **Node.js 18+**，完整引擎驗證建議使用 Node.js 24.16.0+（24.x），OpenClaw 會按已安裝版本的 `engines.node` 自動檢測
 
 ## 社群
 
@@ -75,7 +75,7 @@ ClawPanel 是支援多 AI Agent 框架的視覺化管理面板，目前支援 [O
 ## 功能特性
 
 - **🤖 AI 助手（全新）** — 內建 AI 助手，4 種模式 + 8 大工具 + 互動式問答
-- **🧩 多引擎架構** — 同時支援 OpenClaw 和 Hermes Agent 雙引擎，自由切換，各自獨立管理
+- **🧩 多引擎架構** — 支援 OpenClaw、Hermes Agent、DeepSeek Harness、OpenCode 與實驗版 Pi，自由切換，各自獨立管理
 - **🤖 Hermes Agent 對話** — 內建 Hermes Agent 聊天介面，支援工具呼叫視覺化、檔案系統存取開關、SSE 串流輸出
 - **🖼️ 圖片辨識** — 貼上截圖或拖曳圖片，AI 自動辨識分析
 - **儀表板** — 系統概覽，即時服務狀態監控，快捷操作
@@ -116,11 +116,11 @@ curl -fsSL https://raw.githubusercontent.com/qingchencloud/clawpanel/main/script
 ```bash
 docker run -d --name clawpanel --restart unless-stopped \
   -p 1420:1420 -v clawpanel-data:/root/.openclaw \
-  node:22-slim \
+  node:24.16.0-slim \
   sh -c "apt-get update && apt-get install -y git && \
-    npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com && \
+    npm install -g openclaw@2026.9.8 --registry https://registry.npmmirror.com && \
     git clone https://github.com/qingchencloud/clawpanel.git /app && \
-    cd /app && npm install && npm run build && npm run serve"
+    cd /app && npm ci && npm run build && npm run serve"
 ```
 
 ## 快速上手

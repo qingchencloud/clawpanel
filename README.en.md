@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  OpenClaw & Hermes Agent Management Panel with Built-in AI Assistant — Multi-Engine AI Framework Management
+  Multi-Engine AI Agent Management Panel with Built-in AI Assistant — OpenClaw, Hermes, DSH, OpenCode & Pi
 </p>
 
 <p align="center">
@@ -31,9 +31,9 @@
   <img src="docs/feature-showcase.gif" width="800" alt="ClawPanel Feature Showcase">
 </p>
 
-ClawPanel is a visual management panel supporting multiple AI Agent frameworks, currently with [OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation) and [Hermes Agent](https://github.com/nousresearch/hermes-agent) dual-engine support. It features a **built-in intelligent AI assistant** that helps you install, auto-diagnose configurations, troubleshoot issues, and fix errors. 8 tools + 4 modes + interactive Q&A — easy to manage for beginners and experts alike.
+ClawPanel is a visual management panel for multiple AI Agent frameworks, currently supporting [OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation), [Hermes Agent](https://github.com/nousresearch/hermes-agent), [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), [OpenCode](https://github.com/anomalyco/opencode), and experimental [Pi](https://github.com/earendil-works/pi). It features a **built-in intelligent AI assistant** that helps you install, auto-diagnose configurations, troubleshoot issues, and fix errors. 8 tools + 4 modes + interactive Q&A — easy to manage for beginners and experts alike.
 
-> 🌐 **Website**: [claw.qt.cool](https://claw.qt.cool/) | 📦 **Download**: [Official Download Center](https://claw.qt.cool/download) | Fallback: [GitHub Releases](https://github.com/qingchencloud/clawpanel/releases/latest)
+> 🌐 **Website**: [claw.qt.cool](https://claw.qt.cool/) | 📦 **Download**: [Official Download Center](https://claw.qt.cool/download) | 📚 **Docs**: [Documentation index](docs/index.md) | Fallback: [GitHub Releases](https://github.com/qingchencloud/clawpanel/releases/latest)
 
 ### 🧪 Free Testing: QingChen Cloud
 
@@ -59,9 +59,9 @@ Register at [CiyAPI](https://ciyapi.79tian.com/sign-up), create an API Key, and 
 ClawPanel provides a **pure Web deployment mode** (zero GUI dependency), natively compatible with ARM64 boards:
 
 - **Orange Pi / Raspberry Pi / RK3588** — `npm run serve` to run
-- **Docker ARM64** — `docker run ghcr.io/qingchencloud/openclaw:latest`
+- **Docker ARM64** — build locally from the repository Dockerfile; see the [ARM deployment guide](docs/armbian-deploy.md)
 - **Armbian / Debian / Ubuntu Server** — Auto-detect architecture
-- No Rust / Tauri / GUI needed. ClawPanel Web requires **Node.js 18+**; OpenClaw Gateway is checked against the installed OpenClaw `engines.node` requirement, with **Node.js 22.19.0+** recommended.
+- No Rust / Tauri / GUI needed. The basic Web backend requires **Node.js 18+**; full engine development and validation are recommended on Node.js 24.16.0+ (24.x), while OpenClaw is checked against the installed package's `engines.node` requirement.
 
 > 📖 See [Armbian Deployment Guide](docs/armbian-deploy.md) | [Web Dev Mode](#web-version-no-rusttauri-required)
 
@@ -82,11 +82,13 @@ A community of passionate AI Agent developers and enthusiasts — join us!
 ## Features
 
 - **🤖 AI Assistant (New)** — Built-in AI assistant, 4 modes + 8 tools + interactive Q&A. See [AI Assistant Highlights](#-ai-assistant-highlights)
-- **🧩 Multi-Engine Architecture** — Supports both OpenClaw and Hermes Agent dual engines, freely switchable, independently managed
+- **🧩 Multi-Engine Architecture** — Supports OpenClaw, Hermes Agent, DeepSeek Harness, OpenCode, and experimental Pi; engines are switchable and independently managed
 - **🤖 Hermes Agent Chat** — Built-in Hermes Agent chat interface with tool call visualization, file system access toggle, SSE streaming output
+- **🧪 Pi Workbench (Experimental)** — Managed Pi runtime, shared model channels, streaming sessions, and per-call tool approvals; see the [Pi guide](docs/pi-integration.en.md)
+- **💻 OpenCode Workbench** — Managed install/update/uninstall flow, shared model-channel synchronization, and an embedded OpenCode workbench; see the [OpenCode guide](docs/opencode.md)
 - **🖼️ Image Recognition** — Paste screenshots or drag images, AI auto-analyzes, multimodal conversations
 - **Dashboard** — System overview, real-time service monitoring, quick actions
-- **Service Management** — OpenClaw / Hermes Gateway start/stop, version detection & one-click upgrade, config backup & restore
+- **Service Management** — OpenClaw Gateway plus independent engine install/update/uninstall, version detection, config backup & restore
 - **Model Configuration** — Multi-provider management, model CRUD, batch connectivity tests, latency detection, drag-to-reorder, auto-save + undo
 - **Gateway Configuration** — Port, access scope (localhost/LAN), auth Token, Tailscale networking
 - **Messaging Channels** — Unified Telegram, Discord, Feishu, DingTalk, QQ management, multi-Agent binding per platform
@@ -142,21 +144,21 @@ Visit `http://YOUR_SERVER_IP:1420` after deployment. 📖 [Linux Deployment Guid
 ```bash
 docker run -d --name clawpanel --restart unless-stopped \
   -p 1420:1420 -v clawpanel-data:/root/.openclaw \
-  node:22-slim \
+  node:24.16.0-slim \
   sh -c "apt-get update && apt-get install -y git && \
-    npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com && \
+    npm install -g openclaw@2026.9.8 --registry https://registry.npmmirror.com && \
     git clone https://github.com/qingchencloud/clawpanel.git /app && \
-    cd /app && npm install && npm run build && npm run serve"
+    cd /app && npm ci && npm run build && npm run serve"
 ```
 
 📖 [Docker Deployment Guide](docs/docker-deploy.md)
 
 ## Quick Start
 
-1. **Initial Setup** — First launch auto-detects Node.js, Git, OpenClaw. One-click install if missing.
-2. **Configure Models** — Add AI providers (DeepSeek, MiniMax, OpenAI, Ollama, etc.) with API keys. Test connectivity.
-3. **Start Gateway** — Go to Service Management, click Start. Green status = ready.
-4. **Start Chatting** — Go to Live Chat, select model, start conversation with streaming & Markdown.
+1. **Initial Setup** — Choose an engine from the left selector and complete its runtime setup.
+2. **Configure Models** — Save providers under **General → Model Channels**, then explicitly sync each channel to the target engine.
+3. **Start the Runtime** — OpenClaw uses Gateway; DSH, OpenCode and Pi are managed independently from their own runtime pages.
+4. **Start Working** — Open Live Chat or an engine workbench, select a model, and verify a complete test response.
 
 ## 🤖 AI Assistant Highlights
 

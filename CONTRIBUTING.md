@@ -32,7 +32,7 @@
 
 | 依赖 | 最低版本 | 说明 |
 |------|----------|------|
-| Node.js | 18+ | 前端构建与 Web 后端；运行 OpenClaw Gateway 时按当前 OpenClaw 的 `engines.node` 检测，OpenClaw 2026.7.1 要求 `>=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0` |
+| Node.js | 18+ | 基础前端构建与 Web 后端；完整引擎开发/验收推荐 Node.js 24.16.0+（24.x），OpenClaw 运行时仍按安装包的 `engines.node` 检测 |
 | Rust | stable | Tauri 后端编译 |
 | Tauri CLI | v2 | `cargo install tauri-cli --version "^2"` |
 
@@ -43,8 +43,8 @@
 git clone https://github.com/qingchencloud/clawpanel.git
 cd clawpanel
 
-# 安装前端依赖
-npm install
+# 按锁文件安装前端依赖
+npm ci
 ```
 
 #### macOS / Linux
@@ -91,6 +91,12 @@ clawpanel/
 │   │   ├── security.js         #   安全设置
 │   │   ├── setup.js            #   初始设置向导
 │   │   └── about.js            #   关于页面
+│   ├── engines/                # 引擎入口、页面与运行时适配
+│   │   ├── openclaw/           # OpenClaw
+│   │   ├── hermes/             # Hermes Agent
+│   │   ├── deepseek-harness/   # DeepSeek Harness
+│   │   ├── opencode/           # OpenCode
+│   │   └── pi/                 # Pi 实验引擎
 │   ├── components/             # 通用组件
 │   │   ├── sidebar.js          #   侧边导航栏
 │   │   ├── toast.js            #   消息提示
@@ -138,6 +144,7 @@ clawpanel/
 │   └── sync-version.js         #   版本号同步脚本
 ├── docs/                       # 文档、截图与更新清单
 │   ├── update/latest.json      #   旧版前端热更新兼容清单（新客户端不作为主更新入口）
+│   ├── engines-and-models.md   #   多引擎与模型渠道说明
 │   ├── linux-deploy.md         #   Linux 部署指南
 │   └── docker-deploy.md        #   Docker 部署指南
 ├── public/                     # 静态资源（图标、Logo）
@@ -204,7 +211,7 @@ tauri-api.js  →  isTauri?
 
 ```bash
 # 设置新版本并自动同步到所有文件
-npm run version:set 0.6.0
+npm run version:set X.Y.Z
 
 # 仅同步当前 package.json 版本到其他文件
 npm run version:sync
@@ -229,32 +236,34 @@ import { version as APP_VERSION } from '../../package.json'
 git status
 
 # 2. 设置新版本号（自动同步到 tauri.conf.json / Cargo.toml / Cargo.lock）
-npm run version:set 0.6.0
+npm run version:set X.Y.Z
 
 # 3. 编写 CHANGELOG.md 变更记录
 
-# 4. 提交
-git add -A
-git commit -m "chore: release v0.6.0"
+# 4. 只暂存本次发版文件并提交
+git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock CHANGELOG.md
+git commit -m "chore: release vX.Y.Z"
 git push origin main
 
-# 5. 打 tag 触发自动构建
-git tag v0.6.0
-git push origin v0.6.0
+# 5. 等待 main 的三平台 CI 成功，核对提交 SHA 后再打 tag
+git tag vX.Y.Z
+git push origin vX.Y.Z
 ```
 
 ### 发版后自动执行
 
 推送 tag 后，GitHub Actions (`release.yml`) 会自动：
 1. **并行构建** macOS ARM64 / macOS Intel / Linux / Windows 四个平台
-2. **创建 GitHub Release** 并上传安装包（.dmg / .exe / .msi / .AppImage / .deb / .rpm）
-3. 所有平台构建完成后，**自动生成 Release Notes**（含下载表格 + 分类 Changelog）
+2. **创建 GitHub Release** 并上传安装包、完整 Web 服务端包和桌面前端热更新包
+3. 所有验证与平台构建完成后，**自动生成 Release Notes**（含下载表格 + 分类 Changelog）
+
+`release.yml` 的发布前门禁包含 Node 测试、Pi 固定版本 RPC 验收和 Rust 测试；发布前仍应先确认 `ci.yml` 对同一提交为绿色。标签必须指向当前提交，已存在的 Release 不覆盖。
 
 ### 回滚
 
 ```bash
-git tag -d v0.6.0
-git push origin :refs/tags/v0.6.0
+git tag -d vX.Y.Z
+git push origin :refs/tags/vX.Y.Z
 # 修复后重新打 tag
 ```
 
@@ -269,14 +278,17 @@ git push origin :refs/tags/v0.6.0
 - **检查项**：
   1. `npm ci` — 前端依赖安装
   2. `cargo fmt --check` — Rust 代码格式
-  3. `cargo check` — Rust 编译检查
-  4. `cargo clippy -- -D warnings` — Rust lint（警告即失败）
-  5. `npm run build` — 前端构建验证
+  3. `cargo check --locked` — Rust 编译检查
+  4. `cargo clippy --locked --all-targets -- -D warnings` — Rust lint（警告即失败）
+  5. `node --test tests/*.test.js` — Node 回归测试
+  6. `node scripts/test-pi-runtime.mjs` — Pi 固定版本实际 RPC 启动验收（仅本地模拟 Provider）
+  7. `cargo test --locked` — Rust 单元测试
+  8. `npm run build` — 前端构建验证
 
 ### `release.yml` — 发布构建
 
 - **触发**：推送 `v*` 标签 或 手动触发
-- **平台**：macOS ARM64 / macOS Intel / Linux x64 / Windows x64
+- **平台**：macOS ARM64 / macOS Intel / Linux x64 / Windows x64（另含 Windows 完整包）
 - **产物**：通过 `tauri-apps/tauri-action@v0` 构建并上传到 GitHub Release
 - **Release Notes**：独立 job，等所有平台构建完成后统一生成
 

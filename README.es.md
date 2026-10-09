@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  Panel de gestión OpenClaw & Hermes Agent con Asistente IA integrado — Gestión multi-motor de frameworks IA
+  Panel multi-motor de AI Agents con Asistente IA integrado — OpenClaw, Hermes, DSH, OpenCode y Pi
 </p>
 
 <p align="center">
@@ -28,7 +28,7 @@
   <img src="docs/feature-showcase.gif" width="800" alt="ClawPanel Showcase">
 </p>
 
-ClawPanel es un panel de gestión visual que soporta múltiples frameworks de AI Agent, actualmente con soporte dual para [OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation) y [Hermes Agent](https://github.com/nousresearch/hermes-agent). Cuenta con un **asistente IA inteligente integrado** que te ayuda a instalar, diagnosticar configuraciones automáticamente, solucionar problemas y corregir errores. 8 herramientas + 4 modos + Q&A interactivo — fácil de gestionar para principiantes y expertos.
+ClawPanel es un panel visual para varios frameworks de AI Agent: [OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation), [Hermes Agent](https://github.com/nousresearch/hermes-agent), [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), [OpenCode](https://github.com/anomalyco/opencode) y el [Pi](https://github.com/earendil-works/pi) experimental. Incluye un **asistente IA inteligente** para instalar, diagnosticar configuraciones y resolver problemas.
 
 > 🌐 **Sitio web**: [claw.qt.cool](https://claw.qt.cool/) | 📦 **Descargar**: [Centro de descargas oficial](https://claw.qt.cool/download) | Alternativa: [GitHub Releases](https://github.com/qingchencloud/clawpanel/releases/latest)
 
@@ -56,7 +56,7 @@ Regístrate en [CiyAPI](https://ciyapi.79tian.com/sign-up), crea una API Key y u
 - **Orange Pi / Raspberry Pi / RK3588** — `npm run serve` para ejecutar
 - **Docker ARM64** — `docker run ghcr.io/qingchencloud/openclaw:latest`
 - **Armbian / Debian / Ubuntu Server** — Detección automática de arquitectura
-- Sin necesidad de Rust / Tauri / GUI. ClawPanel Web requiere **Node.js 18+**; OpenClaw Gateway se valida según el `engines.node` de la versión instalada de OpenClaw, recomendado **Node.js 22.19.0+**.
+- Sin necesidad de Rust / Tauri / GUI. El Web básico requiere **Node.js 18+**; para validar todos los motores se recomienda Node.js 24.16.0+ (24.x). OpenClaw se valida según su requisito `engines.node`.
 
 ## Comunidad
 
@@ -75,7 +75,7 @@ Una comunidad de desarrolladores y entusiastas apasionados por los AI Agents —
 ## Características
 
 - **🤖 Asistente IA (Nuevo)** — Asistente IA integrado, 4 modos + 8 herramientas + Q&A interactivo
-- **🧩 Arquitectura multi-motor** — Soporta OpenClaw y Hermes Agent dual, conmutación libre, gestión independiente
+- **🧩 Arquitectura multi-motor** — Soporta OpenClaw, Hermes Agent, DeepSeek Harness, OpenCode y Pi experimental, conmutación libre y gestión independiente
 - **🤖 Chat Hermes Agent** — Interfaz de chat Hermes Agent integrada, visualización de llamadas a herramientas, acceso a archivos, streaming SSE
 - **🖼️ Reconocimiento de imágenes** — Pega capturas o arrastra imágenes, IA analiza automáticamente
 - **Panel** — Vista general del sistema, monitoreo de servicios en tiempo real
@@ -116,11 +116,11 @@ curl -fsSL https://raw.githubusercontent.com/qingchencloud/clawpanel/main/script
 ```bash
 docker run -d --name clawpanel --restart unless-stopped \
   -p 1420:1420 -v clawpanel-data:/root/.openclaw \
-  node:22-slim \
+  node:24.16.0-slim \
   sh -c "apt-get update && apt-get install -y git && \
-    npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com && \
+    npm install -g openclaw@2026.9.8 --registry https://registry.npmmirror.com && \
     git clone https://github.com/qingchencloud/clawpanel.git /app && \
-    cd /app && npm install && npm run build && npm run serve"
+    cd /app && npm ci && npm run build && npm run serve"
 ```
 
 ## Inicio rápido

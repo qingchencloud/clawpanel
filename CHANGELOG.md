@@ -7,6 +7,11 @@
 
 ## [未发布 (Unreleased)]
 
+### 文档 (Documentation)
+
+- 重整多引擎、模型渠道、OpenCode、Pi 与 Linux/Docker/ARM 部署文档，明确官方 OpenClaw 默认基线、显式同步、服务器端运行边界及实验版能力范围。
+- 新增文档导航与英文 Pi 指南，更新贡献、发版和安全政策说明。
+
 ## [0.22.0] - 2026-10-09
 
 ### 新增 (Features)

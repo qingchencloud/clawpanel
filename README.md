@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  内置 AI 助手的 OpenClaw、Hermes Agent 与 DeepSeek Harness 管理面板
+  内置 AI 助手的多引擎 Agent 管理面板（OpenClaw、Hermes、DSH、OpenCode、Pi）
 </p>
 
 <p align="center">
@@ -37,18 +37,18 @@
   </a>
 </p>
 
-ClawPanel 是支持多 AI Agent 框架的可视化管理面板，目前支持 [OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation)、[Hermes Agent](https://github.com/nousresearch/hermes-agent) 和 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 三引擎。**内置智能 AI 助手**，帮你一键安装、自动诊断配置、排查问题、修复错误。8 大工具 + 4 种模式 + 交互式问答，从新手到老手都能轻松管理。
+ClawPanel 是支持多 AI Agent 框架的可视化管理面板，目前支持 [OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation)、[Hermes Agent](https://github.com/nousresearch/hermes-agent)、[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)、[OpenCode](https://github.com/anomalyco/opencode) 和实验版 [Pi](https://github.com/earendil-works/pi)。**内置智能 AI 助手**，帮你一键安装、自动诊断配置、排查问题、修复错误。8 大工具 + 4 种模式 + 交互式问答，从新手到老手都能轻松管理。
 
-> 🌐 **官网**: [claw.qt.cool](https://claw.qt.cool/)  |  📦 **下载**: [官网下载中心](https://claw.qt.cool/download)  |  备用: [GitHub Releases](https://github.com/qingchencloud/clawpanel/releases/latest)  |  国内镜像: [AtomGit](https://atomgit.com/qingchencloud/clawpanel)
+> 🌐 **官网**: [claw.qt.cool](https://claw.qt.cool/)  |  📦 **下载**: [官网下载中心](https://claw.qt.cool/download)  |  📚 **文档**: [文档导航](docs/index.md)  |  备用: [GitHub Releases](https://github.com/qingchencloud/clawpanel/releases/latest)  |  国内镜像: [AtomGit](https://atomgit.com/qingchencloud/clawpanel)
 
-## 🧪 DeepSeek Harness 第三引擎：面板内完成配置与实际操作
+## 🧪 DeepSeek Harness：面板内完成配置与实际操作
 
 - **受管运行时** — 在“运行与配置”页面安装、启动、停止和卸载固定验收版本，不污染全局 npm 环境。
 - **独立工作台** — 通过左侧“工作台”进入完整 DSH Web 界面，直接对话、选择工作区、切换模型和管理会话。
 - **统一模型渠道** — 将 Provider、API Key、上下文窗口、输出上限和默认模型从 ClawPanel 同步到 DSH，并回读确认结果。
 - **Web/headless 安全内嵌** — DSH 保持回环监听，远程 Web 版通过短期令牌和沙箱代理使用完整界面，无需额外开放公网端口。
 
-## ✨ Hermes Agent 第二引擎：会话、记忆、人格与工具全景管理
+## ✨ Hermes Agent：会话、记忆、人格与工具全景管理
 
 <p align="center">
   <a href="docs/hermes-agent.md">
@@ -117,9 +117,9 @@ ClawPanel 是支持多 AI Agent 框架的可视化管理面板，目前支持 [O
 ClawPanel 提供**纯 Web 版部署模式**（零 GUI 依赖），天然兼容 ARM64 开发板和嵌入式设备：
 
 - **Orange Pi / 树莓派 / RK3588** 等 ARM64 板子 — `npm run serve` 即可运行
-- **Docker ARM64 镜像** — `docker run ghcr.io/qingchencloud/openclaw:latest` 开箱即用
+- **Docker ARM64** — 使用仓库 Dockerfile 本地构建，详见 [ARM 部署指南](docs/armbian-deploy.md)
 - **Armbian / Debian / Ubuntu Server** — 一键部署脚本自动检测架构
-- 无需 Rust / Tauri / 图形界面；ClawPanel Web 后端需要 **Node.js 18+**，运行 OpenClaw Gateway 时会按当前 OpenClaw 的 `engines.node` 自动检测（OpenClaw 2026.7.1 要求 `>=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0`）
+- 无需 Rust / Tauri / 图形界面；基础 Web 后端需要 **Node.js 18+**，完整引擎部署推荐 Node.js 24.16.0+（24.x），运行 OpenClaw Gateway 时会按已安装版本的 `engines.node` 自动检测
 
 > 📖 详见 [Armbian 部署指南](docs/armbian-deploy.md) | [Web 版开发说明](#web-开发版无需-rusttauri)
 
@@ -207,7 +207,7 @@ ClawPanel 提供**纯 Web 版部署模式**（零 GUI 依赖），天然兼容 A
 
 ### Linux 服务器（Web 版）
 
-没有桌面环境？一键部署 ClawPanel Web 版，通过浏览器远程管理 OpenClaw：
+没有桌面环境？一键部署 ClawPanel Web 版，通过浏览器远程管理多个引擎：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/qingchencloud/clawpanel/main/scripts/linux-deploy.sh | bash
@@ -215,7 +215,7 @@ curl -fsSL https://raw.githubusercontent.com/qingchencloud/clawpanel/main/script
 
 部署脚本的新安装默认使用官方稳定版 OpenClaw；如需汉化版可显式执行
 `curl -fsSL https://raw.githubusercontent.com/qingchencloud/clawpanel/main/scripts/linux-deploy.sh | OPENCLAW_SOURCE=chinese bash`。
-部署完成后访问 `http://服务器IP:1420`，功能与桌面版一致。
+部署完成后访问 `http://服务器IP:1420`，再在左侧选择需要的引擎。模型测试、工作目录和引擎进程都在服务器上执行；各引擎不保证功能完全相同。
 
 也可以从 GitHub Release 下载 `web-x.y.z.zip` 完整 Web 服务端包。升级时必须整体替换前端与 Node 后端并重启服务；`frontend-hot-update-x.y.z.zip` 只供桌面端热更新，不能用于 Web 服务器部署。
 
@@ -226,11 +226,11 @@ curl -fsSL https://raw.githubusercontent.com/qingchencloud/clawpanel/main/script
 ```bash
 docker run -d --name clawpanel --restart unless-stopped \
   -p 1420:1420 -v clawpanel-data:/root/.openclaw \
-  node:22.22.3-slim \
+  node:24.16.0-slim \
   sh -c "apt-get update && apt-get install -y git && \
-    npm install -g openclaw@2026.8.2 --registry https://registry.npmmirror.com && \
+    npm install -g openclaw@2026.9.8 --registry https://registry.npmmirror.com && \
     git clone https://github.com/qingchencloud/clawpanel.git /app && \
-    cd /app && npm install && npm run build && npm run serve"
+    cd /app && npm ci && npm run build && npm run serve"
 ```
 
 📖 详细教程见 [Docker 部署指南](docs/docker-deploy.md)（含 Compose、自定义镜像、Nginx 反向代理等）
@@ -282,7 +282,7 @@ curl -fsSL https://raw.githubusercontent.com/qingchencloud/clawpanel/main/script
 cd /opt/clawpanel  # 替换为实际安装目录
 git status --short  # 有输出时先处理本地修改
 git pull --ff-only origin main
-npm install
+npm ci
 npm run build
 node -p "require('./package.json').version"  # 应输出最新版本
 sudo systemctl restart clawpanel
@@ -294,7 +294,7 @@ sudo systemctl restart clawpanel
 
 > **升级 OpenClaw**：面板和 OpenClaw 版本需要匹配。可在「服务管理」页面一键升级，或手动执行：
 > ```bash
-> sudo npm install -g openclaw@2026.8.2 --registry https://registry.npmmirror.com
+> sudo npm install -g openclaw@2026.9.8 --registry https://registry.npmmirror.com
 > ```
 > 汉化版仍可显式安装：`sudo npm install -g @qingchencloud/openclaw-zh@2026.7.1-2-zh.1 --registry https://registry.npmmirror.com`。
 
@@ -318,17 +318,17 @@ docker rm clawpanel
 # 重新启动新容器
 docker run -d --name clawpanel --restart unless-stopped \
   -p 1420:1420 -v clawpanel-data:/root/.openclaw \
-  node:22.22.3-slim \
+  node:24.16.0-slim \
   sh -c "apt-get update && apt-get install -y git && \
-    npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com && \
+    npm install -g openclaw@2026.9.8 --registry https://registry.npmmirror.com && \
     git clone https://github.com/qingchencloud/clawpanel.git /app && \
-    cd /app && npm install && npm run build && npm run serve"
+    cd /app && npm ci && npm run build && npm run serve"
 ```
 
 **仅升级容器内的 OpenClaw**
 
 ```bash
-docker exec -it clawpanel npm install -g @qingchencloud/openclaw-zh@latest --registry https://registry.npmmirror.com
+docker exec -it clawpanel npm install -g openclaw@2026.9.8 --registry https://registry.npmmirror.com
 ```
 
 ### macOS / Windows Web 版升级
@@ -454,6 +454,7 @@ docker rmi $(docker images --filter "reference=*clawpanel*" -q) 2>/dev/null
 - **服务管理** — OpenClaw / Hermes Gateway 与 DeepSeek Harness 受管运行时启停控制、版本检测、配置备份与还原
 - **模型配置** — 多服务商管理、模型增删改查、批量连通性测试、延迟检测、拖拽排序、自动保存+撤销
 - **网关配置** — 端口、访问权限（本机/局域网）、认证 Token、Tailscale 组网
+- **运行时管理** — OpenClaw Gateway 以及 DSH、OpenCode、Pi 独立运行时的状态、版本和生命周期控制
 - **消息渠道** — 统一管理 Telegram、Discord、飞书、钉钉、QQ 等消息接入，支持同平台多 Agent 绑定
 - **通信与自动化** — 消息设置、广播策略、斜杠命令、Webhook、执行审批转发等高级配置
 - **使用情况** — Token 用量、API 费用、热门模型/服务商/工具排行、每日用量图表
@@ -648,7 +649,7 @@ clawpanel/
 
 ### 前置条件
 
-- [Node.js](https://nodejs.org/) >= 18（从源码构建 ClawPanel；运行 OpenClaw Gateway 按当前 OpenClaw 的 `engines.node` 检测）
+- [Node.js](https://nodejs.org/) >= 18 可构建基础前端；完整引擎开发与验收推荐 Node.js 24.16.0+（24.x）
 - [Rust](https://www.rust-lang.org/tools/install) (stable)
 - Tauri v2 系统依赖（参考 [Tauri 官方文档](https://v2.tauri.app/start/prerequisites/)）
 
@@ -738,7 +739,7 @@ npm run serve
 # 默认监听 0.0.0.0:1420，支持 --port 和 --host 参数
 ```
 
-Web 版功能与桌面版一致，后端通过 `scripts/dev-api.js` 调用本机 OpenClaw CLI 实现。
+Web 版通过 Node.js 后端调用服务器上的 CLI 和受管运行时；各引擎能力不同，模型渠道保存后需要显式同步到目标引擎。详细边界见 [多引擎与模型渠道](docs/engines-and-models.md)。
 
 > **ARM/Armbian 用户**：Web 模式天然兼容 ARM64 设备，详见 [Armbian 部署指南](docs/armbian-deploy.md)。
 
@@ -752,13 +753,13 @@ Web 版功能与桌面版一致，后端通过 `scripts/dev-api.js` 调用本机
 
 - ✅ **Node.js** — 自动检测，未安装时提供一键安装
 - ✅ **Git** — 自动检测并配置 HTTPS 模式（解决 SSH 不通问题）
-- ✅ **OpenClaw** — 一键安装，可选汉化版或原版
+- ✅ **引擎运行时** — 在左侧选择 OpenClaw、Hermes、DSH、OpenCode 或 Pi，按引擎页面完成安装
 
 > 所有步骤均有绿色勾标记，全部通过后点击「前往模型配置」。
 
 ### 2. 配置 AI 模型
 
-进入**模型配置**页面，添加至少一个 AI 服务商：
+进入**通用 → 模型渠道**页面，添加至少一个 AI 服务商。保存后，点击对应按钮显式同步到目标引擎：
 
 | 服务商 | 获取 API Key |
 |--------|-------------|
@@ -770,25 +771,25 @@ Web 版功能与桌面版一致，后端通过 `scripts/dev-api.js` 调用本机
 
 填入 `Base URL` 和 `API Key`，点击「测试连接」确认可用，然后保存。
 
-### 3. 启动 Gateway
+### 3. 启动运行时
 
-前往**服务管理**页面，点击「启动」按钮启动 Gateway。状态变为绿色即可。
+OpenClaw 前往**服务管理**页面，点击「启动」按钮启动 Gateway。DSH、OpenCode 和 Pi 在各自引擎的「运行与配置」页面独立启停。
 
-> Gateway 是 OpenClaw 的核心服务，负责处理 AI 对话请求。
+> Gateway 是 OpenClaw 的核心服务。其他引擎有自己的本地运行时，不共享 Gateway 生命周期。
 
 ### 4. 开始聊天
 
-前往**实时聊天**页面，选择模型后即可开始对话。支持流式输出、Markdown 渲染、多模态图片识别。
+前往 OpenClaw 的**实时聊天**，或进入其他引擎的**工作台**，选择模型后发送一条完整测试消息。各引擎的会话、项目和权限彼此独立。
 
 ---
 
 ## Web 版部署指南
 
-Web 版适用于 Linux 服务器（无桌面环境），通过浏览器远程管理 OpenClaw。
+Web 版适用于 Linux 服务器（无桌面环境），通过浏览器远程管理多个引擎。模型测试、工作目录和引擎进程都在运行 ClawPanel 的服务器上执行。
 
 ### 环境要求
 
-- **Node.js** >= 18（ClawPanel Web 后端）；运行 OpenClaw Gateway 会按当前 OpenClaw 要求自动检测，OpenClaw 2026.7.1 要求 `>=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0`
+- **Node.js** 推荐 24.16.0+（24.x）；面板会按已安装 OpenClaw 的 `engines.node` 检测兼容性，当前官方稳定版 2026.9.8 要求 `>=24.16.0 <25 || >=26.1.0`
 - **Git**（用于 OpenClaw 依赖安装）
 - **端口** 1420（ClawPanel）+ 18789（Gateway）
 
@@ -911,7 +912,7 @@ open /Applications/ClawPanel.app
 1. 以管理员身份运行 ClawPanel
 2. 或打开 PowerShell（管理员）手动安装：
    ```powershell
-   npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com
+   npm install -g openclaw@2026.9.8 --registry https://registry.npmmirror.com
    ```
 3. 如果仍报错，清理 npm 缓存：`npm cache clean --force`
 
@@ -932,7 +933,7 @@ git config --global url."https://github.com/".insteadOf git@github.com:
 
 ```powershell
 npm cache clean --force
-npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com
+npm install -g openclaw@2026.9.8 --registry https://registry.npmmirror.com
 ```
 
 ### 安装后 Node.js 检测不到（Windows）

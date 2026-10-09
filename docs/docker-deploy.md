@@ -1,8 +1,8 @@
 # ClawPanel Docker 部署指南
 
-本文介绍如何用 Docker 部署 **ClawPanel Web 版**，通过浏览器远程管理 OpenClaw。
+本文介绍如何用 Docker 部署 **ClawPanel Web 版**，通过浏览器远程管理 OpenClaw、Hermes Agent、DeepSeek Harness、OpenCode 和实验版 Pi。
 
-> **ClawPanel** 有 Win/Mac 桌面客户端，但 Linux 没有桌面版。Docker 部署让你在任何有 Docker 的机器上一键跑起 ClawPanel Web 管理面板。
+> Docker 部署提供 Web 管理面板和服务器端运行时。镜像默认预装 OpenClaw；Hermes、DSH、OpenCode 和 Pi 仍需按各自页面的运行时要求安装或配置。
 
 ---
 
@@ -51,10 +51,10 @@ docker run -d \
   node:24.16.0-slim \
   sh -c "\
     apt-get update && apt-get install -y git && \
-    npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com && \
+    npm install -g openclaw@2026.9.8 --registry https://registry.npmmirror.com && \
     openclaw init 2>/dev/null || true && \
     git clone https://github.com/qingchencloud/clawpanel.git /app && \
-    cd /app && npm install && npm run build && \
+    cd /app && npm ci && npm run build && \
     npm run serve"
 ```
 
@@ -66,72 +66,16 @@ docker run -d \
 
 ## 方式二：Docker Compose（推荐）
 
-创建 `docker-compose.yml`：
-
-```yaml
-version: '3.8'
-
-services:
-  clawpanel:
-    build:
-      context: .
-      dockerfile: Dockerfile.clawpanel
-    container_name: clawpanel
-    restart: unless-stopped
-    ports:
-      - "1420:1420"
-    volumes:
-      - openclaw-data:/root/.openclaw
-    environment:
-      - NODE_ENV=production
-
-  gateway:
-    image: node:24.16.0-slim
-    container_name: openclaw-gateway
-    restart: unless-stopped
-    ports:
-      - "18789:18789"
-    volumes:
-      - openclaw-data:/root/.openclaw
-    command: >
-      sh -c "npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com &&
-             openclaw init 2>/dev/null || true &&
-             openclaw gateway start --foreground"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:18789/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-
-volumes:
-  openclaw-data:
-```
-
-同目录下创建 `Dockerfile.clawpanel`：
-
-```dockerfile
-FROM node:24.16.0-slim
-
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-RUN git clone https://github.com/qingchencloud/clawpanel.git . && \
-    npm install
-
-EXPOSE 1420
-
-RUN npm run build
-
-CMD ["npm", "run", "serve"]
-```
-
-启动：
+仓库根目录已经提供 `docker-compose.yml` 和 `Dockerfile`，不要再复制旧的双容器示例。Linux 主机上直接执行：
 
 ```bash
+git clone https://github.com/qingchencloud/clawpanel.git /opt/clawpanel
+cd /opt/clawpanel
+docker compose build --pull
 docker compose up -d
 ```
 
-这样 ClawPanel 和 Gateway 共享同一个 `openclaw-data` 卷，ClawPanel 可以直接管理 Gateway。
+当前 Compose 使用 host 网络、持久化 `~/.openclaw`，并由仓库 Dockerfile 预装当前官方 OpenClaw 稳定版。它适合 Linux 主机；Docker Desktop 等不支持或限制 host 网络的环境，请改用单容器端口映射，并单独配置 Gateway 地址。
 
 ---
 
@@ -144,12 +88,12 @@ FROM node:24.16.0-slim
 
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 
-# 安装 OpenClaw CLI（ClawPanel 需要读写配置）
-RUN npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com
+# 安装 OpenClaw 官方稳定版 CLI（ClawPanel 的 OpenClaw 引擎需要；其他引擎独立管理）
+RUN npm install -g openclaw@2026.9.8 --registry https://registry.npmmirror.com
 
 WORKDIR /app
 RUN git clone https://github.com/qingchencloud/clawpanel.git . && \
-    npm install
+    npm ci
 
 EXPOSE 1420
 
@@ -186,6 +130,9 @@ ClawPanel 的所有数据都存储在 `~/.openclaw/` 目录中：
 | `backups/` | 配置备份 |
 | `agents/` | Agent 数据（记忆、工作区） |
 | `devices/` | 设备配对信息 |
+| `clawpanel/pi/` | Pi 受管运行时、模型和会话 |
+| `clawpanel/opencode/` | OpenCode 受管运行时、配置、凭据和工作区 |
+| `clawpanel/deepseek-harness/` | DSH 受管运行时和回环服务数据 |
 
 ### 持久化
 
@@ -289,7 +236,8 @@ docker stop clawpanel && docker rm clawpanel
 ### 更新 ClawPanel
 
 ```bash
-docker exec -it clawpanel bash -c "cd /app && git pull origin main && npm install"
+# 仅适用于从源码构建的开发容器；生产容器推荐重新构建镜像
+docker exec -it clawpanel bash -c "cd /app && git pull --ff-only origin main && npm ci && npm run build"
 docker restart clawpanel
 ```
 
@@ -303,7 +251,7 @@ docker compose up -d clawpanel
 ### 更新 OpenClaw
 
 ```bash
-docker exec -it clawpanel npm install -g @qingchencloud/openclaw-zh@latest --registry https://registry.npmmirror.com
+docker exec -it clawpanel npm install -g openclaw@2026.9.8 --registry https://registry.npmmirror.com
 ```
 
 ---
@@ -318,34 +266,25 @@ docker exec -it clawpanel npm install -g @qingchencloud/openclaw-zh@latest --reg
 docker logs clawpanel
 ```
 
-确认看到 `VITE ready` 和 `[dev-api] 开发 API 已启动` 输出。
+确认看到 Web 服务监听地址和 `[api] API 已启动` 输出，再访问 `/__api/health` 检查前后端版本。
 
 ### Q: 面板里点"安装 OpenClaw"失败 / 拉取不了？
 
 面板中的"安装 OpenClaw"走的是 `npm install -g`（在容器内通过网络下载安装），**不是拉取 Docker 镜像**。失败原因通常是容器网络不通或 npm 源访问慢。
 
-**推荐方案（二选一）：**
+**推荐方案：**使用仓库 Dockerfile / Compose 在构建阶段预装 OpenClaw，避免把安装失败留到容器运行时：
 
-1. **使用一体镜像（最简单）**：直接用预装了 OpenClaw + Gateway + ClawPanel 的一体镜像，不需要在面板里点安装：
-   ```bash
-   docker run -d --name openclaw -p 1420:1420 -p 18789:18789 \
-     -v openclaw-data:/root/.openclaw \
-     ghcr.io/qingchencloud/openclaw:latest
-   ```
-   > 一体镜像仓库：[github.com/qingchencloud/openclaw-docker](https://github.com/qingchencloud/openclaw-docker)
-
-2. **在 Dockerfile 中预装**：构建镜像时就安装好 OpenClaw，避免运行时下载：
-   ```dockerfile
-   FROM node:24.16.0-slim
-   RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
-   # 预装 OpenClaw CLI（使用国内镜像源加速）
-   RUN npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com
-   # ... 后续 ClawPanel 安装步骤
-   ```
+```dockerfile
+FROM node:24.16.0-slim
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+# 预装 OpenClaw CLI（使用国内镜像源加速）
+RUN npm install -g openclaw@2026.9.8 --registry https://registry.npmmirror.com
+# ... 后续 ClawPanel 安装步骤
+```
 
 **临时方案**：如果容器已经在运行，可以手动进入容器安装：
 ```bash
-docker exec -it clawpanel npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com
+docker exec -it clawpanel npm install -g openclaw@2026.9.8 --registry https://registry.npmmirror.com
 ```
 
 ### Q: 面板显示 "openclaw.json 不存在"？
