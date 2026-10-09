@@ -10,6 +10,12 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 const DSH_PACKAGE_NAME: &str = "@deepseek-ai/dsh";
 const DSH_PACKAGE_VERSION: &str = "0.2.0-rc.2";
 const DSH_DEFAULT_PORT: u16 = 3080;
@@ -287,15 +293,20 @@ fn read_pid_record() -> Option<Value> {
 }
 
 fn process_alive(pid: u32) -> bool {
-    if cfg!(windows) {
+    #[cfg(target_os = "windows")]
+    {
         Command::new("tasklist.exe")
             .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+            .creation_flags(CREATE_NO_WINDOW)
             .output()
             .ok()
             .filter(|output| output.status.success())
             .map(|output| String::from_utf8_lossy(&output.stdout).contains(&pid.to_string()))
             .unwrap_or(false)
-    } else {
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
         Command::new("kill")
             .args(["-0", &pid.to_string()])
             .status()
@@ -305,12 +316,14 @@ fn process_alive(pid: u32) -> bool {
 }
 
 fn process_command_line(pid: u32) -> String {
-    if cfg!(windows) {
+    #[cfg(target_os = "windows")]
+    {
         let script = format!(
             "(Get-CimInstance Win32_Process -Filter \"ProcessId = {pid}\" -ErrorAction SilentlyContinue).CommandLine"
         );
         return Command::new("powershell.exe")
             .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .creation_flags(CREATE_NO_WINDOW)
             .output()
             .ok()
             .map(|output| String::from_utf8_lossy(&output.stdout).to_string())
