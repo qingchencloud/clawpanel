@@ -5,7 +5,10 @@ import path from 'node:path'
 export default function (pi) {
   pi.on('tool_call', async (event, ctx) => {
     const workspace = fs.realpathSync(process.cwd())
-    const privateRoot = process.env.CLAWPANEL_PI_PRIVATE_ROOT
+    // 私有目录也规范化，覆盖 macOS /var 别名和 Windows junction 路径。
+    let privateRoot
+    try { privateRoot = process.env.CLAWPANEL_PI_PRIVATE_ROOT ? fs.realpathSync(process.env.CLAWPANEL_PI_PRIVATE_ROOT) : null }
+    catch { return { block: true, reason: 'ClawPanel: private configuration path is unavailable' } }
     const target = event.input?.path
     if (typeof target === 'string') {
       let resolved = path.resolve(workspace, target)

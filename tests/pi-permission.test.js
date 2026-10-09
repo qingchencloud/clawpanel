@@ -12,6 +12,8 @@ test('Pi 工具守卫：目录边界、私有目录、符号链接与逐次确�
     const workspace = path.join(root, 'workspace'), external = path.join(root, 'external'), privateRoot = path.join(workspace, 'agent')
     for (const dir of [workspace, external, privateRoot]) fs.mkdirSync(dir, { recursive: true })
     fs.symlinkSync(external, path.join(workspace, 'linked'), process.platform === 'win32' ? 'junction' : 'dir')
+    const privateAlias = path.join(root, 'private-alias')
+    fs.symlinkSync(privateRoot, privateAlias, process.platform === 'win32' ? 'junction' : 'dir')
     fs.writeFileSync(path.join(root, 'permission.mjs'), PI_PERMISSION_SOURCE)
     fs.writeFileSync(path.join(root, 'probe.mjs'), `
 import setup from './permission.mjs'
@@ -30,7 +32,7 @@ confirmed = true
 results.push(await check('write', 'confirmed.txt'))
 console.log(JSON.stringify({ results, asked }))
 `)
-    const probe = spawnSync(process.execPath, [path.join(root, 'probe.mjs')], { cwd: workspace, env: { ...process.env, CLAWPANEL_PI_PRIVATE_ROOT: privateRoot, CLAWPANEL_PI_ALLOW_TOOLS: '0' }, windowsHide: true, encoding: 'utf8', timeout: 10000 })
+    const probe = spawnSync(process.execPath, [path.join(root, 'probe.mjs')], { cwd: workspace, env: { ...process.env, CLAWPANEL_PI_PRIVATE_ROOT: privateAlias, CLAWPANEL_PI_ALLOW_TOOLS: '0' }, windowsHide: true, encoding: 'utf8', timeout: 10000 })
     assert.equal(probe.status, 0, probe.stderr)
     assert.deepEqual(JSON.parse(probe.stdout), { results: [false, true, true, true, true, true, false], asked: 2 })
   } finally {
