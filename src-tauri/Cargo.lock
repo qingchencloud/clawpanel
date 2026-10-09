@@ -375,7 +375,7 @@ dependencies = [
 
 [[package]]
 name = "clawpanel"
-version = "0.21.9"
+version = "0.22.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",

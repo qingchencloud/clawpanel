@@ -5,8 +5,8 @@ mod utils;
 
 use commands::{
     agent, assistant, cli_conflict, config, deepseek_harness, device, diagnose, extensions, hermes,
-    hermes_providers, logs, media, memory, messaging, model_channels, opencode, pairing, portable,
-    service, site_api, skills, update,
+    hermes_providers, logs, media, memory, messaging, model_channels, opencode, pairing, pi,
+    portable, service, site_api, skills, update,
 };
 
 pub fn run() {
@@ -206,6 +206,8 @@ pub fn run() {
             model_channels::read_model_channels,
             model_channels::write_model_channels,
             model_channels::reveal_model_channel_key,
+            // Pi：私有 Node 桥，共用 Web 运行时适配
+            pi::pi_call,
             // DeepSeek Harness 回环服务与模型同步
             deepseek_harness::dsh_status,
             deepseek_harness::dsh_embed_session,
@@ -445,7 +447,11 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("启动 ClawPanel 失败")
-        .run(|_app, _event| {});
+        .run(|_app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                pi::shutdown();
+            }
+        });
 }
 
 /// 启动时清理落后版本的热更新目录（issue #261）。

@@ -27,6 +27,7 @@ import openclawEngine from './engines/openclaw/index.js'
 import hermesEngine from './engines/hermes/index.js'
 import deepseekHarnessEngine from './engines/deepseek-harness/index.js'
 import openCodeEngine from './engines/opencode/index.js'
+import piEngine from './engines/pi/index.js'
 import xintianEngine from './engines/xintian/index.js'
 import { showGatewayStartDiagnostics } from './lib/gateway-start-diagnostics.js'
 
@@ -644,6 +645,7 @@ async function boot() {
   registerEngine(hermesEngine)
   registerEngine(deepseekHarnessEngine)
   registerEngine(openCodeEngine)
+  registerEngine(piEngine)
   registerEngine(xintianEngine)
   registerRoute('/engine-select', () => import('./pages/engine-select.js'))
   registerRoute('/media', () => import('./pages/media.js'))

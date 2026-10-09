@@ -278,6 +278,10 @@ function _debouncedReloadGateway() {
 
 // 导出 API
 export const api = {
+  // Pi：共用受管运行时，桌面 IPC / Web HTTP 提供一致的事件游标与管理接口。
+  piStatus: () => cachedInvoke('pi_call', { command: 'status' }, 2000),
+  piCall: (command, args = {}) => { if (command !== 'events') invalidate('pi_call'); return invoke('pi_call', { command, args }) },
+  piSyncProvider: ({ channelId, setDefault = false }) => { invalidate('pi_call'); return invoke('pi_call', { command: 'sync_provider', args: { channelId, setDefault } }) },
   // 服务管理（状态用短缓存，操作不缓存）
   getServicesStatus: () => cachedInvoke('get_services_status', {}, 10000),
   startService: (label) => { invalidate('get_services_status'); return invoke('start_service', { label }).finally(() => invalidate('get_services_status')) },

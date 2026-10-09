@@ -10,6 +10,7 @@ import {
   hermesSyncSupported,
   dshSyncSupported,
   openCodeSyncSupported,
+  piSyncSupported,
   assistantSyncSupported,
   getDshPort,
   resolveHermesTarget,
@@ -17,6 +18,7 @@ import {
   syncChannelToHermes,
   syncChannelToDsh,
   syncChannelToOpenCode,
+  syncChannelToPi,
   syncChannelToAssistant,
   importChannelsFromOpenclaw,
 } from '../lib/model-channels.js'
@@ -217,6 +219,7 @@ function renderChannelCard(state, channel) {
         ${renderSyncLine(state, channel, 'hermes', t('modelChannels.targetHermes'), hermesSyncSupported(channel), t('modelChannels.syncHermesUnsupported'), t('modelChannels.syncHermes'))}
         ${renderSyncLine(state, channel, 'dsh', t('modelChannels.targetDsh'), dshSyncSupported(channel), t('modelChannels.syncDshUnsupported'), t('modelChannels.syncDsh'))}
         ${renderSyncLine(state, channel, 'opencode', t('modelChannels.targetOpenCode'), openCodeSyncSupported(channel), t('modelChannels.syncOpenCodeUnsupported'), t('modelChannels.syncOpenCode'))}
+        ${renderSyncLine(state, channel, 'pi', 'Pi', piSyncSupported(channel), t('pi.unsupported'), t('pi.sync'))}
         ${renderSyncLine(state, channel, 'assistant', t('modelChannels.targetAssistant'), assistantSyncSupported(channel), t('modelChannels.syncAssistantUnsupported'), t('modelChannels.syncAssistant'))}
       </div>
       <div class="mch-actions">
@@ -476,7 +479,7 @@ async function deleteChannel(page, state, channelId) {
   const ok = await showConfirm(t('modelChannels.deleteConfirm', { name: channel.name }))
   if (!ok) return
   state.doc = { ...state.doc, channels: (state.doc.channels || []).filter(c => c.id !== channelId) }
-  for (const target of ['openclaw', 'hermes', 'dsh', 'opencode', 'assistant']) {
+  for (const target of ['openclaw', 'hermes', 'dsh', 'opencode', 'pi', 'assistant']) {
     if (state.doc.syncState?.[target]) delete state.doc.syncState[target][channelId]
   }
   await persistDoc(state)
@@ -564,6 +567,14 @@ async function syncChannel(page, state, channelId, target) {
       recordSync(state, target, channel, { providerId: result.providerId, verified: result.verified })
       await persistDoc(state)
       toast(t('modelChannels.syncDone', { target: t('modelChannels.targetOpenCode') }), 'success')
+    } else if (target === 'pi') {
+      if (!piSyncSupported(channel)) { toast(t('pi.unsupported'), 'warning'); return }
+      if (!await showConfirm(t('pi.syncConfirm'), { variant: 'primary' })) return
+      const setDefault = channel.defaultModel ? await showConfirm(t('modelChannels.syncSetDefaultAsk', { model: channel.defaultModel }), { variant: 'primary' }) : false
+      const result = await syncChannelToPi(channel, { setDefault })
+      recordSync(state, target, channel, { providerId: result.providerId, verified: result.verified, verification: result.verification })
+      await persistDoc(state)
+      toast(t('modelChannels.syncDone', { target: 'Pi' }), 'success')
     } else if (target === 'assistant') {
       const model = channel.defaultModel || channel.models?.[0]?.id || ''
       const ok = await showConfirm(t('modelChannels.syncAssistantConfirm', { model: model || '-' }), { variant: 'primary' })
@@ -579,6 +590,7 @@ async function syncChannel(page, state, channelId, target) {
     if (error?.message === 'unsupported') toast(t('modelChannels.syncHermesUnsupported'), 'warning')
     else if (error?.message === 'unsupported-dsh') toast(t('modelChannels.syncDshUnsupported'), 'warning')
     else if (error?.message === 'unsupported-opencode') toast(t('modelChannels.syncOpenCodeUnsupported'), 'warning')
+    else if (error?.message === 'unsupported-pi') toast(t('pi.unsupported'), 'warning')
     else if (error?.message === 'no-key') toast(t('modelChannels.noKeyForSync'), 'warning')
     else throw error
   } finally {

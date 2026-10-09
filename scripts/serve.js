@@ -16,7 +16,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import { homedir } from 'os'
 import net from 'net'
-import { _initApi, _apiMiddleware, _handleDshUpgrade, _handleOpenCodeUpgrade, _isWebSocketAuthorized } from './dev-api.js'
+import { _initApi, _apiMiddleware, _handleDshUpgrade, _handleOpenCodeUpgrade, _isWebSocketAuthorized, _disposePiRuntime } from './dev-api.js'
 import { serializeGatewayWebSocketHeaders } from './gateway-ws-proxy.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -205,8 +205,13 @@ async function main() {
   })
 
   // 优雅退出
-  process.on('SIGINT', () => { console.log('\n  👋 服务已停止'); process.exit(0) })
-  process.on('SIGTERM', () => { console.log('\n  👋 服务已停止'); process.exit(0) })
+  const shutdown = async () => {
+    await _disposePiRuntime().catch(error => console.warn('[pi]', error.message))
+    console.log('\n  👋 服务已停止')
+    process.exit(0)
+  }
+  process.once('SIGINT', shutdown)
+  process.once('SIGTERM', shutdown)
 }
 
 main().catch(e => { console.error('启动失败:', e); process.exit(1) })

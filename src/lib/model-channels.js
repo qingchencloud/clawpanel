@@ -60,6 +60,17 @@ export function openCodeSyncSupported(channel) {
   return !channel?.apiKeyRef && OPENCODE_SUPPORTED_API_TYPES.has(normalizeModelApiType(channel?.apiType))
 }
 
+export function piSyncSupported(channel) {
+  return !channel?.apiKeyRef && ['openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai', 'ollama'].includes(normalizeModelApiType(channel?.apiType))
+}
+
+/** Pi 密钥由本机后端读取；浏览器只提交渠道 ID。 */
+export async function syncChannelToPi(channel, { setDefault = false } = {}) {
+  if (!piSyncSupported(channel)) throw new Error('unsupported-pi')
+  if (!channel?.apiKeySaved) throw new Error('no-key')
+  return api.piSyncProvider({ channelId: channel.id, setDefault })
+}
+
 export function getDshPort() {
   try {
     const port = Number(localStorage.getItem(DSH_PORT_STORAGE_KEY) || 3080)

@@ -445,7 +445,8 @@ docker rmi $(docker images --filter "reference=*clawpanel*" -q) 2>/dev/null
 </p>
 
 - **🤖 AI 助手（全新·重磅）** — 内置独立 AI 助手，4 种操作模式 + 8 大工具 + 交互式问答，详见下方 [AI 助手亮点](#-ai-助手亮点)
-- **🧩 多引擎架构** — 同时支持 OpenClaw、Hermes Agent 和 DeepSeek Harness 三引擎，自由切换，各自独立管理
+- **🧩 多引擎架构** — 支持 OpenClaw、Hermes Agent、DeepSeek Harness、OpenCode，以及实验版 Pi；自由切换，各自独立管理
+- **π Pi 实验工作台** — 独立安装与会话管理、统一模型渠道、流式回复及逐次工具审批；不依赖 OpenClaw Gateway。[使用说明与验收边界](docs/pi-integration.md)
 - **🧪 DeepSeek Harness 工作台** — 面板内完成受管安装、模型渠道同步和完整 DSH Web 操作，无需另开页面或额外开放端口
 - **🤖 Hermes Agent 对话** — 内置 Hermes Agent 聊天界面，支持工具调用可视化、文件系统访问开关、SSE 流式输出
 - **🖼️ 图片识别** — 粘贴截图或拖拽图片，AI 自动识别分析，支持多模态图文混排对话

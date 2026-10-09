@@ -14,6 +14,7 @@ import http from 'http'
 import crypto from 'crypto'
 import { once } from 'events'
 import * as YAML from 'yaml'
+import { PiRuntime } from './pi-runtime.js'
 import { createDshAuth, redactDshOutput } from './deepseek-harness-auth.js'
 import { channelPluginStatusAt, channelPluginStatusFromInventory, installChannelPluginAt, redactPluginOutput } from './channel-plugin-install.js'
 import { buildWeixinCompatibilityStatus, resolveWeixinInstallVersion } from './weixin-compat.js'
@@ -9748,6 +9749,7 @@ async function instanceHealthCheck(instance) {
 
 // 始终在本机处理的命令（不代理到远程实例）
 const ALWAYS_LOCAL = new Set([
+  'pi_call',
   'instance_list', 'instance_add', 'instance_remove', 'instance_set_active',
   'instance_health_check', 'instance_health_all',
   'docker_info', 'docker_list_containers', 'docker_create_container',
@@ -9772,6 +9774,32 @@ const ALWAYS_LOCAL = new Set([
   // 便携模式是本进程属性，不能代理到远程实例
   'get_portable_status', 'migrate_to_portable', 'migrate_to_local',
 ])
+
+// Pi 管理操作只在本机执行；按配置根目录隔离，不读取浏览器传来的密钥。
+let _piRuntime = null
+export async function _disposePiRuntime() {
+  const previous = _piRuntime
+  _piRuntime = null
+  if (previous) await previous.dispose()
+}
+function getPiRuntime() {
+  const root = path.join(OPENCLAW_DIR, 'clawpanel', 'pi')
+  if (_piRuntime && _piRuntime.root !== path.resolve(root)) {
+    const previous = _piRuntime
+    _piRuntime = null
+    previous.dispose().catch(error => console.warn('[pi] dispose:', error.message))
+  }
+  if (!_piRuntime) _piRuntime = new PiRuntime({
+    root,
+    registry: getConfiguredNpmRegistry,
+    readChannel: id => {
+      const channel = readModelChannelsPrivate().channels.find(item => item.id === id)
+      if (!channel) return null
+      return { ...channel, apiKey: resolveModelApiKey(channel.apiKey) }
+    },
+  })
+  return _piRuntime
+}
 
 // === 工具函数 ===
 
@@ -16001,6 +16029,11 @@ const handlers = {
     })
   },
 
+  // Pi：受管运行时、独立配置及原生 RPC 工作台
+  pi_call({ command, args = {} } = {}) {
+    return getPiRuntime().call(command, args)
+  },
+
   // OpenCode：受管二进制、独立配置和安全内嵌工作台
   opencode_status({ port = OPENCODE_DEFAULT_PORT } = {}) {
     return openCodeStatus(port)
@@ -20502,11 +20535,13 @@ export function devApiPlugin() {
     configureServer(server) {
       ensureInit()
       attachDshUpgrade(server)
+      server.httpServer?.once('close', () => { _disposePiRuntime().catch(error => console.warn('[pi]', error.message)) })
       server.middlewares.use(_apiMiddleware)
     },
     configurePreviewServer(server) {
       ensureInit()
       attachDshUpgrade(server)
+      server.httpServer?.once('close', () => { _disposePiRuntime().catch(error => console.warn('[pi]', error.message)) })
       server.middlewares.use(_apiMiddleware)
     },
   }

@@ -30,6 +30,7 @@ pub mod messaging;
 pub mod model_channels;
 pub mod opencode;
 pub mod pairing;
+pub mod pi;
 pub mod portable;
 pub mod service;
 pub mod site_api;

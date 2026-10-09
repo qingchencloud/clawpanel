@@ -91,6 +91,10 @@ jobs:
       - name: Node 单元测试
         run: node --test tests/*.test.js
 
+      # Pi 的固定版本在三平台实际启动；只调用本地模拟 Provider。
+      - name: Pi 真实运行时协议验收
+        run: node scripts/test-pi-runtime.mjs
+
       # Rust 单元测试
       - name: Rust 单元测试
         working-directory: src-tauri

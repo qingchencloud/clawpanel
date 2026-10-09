@@ -20,6 +20,7 @@ const PRIMARY_OPTIONS = [
 ]
 
 const SECONDARY_OPTIONS = [
+  { id: 'pi', activeEngineId: 'pi', enabledEngineIds: ['pi'], targetRoute: '/pi/dashboard' },
   {
     id: 'opencode',
     activeEngineId: 'opencode',
@@ -79,6 +80,8 @@ export async function render() {
       ${renderContent('hermes')}
 
       <div class="es-secondary">
+        <button type="button" class="es-secondary-link" data-secondary="pi">Pi · ${esc(t('pi.title'))}</button>
+        <span class="es-secondary-sep" aria-hidden="true">·</span>
         <button type="button" class="es-secondary-link" data-secondary="opencode">${esc(t('engine.choiceSecondaryOpenCode'))}</button>
         <span class="es-secondary-sep" aria-hidden="true">·</span>
         <button type="button" class="es-secondary-link" data-secondary="deepseek-harness">${esc(t('engine.choiceSecondaryDsh'))}</button>

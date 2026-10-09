@@ -86,6 +86,9 @@ jobs:
       - name: Node 单元测试
         run: node --test tests/*.test.js
 
+      - name: Pi 真实运行时协议验收
+        run: node scripts/test-pi-runtime.mjs
+
       - name: 安装 Rust 工具链
         uses: dtolnay/rust-toolchain@stable
 
