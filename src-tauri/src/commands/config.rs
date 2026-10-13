@@ -857,6 +857,7 @@ fn pre_install_cleanup() {
                 "Get-CimInstance Win32_Process -Filter \"CommandLine like '%openclaw%gateway%'\" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty ProcessId"])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
+            .creation_flags(0x08000000)
             .spawn()
         {
             if let Some(output) = run_with_timeout(child, 10) {
@@ -884,6 +885,7 @@ fn pre_install_cleanup() {
                     .args(["-NoProfile", "-Command", &ps_script])
                     .stdout(std::process::Stdio::piped())
                     .stderr(std::process::Stdio::null())
+                    .creation_flags(0x08000000)
                     .spawn()
                 {
                     if let Some(output) = run_with_timeout(child, 10) {
@@ -5138,6 +5140,7 @@ async fn upgrade_openclaw_inner(
                     );
                     if let Ok(output) = Command::new("powershell")
                         .args(["-NoProfile", "-Command", &ps_script])
+                        .creation_flags(0x08000000)
                         .output()
                     {
                         let text = String::from_utf8_lossy(&output.stdout);
@@ -5424,6 +5427,7 @@ async fn uninstall_openclaw_inner(
                 );
                 if let Ok(output) = Command::new("powershell")
                     .args(["-NoProfile", "-Command", &ps_script])
+                    .creation_flags(0x08000000)
                     .output()
                 {
                     let text = String::from_utf8_lossy(&output.stdout);
