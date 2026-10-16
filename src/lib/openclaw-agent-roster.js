@@ -75,6 +75,7 @@ function normalizeCanonicalOwnership(agents) {
   const entries = isRecord(agents.entries) ? agents.entries : {}
   const values = Object.values(entries).filter(isRecord)
   for (const entry of values) delete entry.default
+  for (const entry of values) delete entry.isDefault
   if (values.length > 1) agents.ownership = 'explicit'
   else if (values.length === 0) delete agents.ownership
 }
