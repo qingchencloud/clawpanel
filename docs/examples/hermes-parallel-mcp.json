@@ -1,0 +1,10 @@
+{
+  "parallel": {
+    "url": "https://search.parallel.ai/mcp",
+    "headers": {
+      "User-Agent": "ClawPanel/0.22.1"
+    },
+    "connect_timeout": 30,
+    "timeout": 60
+  }
+}
