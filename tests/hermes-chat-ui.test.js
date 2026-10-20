@@ -24,3 +24,9 @@ test('Hermes 聊天页健康提示操作入口必须满足移动端触控尺寸'
   assert.match(block, /min-height:\s*44px/, '健康提示操作入口高度必须至少 44px')
   assert.match(block, /min-width:\s*44px/, '健康提示操作入口宽度必须至少 44px')
 })
+
+test('输入正文轻量更新发送按钮，不依赖整体重绘或健康轮询', () => {
+ assert.match(source,/function updateSendButton\(\)/)
+ const start=source.indexOf("input.addEventListener('input'")
+ assert.ok(start>=0);assert.match(source.slice(start,source.indexOf("el.querySelector('#hm-chat-send')",start)),/updateSendButton\(\)/)
+})

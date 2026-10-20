@@ -204,7 +204,7 @@ fn kill_gateway_pid() -> bool {
     }
     #[cfg(target_os = "windows")]
     {
-        let mut cmd = std::process::Command::new("taskkill");
+        let mut cmd = crate::utils::background_command("taskkill");
         cmd.args(["/F", "/PID", &pid.to_string()]);
         cmd.creation_flags(CREATE_NO_WINDOW);
         let ok = cmd.output().map(|o| o.status.success()).unwrap_or(false);
@@ -802,7 +802,7 @@ async fn do_restart_gateway() -> Result<(), String> {
         .try_clone()
         .map_err(|e| format!("克隆日志句柄失败: {e}"))?;
 
-    let mut cmd = std::process::Command::new(hermes_program_for_spawn()?);
+    let mut cmd = crate::utils::background_command(hermes_program_for_spawn()?);
     cmd.args(["gateway", "run"])
         .current_dir(&home)
         .stdin(std::process::Stdio::null())
@@ -1331,7 +1331,7 @@ fn hermes_enhanced_path() -> String {
 /// 执行命令并获取 stdout（静默，无窗口）
 fn run_silent(program: &str, args: &[&str]) -> Result<String, String> {
     let enhanced = hermes_enhanced_path();
-    let mut cmd = Command::new(command_program(program)?);
+    let mut cmd = crate::utils::background_command(command_program(program)?);
     cmd.args(args);
     apply_hermes_runtime_env(&mut cmd, &enhanced);
     #[cfg(target_os = "windows")]
@@ -1347,7 +1347,7 @@ fn run_silent(program: &str, args: &[&str]) -> Result<String, String> {
 
 /// 在指定路径上执行命令
 fn run_at_path(program: &str, args: &[&str], path: &str) -> Result<String, String> {
-    let mut cmd = Command::new(command_program(program)?);
+    let mut cmd = crate::utils::background_command(command_program(program)?);
     cmd.args(args);
     apply_hermes_runtime_env(&mut cmd, path);
     #[cfg(target_os = "windows")]
@@ -1361,8 +1361,9 @@ fn run_at_path(program: &str, args: &[&str], path: &str) -> Result<String, Strin
 }
 
 fn hermes_version_at_path(path: &str) -> Result<String, String> {
-    run_at_path("hermes", &["version"], path)
-        .or_else(|_| run_at_path("hermes", &["--version"], path))
+    // 优先官方快速入口，避免状态轮询触发完整 CLI 启动。
+    run_at_path("hermes", &["--version"], path)
+        .or_else(|_| run_at_path("hermes", &["version"], path))
 }
 
 /// 解析 Python 版本号 "Python X.Y.Z" → (X, Y, Z)
@@ -1485,7 +1486,7 @@ pub fn check_python() -> Result<Value, String> {
 fn find_executable_path(name: &str, enhanced_path: &str) -> Option<String> {
     #[cfg(target_os = "windows")]
     {
-        let mut cmd = Command::new("where");
+        let mut cmd = crate::utils::background_command("where");
         cmd.arg(name).env("PATH", enhanced_path);
         cmd.creation_flags(CREATE_NO_WINDOW);
         if let Ok(output) = cmd.output() {
@@ -1809,27 +1810,73 @@ fn hermes_dashboard_port() -> u16 {
     9119 // Hermes Dashboard 默认端口
 }
 
-fn hermes_dashboard_cli_status(port: u16) -> Option<(bool, String)> {
+#[cfg(test)]
+#[test]
+fn dashboard_status_probe_uses_actual_official_negative_output() {
+    for output in [
+        "No hermes dashboard or serve processes running.",
+        "No hermes dashboard processes running for this profile.",
+        "No dashboard processes running.",
+        "Dashboard is not running.",
+    ] {
+        assert_eq!(parse_hermes_dashboard_status(output), Some(false));
+    }
+    for output in [
+        "1 hermes dashboard/serve process(es) running:\nPID 123 [dashboard]",
+        "Dashboard running at http://127.0.0.1:9119",
+        "Listening on http://127.0.0.1:9119",
+    ] {
+        assert_eq!(parse_hermes_dashboard_status(output), Some(true));
+    }
+    for output in [
+        "Usage: manage running dashboards http://docs.example",
+        "http://127.0.0.1:9119",
+        "Default port: 9119",
+        "{\"running\":false}",
+    ] {
+        assert_eq!(parse_hermes_dashboard_status(output), None);
+    }
+}
+
+fn parse_hermes_dashboard_status(output: &str) -> Option<bool> {
+    let lower = output.trim().to_ascii_lowercase();
+    // 官方无进程信息也以 exit 0 返回，文案中的 running 不构成正向状态。
+    if lower.lines().any(|line| {
+        line.trim()
+            .strip_prefix("no ")
+            .map(|tail| tail.strip_prefix("hermes ").unwrap_or(tail))
+            .is_some_and(|tail| tail.starts_with("dashboard") || tail.starts_with("serve"))
+    }) || lower.contains("not running")
+        || lower.contains("stopped")
+        || lower.contains("inactive")
+    {
+        return Some(false);
+    }
+    for line in lower.lines().map(str::trim) {
+        if let Some((count, _)) = line.split_once(" hermes dashboard/serve process(es) running:") {
+            if let Ok(count) = count.parse::<u32>() {
+                return Some(count > 0);
+            }
+        }
+        if let Some(tail) = line.strip_prefix("dashboard ") {
+            let tail = tail.strip_prefix("is ").unwrap_or(tail);
+            if tail == "running" || tail.starts_with("running ") || tail.starts_with("running:") {
+                return Some(true);
+            }
+        }
+        if line.starts_with("listening on http://") || line.starts_with("listening on https://") {
+            return Some(true);
+        }
+    }
+    // 帮助文案、URL 或端口不作已运行证明，未知结果交给 TCP。
+    None
+}
+
+fn hermes_dashboard_cli_status(_port: u16) -> Option<(bool, String)> {
     let output = run_silent("hermes", &["dashboard", "--status"])
         .or_else(|_| run_silent("hermes", &["dashboard", "status"]))
         .ok()?;
-    let lower = output.to_ascii_lowercase();
-    if lower.contains("not running")
-        || lower.contains("stopped")
-        || lower.contains("inactive")
-        || lower.contains("no dashboard")
-    {
-        return Some((false, output));
-    }
-    if lower.contains("running")
-        || lower.contains("listening")
-        || lower.contains("http://")
-        || lower.contains("https://")
-        || lower.contains(&port.to_string())
-    {
-        return Some((true, output));
-    }
-    None
+    parse_hermes_dashboard_status(&output).map(|running| (running, output))
 }
 
 fn hermes_dashboard_tcp_running(port: u16, timeout_ms: u64) -> bool {
@@ -1853,11 +1900,10 @@ fn hermes_dashboard_cli_stop() -> bool {
 pub async fn hermes_dashboard_probe() -> Result<Value, String> {
     let port = hermes_dashboard_port();
     let cli_status = hermes_dashboard_cli_status(port);
-    let cli_running = cli_status.as_ref().map(|(running, _)| *running);
     let cli_output = cli_status.as_ref().map(|(_, output)| output.clone());
     let running = tokio::task::spawn_blocking(move || {
-        let tcp_running = hermes_dashboard_tcp_running(port, 800);
-        tcp_running || cli_running.unwrap_or(false)
+        // CLI 列表包含其他 HOME/端口；本实例仍需真实监听。
+        hermes_dashboard_tcp_running(port, 800)
     })
     .await
     .unwrap_or(false);
@@ -1875,7 +1921,7 @@ fn kill_dashboard_pid() -> bool {
     }
     #[cfg(target_os = "windows")]
     {
-        let mut cmd = std::process::Command::new("taskkill");
+        let mut cmd = crate::utils::background_command("taskkill");
         cmd.args(["/F", "/PID", &pid.to_string()]);
         cmd.creation_flags(CREATE_NO_WINDOW);
         let ok = cmd.output().map(|o| o.status.success()).unwrap_or(false);
@@ -1907,12 +1953,8 @@ fn kill_dashboard_pid() -> bool {
 #[tauri::command]
 pub async fn hermes_dashboard_start(app: tauri::AppHandle) -> Result<Value, String> {
     let port = hermes_dashboard_port();
-    // 1. 已运行？
-    if hermes_dashboard_tcp_running(port, 500)
-        || hermes_dashboard_cli_status(port)
-            .map(|(running, _)| running)
-            .unwrap_or(false)
-    {
+    // 1. 只认本实例配置端口；CLI 全局列表包含其他 HOME/端口。
+    if hermes_dashboard_tcp_running(port, 500) {
         return Ok(serde_json::json!({
             "started": true,
             "already_running": true,
@@ -1937,8 +1979,8 @@ pub async fn hermes_dashboard_start(app: tauri::AppHandle) -> Result<Value, Stri
         .map_err(|e| format!("克隆日志句柄失败: {e}"))?;
 
     let enhanced = hermes_enhanced_path();
-    let mut cmd = std::process::Command::new(hermes_program_for_spawn()?);
-    cmd.args(["dashboard", "--no-open"])
+    let mut cmd = crate::utils::background_command(hermes_program_for_spawn()?);
+    cmd.args(["dashboard", "--no-open", "--port", &port.to_string()])
         .current_dir(&home)
         .stdin(std::process::Stdio::null())
         .stdout(log_file)
@@ -2347,7 +2389,7 @@ fn hermes_uv_tool_root() -> Option<std::path::PathBuf> {
     } else {
         "uv".into()
     };
-    let mut cmd = std::process::Command::new(&uv_cmd);
+    let mut cmd = crate::utils::background_command(&uv_cmd);
     cmd.args(["tool", "dir"]);
     let enhanced = hermes_enhanced_path();
     apply_hermes_runtime_env(&mut cmd, &enhanced);
@@ -2594,7 +2636,7 @@ fn hermes_installer_sha256(bytes: &[u8]) -> String {
 
 fn run_hermes_source_git(args: &[&str]) -> Option<std::process::Output> {
     let enhanced = hermes_enhanced_path();
-    let mut cmd = Command::new(command_program("git").ok()?);
+    let mut cmd = crate::utils::background_command(command_program("git").ok()?);
     cmd.arg("-C").arg(hermes_source_dir()).args(args);
     apply_hermes_runtime_env(&mut cmd, &enhanced);
     #[cfg(target_os = "windows")]
@@ -2648,7 +2690,7 @@ async fn read_hermes_installer_via_git(
     }
 
     let enhanced = hermes_enhanced_path();
-    let mut clone = tokio::process::Command::new(command_program("git")?);
+    let mut clone = crate::utils::background_command_async(command_program("git")?);
     clone.args([
         "clone",
         "--quiet",
@@ -2682,7 +2724,7 @@ async fn read_hermes_installer_via_git(
             ));
         }
 
-        let mut show = tokio::process::Command::new(command_program("git")?);
+        let mut show = crate::utils::background_command_async(command_program("git")?);
         show.arg("-C")
             .arg(&checkout)
             .arg("show")
@@ -2795,8 +2837,25 @@ async fn ensure_hermes_installer_script(app: &tauri::AppHandle) -> Result<PathBu
     Ok(script_path)
 }
 
+#[cfg(target_os = "windows")]
+fn ensure_hermes_managed_wrapper() -> Result<PathBuf, String> {
+    // 与 Web 读取的固定文件同源，原版安装器仍独立保持固定 hash。
+    let bytes = include_str!("../../../scripts/hermes-managed-install.ps1").as_bytes();
+    let cache = hermes_home().join(".clawpanel-cache");
+    std::fs::create_dir_all(&cache).map_err(|e| format!("创建受管安装器目录失败: {e}"))?;
+    let wrapper = cache.join(format!(
+        "clawpanel-managed-{}.ps1",
+        hermes_installer_sha256(bytes)
+    ));
+    if std::fs::read(&wrapper).ok().as_deref() != Some(bytes) {
+        std::fs::write(&wrapper, bytes).map_err(|e| format!("写入受管安装器失败: {e}"))?;
+    }
+    Ok(wrapper)
+}
+
 fn build_hermes_installer_stage_command(
     script_path: &Path,
+    wrapper_path: &Path,
     stage: &str,
 ) -> tokio::process::Command {
     let home = hermes_home();
@@ -2804,9 +2863,11 @@ fn build_hermes_installer_stage_command(
 
     #[cfg(target_os = "windows")]
     let mut cmd = {
-        let mut command = tokio::process::Command::new("powershell.exe");
+        let mut command = crate::utils::background_command_async("powershell.exe");
         command
             .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
+            .arg(wrapper_path)
+            .arg("-InstallerPath")
             .arg(script_path)
             .arg("-HermesHome")
             .arg(&home)
@@ -2828,6 +2889,7 @@ fn build_hermes_installer_stage_command(
 
     #[cfg(not(target_os = "windows"))]
     let mut cmd = {
+        let _ = wrapper_path;
         let mut command = tokio::process::Command::new("bash");
         command
             .arg(script_path)
@@ -2860,7 +2922,15 @@ fn build_hermes_installer_stage_command(
     apply_git_mirror_env(&mut cmd);
     super::apply_proxy_env_tokio(&mut cmd);
     #[cfg(target_os = "windows")]
-    cmd.creation_flags(CREATE_NO_WINDOW);
+    {
+        cmd.env("UV_NO_MODIFY_PATH", "1");
+        for (name, _) in std::env::vars_os() {
+            if name.to_string_lossy().eq_ignore_ascii_case("PSModulePath") {
+                cmd.env_remove(name);
+            }
+        }
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
     cmd
 }
 
@@ -2869,6 +2939,10 @@ async fn install_hermes_managed_source(app: &tauri::AppHandle) -> Result<(), Str
     ensure_portable_git(app).await?;
     emit_hermes_stable_version_log(app);
     let script_path = ensure_hermes_installer_script(app).await?;
+    #[cfg(target_os = "windows")]
+    let wrapper_path = ensure_hermes_managed_wrapper()?;
+    #[cfg(not(target_os = "windows"))]
+    let wrapper_path = script_path.clone();
     let checkout_was_clean = normalize_hermes_line_ending_only_changes();
     let stage_count = HERMES_INSTALLER_STAGES.len().max(1);
 
@@ -2881,7 +2955,7 @@ async fn install_hermes_managed_source(app: &tauri::AppHandle) -> Result<(), Str
         );
         let (status, output_tail) = run_install_command_streaming(
             app,
-            build_hermes_installer_stage_command(&script_path, stage),
+            build_hermes_installer_stage_command(&script_path, &wrapper_path, stage),
         )
         .await?;
         if status.success() {
@@ -14008,7 +14082,7 @@ async fn run_venv_python_json(script: &str) -> Result<Value, String> {
         "Hermes Python 解释器未找到（已尝试 HERMES_PYTHON、官方 source venv、~/.hermes-venv 与 uv tool 路径）。请先安装 Hermes。".to_string()
     })?;
 
-    let mut cmd = tokio::process::Command::new(&py);
+    let mut cmd = crate::utils::background_command_async(&py);
     cmd.arg("-c").arg(script);
     cmd.env("PYTHONIOENCODING", "utf-8");
     cmd.env("PATH", super::enhanced_path());
@@ -14438,7 +14512,7 @@ pub async fn hermes_gateway_action(
                     .try_clone()
                     .map_err(|e| format!("克隆日志句柄失败: {e}"))?;
 
-                let mut cmd = std::process::Command::new(hermes_program_for_spawn()?);
+                let mut cmd = crate::utils::background_command(hermes_program_for_spawn()?);
                 cmd.args(["gateway", "run"])
                     .current_dir(&home)
                     .stdin(std::process::Stdio::null())
@@ -14610,7 +14684,7 @@ pub async fn hermes_gateway_action(
             let killed = kill_gateway_pid();
 
             // 2. 尝试 hermes gateway stop（作为补充）
-            let mut cmd = tokio::process::Command::new(hermes_program_for_spawn()?);
+            let mut cmd = crate::utils::background_command_async(hermes_program_for_spawn()?);
             cmd.args(["gateway", "stop"]);
             apply_hermes_runtime_env_tokio(&mut cmd, &enhanced);
             #[cfg(target_os = "windows")]
@@ -14637,7 +14711,7 @@ pub async fn hermes_gateway_action(
             }
         }
         "status" => {
-            let mut cmd = tokio::process::Command::new(hermes_program_for_spawn()?);
+            let mut cmd = crate::utils::background_command_async(hermes_program_for_spawn()?);
             cmd.args(["gateway", "status"]);
             apply_hermes_runtime_env_tokio(&mut cmd, &enhanced);
             #[cfg(target_os = "windows")]
@@ -14647,7 +14721,7 @@ pub async fn hermes_gateway_action(
             Ok(stdout)
         }
         "install" => {
-            let mut cmd = tokio::process::Command::new(hermes_program_for_spawn()?);
+            let mut cmd = crate::utils::background_command_async(hermes_program_for_spawn()?);
             cmd.args(["gateway", "install"]);
             apply_hermes_runtime_env_tokio(&mut cmd, &enhanced);
             #[cfg(target_os = "windows")]
@@ -14660,7 +14734,7 @@ pub async fn hermes_gateway_action(
             }
         }
         "uninstall" => {
-            let mut cmd = tokio::process::Command::new(hermes_program_for_spawn()?);
+            let mut cmd = crate::utils::background_command_async(hermes_program_for_spawn()?);
             cmd.args(["gateway", "uninstall"]);
             apply_hermes_runtime_env_tokio(&mut cmd, &enhanced);
             #[cfg(target_os = "windows")]
@@ -14769,7 +14843,7 @@ pub async fn hermes_detect_environments() -> Result<Value, String> {
     #[cfg(target_os = "windows")]
     {
         // 1. 检测 WSL 是否安装
-        let wsl_check = std::process::Command::new("wsl")
+        let wsl_check = crate::utils::background_command("wsl")
             .args(["--list", "--quiet"])
             .creation_flags(CREATE_NO_WINDOW)
             .output();
@@ -14788,7 +14862,7 @@ pub async fn hermes_detect_environments() -> Result<Value, String> {
                     result["wsl2"]["distros"] = serde_json::json!(distros);
 
                     // 2. 获取默认 WSL2 IP
-                    let ip_cmd = std::process::Command::new("wsl")
+                    let ip_cmd = crate::utils::background_command("wsl")
                         .args(["-e", "hostname", "-I"])
                         .creation_flags(CREATE_NO_WINDOW)
                         .output();
@@ -14803,7 +14877,7 @@ pub async fn hermes_detect_environments() -> Result<Value, String> {
                     }
 
                     // 3. 检测 WSL 里是否安装了 hermes
-                    let hermes_check = std::process::Command::new("wsl")
+                    let hermes_check = crate::utils::background_command("wsl")
                         .args([
                             "-e",
                             "bash",
@@ -14846,7 +14920,7 @@ pub async fn hermes_detect_environments() -> Result<Value, String> {
     // --- Docker 检测（所有平台）---
     {
         let docker_check = {
-            let mut cmd = std::process::Command::new("docker");
+            let mut cmd = crate::utils::background_command("docker");
             cmd.args(["info", "--format", "{{.ServerVersion}}"]);
             #[cfg(target_os = "windows")]
             cmd.creation_flags(CREATE_NO_WINDOW);
@@ -14861,7 +14935,7 @@ pub async fn hermes_detect_environments() -> Result<Value, String> {
 
                 // 查找运行中的 hermes 相关容器
                 let ps_cmd = {
-                    let mut cmd = std::process::Command::new("docker");
+                    let mut cmd = crate::utils::background_command("docker");
                     cmd.args([
                         "ps",
                         "--format",
@@ -15025,7 +15099,7 @@ pub async fn uninstall_hermes(app: tauri::AppHandle, clean_config: bool) -> Resu
         };
 
         // uv tool uninstall
-        let mut cmd = tokio::process::Command::new(&uv);
+        let mut cmd = crate::utils::background_command_async(&uv);
         cmd.args(["tool", "uninstall", "hermes-agent"]);
         let _ = app.emit("hermes-install-log", "> uv tool uninstall hermes-agent");
         let enhanced = hermes_enhanced_path();
@@ -18308,7 +18382,7 @@ fn pid_is_alive(pid: u32) -> bool {
     }
     #[cfg(target_os = "windows")]
     {
-        let out = std::process::Command::new("tasklist")
+        let out = crate::utils::background_command("tasklist")
             .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
             .creation_flags(CREATE_NO_WINDOW)
             .output();
@@ -18485,7 +18559,7 @@ pub async fn hermes_multi_gateway_start(
         .try_clone()
         .map_err(|e| format!("克隆日志句柄失败: {e}"))?;
 
-    let mut cmd = std::process::Command::new(hermes_program_for_spawn()?);
+    let mut cmd = crate::utils::background_command(hermes_program_for_spawn()?);
     cmd.args(["--profile", &profile, "gateway", "run"])
         .current_dir(&home)
         .stdin(std::process::Stdio::null())
@@ -18563,7 +18637,7 @@ pub async fn hermes_multi_gateway_stop(name: String) -> Result<Value, String> {
     let pid = pid.unwrap();
     #[cfg(target_os = "windows")]
     {
-        let _ = std::process::Command::new("taskkill")
+        let _ = crate::utils::background_command("taskkill")
             .args(["/F", "/PID", &pid.to_string()])
             .creation_flags(CREATE_NO_WINDOW)
             .output();

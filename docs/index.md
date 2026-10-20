@@ -15,7 +15,6 @@ ClawPanel 提供桌面端和 Web 端，统一管理 OpenClaw、Hermes Agent、De
 |---|---|
 | 了解各引擎差异、首次配置模型、排查同步问题 | [多引擎与模型渠道](engines-and-models.md) |
 | 安装和使用 Pi，了解工具审批与实验版边界 | [Pi 使用指南](pi-integration.md) / [English](pi-integration.en.md) |
-| 查看 Pi 与 OpenClaw 操控对标的已实现项和缺口 | [Pi 对标复查](pi-openclaw-parity-review.md) |
 | 使用 Hermes 会话、记忆及渠道管理 | [Hermes Agent 图文指南](hermes-agent.md) |
 | 安装、更新和卸载 OpenCode，进入内嵌工作台 | [OpenCode 使用指南](opencode.md) |
 | 在无桌面的 Linux 服务器部署 | [Linux 部署](linux-deploy.md) |
@@ -31,4 +30,4 @@ ClawPanel 提供桌面端和 Web 端，统一管理 OpenClaw、Hermes Agent、De
 - [更新日志](https://github.com/qingchencloud/clawpanel/blob/main/CHANGELOG.md)
 - [提交问题](https://github.com/qingchencloud/clawpanel/issues)：注明面板版本、引擎版本、桌面/Web、操作系统、具体页面和脱敏错误日志。
 
-带日期的兼容性记录描述当时的验收结果，不代表任意未来上游版本都已兼容。推荐版本以该面板版本附带的策略及配置页为准。
+兼容性以当前面板版本附带的版本策略和配置页为准；历史验收记录不随仓库分发。

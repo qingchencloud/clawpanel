@@ -1,0 +1,349 @@
+{
+  "provenance": {
+    "sourceSha": "407519bcc3ed15a00f9b8b1d4d6099e2b283f6e2",
+    "runId": 38961944149,
+    "logLine": 2002,
+    "logSha256": "35cb03fcfc45ec03249c15f0f432ebc5494e5a2451535a0ff3efeaad2c7ddf30",
+    "originalWholeJsonComplete": false,
+    "completeSampleSha256": "6fc52ecb8c55eb67557e485cbe554f61466b004184ab1619e65727cd71ff545e",
+    "scope": "only first complete original peak sample; no reconstruction of truncated samples"
+  },
+  "sample": {
+    "count": 3,
+    "startedAtMs": 1792182410019,
+    "completedAtMs": 1792182410019,
+    "probeCount": 6,
+    "pids": [
+      {
+        "pid": 4040,
+        "alive": false,
+        "startedAtMs": 1792182410019,
+        "completedAtMs": 1792182410019,
+        "startedAtNs": "382001081400",
+        "completedAtNs": "382001136000",
+        "start": {
+          "event": "start",
+          "pid": 4040,
+          "name": "burst-0",
+          "at": 1792182396653,
+          "monotonicMs": 368635
+        },
+        "lastEvent": {
+          "event": "exit",
+          "pid": 4040,
+          "name": "burst-0",
+          "at": 1792182402872,
+          "monotonicMs": 374854
+        },
+        "nativeFirst": {
+          "sampledAtMs": 1792182396677,
+          "status": "running",
+          "creationTimeFileTimeHex": "01dd5daca473914b",
+          "createdAtMs": 1792182396578,
+          "exitAtMs": 0,
+          "belongsToFixture": true,
+          "waitResult": 258,
+          "nativeError": 0,
+          "imageQueryError": 0
+        },
+        "nativeBefore": {
+          "sampledAtMs": 1792182410019,
+          "status": "missing",
+          "creationTimeFileTimeHex": null,
+          "createdAtMs": 0,
+          "exitAtMs": 0,
+          "belongsToFixture": false,
+          "waitResult": 4294967295,
+          "nativeError": 87,
+          "imageQueryError": 0
+        },
+        "nativeAfter": {
+          "sampledAtMs": 1792182410019,
+          "status": "missing",
+          "creationTimeFileTimeHex": null,
+          "createdAtMs": 0,
+          "exitAtMs": 0,
+          "belongsToFixture": false,
+          "waitResult": 4294967295,
+          "nativeError": 87,
+          "imageQueryError": 0
+        }
+      },
+      {
+        "pid": 7056,
+        "alive": true,
+        "startedAtMs": 1792182410019,
+        "completedAtMs": 1792182410019,
+        "startedAtNs": "382001136900",
+        "completedAtNs": "382001144700",
+        "start": {
+          "event": "start",
+          "pid": 7056,
+          "name": "burst-1",
+          "at": 1792182396655,
+          "monotonicMs": 368637
+        },
+        "lastEvent": {
+          "event": "exit",
+          "pid": 7056,
+          "name": "burst-1",
+          "at": 1792182402872,
+          "monotonicMs": 374854
+        },
+        "nativeFirst": {
+          "sampledAtMs": 1792182396679,
+          "status": "running",
+          "creationTimeFileTimeHex": "01dd5daca474e365",
+          "createdAtMs": 1792182396586,
+          "exitAtMs": 0,
+          "belongsToFixture": true,
+          "waitResult": 258,
+          "nativeError": 0,
+          "imageQueryError": 0
+        },
+        "nativeBefore": {
+          "sampledAtMs": 1792182409988,
+          "status": "missing",
+          "creationTimeFileTimeHex": null,
+          "createdAtMs": 0,
+          "exitAtMs": 0,
+          "belongsToFixture": false,
+          "waitResult": 4294967295,
+          "nativeError": 87,
+          "imageQueryError": 0
+        },
+        "nativeAfter": {
+          "sampledAtMs": 1792182410021,
+          "status": "running",
+          "creationTimeFileTimeHex": "01dd5dacac72cb4b",
+          "createdAtMs": 1792182409995,
+          "exitAtMs": 0,
+          "belongsToFixture": false,
+          "waitResult": 258,
+          "nativeError": 0,
+          "imageQueryError": 0
+        }
+      },
+      {
+        "pid": 964,
+        "alive": false,
+        "startedAtMs": 1792182410019,
+        "completedAtMs": 1792182410019,
+        "startedAtNs": "382001145000",
+        "completedAtNs": "382001153700",
+        "start": {
+          "event": "start",
+          "pid": 964,
+          "name": "burst-2",
+          "at": 1792182402942,
+          "monotonicMs": 374925
+        },
+        "lastEvent": {
+          "event": "exit",
+          "pid": 964,
+          "name": "burst-2",
+          "at": 1792182409151,
+          "monotonicMs": 381133
+        },
+        "nativeFirst": {
+          "sampledAtMs": 1792182402967,
+          "status": "running",
+          "creationTimeFileTimeHex": "01dd5daca835c14e",
+          "createdAtMs": 1792182402884,
+          "exitAtMs": 0,
+          "belongsToFixture": true,
+          "waitResult": 258,
+          "nativeError": 0,
+          "imageQueryError": 0
+        },
+        "nativeBefore": {
+          "sampledAtMs": 1792182409988,
+          "status": "missing",
+          "creationTimeFileTimeHex": null,
+          "createdAtMs": 0,
+          "exitAtMs": 0,
+          "belongsToFixture": false,
+          "waitResult": 4294967295,
+          "nativeError": 87,
+          "imageQueryError": 0
+        },
+        "nativeAfter": {
+          "sampledAtMs": 1792182410021,
+          "status": "missing",
+          "creationTimeFileTimeHex": null,
+          "createdAtMs": 0,
+          "exitAtMs": 0,
+          "belongsToFixture": false,
+          "waitResult": 4294967295,
+          "nativeError": 87,
+          "imageQueryError": 0
+        }
+      },
+      {
+        "pid": 4084,
+        "alive": false,
+        "startedAtMs": 1792182410019,
+        "completedAtMs": 1792182410019,
+        "startedAtNs": "382001154100",
+        "completedAtNs": "382001160700",
+        "start": {
+          "event": "start",
+          "pid": 4084,
+          "name": "burst-3",
+          "at": 1792182402944,
+          "monotonicMs": 374927
+        },
+        "lastEvent": {
+          "event": "exit",
+          "pid": 4084,
+          "name": "burst-3",
+          "at": 1792182409151,
+          "monotonicMs": 381134
+        },
+        "nativeFirst": {
+          "sampledAtMs": 1792182402967,
+          "status": "running",
+          "creationTimeFileTimeHex": "01dd5daca83688c0",
+          "createdAtMs": 1792182402889,
+          "exitAtMs": 0,
+          "belongsToFixture": true,
+          "waitResult": 258,
+          "nativeError": 0,
+          "imageQueryError": 0
+        },
+        "nativeBefore": {
+          "sampledAtMs": 1792182409988,
+          "status": "missing",
+          "creationTimeFileTimeHex": null,
+          "createdAtMs": 0,
+          "exitAtMs": 0,
+          "belongsToFixture": false,
+          "waitResult": 4294967295,
+          "nativeError": 87,
+          "imageQueryError": 0
+        },
+        "nativeAfter": {
+          "sampledAtMs": 1792182410021,
+          "status": "missing",
+          "creationTimeFileTimeHex": null,
+          "createdAtMs": 0,
+          "exitAtMs": 0,
+          "belongsToFixture": false,
+          "waitResult": 4294967295,
+          "nativeError": 87,
+          "imageQueryError": 0
+        }
+      },
+      {
+        "pid": 8860,
+        "alive": true,
+        "startedAtMs": 1792182410019,
+        "completedAtMs": 1792182410019,
+        "startedAtNs": "382001161000",
+        "completedAtNs": "382001164900",
+        "start": {
+          "event": "start",
+          "pid": 8860,
+          "name": "burst-4",
+          "at": 1792182409227,
+          "monotonicMs": 381209
+        },
+        "lastEvent": {
+          "event": "start",
+          "pid": 8860,
+          "name": "burst-4",
+          "at": 1792182409227,
+          "monotonicMs": 381209
+        },
+        "nativeFirst": {
+          "sampledAtMs": 1792182409245,
+          "status": "running",
+          "creationTimeFileTimeHex": "01dd5dacabf3b1ea",
+          "createdAtMs": 1792182409162,
+          "exitAtMs": 0,
+          "belongsToFixture": true,
+          "waitResult": 258,
+          "nativeError": 0,
+          "imageQueryError": 0
+        },
+        "nativeBefore": {
+          "sampledAtMs": 1792182409990,
+          "status": "running",
+          "creationTimeFileTimeHex": "01dd5dacabf3b1ea",
+          "createdAtMs": 1792182409162,
+          "exitAtMs": 0,
+          "belongsToFixture": true,
+          "waitResult": 258,
+          "nativeError": 0,
+          "imageQueryError": 0
+        },
+        "nativeAfter": {
+          "sampledAtMs": 1792182410021,
+          "status": "running",
+          "creationTimeFileTimeHex": "01dd5dacabf3b1ea",
+          "createdAtMs": 1792182409162,
+          "exitAtMs": 0,
+          "belongsToFixture": true,
+          "waitResult": 258,
+          "nativeError": 0,
+          "imageQueryError": 0
+        }
+      },
+      {
+        "pid": 1460,
+        "alive": true,
+        "startedAtMs": 1792182410019,
+        "completedAtMs": 1792182410019,
+        "startedAtNs": "382001165200",
+        "completedAtNs": "382001168300",
+        "start": {
+          "event": "start",
+          "pid": 1460,
+          "name": "burst-5",
+          "at": 1792182409227,
+          "monotonicMs": 381209
+        },
+        "lastEvent": {
+          "event": "start",
+          "pid": 1460,
+          "name": "burst-5",
+          "at": 1792182409227,
+          "monotonicMs": 381209
+        },
+        "nativeFirst": {
+          "sampledAtMs": 1792182409245,
+          "status": "running",
+          "creationTimeFileTimeHex": "01dd5dacabf4b117",
+          "createdAtMs": 1792182409168,
+          "exitAtMs": 0,
+          "belongsToFixture": true,
+          "waitResult": 258,
+          "nativeError": 0,
+          "imageQueryError": 0
+        },
+        "nativeBefore": {
+          "sampledAtMs": 1792182409990,
+          "status": "running",
+          "creationTimeFileTimeHex": "01dd5dacabf4b117",
+          "createdAtMs": 1792182409168,
+          "exitAtMs": 0,
+          "belongsToFixture": true,
+          "waitResult": 258,
+          "nativeError": 0,
+          "imageQueryError": 0
+        },
+        "nativeAfter": {
+          "sampledAtMs": 1792182410021,
+          "status": "running",
+          "creationTimeFileTimeHex": "01dd5dacabf4b117",
+          "createdAtMs": 1792182409168,
+          "exitAtMs": 0,
+          "belongsToFixture": true,
+          "waitResult": 258,
+          "nativeError": 0,
+          "imageQueryError": 0
+        }
+      }
+    ]
+  }
+}

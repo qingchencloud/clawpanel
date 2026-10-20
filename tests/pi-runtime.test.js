@@ -7,7 +7,7 @@ import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import crypto from 'node:crypto'
 import { PiRuntime } from '../scripts/pi-runtime.js'
-import { PI_PACKAGE_NAME } from '../scripts/pi-models.js'
+import { PI_PACKAGE_NAME, PI_PACKAGE_VERSION } from '../scripts/pi-models.js'
 
 const channel = { id: 'fixture', apiType: 'openai-completions', baseUrl: 'http://localhost:1234/v1', apiKey: '!not-a-command-fixture', models: [{ id: 'model', contextWindow: 131072 }], defaultModel: 'model' }
 async function withRuntime(run, options = {}) {
@@ -64,13 +64,13 @@ test('Pi 切换运行时后核验失败恢复旧版本，不删除配置或工�
   runtime.spawn = (_command, args) => {
     const child = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.kill = () => child.emit('close', 1)
     queueMicrotask(() => {
-      if (args.includes('install')) installFixture(runtime, 'runtime.update-staging', '1.1.0')
-      else child.stdout.write(args[0] === runtime.cli('runtime.update-staging') ? '1.1.0\n' : '0.0.0\n')
+      if (args.includes('install')) installFixture(runtime, 'runtime.update-staging', PI_PACKAGE_VERSION)
+      else child.stdout.write(args[0] === runtime.cli('runtime.update-staging') ? PI_PACKAGE_VERSION + '\n' : '0.0.0\n')
       child.emit('close', 0)
     })
     return child
   }
-  await assert.rejects(runtime.install('1.1.0'), /已回滚原运行时/)
+  await assert.rejects(runtime.install(PI_PACKAGE_VERSION), /已回滚原运行时/)
   assert.equal(runtime.status().version, '1.0.0')
   assert.ok(fs.existsSync(runtime.file('config.json')))
   assert.ok(fs.existsSync(runtime.file('workspace')))

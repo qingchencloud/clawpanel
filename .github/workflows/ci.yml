@@ -94,7 +94,14 @@ jobs:
         run: cargo clippy --locked --all-targets -- -D warnings
 
       # Node 单元测试
+      - name: 准备 CLI 自有夹具诊断目录
+        env:
+          HERMES_BOUNDS_TEST_EVIDENCE: ${{ runner.temp }}/hermes-bounds-ci
+        run: node -e 'const fs=require("node:fs");fs.mkdirSync(process.env.HERMES_BOUNDS_TEST_EVIDENCE,{recursive:true})'
+
       - name: Node 单元测试
+        env:
+          HERMES_BOUNDS_TEST_EVIDENCE: ${{ runner.temp }}/hermes-bounds-ci
         run: node --test tests/*.test.js
 
       # Pi 的固定版本在三平台实际启动；只调用本地模拟 Provider。
@@ -109,3 +116,25 @@ jobs:
       # 前端构建验证
       - name: 前端构建验证
         run: npm run build
+
+      # 仅固定自有Node夹具的PID/时序回执；不上传HOME、env、缓存或业务配置。
+      - name: 保留 CLI 自有夹具失败现场
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hermes-cli-bounds-${{ runner.os }}-${{ github.sha }}
+          path: ${{ runner.temp }}/hermes-bounds-ci/bounds-http-report.json
+          if-no-files-found: warn
+          include-hidden-files: false
+          retention-days: 7
+
+      # 独立保留原gate前自有PID回执；材料缺失仅告警，不代表检查通过。
+      - name: 保留 CLI 清理门禁前自有回执
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hermes-cli-cleanup-before-gate-${{ runner.os }}-${{ github.sha }}
+          path: ${{ runner.temp }}/hermes-bounds-ci/cleanup-own-node-before-gate.json
+          if-no-files-found: warn
+          include-hidden-files: false
+          retention-days: 7

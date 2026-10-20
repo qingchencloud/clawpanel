@@ -2,7 +2,9 @@
 
 ## 当前边界
 
-每日检查上游版本和本仓库反馈，整理报告。当前日常自动维护由本地 Codex 会话定时任务执行：复现、低风险适配、测试、推送，并在同一提交的三平台 CI 与相关真实运行验收通过后，按用户授权推送新 tag；高风险先确认，无实际改动不空发版。电脑及 Codex 需要保持运行。
+每日检查上游版本和本仓库反馈，整理报告。当前日常自动维护由本地 Codex 会话定时任务执行：自主评估技术风险、隔离复现与适配、测试、推送，并在同一提交的三平台 CI 与相关真实运行验收通过后，按用户授权推送新 tag；无实际改动不空发版。电脑及 Codex 需要保持运行。
+
+2026-10-16 用户将项目范围内的技术维护判断委托给本地 Codex：技术高风险保留原分级、审查具体版本/接口与回滚方案，增加针对性负向验收及新旧版本实测，证据齐全后自主推进，不逐版让用户判断风险。验收缺失或失败就保留旧推荐、暂缓该候选并自行诊断；不得删断言、降低扫描器风险等级或放松认证/沙箱来换绿灯。新增费用、真实业务数据删除/不可逆迁移、扩大生产公网权限、更换真实身份，以及其他项目/官网等业务边界，仍说明具体影响后确认。此委托只适用于本地流程，下面 GitHub 控制器的候选守卫和默认关闭状态保持不变。
 
 **GitHub 维护控制器的自动合并、tag、Release、生产部署和用户机器内核升级仍关闭。** `autoRelease=false` 限定的是该控制器，不是对本地 Codex 已授权发版步骤的替代。控制器没有改一个开关就能发版的路径。
 
@@ -18,7 +20,7 @@
 4. **draft**：仅三平台回归和独立容器运行验收都成功且显式开启候选 PR 功能时，使用仓库限定的 GitHub App 创建草稿；此 job 不执行候选代码、不安装其依赖。复核 `main` SHA，不强推已有分支，不重开人工关闭的候选。分支已创建但 PR 请求失败时，校验候选身份、patch 哈希和基线 parent 及实际 Git tree 后可恢复创建；不接管同名陌生分支。
 5. **notify**：高风险、不完整数据、适配/测试/草稿写入异常时，在机器人自有的一个汇总 Issue 通知。相同指纹不重复写入；可以配置明确的维护者账号提及。
 
-每个 job 有超时，同一时间只运行一轮每日维护；维护设施的 main 推送和 PR 均跑三平台控制器黑盒 E2E，PR 不触发线上采集或带凭据的 AI/通知 job。手工运行时启用 `runtime_selftest`，会额外在独立非特权 Linux 容器运行 OpenClaw/Hermes 基线验收，不依赖 AI 候选或 AI 凭据。发 tag 前须核对具体容器 job 实际执行成功及报告绑定同一 SHA；skipped 和历史绿灯不算通过。暂不自动重试 AI，避免无限消耗。失败/高风险候选身份写入自有汇总 Issue 的 `clawpanel-maintenance-blocked` 标记，后续保留待确认，不重复调用 AI；维护者复核后可删除该候选的 blocked 标记允许重试。定时任务可能延迟，本阶段未实现独立失活 watchdog。
+每个 job 有超时，同一时间只运行一轮每日维护；维护设施的 main 推送和 PR 均跑三平台控制器黑盒 E2E，PR 不触发线上采集或带凭据的 AI/通知 job。手工运行时启用 `runtime_selftest`，会额外在独立非特权 Linux 容器运行 OpenClaw、Hermes、OpenCode 和 DSH 默认/预览五项实装验收，不依赖 AI 候选或 AI 凭据。发 tag 前须核对具体容器 job 实际执行成功及报告绑定同一 SHA；skipped 和历史绿灯不算通过。暂不自动重试 AI，避免无限消耗。失败/高风险候选身份写入自有汇总 Issue 的 `clawpanel-maintenance-blocked` 标记，后续保留待确认，不重复调用 AI；维护者复核后可删除该候选的 blocked 标记允许重试。定时任务可能延迟，本阶段未实现独立失活 watchdog。
 
 ## 版本与反馈策略
 
@@ -71,6 +73,20 @@ App 只需要 Contents / Pull requests 写入权限及必要的元数据读取�
 
 ## 本地命令
 
+### Hermes 独立资格验收
+
+`hermes-qualification.yml` 是手工触发、只读的补充验收，不改变每日控制器的 AI/PR/自动发布开关。仅 canonical 仓库的 `main` 执行可信工具，输入必须是完整候选 SHA。Windows 安装仅在 GitHub-hosted 一次性 VM 的真实 runneradmin SID/ProfileList 核验后运行，拒绝本机及 self-hosted；隔离 HOME 不被当作 HKCU 沙箱。记录注册表值与类型、shell、全局 launcher 的前后快照，不自动恢复改动掩盖失败。
+
+Linux 使用原可信 Runtime.Dockerfile、非 root、只读 tooling、无 Docker socket 的容器。实际 fresh11 通过后在原容器同 HOME 启动生产 Web，运行两轮真实 headless Chromium，每轮完整 Send8、210 秒和 42 次健康采样；最后调用生产 STOP 并核验 PID/端口。没有实际运行、缺证据或旧报告均失败。Windows Web 生命周期与原生 Tauri 分开记录；`test-hermes-tauri-qualification.mjs` 使用真实 WebDriver/WebView2/Rust IPC，尚未执行时保持 native 缺口，不能由布尔值回执补绿。
+
+冷启动排障可显式选择 `startup_diagnostic=true`（默认关闭，仅 Windows）。真实 VM/SID 准入和 privatecompletion 核验后，可信工具才对本次 Gateway 启动开启 Python importtime，并只读统计私有依赖目录的 pyc 元数据。PM 原脚本、source/currency/products/stamp/boot 校验、20 秒启动、15 秒 CLI 和 900 秒安装预算保持不变。诊断不执行 native 生命周期、不得作为发布资格；报告固定 `qualificationPass=false`，完整汇总仍拒绝缺失 native/生命周期证据。后置晚就绪只说明诊断观察，不将启动超时转绿。若 importtime 仍未覆盖耗时，可再显式选择 `startup_stack_samples=true`（仅 candidate/Windows/diagnostic），每2秒记录一次无局部变量的 Python 栈，60秒停止，主线程 PID 映射用于区分重执行的解释器；采样开销不作为正常启动成绩。输出为带 `-diagnostic` 后缀的独立脱敏 artifact，正常资格必须另跑。
+
+原始证据保留在一次性 runner，公开 artifact 仅包含另外生成的脱敏副本；不上传 HOME、dotenv、运行时、缓存或真实凭据，trace ZIP 逐成员脱敏。资格验收本身不提交、不升级用户机器、不打 tag。
+
+`weixin-qualification.yml` 是独立的手工 Windows 原生验收：固定官方宿主5.12/9.8/10.4、完整候选SHA，真实VM/SID准入后才进行私有安装、no-bundle构建和WebView2操作。`ui-origin` 只记录已执行的安装确认及来源边界阶段，不构成完整发版资格；`complete` 对缺失负向或清理证据保持失败。报告分别列出真实UI、SDK/配置回读、有效票据的iframe拒绝、上游策略拒绝及窗口覆盖缺口，不用fixture、缺API或框架拒绝创建窗口代替产品来源拒绝。工作流只有读权限，不安装本机运行时、不修改官网或控制器发版开关。
+
+Hermes Windows的生产STOP验收须有新鲜、非空的停止前PID及CreationDate、同一集合的停止后观察和两个配置端口的实际关闭证据。空进程集合、空stdout、旧历史Set和单纯基础设施清理都不构成生产STOP通过。CLI的execFile观察只保留脱敏诊断，不替换原回调、双流、退出码或预算。
+
 在仓库根目录执行（不会改动真实运行时）：
 
 ```powershell
@@ -99,6 +115,6 @@ node scripts/maintenance-runtime-smoke.mjs --engine pi --output .tmp/maintenance
 - 候选 patch 限制文件数、改动行数和字节数；禁止工作流、维护器、发布配置、依赖、二进制、符号链接、子模块及路径穿越。认证、权限、签名或执行/网络边界的源码差异要求人工确认。
 - 候选分支命名由可信候选身份决定，固定为 `codex/maintenance-<candidateKey前16位>`。已有分支冲突或写入结果不明时不覆盖，只恢复严格匹配的孤立候选，其余保留现场确认。
 - GitHub App/AI/真实 GitHub 通知及草稿创建，需要在启用后做一次受控在线验收；本地 HTTP fixture 不替代这一门禁。
-- GitHub 控制器自动发版仍未实现、未启用。本地 Codex 的已授权低风险发版须满足同一 SHA 的主分支三平台 CI、具体运行验收、独立复查及发布全资产回读，异常暂停；保持旧产物与配置备份，结构性迁移不做盲目二进制回退。
+- GitHub 控制器自动发版仍未实现、未启用。本地 Codex 的已授权发版须满足同一 SHA 的主分支三平台 CI、具体运行验收、发布前复查及发布全资产回读，正常每日至多一版，异常暂停；保持旧产物与配置备份，结构性迁移不做盲目二进制回退。
 
 参考：[GitHub 工作流触发](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)、[官方 Codex Action](https://github.com/openai/codex-action)、[GitHub 不可信输入](https://docs.github.com/en/actions/concepts/security/script-injections)。

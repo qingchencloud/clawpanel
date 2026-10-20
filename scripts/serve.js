@@ -16,7 +16,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import { homedir } from 'os'
 import net from 'net'
-import { _initApi, _apiMiddleware, _handleDshUpgrade, _handleOpenCodeUpgrade, _isWebSocketAuthorized, _disposePiRuntime } from './dev-api.js'
+import { _initApi, _apiMiddleware, _handleDshUpgrade, _handleOpenCodeUpgrade, _isWebSocketAuthorized, _disposePiRuntime, isOpenCodeEmbedRequest, isDshEmbedRequest } from './dev-api.js'
 import { serializeGatewayWebSocketHeaders } from './gateway-ws-proxy.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -143,7 +143,8 @@ async function main() {
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-    if (req.method === 'OPTIONS') { res.statusCode = 204; res.end(); return }
+    // 嵌入 UI 的预检也必须经过能力令牌校验和自己的请求头契约。
+    if (req.method === 'OPTIONS' && !isOpenCodeEmbedRequest(req.url) && !isDshEmbedRequest(req.url)) { res.statusCode = 204; res.end(); return }
 
     // API 请求
     await _apiMiddleware(req, res, () => {

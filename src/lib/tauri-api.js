@@ -11,6 +11,19 @@ export function isTauriRuntime() {
   return !!window.__TAURI_INTERNALS__ || !!window.__TAURI__ || window.location?.hostname === 'tauri.localhost'
 }
 
+/** 仅打开普通网页；桌面走既有shell能力，错误交给调用页显示。 */
+export async function openExternalUrl(url) {
+  const target = new URL(url)
+  if (!['http:', 'https:'].includes(target.protocol) || target.username || target.password) {
+    throw new Error(t('common.operationFailed'))
+  }
+  if (isTauriRuntime()) {
+    const { open } = await import('@tauri-apps/plugin-shell')
+    return open(target.href)
+  }
+  return window.open(target.href, '_blank', 'noopener,noreferrer')
+}
+
 let _tauriListenFn = null
 const _webChannelListeners = new Map()
 
@@ -402,7 +415,7 @@ export const api = {
   openCodeCheckUpdate: () => invoke('opencode_check_update'),
   openCodeUpdate: () => { invalidate('opencode_status'); return invoke('opencode_update') },
   openCodeUninstall: () => { invalidate('opencode_status'); return invoke('opencode_uninstall') },
-  openCodeEmbedSession: (port = 4096) => invoke('opencode_embed_session', { port }),
+  openCodeEmbedSession: (port = 4096, storage = {}) => invoke('opencode_embed_session', { port, storage }),
   openCodeStart: (port = 4096) => { invalidate('opencode_status'); return invoke('opencode_start', { port }) },
   openCodeConnectOfficial: () => invoke('opencode_connect_official'),
   openCodeDisconnectOfficial: (epoch) => invoke('opencode_disconnect_official', { epoch }),

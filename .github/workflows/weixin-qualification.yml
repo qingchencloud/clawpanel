@@ -1,0 +1,177 @@
+name: Manual Weixin Native Qualification
+
+# 先审查注册 main；只在一次性 hosted VM 构建/私有安装，不操作业务微信账户或发布。
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: '已审查且集成 Rust+UI 的完整40位候选SHA；不接受branch/tag'
+        type: string
+        required: true
+      scope:
+        description: 'complete缺任何真实负向即失败；ui-origin仅首阶段，永不pass-native'
+        type: choice
+        options: [complete, ui-origin]
+        default: complete
+      diagnostic_attach:
+        description: '仅10.4 W3C attach诊断，永不作为15case资格通过'
+        type: boolean
+        required: false
+        default: false
+      observe_app_token:
+        description: '仅10.4 attach诊断读取本轮app/parent token元数据，永不资格化'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weixin-native-qualification
+  cancel-in-progress: false
+
+jobs:
+  native:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'qingchencloud/clawpanel'
+    name: Windows official ${{ matrix.host }} / ${{ inputs.diagnostic_attach && 'diagnostic-attach (NEVER qualification)' || inputs.scope }} (partial is not qualification)
+    runs-on: windows-2025
+    timeout-minutes: 110
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        host: ${{ fromJSON(inputs.diagnostic_attach && '["2026.10.4"]' || '["2026.5.12","2026.9.8","2026.10.4"]') }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          path: tooling
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.16.0
+      - name: 先检查完整SHA（仅plan，无安装/GUI；不插值到shell）
+        shell: pwsh
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          DIAGNOSTIC_ATTACH: ${{ inputs.diagnostic_attach }}
+          OBSERVE_APP_TOKEN: ${{ inputs.observe_app_token }}
+          OPENCLAW_HOST_VERSION: ${{ matrix.host }}
+        run: |
+          node --input-type=module -e @'
+          import assert from 'node:assert/strict'
+          import { spawnSync } from 'node:child_process'
+          const env = process.env, diagnostic = env.DIAGNOSTIC_ATTACH, observe = env.OBSERVE_APP_TOKEN ?? 'false'
+          assert.ok(['true', 'false'].includes(diagnostic), 'Invalid diagnostic boolean')
+          assert.ok(['true', 'false'].includes(observe), 'Invalid token observation boolean')
+          if (observe === 'true') { assert.equal(diagnostic, 'true', 'token观察仅attach诊断'); assert.equal(env.OPENCLAW_HOST_VERSION, '2026.10.4', 'token观察只允许10.4') }
+          const args = ['tooling/scripts/test-weixin-windows-qualification.mjs', '--plan']
+          if (diagnostic === 'true') args.push('--diagnostic-attach')
+          if (observe === 'true') args.push('--observe-app-token')
+          args.push('--sha', env.CANDIDATE_SHA)
+          const child = spawnSync(process.execPath, args, { stdio: 'inherit', env })
+          if (child.error) throw child.error
+          process.exit(child.status ?? 1)
+          '@
+          exit $LASTEXITCODE
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          path: candidate
+          ref: ${{ inputs.candidate_sha }}
+          persist-credentials: false
+      - name: ${{ inputs.diagnostic_attach && '仅10.4 W3C attach诊断（永不资格化）' || '真实VM资格后私有安装、同SHA no-bundle/W3C UI及来源负向' }}
+        shell: pwsh
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          OPENCLAW_HOST_VERSION: ${{ matrix.host }}
+          QUALIFICATION_SCOPE: ${{ inputs.scope }}
+          DIAGNOSTIC_ATTACH: ${{ inputs.diagnostic_attach }}
+          OBSERVE_APP_TOKEN: ${{ inputs.observe_app_token }}
+        run: |
+          node --input-type=module -e @'
+          import assert from 'node:assert/strict'
+          import { spawnSync } from 'node:child_process'
+          const env = process.env, diagnostic = env.DIAGNOSTIC_ATTACH
+          assert.ok(['true', 'false'].includes(diagnostic), 'Invalid diagnostic boolean')
+          const observe = env.OBSERVE_APP_TOKEN ?? 'false'
+          assert.ok(['true', 'false'].includes(observe), 'Invalid token observation boolean')
+          if (observe === 'true') { assert.equal(diagnostic, 'true', 'token观察仅attach诊断'); assert.equal(env.OPENCLAW_HOST_VERSION, '2026.10.4', 'token观察只允许10.4') }
+          if (diagnostic === 'true') assert.equal(env.OPENCLAW_HOST_VERSION, '2026.10.4', '诊断只允许10.4')
+          const args = ['tooling/scripts/test-weixin-windows-qualification.mjs', '--execute', '--root', 'candidate', '--sha', env.CANDIDATE_SHA, '--host', env.OPENCLAW_HOST_VERSION]
+          if (diagnostic === 'true') args.push('--diagnostic-attach')
+          else args.push('--scope', env.QUALIFICATION_SCOPE)
+          if (observe === 'true') args.push('--observe-app-token')
+          args.push('--output', env.RUNNER_TEMP + '/weixin-native-' + env.OPENCLAW_HOST_VERSION)
+          const child = spawnSync(process.execPath, args, { stdio: 'inherit', env })
+          if (child.error) throw child.error
+          process.exit(child.status ?? 1)
+          '@
+          exit $LASTEXITCODE
+      - name: 摘要保留partial/未执行负向，不按job绿灯宣称完整
+        if: always()
+        shell: pwsh
+        env:
+          OPENCLAW_HOST_VERSION: ${{ matrix.host }}
+          DIAGNOSTIC_ATTACH: ${{ inputs.diagnostic_attach }}
+          OBSERVE_APP_TOKEN: ${{ inputs.observe_app_token }}
+        run: |
+          node --input-type=module -e @'
+          import assert from 'node:assert/strict'
+          import fs from 'node:fs'
+          import path from 'node:path'
+          import { pathToFileURL } from 'node:url'
+          const env = process.env, diagnostic = env.DIAGNOSTIC_ATTACH
+          assert.ok(['true', 'false'].includes(diagnostic), 'Invalid diagnostic boolean')
+          const observe = env.OBSERVE_APP_TOKEN ?? 'false'
+          assert.ok(['true', 'false'].includes(observe), 'Invalid token observation boolean')
+          if (observe === 'true') { assert.equal(diagnostic, 'true', 'token观察仅attach诊断'); assert.equal(env.OPENCLAW_HOST_VERSION, '2026.10.4', 'token观察只允许10.4') }
+          const append = text => fs.appendFileSync(env.GITHUB_STEP_SUMMARY, text + '\n')
+          if (diagnostic === 'true') append(`### Weixin ${env.OPENCLAW_HOST_VERSION} — DIAGNOSTIC ONLY — NOT QUALIFIED\nscope: diagnostic-attach; 15-case qualification NOT established.`)
+          if (observe === 'true') append('Readonly token observation requested; neverQualification=true; NOT QUALIFIED.')
+          const file = path.join(env.RUNNER_TEMP, 'weixin-native-' + env.OPENCLAW_HOST_VERSION, 'public/report.json')
+          if (fs.existsSync(file)) {
+            const r = JSON.parse(fs.readFileSync(file, 'utf8'))
+            if (diagnostic === 'true') {
+              assert.equal(r.scope, 'diagnostic-attach'); assert.equal(r.executionMode, 'actual-github-hosted-windows-vm-weixin-attach-diagnostic')
+              assert.notEqual(r.status, 'pass-native'); assert.notEqual(r.nativeQualification, true)
+              if (r.status === 'diagnostic-ui-ipc-observed') assert.equal(r.nativeQualification, false)
+              if (observe === 'true') {
+                // 只校验已存harness receipt；SID/spawn取原sidecar，不声称独立重测parent/token。
+                const d = r.diagnostic, token = d?.tokenObservation, identity = d?.appIdentity
+                assert.equal(d?.tokenObservationRequested, true, 'Requested token receipt missing')
+                assert.ok(token?.app && token?.parent && identity, 'Requested token proof missing')
+                assert.equal(identity.exe.toLowerCase(), d.application.toLowerCase())
+                const folder = path.dirname(file), runner = JSON.parse(fs.readFileSync(path.join(folder, 'runner-proof.json'), 'utf8'))
+                const owners = JSON.parse(fs.readFileSync(path.join(folder, 'attach-spawn-ownership.json'), 'utf8'))
+                assert.ok(Array.isArray(owners), 'Stored spawn receipt missing')
+                const matches = owners.filter(p => p?.pid === identity.pid && typeof p.exe === 'string' && p.exe.toLowerCase() === d.application.toLowerCase())
+                assert.equal(matches.length, 1, 'Stored spawn identity is missing/ambiguous')
+                const spawn = matches[0]
+                assert.equal(spawn.proof?.pid, identity.pid); assert.equal(spawn.proof?.creationDate, identity.creationDate)
+                assert.equal(spawn.proof.exe.toLowerCase(), d.application.toLowerCase())
+                const { publicTokenObservation } = await import(pathToFileURL(path.resolve('tooling/scripts/weixin-native-token-observation.mjs')).href)
+                try { publicTokenObservation(token, { app: { pid: spawn.pid, exe: spawn.exe, startedAt: spawn.startedAt, returnedAt: spawn.returnedAt }, parent: { pid: token.parent.pid, exe: token.parent.exe }, expectedSid: runner.sid }) } catch { throw new Error('Stored token receipt binding failed') }
+                assert.equal(token.app.cimCreationUtc, identity.creationDate, 'Token/app identity birth mismatch')
+                append('Token proof observed: stored validated harness receipt only; neverQualification=true; NOT QUALIFIED.')
+              }
+              append(`Observed status: ${r.status}; Candidate: ${r.candidateSha}; scope: diagnostic-attach. NOT QUALIFIED.`)
+            } else {
+              append(`### Weixin ${env.OPENCLAW_HOST_VERSION} — ${r.status}`)
+              append(`Candidate: ${r.candidateSha}; scope: ${r.scope}. UI-origin is partial, not pass-native.`)
+            }
+            for (const gap of r.gaps || []) append('- NOT EXECUTED: ' + gap)
+          } else {
+            append('No admission/runtime report; NOT qualified.')
+            assert.notEqual(observe, 'true', 'Requested token proof missing')
+          }
+          '@
+          exit $LASTEXITCODE
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: weixin-native-${{ matrix.host }}-${{ inputs.candidate_sha }}-${{ inputs.diagnostic_attach && 'diagnostic-attach-never-qualification' || inputs.scope }}
+          path: ${{ runner.temp }}/weixin-native-${{ matrix.host }}/public/
+          if-no-files-found: warn
+          retention-days: 14
+          include-hidden-files: false

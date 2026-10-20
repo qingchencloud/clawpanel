@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       runtime_selftest:
-        description: '运行 OpenClaw/Hermes 基线容器验收（独立于 AI 候选）'
+        description: '运行 OpenClaw/Hermes/OpenCode/DSH 默认及预览容器验收（独立于 AI 候选）'
         required: false
         type: boolean
         default: false
@@ -77,7 +77,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        engine: [openclaw, hermes]
+        engine: [openclaw, hermes, opencode, deepseek-harness, deepseek-harness-preview]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

@@ -149,7 +149,7 @@ pub async fn assistant_exec(command: String, cwd: Option<String>) -> Result<Stri
     #[cfg(target_os = "windows")]
     {
         const CREATE_NO_WINDOW: u32 = 0x08000000;
-        output = tokio::process::Command::new("cmd")
+        output = crate::utils::background_command_async("cmd")
             .args(["/c", &command])
             .current_dir(&work_dir)
             .env("PATH", super::enhanced_path())
@@ -273,7 +273,7 @@ pub async fn assistant_list_processes(filter: Option<String>) -> Result<String, 
     let output;
     #[cfg(target_os = "windows")]
     {
-        output = tokio::process::Command::new("powershell")
+        output = crate::utils::background_command_async("powershell")
             .args(["-NoProfile", "-Command",
                 "Get-Process | Select-Object Id, ProcessName, CPU, WorkingSet64 | Sort-Object ProcessName | Format-Table -AutoSize | Out-String -Width 200"])
             .creation_flags(0x08000000)
@@ -342,7 +342,7 @@ async fn get_port_process(port: u16) -> String {
     let output;
     #[cfg(target_os = "windows")]
     {
-        output = tokio::process::Command::new("powershell")
+        output = crate::utils::background_command_async("powershell")
             .args(["-NoProfile", "-Command",
                 &format!("Get-NetTCPConnection -LocalPort {} -ErrorAction SilentlyContinue | Select-Object OwningProcess | ForEach-Object {{ (Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).ProcessName }}", port)])
             .creation_flags(0x08000000)

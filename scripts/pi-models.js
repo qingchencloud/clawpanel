@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto'
 
 export const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent'
-export const PI_PACKAGE_VERSION = '1.1.0'
+export const PI_PACKAGE_VERSION = '1.3.0'
 export const PI_API_TYPES = ['openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai', 'ollama']
 
 export function piVersion(value) {
@@ -74,3 +74,49 @@ export function mergePiConfig(models, settings, channel, setDefault) {
   }
   return { ...converted, models: nextModels, settings: nextSettings }
 }
+
+/** 仅接收原生桥提供的回环能力；不接受通用模型渠道或云端凭据。 */
+export function piOfficialConnection(value) {
+  if (value?.engine !== 'pi' || value.providerId !== 'clawpanel-official' || value.apiKey !== 'clawpanel-local'
+      || typeof value.memberId !== 'string' || !value.memberId || !Number.isSafeInteger(value.epoch) || value.epoch < 0) throw new Error('platform_engine_connection_invalid')
+  const url = new URL(value.baseUrl)
+  if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || !url.port || url.username || url.password || url.search || url.hash
+      || !/^\/engine\/[A-Za-z0-9_-]{32,128}\/v1$/.test(url.pathname)) throw new Error('platform_engine_connection_invalid')
+  if (!Array.isArray(value.models) || !value.models.length || value.models.length > 64) throw new Error('platform_engine_models_unavailable')
+  const models = value.models.map(model => {
+    if (!/^official\/[a-z0-9][a-z0-9_-]{0,63}$/.test(model.id)) throw new Error('platform_engine_connection_invalid')
+    const contextWindow = positive(model.context_tokens ?? model.contextWindow, '上下文窗口') || 32768
+    const maxTokens = Math.min(positive(model.max_output_tokens ?? model.maxTokens, '输出上限') || 4096, 8192, contextWindow)
+    return { id: model.id, provider: value.providerId, name: String(model.display_name || model.name || model.id), contextWindow, maxTokens, reasoning: false, toolCalls: model.capabilities?.tool_calls === true }
+  })
+  if (new Set(models.map(model => model.id)).size !== models.length) throw new Error('platform_engine_connection_invalid')
+  return { engine: 'pi', providerId: value.providerId, baseUrl: url.href, apiKey: 'clawpanel-local', memberId: value.memberId, epoch: value.epoch, models }
+}
+
+/** 显式加载的官方 provider；能力只从子进程环境读取，不写入模型配置。 */
+export const PI_OFFICIAL_SOURCE = `
+import { randomUUID } from 'node:crypto'
+export default function (pi) {
+  const connection = JSON.parse(process.env.CLAWPANEL_PI_OFFICIAL_CONNECTION)
+  delete process.env.CLAWPANEL_PI_OFFICIAL_CONNECTION
+  pi.registerProvider('clawpanel-official', {
+    name: 'ClawPanel', api: 'openai-completions', baseUrl: connection.baseUrl, apiKey: 'clawpanel-local',
+    // 仅满足 SDK 本地统计结构；实际费用与余额以官网记录为准。
+    models: connection.models.map(model => ({ ...model, input: ['text'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, compat: {
+      supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false,
+      supportsStrictMode: false, supportsUsageInStreaming: true, maxTokensField: 'max_tokens',
+    } })),
+  })
+  pi.on('before_provider_headers', (event, ctx) => {
+    if (ctx.model?.provider === 'clawpanel-official') event.headers['X-ClawPanel-Operation-ID'] = randomUUID()
+  })
+  pi.on('before_provider_request', (event, ctx) => {
+    if (ctx.model?.provider !== 'clawpanel-official') return
+    const body = event.payload
+    // 纯文本块到字符串是等价转换；图片和其他内容原样交网关明确拒绝。
+    for (const message of body.messages || []) if (Array.isArray(message.content) && message.content.every(block => block.type === 'text' && typeof block.text === 'string')) message.content = message.content.map(block => block.text).join('')
+    body.parallel_tool_calls = false
+    return body
+  })
+}
+`

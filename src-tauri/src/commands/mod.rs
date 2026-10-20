@@ -2,8 +2,6 @@ use std::net::IpAddr;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
-#[cfg(target_os = "windows")]
-use std::process::Command;
 use std::sync::RwLock;
 use std::time::Duration;
 
@@ -308,7 +306,7 @@ pub(crate) fn windows_npm_global_prefix() -> Option<String> {
     }
 
     const CREATE_NO_WINDOW: u32 = 0x08000000;
-    let mut cmd = Command::new("cmd");
+    let mut cmd = crate::utils::background_command("cmd");
     cmd.args(["/d", "/s", "/c", "npm config get prefix"]);
     cmd.creation_flags(CREATE_NO_WINDOW);
     if let Ok(output) = cmd.output() {

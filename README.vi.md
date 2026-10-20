@@ -25,31 +25,12 @@
 ---
 
 <p align="center">
-  <img src="docs/feature-showcase.gif" width="800" alt="ClawPanel Showcase">
+  <img src="docs/feature-showcase.gif" width="800" alt="Minh họa cấu hình mô hình ClawPanel">
 </p>
 
 ClawPanel là bảng quản lý trực quan cho nhiều AI Agent framework: [OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation), [Hermes Agent](https://github.com/nousresearch/hermes-agent), [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), [OpenCode](https://github.com/anomalyco/opencode) và [Pi](https://github.com/earendil-works/pi) thử nghiệm. Tích hợp **trợ lý AI thông minh** để cài đặt, chẩn đoán cấu hình và xử lý sự cố.
 
 > 🌐 **Website**: [claw.qt.cool](https://claw.qt.cool/) | 📦 **Tải xuống**: [Trung tâm tải xuống chính thức](https://claw.qt.cool/download) | Dự phòng: [GitHub Releases](https://github.com/qingchencloud/clawpanel/releases/latest)
-
-### 🧪 Thử nghiệm miễn phí: QingChen Cloud
-
-[QingChen Cloud](https://gpt.qt.cool/) là nền tảng thử nghiệm điểm danh dành cho ClawPanel. ClawPanel không tích hợp hoặc tự đọc khóa QingChen Cloud. Hãy tự đăng ký, truy cập [trang điểm danh](https://gpt.qt.cool/checkin) để nhận hạn mức thử nghiệm và API Key của bạn, rồi dán vào ClawPanel để cấu hình mô hình. Trạng thái và quy tắc hiện hành được hiển thị trên QingChen Cloud.
-
-### 🤝 Tài trợ: CiyAPI
-
-> Nội dung quảng bá được tài trợ bởi bên thứ ba; áp dụng các quy tắc mới nhất trên trang CiyAPI.
-
-<p align="center">
-  <a href="https://ciyapi.79tian.com" rel="sponsored noopener noreferrer"><img src="https://img.shields.io/badge/🤝 CiyAPI-Sponsored-6366f1?style=for-the-badge" alt="CiyAPI sponsored service"></a>
-</p>
-
-- **Mô hình tiên tiến** — GPT, Claude, Gemini, Grok, Kimi và nhiều mô hình khác
-- **Ưu đãi nạp tiền** — Nạp ¥1 nhận $1 tín dụng sử dụng trên nền tảng
-- **Tuyến giảm giá** — Một số tuyến có giá chiết khấu; xem bảng giá mô hình
-- **Tương thích OpenAI** — Lấy API Key và kết nối qua ClawPanel
-
-Đăng ký tại [CiyAPI](https://ciyapi.79tian.com/sign-up), tạo API Key và dùng `https://ciyapi.79tian.com/v1` làm Base URL. Xem [bảng giá mô hình](https://ciyapi.79tian.com/pricing/) để biết danh sách và giá hiện tại.
 
 ### 🔥 Hỗ trợ Bo mạch phát triển / Thiết bị nhúng
 
@@ -90,7 +71,6 @@ Cộng đồng các nhà phát triển và người dùng đam mê AI Agent — 
 - **Tác vụ định kỳ** — Thực thi theo lịch Cron, gửi đa kênh
 - **Xem nhật ký** — Nhật ký thời gian thực đa nguồn và tìm kiếm
 - **Quản lý bộ nhớ** — Xem/sửa tệp bộ nhớ, xuất ZIP, chuyển Agent
-- **Tài trợ CiyAPI** — GPT, Claude và các mô hình khác; nạp ¥1 nhận $1 tín dụng sử dụng
 - **Công cụ mở rộng** — Quản lý tunnel cftunnel, giám sát ClawApp
 - **Giới thiệu** — Thông tin phiên bản, liên kết cộng đồng, dự án liên quan
 
@@ -118,7 +98,7 @@ docker run -d --name clawpanel --restart unless-stopped \
   -p 1420:1420 -v clawpanel-data:/root/.openclaw \
   node:24.16.0-slim \
   sh -c "apt-get update && apt-get install -y git && \
-    npm install -g openclaw@2026.10.3 --registry https://registry.npmmirror.com && \
+    npm install -g openclaw@2026.10.4 --registry https://registry.npmmirror.com && \
     git clone https://github.com/qingchencloud/clawpanel.git /app && \
     cd /app && npm ci && npm run build && npm run serve"
 ```

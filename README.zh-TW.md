@@ -25,31 +25,12 @@
 ---
 
 <p align="center">
-  <img src="docs/feature-showcase.gif" width="800" alt="ClawPanel 功能展示">
+  <img src="docs/feature-showcase.gif" width="800" alt="ClawPanel 模型設定示範">
 </p>
 
 ClawPanel 是支援多 AI Agent 框架的視覺化管理面板，目前支援 [OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation)、[Hermes Agent](https://github.com/nousresearch/hermes-agent)、[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)、[OpenCode](https://github.com/anomalyco/opencode) 和實驗版 [Pi](https://github.com/earendil-works/pi)。**內建智慧 AI 助手**，協助安裝、診斷設定與排除問題。
 
 > 🌐 **官網**: [claw.qt.cool](https://claw.qt.cool/) | 📦 **下載**: [官網下載中心](https://claw.qt.cool/download) | 備用: [GitHub Releases](https://github.com/qingchencloud/clawpanel/releases/latest) | 國內鏡像: [AtomGit](https://atomgit.com/qingchencloud/clawpanel)
-
-### 🧪 免費測試：晴辰雲
-
-[晴辰雲](https://gpt.qt.cool/)是 ClawPanel 配套的免費簽到測試平台，適合模型體驗與功能驗證。ClawPanel 不內建或自動讀取晴辰雲金鑰；請自行註冊並前往[簽到頁](https://gpt.qt.cool/checkin)取得測試額度與 API Key，再手動貼到 ClawPanel 選擇模型並一鍵設定。具體開放狀態和額度規則以晴辰雲頁面為準。
-
-### 🤝 贊助推廣：詞元 API
-
-> 第三方贊助推廣，具體規則以詞元 API 頁面為準。
-
-<p align="center">
-  <a href="https://ciyapi.79tian.com" rel="sponsored noopener noreferrer"><img src="https://img.shields.io/badge/🤝 詞元 API-贊助推廣-6366f1?style=for-the-badge" alt="詞元 API 贊助推廣"></a>
-</p>
-
-- **主流前沿模型** — 支援 GPT、Claude、Gemini、Grok、Kimi 等模型
-- **儲值福利** — 儲值 ¥1 到帳 $1 平台額度
-- **模型折扣** — 部分線路按折扣計費，具體以模型廣場為準
-- **OpenAI Compatible** — 取得 API Key 後可在 ClawPanel 中一鍵接入
-
-在[詞元 API](https://ciyapi.79tian.com/sign-up)註冊並取得 API Key，OpenAI-compatible Base URL 填寫 `https://ciyapi.79tian.com/v1`。模型與價格以[模型廣場](https://ciyapi.79tian.com/pricing/)為準。
 
 ### 🔥 開發板 / 嵌入式裝置支援
 
@@ -90,7 +71,6 @@ ClawPanel 是支援多 AI Agent 框架的視覺化管理面板，目前支援 [O
 - **定時任務** — Cron 定時執行，多頻道投遞
 - **日誌檢視** — 多來源即時日誌與關鍵字搜尋
 - **記憶管理** — 記憶檔案檢視/編輯、ZIP 匯出、Agent 切換
-- **詞元 API 贊助推廣** — 支援 GPT、Claude 等模型，儲值 ¥1 到帳 $1 平台額度
 - **擴充工具** — cftunnel 隧道管理、ClawApp 狀態監控
 - **關於** — 版本資訊、社群入口、相關專案連結
 
@@ -118,7 +98,7 @@ docker run -d --name clawpanel --restart unless-stopped \
   -p 1420:1420 -v clawpanel-data:/root/.openclaw \
   node:24.16.0-slim \
   sh -c "apt-get update && apt-get install -y git && \
-    npm install -g openclaw@2026.10.3 --registry https://registry.npmmirror.com && \
+    npm install -g openclaw@2026.10.4 --registry https://registry.npmmirror.com && \
     git clone https://github.com/qingchencloud/clawpanel.git /app && \
     cd /app && npm ci && npm run build && npm run serve"
 ```

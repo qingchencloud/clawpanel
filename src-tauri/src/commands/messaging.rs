@@ -4900,7 +4900,7 @@ pub async fn install_plugin(package_name: String) -> Result<Value, String> {
 
     let cli = crate::utils::resolve_openclaw_cli_path()
         .ok_or_else(|| "找不到 OpenClaw CLI，请先安装".to_string())?;
-    let output = std::process::Command::new(&cli)
+    let output = crate::utils::background_command(&cli)
         .args(["plugins", "install", &package_name])
         .current_dir(dirs::home_dir().unwrap_or_default())
         .output()

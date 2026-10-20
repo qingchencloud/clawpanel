@@ -25,31 +25,12 @@
 ---
 
 <p align="center">
-  <img src="docs/feature-showcase.gif" width="800" alt="ClawPanel Showcase">
+  <img src="docs/feature-showcase.gif" width="800" alt="Демонстрация настройки моделей ClawPanel">
 </p>
 
 ClawPanel — это визуальная панель для нескольких фреймворков AI-агентов: [OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation), [Hermes Agent](https://github.com/nousresearch/hermes-agent), [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), [OpenCode](https://github.com/anomalyco/opencode) и экспериментального [Pi](https://github.com/earendil-works/pi). Встроенный интеллектуальный ИИ-ассистент помогает устанавливать, диагностировать конфигурации и устранять неполадки.
 
 > 🌐 **Сайт**: [claw.qt.cool](https://claw.qt.cool/) | 📦 **Скачать**: [официальный центр загрузки](https://claw.qt.cool/download) | Резерв: [GitHub Releases](https://github.com/qingchencloud/clawpanel/releases/latest)
-
-### 🧪 Бесплатное тестирование: QingChen Cloud
-
-[QingChen Cloud](https://gpt.qt.cool/) — платформа тестирования ClawPanel с ежедневной отметкой. ClawPanel не содержит встроенный ключ QingChen Cloud и не считывает старые ключи автоматически. Зарегистрируйтесь, получите тестовый лимит и собственный API Key на [странице отметки](https://gpt.qt.cool/checkin), затем вставьте его в ClawPanel для настройки моделей. Текущие условия опубликованы на QingChen Cloud.
-
-### 🤝 Спонсор: CiyAPI
-
-> Стороннее спонсорское размещение; действуют актуальные правила, опубликованные CiyAPI.
-
-<p align="center">
-  <a href="https://ciyapi.79tian.com" rel="sponsored noopener noreferrer"><img src="https://img.shields.io/badge/🤝 CiyAPI-Sponsored-6366f1?style=for-the-badge" alt="Спонсорский сервис CiyAPI"></a>
-</p>
-
-- **Передовые модели** — GPT, Claude, Gemini, Grok, Kimi и другие
-- **Бонус пополнения** — ¥1 пополнения даёт $1 кредита на использование
-- **Скидочные маршруты** — Для части маршрутов действует скидочная цена
-- **Совместимость с OpenAI** — Получите API Key и подключите его через ClawPanel
-
-Зарегистрируйтесь в [CiyAPI](https://ciyapi.79tian.com/sign-up), создайте API Key и используйте `https://ciyapi.79tian.com/v1` как Base URL. Текущие модели и цены доступны в [каталоге моделей](https://ciyapi.79tian.com/pricing/).
 
 ### 🔥 Поддержка плат разработки / Встраиваемых устройств
 
@@ -90,7 +71,6 @@ ClawPanel — это визуальная панель для нескольки
 - **Запланированные задачи** — Выполнение по расписанию Cron, многоканальная доставка
 - **Просмотр логов** — Логи в реальном времени из нескольких источников и поиск
 - **Управление памятью** — Просмотр/редактирование файлов памяти, экспорт ZIP, переключение агентов
-- **Спонсорство CiyAPI** — GPT, Claude и другие модели; ¥1 даёт $1 кредита на использование
 - **Расширения** — Управление туннелями cftunnel, мониторинг ClawApp
 - **О программе** — Информация о версии, ссылки сообщества, связанные проекты
 
@@ -118,7 +98,7 @@ docker run -d --name clawpanel --restart unless-stopped \
   -p 1420:1420 -v clawpanel-data:/root/.openclaw \
   node:24.16.0-slim \
   sh -c "apt-get update && apt-get install -y git && \
-    npm install -g openclaw@2026.10.3 --registry https://registry.npmmirror.com && \
+    npm install -g openclaw@2026.10.4 --registry https://registry.npmmirror.com && \
     git clone https://github.com/qingchencloud/clawpanel.git /app && \
     cd /app && npm ci && npm run build && npm run serve"
 ```

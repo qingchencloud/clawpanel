@@ -25,31 +25,12 @@
 ---
 
 <p align="center">
-  <img src="docs/feature-showcase.gif" width="800" alt="ClawPanel 機能ショーケース">
+  <img src="docs/feature-showcase.gif" width="800" alt="ClawPanel モデル設定デモ">
 </p>
 
 ClawPanel は複数の AI Agent フレームワークを管理するビジュアルパネルです。[OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation)、[Hermes Agent](https://github.com/nousresearch/hermes-agent)、[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)、[OpenCode](https://github.com/anomalyco/opencode)、実験版 [Pi](https://github.com/earendil-works/pi) に対応しています。**インテリジェント AI アシスタントを内蔵**し、インストール、設定診断、問題解決を支援します。
 
 > 🌐 **ウェブサイト**: [claw.qt.cool](https://claw.qt.cool/) | 📦 **ダウンロード**: [公式ダウンロードセンター](https://claw.qt.cool/download) | 予備: [GitHub Releases](https://github.com/qingchencloud/clawpanel/releases/latest)
-
-### 🧪 無料テスト：QingChen Cloud
-
-[QingChen Cloud](https://gpt.qt.cool/) は ClawPanel 向けのチェックイン式テストプラットフォームです。ClawPanel に QingChen Cloud のキーは内蔵されず、既存キーも自動読込されません。ご自身で登録し、[チェックインページ](https://gpt.qt.cool/checkin)でテスト枠と API Key を取得して ClawPanel に貼り付けてください。提供状況とルールは QingChen Cloud の表示に従います。
-
-### 🤝 スポンサー：CiyAPI
-
-> 第三者スポンサーによるプロモーションです。CiyAPI の最新ルールが適用されます。
-
-<p align="center">
-  <a href="https://ciyapi.79tian.com" rel="sponsored noopener noreferrer"><img src="https://img.shields.io/badge/🤝 CiyAPI-Sponsored-6366f1?style=for-the-badge" alt="CiyAPI sponsored service"></a>
-</p>
-
-- **主要な最先端モデル** — GPT、Claude、Gemini、Grok、Kimi などに対応
-- **チャージ特典** — ¥1 のチャージで $1 のプラットフォーム利用枠
-- **割引ルート** — 一部ルートは割引価格。詳細はモデル広場を参照
-- **OpenAI 互換** — API Key を取得して ClawPanel から接続
-
-[CiyAPI](https://ciyapi.79tian.com/sign-up) で登録して API Key を作成し、Base URL に `https://ciyapi.79tian.com/v1` を使用します。モデルと価格は[モデル広場](https://ciyapi.79tian.com/pricing/)を参照してください。
 
 ### 🔥 開発ボード / 組み込みデバイスサポート
 
@@ -90,7 +71,6 @@ AI Agent に情熱を持つ開発者とユーザーのコミュニティ — ぜ
 - **定時タスク** — Cron ベースのスケジュール実行、マルチチャンネル配信
 - **ログビューア** — マルチソースリアルタイムログとキーワード検索
 - **メモリ管理** — メモリファイルの表示/編集、ZIP エクスポート、Agent 切替
-- **CiyAPI スポンサー** — GPT、Claude などのモデル、¥1 で $1 の利用枠
 - **拡張ツール** — cftunnel トンネル管理、ClawApp ステータス監視
 - **バージョン情報** — バージョン、コミュニティリンク、関連プロジェクト
 
@@ -118,7 +98,7 @@ docker run -d --name clawpanel --restart unless-stopped \
   -p 1420:1420 -v clawpanel-data:/root/.openclaw \
   node:24.16.0-slim \
   sh -c "apt-get update && apt-get install -y git && \
-    npm install -g openclaw@2026.10.3 --registry https://registry.npmmirror.com && \
+    npm install -g openclaw@2026.10.4 --registry https://registry.npmmirror.com && \
     git clone https://github.com/qingchencloud/clawpanel.git /app && \
     cd /app && npm ci && npm run build && npm run serve"
 ```

@@ -59,7 +59,7 @@
     "host": "2026.5.12",
     "plugin": "2.4.5",
     "compatible": true,
-    "recommendedVersion": "2.4.8",
+    "recommendedVersion": "2.4.9",
     "installAllowed": true,
     "updateAvailable": true
   },
@@ -67,23 +67,23 @@
     "host": "v2026.8.1-2-zh.1",
     "plugin": "2.4.8",
     "compatible": true,
-    "recommendedVersion": "2.4.8",
+    "recommendedVersion": "2.4.9",
     "installAllowed": true,
-    "updateAvailable": false
+    "updateAvailable": true
   },
   {
     "host": "2026.9.4",
     "plugin": "2.4.9",
-    "compatible": null,
-    "recommendedVersion": "2.4.8",
-    "installAllowed": false,
+    "compatible": true,
+    "recommendedVersion": "2.4.9",
+    "installAllowed": true,
     "updateAvailable": false
   },
   {
     "host": "2026.9.4",
     "plugin": "2.4.9-beta.0",
     "compatible": null,
-    "recommendedVersion": "2.4.8",
+    "recommendedVersion": null,
     "installAllowed": false,
     "updateAvailable": false
   },
@@ -91,7 +91,7 @@
     "host": "2026.9.4",
     "plugin": null,
     "compatible": null,
-    "recommendedVersion": "2.4.8",
+    "recommendedVersion": "2.4.9",
     "installAllowed": true,
     "updateAvailable": false
   },

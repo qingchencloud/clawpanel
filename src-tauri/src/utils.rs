@@ -1,6 +1,32 @@
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
+/// 后台子进程统一禁止Windows控制台；调用方的参数、环境、stdio与权限保持不变。
+pub fn background_command(program: impl AsRef<std::ffi::OsStr>) -> std::process::Command {
+    let command = std::process::Command::new(program);
+    #[cfg(target_os = "windows")]
+    {
+        let mut command = command;
+        command.creation_flags(0x08000000);
+        command
+    }
+    #[cfg(not(target_os = "windows"))]
+    command
+}
+
+/// Tokio后台子进程同样在创建时应用隐藏策略，避免版本与状态探针漏设。
+pub fn background_command_async(program: impl AsRef<std::ffi::OsStr>) -> tokio::process::Command {
+    let command = tokio::process::Command::new(program);
+    #[cfg(target_os = "windows")]
+    {
+        let mut command = command;
+        command.creation_flags(0x08000000);
+        command
+    }
+    #[cfg(not(target_os = "windows"))]
+    command
+}
+
 #[cfg(target_os = "windows")]
 fn push_unique_candidate(
     candidates: &mut Vec<std::path::PathBuf>,
@@ -116,7 +142,7 @@ fn common_windows_cli_candidates() -> Vec<std::path::PathBuf> {
     }
 
     const CREATE_NO_WINDOW: u32 = 0x08000000;
-    let mut where_cmd = std::process::Command::new("where");
+    let mut where_cmd = crate::utils::background_command("where");
     where_cmd.arg("openclaw");
     where_cmd.env("PATH", crate::commands::enhanced_path());
     where_cmd.creation_flags(CREATE_NO_WINDOW);
@@ -440,7 +466,7 @@ pub fn openclaw_command() -> std::process::Command {
         let enhanced = crate::commands::enhanced_path();
         // 优先：找到 openclaw.cmd 完整路径，用 cmd /c "完整路径" 避免引号问题
         if let Some(cmd_path) = find_openclaw_cmd() {
-            let mut cmd = std::process::Command::new("cmd");
+            let mut cmd = crate::utils::background_command("cmd");
             if cmd_path
                 .extension()
                 .and_then(|s| s.to_str())
@@ -457,7 +483,7 @@ pub fn openclaw_command() -> std::process::Command {
             return cmd;
         }
         // 兜底：直接用 cmd /c openclaw
-        let mut cmd = std::process::Command::new("cmd");
+        let mut cmd = crate::utils::background_command("cmd");
         cmd.arg("/c").arg("openclaw");
         cmd.env("PATH", &enhanced);
         apply_openclaw_dir_env(&mut cmd);
@@ -484,7 +510,7 @@ pub fn openclaw_command_async() -> tokio::process::Command {
         let enhanced = crate::commands::enhanced_path();
         // 优先：找到 openclaw.cmd 完整路径
         if let Some(cmd_path) = find_openclaw_cmd() {
-            let mut cmd = tokio::process::Command::new("cmd");
+            let mut cmd = crate::utils::background_command_async("cmd");
             if cmd_path
                 .extension()
                 .and_then(|s| s.to_str())
@@ -501,7 +527,7 @@ pub fn openclaw_command_async() -> tokio::process::Command {
             return cmd;
         }
         // 兜底
-        let mut cmd = tokio::process::Command::new("cmd");
+        let mut cmd = crate::utils::background_command_async("cmd");
         cmd.arg("/c").arg("openclaw");
         cmd.env("PATH", &enhanced);
         apply_openclaw_dir_env_tokio(&mut cmd);
@@ -517,5 +543,85 @@ pub fn openclaw_command_async() -> tokio::process::Command {
         apply_openclaw_dir_env_tokio(&mut cmd);
         crate::commands::apply_proxy_env_tokio(&mut cmd);
         cmd
+    }
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod windows_background_tests {
+    use super::*;
+
+    #[test]
+    fn owned_console_child() {
+        if std::env::var("CLAWPANEL_OWN_CONSOLE_FIXTURE").as_deref() != Ok("owned") {
+            return;
+        }
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn GetConsoleWindow() -> *mut std::ffi::c_void;
+        }
+        let window = unsafe { GetConsoleWindow() } as usize;
+        println!("OWN_CONSOLE_WINDOW={window}");
+        println!(
+            "OWN_UNICODE={}",
+            std::env::var("CLAWPANEL_OWN_UNICODE").unwrap()
+        );
+        eprintln!("OWN_STDERR=后台中文");
+        std::process::exit(7);
+    }
+
+    #[test]
+    fn background_command_sync_preserves_owned_output_and_exit_without_console() {
+        let output = background_command(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "utils::windows_background_tests::owned_console_child",
+                "--nocapture",
+            ])
+            .env("CLAWPANEL_OWN_CONSOLE_FIXTURE", "owned")
+            .env("CLAWPANEL_OWN_UNICODE", "后台中文🙂")
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(7));
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(stdout.contains("OWN_CONSOLE_WINDOW=0"));
+        assert!(stdout.contains("OWN_UNICODE=后台中文🙂"));
+        assert!(String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("OWN_STDERR=后台中文"));
+        println!("OWN_STD_SYNC console=0 exit=7 stdout/stderr/unicode preserved");
+    }
+
+    #[test]
+    fn background_command_async_preserves_owned_output_and_exit_without_console() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let output = tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                background_command_async(std::env::current_exe().unwrap())
+                    .args([
+                        "--exact",
+                        "utils::windows_background_tests::owned_console_child",
+                        "--nocapture",
+                    ])
+                    .env("CLAWPANEL_OWN_CONSOLE_FIXTURE", "owned")
+                    .env("CLAWPANEL_OWN_UNICODE", "后台中文🙂")
+                    .kill_on_drop(true)
+                    .output(),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(output.status.code(), Some(7));
+            let stdout = String::from_utf8(output.stdout).unwrap();
+            assert!(stdout.contains("OWN_CONSOLE_WINDOW=0"));
+            assert!(stdout.contains("OWN_UNICODE=后台中文🙂"));
+            assert!(String::from_utf8(output.stderr)
+                .unwrap()
+                .contains("OWN_STDERR=后台中文"));
+            println!("OWN_TOKIO console=0 exit=7 stdout/stderr/unicode preserved");
+        });
     }
 }

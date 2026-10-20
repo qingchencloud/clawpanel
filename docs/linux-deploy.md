@@ -112,7 +112,7 @@ npm -v    # 10.x.x
 使用 OpenClaw 引擎时需要安装并初始化 OpenClaw；只使用其他独立引擎时可跳过此步骤：
 
 ```bash
-npm install -g openclaw@2026.10.3 --registry https://registry.npmmirror.com
+npm install -g openclaw@2026.10.4 --registry https://registry.npmmirror.com
 ```
 
 如需汉化版：
@@ -184,7 +184,7 @@ docker run -d \
   -v clawpanel-data:/root/.openclaw \
   node:24.16.0-slim \
   sh -c "apt-get update && apt-get install -y git && \
-    npm install -g openclaw@2026.10.3 --registry https://registry.npmmirror.com && \
+    npm install -g openclaw@2026.10.4 --registry https://registry.npmmirror.com && \
     git clone https://github.com/qingchencloud/clawpanel.git /app && \
     cd /app && npm ci && npm run build && npm run serve"
 ```
@@ -376,13 +376,13 @@ sudo systemctl restart clawpanel  # 或 pm2 restart clawpanel
 
 ```bash
 # 官方原版（当前新安装默认）
-sudo npm install -g openclaw@2026.10.3 --registry https://registry.npmmirror.com
+sudo npm install -g openclaw@2026.10.4 --registry https://registry.npmmirror.com
 
 # 汉化版（按策略文件中的兼容版本）
 sudo npm install -g @qingchencloud/openclaw-zh@2026.7.1-2-zh.1 --registry https://registry.npmmirror.com
 
 # 国内镜像失败时，再切 npm 官方源重试
-sudo npm install -g openclaw@2026.10.3 --registry https://registry.npmjs.org
+sudo npm install -g openclaw@2026.10.4 --registry https://registry.npmjs.org
 ```
 
 > **维护说明**：如果你是 ClawPanel 维护者，后续只需要更新仓库根目录的 `openclaw-version-policy.json`，即可统一调整不同面板版本对应的推荐 OpenClaw 版本。桌面端程序版本以 `package.json` 为唯一真相源，运行 `npm run version:sync` 同步到 Tauri 配置；`docs/update/latest.json` 仅保留给旧版前端热更新兼容链路。
@@ -418,7 +418,7 @@ systemd 服务也需要改 ExecStart 中的端口。
 使用 OpenClaw 引擎时需要先安装并初始化 OpenClaw；只使用其他独立引擎时不需要为它们额外安装 OpenClaw：
 
 ```bash
-npm install -g openclaw@2026.10.3 --registry https://registry.npmmirror.com
+npm install -g openclaw@2026.10.4 --registry https://registry.npmmirror.com
 openclaw init
 ```
 

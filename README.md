@@ -28,7 +28,7 @@
 ---
 
 <p align="center">
-  <img src="docs/feature-showcase.gif" width="800" alt="ClawPanel 功能全景">
+  <img src="docs/feature-showcase.gif" width="800" alt="ClawPanel 模型配置演示">
 </p>
 
 <p align="center">
@@ -92,25 +92,6 @@ ClawPanel 是支持多 AI Agent 框架的可视化管理面板，目前支持 [O
 - **会话可运营** — 统一查看对话、消息流、运行状态和工具调用细节。
 - **人格可维护** — 把 Agent 的表达风格、价值观和偏好固化为可编辑资产。
 - **渠道可扩展** — 面向 QQ、Telegram、Discord 等外部渠道集中管理连接能力。
-
-### 🧪 免费测试：晴辰云
-
-[晴辰云](https://gpt.qt.cool/)是 ClawPanel 配套的免费签到测试平台，适合模型体验和功能验证。ClawPanel 不内置或自动读取晴辰云密钥；请自行注册并前往[签到页](https://gpt.qt.cool/checkin)领取测试额度与 API Key，再手动粘贴到 ClawPanel 选择模型并一键配置。具体开放状态和额度规则以晴辰云页面为准。
-
-### 🤝 赞助推广：词元 API
-
-> 第三方赞助推广，具体规则以词元 API 页面为准。
-
-<p align="center">
-  <a href="https://ciyapi.79tian.com" rel="sponsored noopener noreferrer"><img src="https://img.shields.io/badge/🤝 词元 API-赞助推广-6366f1?style=for-the-badge" alt="词元 API 赞助推广"></a>
-</p>
-
-- **主流前沿模型** — 支持 GPT、Claude、Gemini、Grok、Kimi 等模型
-- **充值福利** — 充值 ¥1 到账 $1 平台额度
-- **模型折扣** — 部分线路按折扣计费，具体以模型广场为准
-- **OpenAI Compatible** — 获取 API Key 后可在 ClawPanel 中一键接入
-
-配合 OpenClaw 使用：在 [词元 API](https://ciyapi.79tian.com/sign-up) 注册并获取 API Key，选择 **OpenAI Compatible** 提供商，Base URL 填写 `https://ciyapi.79tian.com/v1`。可前往[模型广场](https://ciyapi.79tian.com/pricing/)查看实时模型和价格。
 
 ### 🔥 开发板 / 嵌入式设备支持
 
@@ -228,7 +209,7 @@ docker run -d --name clawpanel --restart unless-stopped \
   -p 1420:1420 -v clawpanel-data:/root/.openclaw \
   node:24.16.0-slim \
   sh -c "apt-get update && apt-get install -y git && \
-    npm install -g openclaw@2026.10.3 --registry https://registry.npmmirror.com && \
+    npm install -g openclaw@2026.10.4 --registry https://registry.npmmirror.com && \
     git clone https://github.com/qingchencloud/clawpanel.git /app && \
     cd /app && npm ci && npm run build && npm run serve"
 ```
@@ -294,7 +275,7 @@ sudo systemctl restart clawpanel
 
 > **升级 OpenClaw**：面板和 OpenClaw 版本需要匹配。可在「服务管理」页面一键升级，或手动执行：
 > ```bash
-> sudo npm install -g openclaw@2026.10.3 --registry https://registry.npmmirror.com
+> sudo npm install -g openclaw@2026.10.4 --registry https://registry.npmmirror.com
 > ```
 > 汉化版仍可显式安装：`sudo npm install -g @qingchencloud/openclaw-zh@2026.7.1-2-zh.1 --registry https://registry.npmmirror.com`。
 
@@ -320,7 +301,7 @@ docker run -d --name clawpanel --restart unless-stopped \
   -p 1420:1420 -v clawpanel-data:/root/.openclaw \
   node:24.16.0-slim \
   sh -c "apt-get update && apt-get install -y git && \
-    npm install -g openclaw@2026.10.3 --registry https://registry.npmmirror.com && \
+    npm install -g openclaw@2026.10.4 --registry https://registry.npmmirror.com && \
     git clone https://github.com/qingchencloud/clawpanel.git /app && \
     cd /app && npm ci && npm run build && npm run serve"
 ```
@@ -328,7 +309,7 @@ docker run -d --name clawpanel --restart unless-stopped \
 **仅升级容器内的 OpenClaw**
 
 ```bash
-docker exec -it clawpanel npm install -g openclaw@2026.10.3 --registry https://registry.npmmirror.com
+docker exec -it clawpanel npm install -g openclaw@2026.10.4 --registry https://registry.npmmirror.com
 ```
 
 ### macOS / Windows Web 版升级
@@ -441,7 +422,7 @@ docker rmi $(docker images --filter "reference=*clawpanel*" -q) 2>/dev/null
 ## 功能特性
 
 <p align="center">
-  <img src="docs/feature-showcase.gif" width="800" alt="功能矩阵">
+  <img src="docs/feature-showcase.gif" width="800" alt="ClawPanel 模型配置演示">
 </p>
 
 - **🤖 AI 助手（全新·重磅）** — 内置独立 AI 助手，4 种操作模式 + 8 大工具 + 交互式问答，详见下方 [AI 助手亮点](#-ai-助手亮点)
@@ -463,15 +444,13 @@ docker rmi $(docker images --filter "reference=*clawpanel*" -q) 2>/dev/null
 - **定时任务** — Cron 定时执行，支持多渠道投递
 - **日志查看** — 多日志源实时查看与关键词搜索
 - **记忆管理** — 记忆文件查看/编辑、分类管理、ZIP 导出、Agent 切换
-- **晴辰云免费测试** — 签到领取测试额度，支持获取模型并一键配置
-- **词元 API 赞助推广** — 支持 GPT、Claude 等模型，充值 ¥1 到账 $1 平台额度
 - **扩展工具** — cftunnel 内网穿透管理、ClawApp 状态监控
 - **关于** — 版本信息、社群入口、相关项目链接、一键升级
 
 ## 功能截图
 
 <p align="center">
-  <img src="docs/quick-stats.gif" width="800" alt="ClawPanel 数据概览">
+  <img src="docs/quick-stats.gif" width="800" alt="模型配置与渠道管理（隔离演示）">
 </p>
 
 <p align="center">
@@ -485,9 +464,9 @@ docker rmi $(docker images --filter "reference=*clawpanel*" -q) 2>/dev/null
 <p align="center"><em>仪表盘 — Gateway / 隧道 / 服务实时状态，版本信息、Agent 数量、模型池一屏掌握</em></p>
 
 <p align="center">
-  <img src="docs/02.png" width="800" alt="AI 助手设置 — 晴辰云免费测试与词元 API 赞助推广">
+  <img src="docs/02.png" width="800" alt="助手设置 — 模型、工具、人设与知识库">
 </p>
-<p align="center"><em>⚙️ AI 设置 — 晴辰云免费测试与词元 API 赞助服务均可一键接入</em></p>
+<p align="center"><em>⚙️ 助手设置 — 模型、工具、人设与知识库</em></p>
 
 <p align="center">
   <img src="docs/05.png" width="800" alt="AI 助手人设 — Agent 灵魂">
@@ -789,7 +768,7 @@ Web 版适用于 Linux 服务器（无桌面环境），通过浏览器远程管
 
 ### 环境要求
 
-- **Node.js** 推荐 24.16.0+（24.x）；面板会按已安装 OpenClaw 的 `engines.node` 检测兼容性，当前官方稳定版 2026.10.3 要求 `>=24.16.0 <25 || >=26.1.0`
+- **Node.js** 推荐 24.16.0+（24.x）；面板会按已安装 OpenClaw 的 `engines.node` 检测兼容性，当前官方稳定版 2026.10.4 要求 `>=24.16.0 <25 || >=26.1.0`
 - **Git**（用于 OpenClaw 依赖安装）
 - **端口** 1420（ClawPanel）+ 18789（Gateway）
 
@@ -912,7 +891,7 @@ open /Applications/ClawPanel.app
 1. 以管理员身份运行 ClawPanel
 2. 或打开 PowerShell（管理员）手动安装：
    ```powershell
-   npm install -g openclaw@2026.10.3 --registry https://registry.npmmirror.com
+   npm install -g openclaw@2026.10.4 --registry https://registry.npmmirror.com
    ```
 3. 如果仍报错，清理 npm 缓存：`npm cache clean --force`
 
@@ -933,7 +912,7 @@ git config --global url."https://github.com/".insteadOf git@github.com:
 
 ```powershell
 npm cache clean --force
-npm install -g openclaw@2026.10.3 --registry https://registry.npmmirror.com
+npm install -g openclaw@2026.10.4 --registry https://registry.npmmirror.com
 ```
 
 ### 安装后 Node.js 检测不到（Windows）

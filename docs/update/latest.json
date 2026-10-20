@@ -1,9 +1,9 @@
 {
-  "version": "0.22.3",
-  "minAppVersion": "0.22.3",
-  "hash": "sha256:b87bbee880ea246788add0b2fefa8c6388f1f48dff897d67d0c9c03cbf75fa4b",
-  "url": "https://github.com/qingchencloud/clawpanel/releases/download/v0.22.3/frontend-hot-update-0.22.3.zip",
-  "size": 3600021,
+  "version": "0.22.5",
+  "minAppVersion": "0.22.5",
+  "hash": "sha256:db59925be2983275ebd9c509c51268d43c72f219b1c0e009fb618466d8593c06",
+  "url": "https://github.com/qingchencloud/clawpanel/releases/download/v0.22.5/frontend-hot-update-0.22.5.zip",
+  "size": 3611854,
   "changelog": "",
-  "releasedAt": "2026-10-15T20:38:42Z"
+  "releasedAt": "2026-10-17T22:37:02Z"
 }

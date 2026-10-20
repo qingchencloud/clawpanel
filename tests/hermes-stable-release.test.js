@@ -54,9 +54,9 @@ test('Hermes version detection supports the 0.20.5 --version-only CLI', () => {
   const webSource = readSource('scripts/dev-api.js')
   const tauriSource = readSource('src-tauri/src/commands/hermes.rs')
 
-  assert.match(webSource, /function runHermesVersionSilent\(\)[^]*?\['version'\][^]*?\['--version'\]/)
-  assert.match(tauriSource, /fn hermes_version_at_path\(path: &str\)[^]*?&\["version"\][^]*?&\["--version"\]/)
-  assert.match(webSource, /const ver = runHermesVersionSilent\(\)/)
+  assert.match(webSource, /function runHermesVersionSilent\(\)[^]*?\['--version'\][^]*?\['version'\]/)
+  assert.match(tauriSource, /fn hermes_version_at_path\(path: &str\)[^]*?&\["--version"\][^]*?&\["version"\]/)
+  assert.match(webSource, /const ver = await runHermesVersionSilent\(\)/)
   assert.match(tauriSource, /match hermes_version_at_path\(&enhanced\)/)
 })
 
@@ -162,8 +162,8 @@ test('Web and Tauri Dashboard launchers use the managed dist without opening a b
   assert.ok(webStartBody, 'Web hermes_dashboard_start handler must be present')
   assert.ok(tauriStartBody, 'Tauri hermes_dashboard_start command must be present')
   assert.match(webStartBody, /envVars\.HERMES_WEB_DIST = ensureHermesDashboardFallbackDist\(home\)/)
-  assert.match(webStartBody, /spawn\('hermes', \['dashboard', '--no-open'\]/)
+  assert.match(webStartBody, /spawn\('hermes', \['dashboard', '--no-open', '--port', String\(port\)\]/)
   assert.match(tauriStartBody, /ensure_hermes_dashboard_fallback_dist\(&home\)/)
-  assert.match(tauriStartBody, /cmd\.args\(\["dashboard", "--no-open"\]\)/)
+  assert.match(tauriStartBody, /cmd\.args\(\["dashboard", "--no-open", "--port", &port\.to_string\(\)\]\)/)
   assert.match(tauriStartBody, /cmd\.env\("HERMES_WEB_DIST", dashboard_dist\)/)
 })

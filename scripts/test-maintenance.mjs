@@ -476,6 +476,14 @@ async function context(item) {
   const evidence = path.join(output, item.id)
   fs.mkdirSync(evidence, { recursive: true })
   const root = await checkout(evidence)
+  if (item.id === 'scan-release-calendar-mismatch') {
+    // 在冻结只读比较基线前构造固定输入，而不是让受测 CLI 改仓库。
+    const hermes = sourcePolicy.sources.find(source => source.id === 'hermes')
+    const file = path.join(root, hermes.tagBaseline.path)
+    const pattern = new RegExp(hermes.tagBaseline.pattern)
+    const original = fs.readFileSync(file, 'utf8'), previous = pattern.exec(original)[1]
+    fs.writeFileSync(file, original.replace(pattern, match => match.replace(previous, 'v2026.9.24')))
+  }
   const mock = await fixtureServer(item.id, root)
   const home = path.join(evidence, 'home')
   const ctx = { item, evidence, root, mock, commands: [], scans: [], env: isolatedEnv(home), initial: await repositoryState(root) }
@@ -792,6 +800,7 @@ async function runReleaseReview(ctx) {
   if (id === 'scan-release-calendar-mismatch') {
     const hermes = sourcePolicy.sources.find(s => s.id === 'hermes')
     const currentTag = new RegExp(hermes.tagBaseline.pattern).exec(fs.readFileSync(path.join(ctx.root, hermes.tagBaseline.path), 'utf8'))[1]
+    assert.equal(currentTag, 'v2026.9.24', '日历 tag 反例不随生产 pin 的命名方式漂移')
     state.releases[hermes.repository] = [release(hermes.repository, currentTag), release(hermes.repository, hermes.tagPrefix + patchVersion(sourceVersions.hermes), { published_at: daysAgo(0.1) })]
     const result = await ctx.scan()
     assertSuccess(result)
@@ -1578,7 +1587,7 @@ async function runWorkflow(item) {
       assert.deepEqual(workflow.on.push?.branches, ['main'], 'push 仅限 main')
       assert.equal(workflow.on.workflow_dispatch.inputs.runtime_selftest.default, false)
       const selftest = jobs['runtime-selftest']
-      assert.deepEqual(selftest.strategy.matrix.engine, ['openclaw', 'hermes'])
+      assert.deepEqual(selftest.strategy.matrix.engine, ['openclaw', 'hermes', 'opencode', 'deepseek-harness', 'deepseek-harness-preview'])
       assert.match(selftest.if, /github\.event_name == 'workflow_dispatch'.*inputs\.runtime_selftest/)
       assert.match(selftest.if, /github\.ref == 'refs\/heads\/main'/)
       assert.equal(selftest.needs, 'controller-e2e')

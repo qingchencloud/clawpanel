@@ -3,9 +3,10 @@ use rand::RngCore;
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read};
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 struct PiBridge {
     child: Child,
@@ -96,6 +97,20 @@ pub(super) async fn official_new_session(
     Ok(json!({"sessionId":result["sessionId"],"model":result["state"]["model"],"newSession":true}))
 }
 
+// 只观察实际读取进度，不改变 BufReader 的首行/EOF/UTF8 语义，不记录 stdout 内容。
+struct BridgeStartupReader<R> {
+    inner: R,
+    bytes: Arc<AtomicUsize>,
+}
+
+impl<R: Read> Read for BridgeStartupReader<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        let size = self.inner.read(buffer)?;
+        self.bytes.fetch_add(size, Ordering::Relaxed);
+        Ok(size)
+    }
+}
+
 /// 仅移除本项目的静态相对 import，保留 Node 内置模块导入；不改写第三方源码。
 fn bridge_source() -> String {
     let runtime = include_str!("../../../scripts/pi-runtime.js")
@@ -112,7 +127,9 @@ fn bridge_source() -> String {
         include_str!("../../../scripts/pi-permission.js"),
         &runtime,
         &bridge,
+        "process.stderr.write('CLAWPANEL_PI_BRIDGE_MODULE_ENTERED\\n');\n",
         "await startPiBridge();\n",
+        "process.stderr.write('CLAWPANEL_PI_BRIDGE_LISTEN_RETURNED\\n');\n",
     ]
     .join("\n")
 }
@@ -149,7 +166,8 @@ fn spawn_bridge(root: PathBuf) -> Result<PiBridge, String> {
     if source_path.is_symlink() {
         return Err("Pi 桥文件不接受符号链接".into());
     }
-    std::fs::write(&source_path, bridge_source()).map_err(|e| format!("Pi 桥写入失败: {e}"))?;
+    let source = bridge_source();
+    std::fs::write(&source_path, &source).map_err(|e| format!("Pi 桥写入失败: {e}"))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -164,7 +182,7 @@ fn spawn_bridge(root: PathBuf) -> Result<PiBridge, String> {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
-    let mut command = Command::new("node");
+    let mut command = crate::utils::background_command("node");
     command
         .arg(node_path(&source_path))
         .env("PATH", super::enhanced_path())
@@ -181,6 +199,9 @@ fn spawn_bridge(root: PathBuf) -> Result<PiBridge, String> {
     let mut child = command
         .spawn()
         .map_err(|e| format!("Pi 桥启动失败，请检查 Node.js: {e}"))?;
+    let started = Instant::now();
+    let stdout_bytes = Arc::new(AtomicUsize::new(0));
+    let stdout_finished = Arc::new(AtomicBool::new(false));
     let diagnostics = Arc::new(Mutex::new(Vec::<u8>::new()));
     let captured = Arc::clone(&diagnostics);
     let mut stderr = child.stderr.take().ok_or("Pi 桥 stderr 缺失")?;
@@ -201,10 +222,16 @@ fn spawn_bridge(root: PathBuf) -> Result<PiBridge, String> {
     });
     let result = (|| {
         let stdout = child.stdout.take().ok_or("Pi 桥 stdout 缺失")?;
+        let stdout = BridgeStartupReader {
+            inner: stdout,
+            bytes: Arc::clone(&stdout_bytes),
+        };
+        let finished = Arc::clone(&stdout_finished);
         let mut line = String::new();
         let (sender, receiver) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let result = BufReader::new(stdout).read_line(&mut line).map(|_| line);
+            finished.store(true, Ordering::Relaxed);
             let _ = sender.send(result);
         });
         let line = receiver
@@ -227,17 +254,42 @@ fn spawn_bridge(root: PathBuf) -> Result<PiBridge, String> {
             token,
         }),
         Err(error) => {
+            use sha2::{Digest, Sha256};
+            // 先采直接子进程/管道状态再终止；元数据仅用于排障，绝不升级握手结果。
+            let elapsed_ms = started.elapsed().as_millis();
+            let child_state = child.try_wait();
+            let bytes_read = stdout_bytes.load(Ordering::Relaxed);
+            let reader_finished = stdout_finished.load(Ordering::Relaxed);
             let _ = child.kill();
-            let _ = child.wait();
+            let reaped = child.wait().is_ok();
             let _ = reader.join();
-            let details = diagnostics
+            let output = diagnostics
                 .lock()
-                .map(|output| String::from_utf8_lossy(&output).replace(&token, "[REDACTED]"))
+                .map(|output| output.clone())
                 .unwrap_or_default();
+            let details = String::from_utf8_lossy(&output).replace(&token, "[REDACTED]");
+            let diagnostic = json!({
+                "pid": child.id(),
+                "timeoutMs": 15000,
+                "elapsedMs": elapsed_ms,
+                "childExitedBeforeCleanup": child_state.as_ref().ok().map(|status| status.is_some()),
+                "childExitCodeBeforeCleanup": child_state.as_ref().ok().and_then(|status| status.as_ref()).and_then(|status| status.code()),
+                "childQueryErrorCode": child_state.as_ref().err().and_then(|error| error.raw_os_error()),
+                "stdoutBytesRead": bytes_read,
+                "stdoutReaderFinished": reader_finished,
+                "stderrBytesCaptured": output.len(),
+                "moduleEntered": details.contains("CLAWPANEL_PI_BRIDGE_MODULE_ENTERED"),
+                "listenReturned": details.contains("CLAWPANEL_PI_BRIDGE_LISTEN_RETURNED"),
+                "nodeOptionsPresent": std::env::var_os("NODE_OPTIONS").is_some(),
+                "nodePathPresent": std::env::var_os("NODE_PATH").is_some(),
+                "sourceSha256": format!("{:x}", Sha256::digest(source.as_bytes())),
+                "reaped": reaped,
+            });
+            let error = format!("{error}\nCLAWPANEL_PI_BRIDGE_STARTUP {diagnostic}");
             if details.trim().is_empty() {
                 Err(error)
             } else {
-                Err(format!("{error}: {}", details.trim()))
+                Err(format!("{error}\n{}", details.trim()))
             }
         }
     }
@@ -397,6 +449,98 @@ mod tests {
         assert!(!source.contains("from './pi-"));
         assert!(source.contains("await startPiBridge()"));
         assert!(source.contains("127.0.0.1"));
+    }
+
+    #[test]
+    fn bridge_startup_timeout_reports_owned_child_without_token_or_output() {
+        let parent = std::env::temp_dir().canonicalize().unwrap();
+        let flag = "CLAWPANEL_PI_TEST_STARTUP_DIAGNOSTIC";
+        if let Ok(nonce) = std::env::var(flag) {
+            let nonce: u64 = nonce.parse().unwrap();
+            let root = parent.parent().unwrap().to_path_buf();
+            assert_eq!(root.join("temp"), parent);
+            assert_eq!(
+                root.file_name().unwrap().to_string_lossy(),
+                format!("clawpanel-pi-startup-diagnostic-{nonce}")
+            );
+            let error = super::spawn_bridge(root.join("bridge")).err().unwrap();
+            let diagnostic = error
+                .split("CLAWPANEL_PI_BRIDGE_STARTUP ")
+                .nth(1)
+                .unwrap_or_else(|| panic!("缺少实际超时诊断: {error}"))
+                .lines()
+                .next()
+                .unwrap();
+            let row: serde_json::Value = serde_json::from_str(diagnostic).unwrap();
+            assert_eq!(row["timeoutMs"], 15000);
+            assert!(row["pid"].as_u64().unwrap() > 0);
+            assert_eq!(row["childExitedBeforeCleanup"], false);
+            assert!(row["stdoutBytesRead"].as_u64().unwrap() > 0);
+            assert_eq!(row["stdoutReaderFinished"], false);
+            assert_eq!(row["moduleEntered"], false);
+            assert_eq!(row["reaped"], true);
+            assert!(row["stderrBytesCaptured"].as_u64().unwrap() <= 32000);
+            assert!(error.contains("fixture-token=[REDACTED]"));
+            assert!(!error.contains("owned-partial-without-newline"));
+            println!("PI_STARTUP_FAULT_RECEIPT {diagnostic}");
+            return;
+        }
+        let nonce = rand::random::<u64>();
+        let root = parent.join(format!("clawpanel-pi-startup-diagnostic-{nonce}"));
+        std::fs::create_dir(&root).unwrap();
+        let preload = root.join("owned-preload.cjs");
+        // 自有 Node 仅输出半行并低CPU等待；不执行 Pi、不安装、不修改父环境。
+        std::fs::write(
+            &preload,
+            "process.stdout.write('owned-partial-without-newline');\nprocess.stderr.write('fixture-token='+process.env.CLAWPANEL_PI_TOKEN+'\\n');\nAtomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0);\n",
+        )
+        .unwrap();
+        let mut command = crate::utils::background_command(std::env::current_exe().unwrap());
+        command.args([
+            "--exact",
+            "commands::pi::tests::bridge_startup_timeout_reports_owned_child_without_token_or_output",
+            "--nocapture",
+        ]);
+        command.env(flag, nonce.to_string()).env(
+            "NODE_OPTIONS",
+            format!(
+                "--require={}",
+                serde_json::to_string(&super::node_path(&preload).to_string_lossy()).unwrap()
+            ),
+        );
+        for (key, directory) in [
+            ("HOME", "home"),
+            ("USERPROFILE", "home"),
+            ("APPDATA", "home/appdata"),
+            ("LOCALAPPDATA", "home/localappdata"),
+            ("XDG_CONFIG_HOME", "home/config"),
+            ("XDG_CACHE_HOME", "home/cache"),
+            ("TEMP", "temp"),
+            ("TMP", "temp"),
+            ("TMPDIR", "temp"),
+        ] {
+            let directory = root.join(directory);
+            std::fs::create_dir_all(&directory).unwrap();
+            command.env(key, super::node_path(&directory));
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x08000000);
+        }
+        let output = command.output().unwrap();
+        assert_eq!(
+            root.canonicalize().unwrap().parent(),
+            Some(parent.as_path())
+        );
+        std::fs::remove_dir_all(root).unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        println!("{}", String::from_utf8_lossy(&output.stdout));
     }
 
     #[test]

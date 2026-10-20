@@ -3,8 +3,10 @@ import { getOpenCodePort } from '../../../lib/model-channels.js'
 import { t } from '../../../lib/i18n.js'
 import { getPlatformAccount, onPlatformAccountChange, platformErrorText } from '../../../lib/platform-account.js'
 import { consumeOfficialEngineIntent, adoptOfficialEngineIntent } from '../../../lib/platform-engine-access.js'
+import { bindOpenCodeStorageBridge, readOpenCodeStorage } from '../../../lib/opencode-storage-bridge.js'
 
 let _cleanupCurrent = null
+let cleanupStorage = null
 
 function esc(value) {
   return String(value ?? '')
@@ -15,11 +17,13 @@ function esc(value) {
 }
 
 export function render() {
+  cleanup()
   const accessIntent = consumeOfficialEngineIntent('opencode')
   _cleanupCurrent?.()
   const page = document.createElement('div')
   page.className = 'page oc-workspace-page'
   page.dataset.engine = 'opencode'
+  if (!isTauriRuntime()) cleanupStorage = bindOpenCodeStorageBridge(page)
 
   const state = {
     loading: true,
@@ -101,9 +105,9 @@ export function render() {
           state.embedExpiresAt = 0
         } else if (!state.embedUrl || state.embedPort !== state.status.port || Date.now() > state.embedExpiresAt - 60000) {
           try {
-            const session = await api.openCodeEmbedSession(state.status.port)
+            const session = await api.openCodeEmbedSession(state.status.port, readOpenCodeStorage())
             if (state.official) return
-            state.embedUrl = session.src
+            state.embedUrl = session.uiSrc || session.src
             state.embedPort = state.status.port
             state.embedExpiresAt = Number(session.expiresAt) || 0
           } catch (error) {
@@ -194,4 +198,9 @@ export function render() {
   return page
 }
 
-export function cleanup() { _cleanupCurrent?.(); _cleanupCurrent = null }
+export function cleanup() {
+  _cleanupCurrent?.()
+  _cleanupCurrent = null
+  cleanupStorage?.()
+  cleanupStorage = null
+}

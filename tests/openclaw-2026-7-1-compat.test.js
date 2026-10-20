@@ -11,10 +11,10 @@ const desktopConfig = readFileSync(new URL('../src-tauri/src/commands/config.rs'
 const desktopService = readFileSync(new URL('../src-tauri/src/commands/service.rs', import.meta.url), 'utf8')
 const chatPage = readFileSync(new URL('../src/pages/chat.js', import.meta.url), 'utf8')
 
-test('ClawPanel recommends official 2026.10.3 while preserving the Chinese correction baseline', () => {
-  assert.equal(policy.default.official.recommended, '2026.10.3')
+test('ClawPanel recommends official 2026.10.4 while preserving the Chinese correction baseline', () => {
+  assert.equal(policy.default.official.recommended, '2026.10.4')
   assert.equal(policy.default.chinese.recommended, '2026.7.1-2-zh.1')
-  assert.match(featureCatalog, /official: '2026\.10\.3'/)
+  assert.match(featureCatalog, /official: '2026\.10\.4'/)
   assert.match(featureCatalog, /chinese: '2026\.7\.1-2-zh\.1'/)
 })
 
@@ -59,16 +59,19 @@ test('OpenClaw 2026.7.1 config reload uses the kernel watcher without probing pa
   assert.match(webBackend, /supportsNativeConfigReload\s*\(/)
 })
 
-test('Windows Gateway terminal closes after its managed process exits', () => {
-  assert.match(
-    desktopService,
-    /"cmd",\s*"\/D",\s*"\/C",\s*runner_path_str\.as_str\(\)/,
-  )
-  assert.doesNotMatch(
-    desktopService,
-    /"cmd",\s*"\/D",\s*"\/K",\s*runner_path_str\.as_str\(\)/,
-  )
+test('Windows Gateway runs hidden and preserves runner logs/nonzero exit without a persistent terminal', () => {
+  assert.match(desktopService, /fn gateway_runner_command\(/)
+  assert.match(desktopService, /background_command\("cmd"\)/)
+  assert.match(desktopService, /"\/D", "\/S", "\/C"/)
+  assert.doesNotMatch(desktopService, /"cmd",\s*"\/D",\s*"\/K",\s*runner_path_str\.as_str\(\)/)
   assert.doesNotMatch(desktopService, /pause \^>nul/)
+  assert.match(desktopService, /CLAWPANEL_EXIT_CODE/)
+  assert.match(desktopService, /gateway\.err\.log/)
+  assert.match(desktopService, /CREATE_NO_WINDOW/)
+  const start = desktopService.slice(desktopService.indexOf('pub async fn start_service_impl', desktopService.indexOf('// ===== Windows')), desktopService.indexOf('pub async fn stop_service_impl', desktopService.indexOf('// ===== Windows')))
+  assert.doesNotMatch(start, /"start"|\.status\(\)/)
+  assert.match(start, /\.spawn\(\)/)
+  assert.match(start, /Duration::from_secs\(20\)/)
 })
 
 test('Chat can abort a run while waiting for the first response event', () => {

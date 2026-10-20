@@ -85,7 +85,7 @@ pub async fn skills_install_dep(kind: String, spec: Value) -> Result<Value, Stri
         other => return Err(format!("不支持的安装类型: {other}")),
     };
 
-    let mut cmd = tokio::process::Command::new(&program);
+    let mut cmd = crate::utils::background_command_async(&program);
     cmd.args(&args).env("PATH", &path_env);
     super::apply_proxy_env_tokio(&mut cmd);
     #[cfg(target_os = "windows")]

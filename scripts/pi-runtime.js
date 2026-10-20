@@ -4,7 +4,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { spawn as spawnRuntime } from 'node:child_process'
 import { PiRpcProcess } from './pi-rpc.js'
-import { PI_PACKAGE_NAME, PI_PACKAGE_VERSION, piVersion, piNodeSupported, piCredentialEnv, mergePiConfig } from './pi-models.js'
+import { PI_PACKAGE_NAME, PI_PACKAGE_VERSION, piVersion, piNodeSupported, piCredentialEnv, mergePiConfig, piOfficialConnection, PI_OFFICIAL_SOURCE } from './pi-models.js'
 import { PI_PERMISSION_SOURCE } from './pi-permission.js'
 
 const jsonRead = (file, fallback = {}) => {
@@ -30,6 +30,7 @@ export class PiRuntime {
     this.secrets = []
     this.children = new Set()
     this.disposed = false
+    this.official = null
     this.reaper = setInterval(() => {
       for (const [id, worker] of this.workers) if (!worker.rpc.busy && Date.now() - worker.accessed > 30 * 60 * 1000) this.close(id).catch(() => {})
     }, 60000)
@@ -123,6 +124,7 @@ export class PiRuntime {
       providers: Object.entries(models.providers || {}).map(([id, provider]) => ({ id, api: provider.api, baseUrl: provider.baseUrl, models: (provider.models || []).map(({ id, name, contextWindow, maxTokens }) => ({ id, name, contextWindow, maxTokens })) })),
       defaultProvider: settings.defaultProvider || '', defaultModel: settings.defaultModel || '',
       config: this.config(), root: this.root, logPath: this.file('runtime.log'),
+      official: this.officialStatus(),
     }
   }
 
@@ -258,6 +260,58 @@ export class PiRuntime {
     })
   }
 
+  officialStatus(id) {
+    const entry = id ? this.worker(id).entry : null
+    return { engine: 'pi', providerId: 'clawpanel-official', status: this.official ? 'connected' : 'disconnected',
+      memberId: this.official?.memberId || null, epoch: this.official?.epoch ?? null, models: this.official?.models || [],
+      modelId: this.officialSelection || null, textOnly: this.officialSelection ? !this.official.models.find(model => model.id === this.officialSelection)?.toolCalls : null,
+      toolsAvailable: this.officialSelection ? this.official.models.find(model => model.id === this.officialSelection)?.toolCalls === true : null,
+      selected: entry?.selectedProvider === 'clawpanel-official', sessionMemberId: entry?.officialMemberId || null }
+  }
+
+  connectOfficial(value) {
+    const connection = piOfficialConnection(value)
+    if (value.modelId !== undefined && !connection.models.some(model => model.id === value.modelId)) throw new Error('official_model_not_allowed')
+    this.official = connection
+    this.officialSelection = value.modelId || null
+    this.secrets.push(connection.baseUrl, new URL(connection.baseUrl).pathname.split('/')[2])
+    return this.officialStatus()
+  }
+
+  async disconnectOfficial(expected = {}) {
+    // 迟到的旧身份清理不得关闭新账号；无身份仅供应用退出清理全部官方会话。
+    if (Object.hasOwn(expected, 'epoch') || Object.hasOwn(expected, 'memberId')) {
+      if (!this.official || expected.epoch !== this.official.epoch || expected.memberId !== this.official.memberId) return { disconnected: false, superseded: true, closed: 0 }
+    }
+    const workers = [...this.workers].filter(([, worker]) => worker.entry.selectedProvider === 'clawpanel-official')
+    this.official = null
+    for (const [id, worker] of workers) if (this.workers.get(id) === worker) await this.close(id)
+    return { disconnected: true, closed: workers.length }
+  }
+
+  async selectModel(id, provider, modelId) {
+    const worker = this.worker(id)
+    if (worker.rpc.busy) throw new Error('任务执行中，请完成或停止后切换模型')
+    const official = provider === 'clawpanel-official'
+    if (official && (!this.official || !this.official.models.some(model => model.id === modelId))) throw new Error('platform_engine_models_unavailable')
+    if (official && worker.entry.officialMemberId && worker.entry.officialMemberId !== this.official.memberId) throw new Error('platform_account_changed')
+    if (official && !this.official.models.find(model => model.id === modelId).toolCalls) {
+      const snapshot = await worker.rpc.request({ type: 'get_messages' })
+      if ((snapshot.messages || []).some(message => message.role === 'toolResult' || message.role === 'tool' || Array.isArray(message.content) && message.content.some(block => block.type === 'toolCall'))) throw new Error('official_tools_history_incompatible')
+    }
+    if (official !== (worker.entry.selectedProvider === 'clawpanel-official') || official && worker.entry.selectedModel !== modelId) {
+      const entry = { ...worker.entry, selectedProvider: provider, selectedModel: modelId, ...(official ? { officialMemberId: this.official.memberId } : {}) }
+      await this.close(id); this.saveEntry(entry)
+      try { return await this.open({ sessionId: id }) }
+      catch (error) { this.saveEntry(worker.entry); throw error }
+    }
+    const available = (await worker.rpc.request({ type: 'get_available_models' })).models || []
+    if (!available.some(model => model.provider.startsWith('clawpanel-') && model.provider === provider && model.id === modelId)) throw new Error('Pi 模型未通过渠道同步或不可用')
+    const result = await worker.rpc.request({ type: 'set_model', provider, modelId })
+    Object.assign(worker.entry, { selectedProvider: provider, selectedModel: modelId }); this.saveEntry(worker.entry)
+    return result
+  }
+
   sessions() {
     return this.recoverSessions().map(session => {
       const worker = this.workers.get(session.id)
@@ -286,12 +340,36 @@ export class PiRuntime {
     const existing = manifest.find(session => session.id === id)
     if (args.sessionId && !existing) throw new Error('Pi 会话不存在')
     const config = this.config()
-    const workspace = this.resolveWorkspace(existing ? existing.workspace : config.workspace)
-    const allowTools = existing ? existing.allowTools === true : config.allowTools === true
+    const selectedOfficial = args.officialModelId === undefined ? null : this.official?.models.find(model => model.id === args.officialModelId)
+    if (args.officialModelId !== undefined && (!selectedOfficial || existing)) throw new Error('official_model_not_allowed')
+    const ownWorkspace = selectedOfficial ? this.file('official-workspace', crypto.createHash('sha256').update(this.official.memberId).digest('hex')) : null
+    if (ownWorkspace) fs.mkdirSync(ownWorkspace, { recursive: true, mode: 0o700 })
+    const workspace = this.resolveWorkspace(existing ? existing.workspace : ownWorkspace || config.workspace)
+    const allowTools = existing ? existing.allowTools === true : selectedOfficial ? selectedOfficial.toolCalls === true && config.allowTools === true : config.allowTools === true
     const entry = existing || { id, name: 'New session', workspace, allowTools, updatedAt: new Date().toISOString() }
-    const credentials = jsonRead(this.agentFile('credentials.json'))
-    this.secrets = Object.values(credentials)
+    // 统一官方入口只为新空会话预选模型；不先启动普通BYOK worker再改模型。
+    if (args.officialModelId !== undefined) {
+      if (existing || !this.official?.models.some(model => model.id === args.officialModelId)) throw new Error('official_model_not_allowed')
+      Object.assign(entry, { selectedProvider: 'clawpanel-official', selectedModel: args.officialModelId, officialMemberId: this.official.memberId })
+    }
+    const official = entry.selectedProvider === 'clawpanel-official'
+    const credentials = official ? {} : jsonRead(this.agentFile('credentials.json'))
+    this.secrets.push(...Object.values(credentials))
     const env = { ...process.env, PI_CODING_AGENT_DIR: this.file('agent'), PI_CODING_AGENT_SESSION_DIR: this.file('sessions'), PI_OFFLINE: '1', CLAWPANEL_PI_PRIVATE_ROOT: fs.realpathSync(this.file('agent')), CLAWPANEL_PI_ALLOW_TOOLS: allowTools ? '1' : '0' }
+    // 只有官方会话使用隔离设置；原 BYOK 设置、密钥和默认模型逐字保留。
+    const extraArgs = []
+    if (official) {
+      for (const key of Object.keys(env)) if (/(?:API_KEY|ACCESS_TOKEN|AUTH_TOKEN)$/.test(key)) delete env[key]
+      if (!this.official || entry.officialMemberId !== this.official.memberId) throw new Error('platform_account_changed')
+      const agent = this.file('official-agent', id)
+      fs.mkdirSync(agent, { recursive: true, mode: 0o700 })
+      this.write(path.join(agent, 'settings.json'), { retry: { enabled: false, maxRetries: 0, provider: { maxRetries: 0 } }, compaction: { enabled: false }, cacheWarming: 'off' })
+      this.write(path.join(agent, 'models.json'), { providers: {} })
+      this.write(this.file('official.mjs'), PI_OFFICIAL_SOURCE, false)
+      env.PI_CODING_AGENT_DIR = agent
+      env.CLAWPANEL_PI_OFFICIAL_CONNECTION = JSON.stringify(this.official)
+      extraArgs.push('--extension', this.file('official.mjs'))
+    }
     for (const [provider, key] of Object.entries(credentials)) env[piCredentialEnv(provider)] = key
     const worker = { rpc: null, events: [], sequence: 0, bytes: 0, waiting: new Set(), accessed: Date.now(), entry }
     const publish = event => {
@@ -305,12 +383,17 @@ export class PiRuntime {
       if (event.type === 'agent_settled') this.saveEntry({ ...entry, updatedAt: new Date().toISOString() })
     }
     const toolArgs = allowTools ? (process.platform === 'win32' ? 'read,grep,find,ls,edit,write,powershell' : 'read,grep,find,ls,edit,write,bash') : 'read,grep,find,ls'
-    worker.rpc = this.rpcFactory({ cliPath: this.cli(), cwd: workspace, env, args: ['--session', this.file('sessions', id + '.jsonl'), '--no-approve', '--offline', '--no-mcp', '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-context-files', '--extension', this.file('permission.mjs'), '--tools', toolArgs], onEvent: publish, redact: text => this.redact(text) })
+    const tools = official && !this.official.models.find(model => model.id === entry.selectedModel)?.toolCalls ? ['--no-tools'] : ['--tools', toolArgs]
+    worker.officialConnection = official ? this.official : null
+    worker.rpc = this.rpcFactory({ cliPath: this.cli(), cwd: workspace, env, args: ['--session', this.file('sessions', id + '.jsonl'), '--no-approve', '--offline', '--no-mcp', '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-context-files', '--extension', this.file('permission.mjs'), ...extraArgs, ...tools], onEvent: publish, redact: text => this.redact(text) })
     this.workers.set(id, worker)
     try {
       const initial = await worker.rpc.start()
       const available = (await worker.rpc.request({ type: 'get_available_models' })).models || []
-      if (!initial.model?.provider?.startsWith('clawpanel-')) {
+      if (entry.selectedProvider && entry.selectedModel) {
+        if (!available.some(model => model.provider === entry.selectedProvider && model.id === entry.selectedModel)) throw new Error('Pi 模型未通过渠道同步或不可用')
+        await worker.rpc.request({ type: 'set_model', provider: entry.selectedProvider, modelId: entry.selectedModel })
+      } else if (!initial.model?.provider?.startsWith('clawpanel-')) {
         const selected = available.find(model => model.provider.startsWith('clawpanel-'))
         if (selected) await worker.rpc.request({ type: 'set_model', provider: selected.provider, modelId: selected.id })
       }
@@ -335,7 +418,13 @@ export class PiRuntime {
     const worker = this.worker(id)
     // 游标在 get_messages 响应解析的同一时刻捕获，防止恢复流时丢掉并发 delta。
     const [state, snapshot, models] = await Promise.all([worker.rpc.request({ type: 'get_state' }), worker.rpc.request({ type: 'get_messages' }, 30000, data => ({ messages: data.messages || [], cursor: worker.sequence })), worker.rpc.request({ type: 'get_available_models' })])
-    return JSON.parse(this.redact(JSON.stringify({ sessionId: id, state, messages: snapshot.messages, models: (models.models || []).filter(model => model.provider.startsWith('clawpanel-')).map(({ id, provider, name, contextWindow, maxTokens, reasoning }) => ({ id, provider, name, contextWindow, maxTokens, reasoning })), pendingDialogs: [...worker.rpc.dialogs.values()], cursor: snapshot.cursor, busy: worker.rpc.busy })))
+    const publicModels = (models.models || []).filter(model => model.provider.startsWith('clawpanel-') && model.provider !== 'clawpanel-official').map(({ id, provider, name, contextWindow, maxTokens, reasoning }) => ({ id, provider, name, contextWindow, maxTokens, reasoning }))
+    publicModels.push(...(this.official?.models || []))
+    if (state.model?.provider === 'clawpanel-official') {
+      const { id, provider, name, contextWindow, maxTokens, reasoning } = state.model
+      state.model = { id, provider, name, contextWindow, maxTokens, reasoning }
+    }
+    return JSON.parse(this.redact(JSON.stringify({ sessionId: id, state, messages: snapshot.messages, models: publicModels, pendingDialogs: [...worker.rpc.dialogs.values()], cursor: snapshot.cursor, busy: worker.rpc.busy })))
   }
 
   async events(id, after = 0) {
@@ -354,7 +443,7 @@ export class PiRuntime {
 
   async close(id) {
     const worker = this.workers.get(safeId(id))
-    if (worker) { await worker.rpc.stop(); this.workers.delete(id); for (const wake of worker.waiting) wake() }
+    if (worker) { await worker.rpc.stop(); if (this.workers.get(id) === worker) this.workers.delete(id); for (const wake of worker.waiting) wake() }
     return { success: true }
   }
 
@@ -371,12 +460,24 @@ export class PiRuntime {
       case 'uninstall': return this.uninstall()
       case 'configure': return this.configure(args)
       case 'sync_provider': return this.syncProvider(args)
+      case 'connect_official': return this.connectOfficial(args.connection)
+      case 'disconnect_official': return this.disconnectOfficial(args)
+      case 'official_status': return this.officialStatus(args.sessionId)
       case 'sessions': return this.sessions()
       case 'open_session': return this.open(args)
       case 'session_state': return this.state(args.sessionId)
       case 'events': return this.events(args.sessionId, args.after ?? 0)
       case 'prompt': {
-        const worker = this.worker(args.sessionId)
+        let worker = this.worker(args.sessionId)
+        if (worker.entry.selectedProvider === 'clawpanel-official') {
+          if (args.connection) this.connectOfficial(args.connection)
+          if (!this.official || this.official.memberId !== worker.entry.officialMemberId) throw new Error('platform_account_changed')
+          if (!this.official.models.some(model => model.id === worker.entry.selectedModel)) throw new Error('platform_engine_models_unavailable')
+          if (worker.officialConnection?.baseUrl !== this.official.baseUrl || worker.officialConnection?.epoch !== this.official.epoch) {
+            if (worker.rpc.busy) throw new Error('Pi 正在执行任务，请先停止或等待完成')
+            await this.close(args.sessionId); await this.open({ sessionId: args.sessionId }); worker = this.worker(args.sessionId)
+          }
+        }
         const state = await worker.rpc.request({ type: 'get_state' })
         if (!state.model?.provider?.startsWith('clawpanel-')) throw new Error('请先从模型渠道同步并选择 Pi 模型')
         const result = await worker.rpc.prompt(String(args.message || ''))
@@ -385,11 +486,7 @@ export class PiRuntime {
         return result
       }
       case 'set_model': {
-        const worker = this.worker(args.sessionId)
-        if (worker.rpc.busy) throw new Error('任务执行中，请完成或停止后切换模型')
-        const available = (await worker.rpc.request({ type: 'get_available_models' })).models || []
-        if (!available.some(model => model.provider.startsWith('clawpanel-') && model.provider === args.provider && model.id === args.modelId)) throw new Error('Pi 模型未通过渠道同步或不可用')
-        return worker.rpc.request({ type: 'set_model', provider: args.provider, modelId: args.modelId })
+        return this.selectModel(args.sessionId, args.provider, args.modelId)
       }
       case 'abort': return this.worker(args.sessionId).rpc.abort()
       case 'dialog_response': return this.worker(args.sessionId).rpc.respond(args)

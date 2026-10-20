@@ -153,7 +153,18 @@ pub(crate) fn find_agent_config(config: &Value, id: &str) -> Option<Value> {
     })
 }
 
-fn normalize_entries_ownership(agents: &mut Map<String, Value>) {
+pub(crate) fn normalize_entries_ownership(agents: &mut Map<String, Value>) {
+    let Some(entries) = agents.get("entries").and_then(Value::as_object) else {
+        return;
+    };
+    // 非 explicit 的旧默认还需官方多 surface 迁移，不能只删标记后改写所有权。
+    let retain_legacy_marker = agents.get("ownership").and_then(Value::as_str) != Some("explicit")
+        && entries.values().any(|entry| {
+            entry
+                .get("default")
+                .map(|value| value != &Value::Bool(false))
+                .unwrap_or(false)
+        });
     let count = agents
         .get_mut("entries")
         .and_then(Value::as_object_mut)
@@ -161,13 +172,16 @@ fn normalize_entries_ownership(agents: &mut Map<String, Value>) {
             for entry in entries.values_mut() {
                 if let Some(object) = entry.as_object_mut() {
                     object.remove("id");
-                    object.remove("default");
+                    object.remove("isDefault");
+                    if !retain_legacy_marker {
+                        object.remove("default");
+                    }
                 }
             }
             entries.values().filter(|entry| entry.is_object()).count()
         })
         .unwrap_or(0);
-    if count > 1 {
+    if count > 1 && !retain_legacy_marker {
         agents.insert(
             "ownership".to_string(),
             Value::String("explicit".to_string()),
@@ -1282,6 +1296,60 @@ fn bootstrap_file_desc(name: &str) -> &'static str {
 #[cfg(test)]
 mod agent_roster_compat_tests {
     use super::*;
+
+    #[test]
+    fn explicit_edit_removes_projection_without_changing_surface_owners() {
+        let mut config = json!({ "agents": {
+            "ownership": "explicit",
+            "defaults": {
+                "systemAgent": { "agentId": "alpha" },
+                "sessionStore": { "agentId": "beta" },
+                "heartbeat": { "agentId": "beta", "every": "30m" },
+                "authInheritance": { "agentId": "alpha" }
+            },
+            "entries": {
+                "alpha": { "default": true, "isDefault": true, "id": "projection", "tools": { "deny": ["exec"] } },
+                "beta": { "default": false, "isDefault": false, "sandbox": { "mode": "all" } }
+            }
+        }, "talk": { "agentId": "beta" }, "gateway": { "auth": { "mode": "token", "token": "fixture" } } });
+        let before = config.clone();
+        ensure_agent_config_mut(&mut config, "ALPHA", false)
+            .unwrap()
+            .unwrap()
+            .insert("name".into(), json!("Renamed"));
+        for entry in config["agents"]["entries"].as_object().unwrap().values() {
+            for key in ["default", "id", "isDefault"] {
+                assert!(entry.get(key).is_none(), "retained {key}");
+            }
+        }
+        assert_eq!(config["agents"]["defaults"], before["agents"]["defaults"]);
+        assert_eq!(
+            config["agents"]["entries"]["alpha"]["tools"],
+            before["agents"]["entries"]["alpha"]["tools"]
+        );
+        assert_eq!(
+            config["agents"]["entries"]["beta"]["sandbox"],
+            before["agents"]["entries"]["beta"]["sandbox"]
+        );
+        assert_eq!(config["talk"], before["talk"]);
+        assert_eq!(config["gateway"], before["gateway"]);
+    }
+
+    #[test]
+    fn legacy_entries_keep_default_for_official_surface_migration() {
+        for create in [false, true] {
+            let mut config = json!({ "agents": { "entries": {
+                "alpha": { "default": true }, "beta": {}
+            } } });
+            ensure_agent_config_mut(&mut config, if create { "gamma" } else { "beta" }, create)
+                .unwrap()
+                .unwrap()
+                .insert("name".into(), json!("Changed"));
+            assert_eq!(config["agents"]["entries"]["alpha"]["default"], true);
+            assert!(config["agents"].get("ownership").is_none());
+            assert!(config["agents"].get("defaults").is_none());
+        }
+    }
 
     #[test]
     fn keyed_entries_project_ids_and_keep_explicit_ownership() {

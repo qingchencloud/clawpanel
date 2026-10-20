@@ -51,7 +51,7 @@ docker run -d \
   node:24.16.0-slim \
   sh -c "\
     apt-get update && apt-get install -y git && \
-    npm install -g openclaw@2026.10.3 --registry https://registry.npmmirror.com && \
+    npm install -g openclaw@2026.10.4 --registry https://registry.npmmirror.com && \
     openclaw init 2>/dev/null || true && \
     git clone https://github.com/qingchencloud/clawpanel.git /app && \
     cd /app && npm ci && npm run build && \
@@ -89,7 +89,7 @@ FROM node:24.16.0-slim
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 
 # 安装 OpenClaw 官方稳定版 CLI（ClawPanel 的 OpenClaw 引擎需要；其他引擎独立管理）
-RUN npm install -g openclaw@2026.10.3 --registry https://registry.npmmirror.com
+RUN npm install -g openclaw@2026.10.4 --registry https://registry.npmmirror.com
 
 WORKDIR /app
 RUN git clone https://github.com/qingchencloud/clawpanel.git . && \
@@ -251,7 +251,7 @@ docker compose up -d clawpanel
 ### 更新 OpenClaw
 
 ```bash
-docker exec -it clawpanel npm install -g openclaw@2026.10.3 --registry https://registry.npmmirror.com
+docker exec -it clawpanel npm install -g openclaw@2026.10.4 --registry https://registry.npmmirror.com
 ```
 
 ---
@@ -278,13 +278,13 @@ docker logs clawpanel
 FROM node:24.16.0-slim
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 # 预装 OpenClaw CLI（使用国内镜像源加速）
-RUN npm install -g openclaw@2026.10.3 --registry https://registry.npmmirror.com
+RUN npm install -g openclaw@2026.10.4 --registry https://registry.npmmirror.com
 # ... 后续 ClawPanel 安装步骤
 ```
 
 **临时方案**：如果容器已经在运行，可以手动进入容器安装：
 ```bash
-docker exec -it clawpanel npm install -g openclaw@2026.10.3 --registry https://registry.npmmirror.com
+docker exec -it clawpanel npm install -g openclaw@2026.10.4 --registry https://registry.npmmirror.com
 ```
 
 ### Q: 面板显示 "openclaw.json 不存在"？

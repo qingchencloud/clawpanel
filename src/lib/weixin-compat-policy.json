@@ -1,10 +1,16 @@
 {
   "packageName": "@tencent-weixin/openclaw-weixin",
   "pluginId": "openclaw-weixin",
-  "reviewedVersion": "2.4.8",
+  "reviewedVersion": "2.4.9",
+  "reviewedPackage": {
+    "sourceCommit": "43675b66551d12d6853155a7869a50fb12a18a1e",
+    "peerOpenclaw": ">=2026.5.12",
+    "nodeEngine": ">=22.13.0",
+    "tarballSha256": "467e8047f7114e45944961fcd3eda9421843c9c65db61ea24176e252ab800ee4"
+  },
   "lines": [
     { "pluginMin": "1.0.0", "pluginMax": "1.0.3", "hostMin": "2026.1.0", "hostBefore": "2026.3.22", "target": "1.0.3", "label": "legacy" },
     { "pluginMin": "2.0.1", "pluginMax": "2.4.4", "hostMin": "2026.3.22", "hostBefore": null, "target": "2.4.4", "label": "compat" },
-    { "pluginMin": "2.4.5", "pluginMax": "2.4.8", "hostMin": "2026.5.12", "hostBefore": null, "target": "2.4.8", "label": "stable" }
+    { "pluginMin": "2.4.5", "pluginMax": "2.4.9", "hostMin": "2026.5.12", "hostBefore": null, "target": "2.4.9", "label": "stable" }
   ]
 }

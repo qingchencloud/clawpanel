@@ -8,8 +8,22 @@ import net from 'node:net'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
+import { isManagedRenamedPiProcess } from './maintenance-pi-process.mjs'
 import { OPENCLAW_PROTOCOL_RANGE, buildDeviceAuthPayloadV3, resolveConnectSignedAt } from '../src/lib/openclaw-gateway-compat.js'
 const toolingRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+
+function collectCandidateSourceHashes(project) {
+  const files = ['scripts/serve.js', 'scripts/dev-api.js', 'scripts/pi-models.js', 'scripts/opencode.js', 'scripts/opencode-proxy.js', 'scripts/deepseek-harness.js', 'scripts/deepseek-harness-auth.js', 'scripts/deepseek-harness-proxy.js', 'src/lib/opencode-storage-bridge.js', 'src/lib/openclaw-gateway-compat.js', 'src/lib/tauri-api.js', 'src/engines/opencode/pages/workspace.js', 'src/engines/opencode/pages/dashboard.js', 'src/engines/hermes/pages/chat.js', 'package.json', 'package-lock.json', 'openclaw-version-policy.json', 'Dockerfile', '.github/maintenance/Runtime.Dockerfile']
+  // 新 PM 是运行依赖，存在时必须进入快照；旧分支没有该文件时仍保留原19项。
+  for (const optional of ['scripts/hermes-pm-runtime.js', 'scripts/hermes-managed-install.ps1']) {
+    try { fs.lstatSync(path.join(project, optional)); files.push(optional) } catch (error) { if (error.code !== 'ENOENT') throw error }
+  }
+  return Object.fromEntries(files.map(file => {
+    const absolute = path.join(project, file), stat = fs.lstatSync(absolute)
+    assert.ok(stat.isFile() && !stat.isSymbolicLink(), '源码必须为普通文件，不接受链接: ' + file)
+    return [file, crypto.createHash('sha256').update(fs.readFileSync(absolute)).digest('hex')]
+  }))
+}
 const engines = ['pi', 'opencode', 'deepseek-harness', 'hermes', 'openclaw', 'openclaw-zh', 'weixin', 'deepseek-harness-preview']
 const argv = process.argv.slice(2)
 if (argv.includes('--help')) {
@@ -40,7 +54,7 @@ for (let ancestor = path.dirname(output); ; ancestor = path.dirname(ancestor)) {
 }
 fs.mkdirSync(output, { recursive: true, mode: 0o700 })
 // Windows 的 pnpm 生命周期 CWD 可能超过 260 字符；受管 HOME 使用候选内的短新目录。
-const shortDshHome = process.platform === 'win32' && engine === 'deepseek-harness'
+const shortDshHome = process.platform === 'win32' && ['deepseek-harness', 'deepseek-harness-preview'].includes(engine)
 const home = shortDshHome ? path.join(project, '.tmp', `mrh-${id.slice(0, 12)}`) : path.join(output, 'home')
 if (shortDshHome) {
   const parent = path.dirname(home)
@@ -135,7 +149,7 @@ function validateCandidate() {
   }
   PI_PACKAGE_VERSION = constant('scripts/pi-models.js', 'PI_PACKAGE_VERSION')
   OPENCODE_PACKAGE_VERSION = constant('scripts/opencode.js', 'OPENCODE_PACKAGE_VERSION')
-  DSH_PACKAGE_VERSION = constant('scripts/deepseek-harness.js', 'DSH_PACKAGE_VERSION', 'DSH_STABLE_VERSION')
+  DSH_PACKAGE_VERSION = engine === 'deepseek-harness-preview' ? constant('scripts/deepseek-harness.js', 'DSH_PREVIEW_VERSION') : constant('scripts/deepseek-harness.js', 'DSH_PACKAGE_VERSION', 'DSH_STABLE_VERSION')
   const backend = fs.readFileSync(path.join(project, 'scripts/dev-api.js'), 'utf8')
   const declaration = key => backend.match(new RegExp(`const ${key} = ['\"]([^'\"]+)['\"]`))?.[1] || ''
   hermesRelease = { version: declaration('HERMES_STABLE_VERSION'), tag: declaration('HERMES_STABLE_TAG'), commit: declaration('HERMES_STABLE_COMMIT'), installerSha256: backend.match(/const HERMES_INSTALLER_SHA256\s*=\s*\{[^}]*posix:\s*['"]([a-f0-9]{64})['"]/s)?.[1] || '' }
@@ -143,7 +157,8 @@ function validateCandidate() {
   assert.match(hermesRelease.installerSha256, /^[a-f0-9]{64}$/)
   report.versions = { panel: pkg.version, pi: PI_PACKAGE_VERSION, opencode: OPENCODE_PACKAGE_VERSION, dsh: DSH_PACKAGE_VERSION, openclaw: policy.default.official.recommended, 'openclaw-zh': policy.default.chinese.recommended }
   report.environment.verifierSha256 = crypto.createHash('sha256').update(fs.readFileSync(fileURLToPath(import.meta.url))).digest('hex')
-  report.environment.candidateSourceHashes = Object.fromEntries(['scripts/serve.js', 'scripts/dev-api.js', 'scripts/pi-models.js', 'scripts/opencode.js', 'scripts/deepseek-harness.js', 'package.json', 'package-lock.json', 'openclaw-version-policy.json'].map(file => [file, crypto.createHash('sha256').update(fs.readFileSync(path.join(project, file))).digest('hex')]))
+  report.environment.verifierDependencyHashes = Object.fromEntries(['scripts/maintenance-pi-process.mjs', 'src/lib/openclaw-gateway-compat.js'].map(file => [file, crypto.createHash('sha256').update(fs.readFileSync(path.join(toolingRoot, file))).digest('hex')]))
+  report.environment.candidateSourceHashes = collectCandidateSourceHashes(project)
   return { packageName: pkg.name, versions: report.versions, candidateRoot: project, verifier: fileURLToPath(import.meta.url) }
 }
 function requireInstallContainer() {
@@ -253,7 +268,16 @@ async function rememberPiPids() {
     values = Array.isArray(parsed) ? parsed : [parsed]
   } else if (process.platform === 'linux') {
     values = fs.readFileSync(`/proc/${web.pid}/task/${web.pid}/children`, 'utf8').trim().split(/\s+/).filter(Boolean).map(Number)
-    values = values.filter(pid => { try { const args = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8'); return args.includes(entry) && args.includes('--mode') && args.includes('rpc') } catch { return false } })
+    values = values.filter(pid => {
+      try {
+        const args = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8')
+        if (args.includes(entry) && args.includes('--mode') && args.includes('rpc')) return true
+        // 新 Pi 把 argv 改成 pi，额外检查全部归属，避免把无关 Node 子进程计入停止验收。
+        const parentPid = Number(fs.readFileSync(`/proc/${pid}/status`, 'utf8').match(/^PPid:\s+(\d+)$/m)?.[1])
+        const agentPath = fs.readFileSync(`/proc/${pid}/environ`, 'utf8').split('\0').find(value => value.startsWith('PI_CODING_AGENT_DIR='))?.slice('PI_CODING_AGENT_DIR='.length)
+        return isManagedRenamedPiProcess({ pid, parentPid, command: args, executable: fs.realpathSync(`/proc/${pid}/exe`), workspace: fs.realpathSync(`/proc/${pid}/cwd`), agentPath }, { parentPid: web.pid, nodePath: fs.realpathSync(process.execPath), workspace: fs.realpathSync(workspace), agentPath: path.join(configDir, 'clawpanel', 'pi', 'agent') })
+      } catch { return false }
+    })
   } else {
     const text = await command('pgrep', ['-P', String(web.pid)], { timeout: 10000 })
     values = text.trim().split(/\s+/).filter(Boolean).map(Number)
@@ -472,7 +496,7 @@ async function dshRpc(method, args = {}) {
   return response.result.value
 }
 async function dshRun() {
-  await stage('install', '真实 API 安装受管 DSH 默认版本', async () => { const value = await api('dsh_install', { channel: 'stable' }, 900000); assert.equal(value.managedInstalled, true); within(value.path); return value })
+  await stage('install', '真实 API 安装受管 DSH 指定通道，不把预览冒充默认', async () => { const value = await api('dsh_install', { channel: engine === 'deepseek-harness-preview' ? 'preview' : 'stable' }, 900000); assert.equal(value.managedInstalled, true); within(value.path); return value })
   await stage('version', 'API 与 CLI 版本与默认通道一致', async () => {
     const status = await api('dsh_status', { port: runtimePort }); report.versions.dsh = status.version; report.versions.expected = DSH_PACKAGE_VERSION
     assert.equal(status.version, DSH_PACKAGE_VERSION)
@@ -523,7 +547,7 @@ async function hermesRun() {
   })
   await stage('version', 'Hermes 真实 CLI 与精确 commit 对应版本一致', async () => {
     const status = await api('check_hermes'); assert.equal(status.installed, true); assert.equal(status.version, hermesRelease.version)
-    const cli = within(path.join(hermesHome, 'hermes-agent', 'venv', 'bin', 'hermes'))
+    const cli = within(status.path || path.join(hermesHome, 'hermes-agent', 'venv', 'bin', 'hermes'))
     const actual = await command(cli, ['--version']); assert.ok(actual.includes(hermesRelease.version))
     report.versions.hermes = hermesRelease.version
     return { version: status.version, actual }
@@ -684,7 +708,7 @@ async function stopRuntime() {
     await until(() => [...runtimePids].every(pid => !alive(pid)), 10000)
     if (result && typeof result === 'object') assert.equal(result.running, false)
     let finalStatus
-    if (engine === 'deepseek-harness') finalStatus = await until(async () => {
+    if (['deepseek-harness', 'deepseek-harness-preview'].includes(engine)) finalStatus = await until(async () => {
       const status = await api('dsh_status', { port: runtimePort })
       return !status.running && !status.portOpen && !status.error ? status : false
     }, 10000)
@@ -729,6 +753,8 @@ try {
   }, 30000)
   await stage('candidate-schema', 'candidate package/lock/策略与版本声明合格；验收器从 tooling 执行', validateCandidate)
   await stage('isolation', '新 HOME 子进程路径回读全部位于本次目录；无继承凭据', async () => {
+    // parent 选择容器验收时，每个引擎都回读真实隔离事实；宿主只设变量不算通过。
+    if (process.env.MAINTENANCE_ISOLATED_RUNTIME === '1') requireInstallContainer()
     const source = "console.log(JSON.stringify({osHomedir:require('node:os').homedir(),...Object.fromEntries(['HOME','USERPROFILE','APPDATA','LOCALAPPDATA','XDG_CONFIG_HOME','XDG_CACHE_HOME','XDG_DATA_HOME','XDG_STATE_HOME','OPENCLAW_CONFIG_DIR','HERMES_HOME'].map(k=>[k,process.env[k]]))}))"
     const result = JSON.parse((await command(process.execPath, ['-e', source])).trim())
     for (const value of Object.values(result)) within(value)
@@ -738,14 +764,14 @@ try {
     const revision = await command('git', ['-c', `safe.directory=${project}`, '-C', project, 'rev-parse', 'HEAD']); report.environment.commit = revision.trim()
     return result
   })
-  if (['openclaw-zh', 'weixin', 'deepseek-harness-preview'].includes(engine)) {
+  if (['openclaw-zh', 'weixin'].includes(engine)) {
     await stage('install', '独立 source id 只允许针对该发行物的实测；高风险项不自动选择', async () => { throw missing(`${engine} 尚无独立安装/真实渠道或预览版聊天验收；保持高风险人工确认，不降级为 official/stable 验收`) })
   }
   await stage('web', '真实 serve.js 绑定随机回环端口，配置根目录回读与健康一致', setupWeb)
   await provider()
   if (engine === 'pi') await piRun()
   else if (engine === 'opencode') await openCodeRun()
-  else if (engine === 'deepseek-harness') await dshRun()
+  else if (['deepseek-harness', 'deepseek-harness-preview'].includes(engine)) await dshRun()
   else if (engine === 'hermes') await hermesRun()
   else await openclawRun()
   await stage('provider-receipt', '真实模型 HTTP 请求含唯一提示词、模型和本地凭据，完整回复已由引擎读回', async () => {

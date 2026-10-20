@@ -53,6 +53,7 @@ RUN apk add --no-cache \
     iproute2 \
     procps \
     lsof \
+    libatomic \
     tzdata
 
 # 设置时区
@@ -75,7 +76,7 @@ COPY --from=builder --chown=node:node /build/src/lib ./src/lib
 
 # 安装 OpenClaw CLI（默认官方稳定版；构建参数仍可切换汉化版）
 ARG OPENCLAW_PACKAGE=openclaw
-ARG OPENCLAW_VERSION=2026.10.3
+ARG OPENCLAW_VERSION=2026.10.4
 RUN npm install -g "${OPENCLAW_PACKAGE}@${OPENCLAW_VERSION}" --registry https://registry.npmmirror.com || \
     npm install -g "${OPENCLAW_PACKAGE}@${OPENCLAW_VERSION}" --registry https://registry.npmjs.org
 

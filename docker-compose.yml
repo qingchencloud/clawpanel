@@ -137,7 +137,7 @@ services:
   #     - TZ=Asia/Shanghai
   #   restart: unless-stopped
   #   command: >
-  #     sh -c "npm install -g openclaw@2026.10.3 --registry https://registry.npmmirror.com &&
+  #     sh -c "npm install -g openclaw@2026.10.4 --registry https://registry.npmmirror.com &&
   #            openclaw init 2>/dev/null || true &&
   #            openclaw gateway start --foreground"
   #   healthcheck:
