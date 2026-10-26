@@ -244,3 +244,24 @@ test('助手同步仅在 localStorage 回读一致后返回 verified', () => {
     apiType: 'openai-responses',
   })
 })
+
+test('Requesty 渠道写入独立 provider，Hermes 侧回退到 custom 端点', async () => {
+  const channel = {
+    id: 'rq', name: 'Requesty', presetKey: 'requesty', baseUrl: 'https://router.requesty.ai/v1',
+    apiType: 'openai-completions', models: [{ id: 'openai/gpt-4o-mini' }], defaultModel: 'openai/gpt-4o-mini',
+  }
+  assert.equal(channels.channelProviderKey(channel), 'requesty')
+
+  // Hermes 内核没有原生 requesty provider，应走 custom（OPENAI_BASE_URL + OPENAI_API_KEY）
+  const originalList = api.hermesListProviders
+  api.hermesListProviders = async () => [
+    { id: 'openrouter', authType: 'api_key', apiKeyEnvVars: ['OPENROUTER_API_KEY'] },
+    { id: 'custom', authType: 'api_key', apiKeyEnvVars: ['OPENAI_API_KEY', 'CUSTOM_API_KEY'] },
+  ]
+  try {
+    const target = await channels.resolveHermesTarget(channel)
+    assert.equal(target?.id, 'custom')
+  } finally {
+    api.hermesListProviders = originalList
+  }
+})
