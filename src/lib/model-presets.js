@@ -60,6 +60,7 @@ export const PROVIDER_PRESETS = [
   { key: 'xai', label: 'xAI (Grok)', baseUrl: 'https://api.x.ai/v1', api: 'openai-completions', site: 'https://console.x.ai/', desc: 'Elon Musk 旗下 AI，支持 Grok 系列模型' },
   { key: 'groq', label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', api: 'openai-completions', site: 'https://console.groq.com/keys', desc: '超快推理平台，支持 Llama、Mixtral 等开源模型' },
   { key: 'openrouter', label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', api: 'openai-completions', site: 'https://openrouter.ai/keys', desc: '模型聚合路由，一个 Key 访问所有主流模型' },
+  { key: 'runcrate', label: 'Runcrate', baseUrl: 'https://api.runcrate.ai/v1', api: 'openai-completions', site: 'https://www.runcrate.ai/dashboard/api-keys', desc: 'OpenAI 兼容推理接口，支持 DeepSeek、GLM、Qwen、Kimi 等开源模型' },
   { key: 'nvidia', label: 'NVIDIA NIM', baseUrl: 'https://integrate.api.nvidia.com/v1', api: 'openai-completions', site: 'https://build.nvidia.com/models', desc: '英伟达推理平台，支持 Llama、Mistral 等模型' },
   { key: 'ollama', label: 'Ollama (本地)', baseUrl: 'http://127.0.0.1:11434/v1', api: 'openai-completions', site: 'https://ollama.com/' },
 ]
@@ -101,6 +102,13 @@ export const MODEL_PRESETS = {
     { id: 'kimi-k2.5', name: 'Kimi K2.5', contextWindow: 131072 },
     { id: 'kimi-k2', name: 'Kimi K2', contextWindow: 131072 },
     { id: 'kimi-latest', name: 'Kimi Latest', contextWindow: 131072 },
+  ],
+  runcrate: [
+    { id: 'deepseek-ai/DeepSeek-V4.1-Flash', name: 'DeepSeek V4.1 Flash', contextWindow: 1048576 },
+    { id: 'zai-org/GLM-5.3-Flash', name: 'GLM 5.3 Flash', contextWindow: 1048576 },
+    { id: 'zai-org/GLM-5.3', name: 'GLM 5.3', contextWindow: 1048576 },
+    { id: 'Qwen/Qwen3.8-Flash', name: 'Qwen3.8 Flash', contextWindow: 1000000 },
+    { id: 'moonshotai/Kimi-K2.6', name: 'Kimi K2.6', contextWindow: 262144 },
   ],
   xai: [
     { id: 'grok-4', name: 'Grok 4', contextWindow: 131072 },

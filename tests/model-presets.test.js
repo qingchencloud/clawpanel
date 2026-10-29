@@ -160,3 +160,30 @@ test('each MODEL_PRESETS group has a matching PROVIDER_PRESETS entry', () => {
       `MODEL_PRESETS group "${group}" has no matching PROVIDER_PRESETS entry`)
   }
 })
+
+// ===== Runcrate =====
+
+test('PROVIDER_PRESETS contains a Runcrate OpenAI-compatible entry', () => {
+  const runcrate = PROVIDER_PRESETS.find(p => p.key === 'runcrate')
+  assert.ok(runcrate, 'Runcrate provider preset should exist')
+  assert.equal(runcrate.label, 'Runcrate')
+  assert.equal(runcrate.api, 'openai-completions')
+  assert.equal(runcrate.baseUrl, 'https://api.runcrate.ai/v1')
+  assert.ok(runcrate.site, 'Runcrate should have a site URL')
+  assert.ok(runcrate.desc, 'Runcrate should have a description')
+})
+
+test('Runcrate model presets use vendor-prefixed ids that no other group claims', () => {
+  const ids = MODEL_PRESETS.runcrate.map(m => m.id)
+  assert.equal(ids[0], 'deepseek-ai/DeepSeek-V4.1-Flash')
+  for (const m of MODEL_PRESETS.runcrate) {
+    assert.equal(m.id.split('/').length, 2, `${m.id} should be vendor/model`)
+    assert.ok(m.contextWindow > 0, `${m.id} should have a positive contextWindow`)
+  }
+  const others = Object.entries(MODEL_PRESETS)
+    .filter(([group]) => group !== 'runcrate')
+    .flatMap(([, models]) => models.map(m => m.id))
+  for (const id of ids) {
+    assert.equal(others.includes(id), false, `${id} collides with another provider group`)
+  }
+})
