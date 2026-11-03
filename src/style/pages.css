@@ -3194,7 +3194,11 @@
   left: 50%;
   transform: translateX(-50%);
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   align-items: center;
+  width: max-content;
+  max-width: calc(100% - 48px);
   gap: 14px;
   z-index: 4;
   padding: 8px 18px;
@@ -3209,6 +3213,7 @@
   background: transparent;
   border: 0;
   font-family: inherit;
+  white-space: nowrap;
   font-size: 12.5px;
   letter-spacing: 0.04em;
   color: rgba(150, 150, 150, 0.85);

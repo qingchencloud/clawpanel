@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  Панель управления OpenClaw & Hermes Agent со встроенным ИИ-ассистентом — Управление мульти-движковыми AI фреймворками
+  Мульти-движковая панель AI-агентов со встроенным ИИ-ассистентом — OpenClaw, Hermes, DSH, OpenCode и Pi
 </p>
 
 <p align="center">
@@ -25,38 +25,23 @@
 ---
 
 <p align="center">
-  <img src="docs/feature-showcase.gif" width="800" alt="ClawPanel Showcase">
+  <img src="docs/feature-showcase.gif" width="800" alt="Демонстрация настройки моделей ClawPanel">
 </p>
 
-ClawPanel — это визуальная панель управления, поддерживающая несколько фреймворков AI-агентов, сейчас с двойной поддержкой [OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation) и [Hermes Agent](https://github.com/nousresearch/hermes-agent). Со **встроенным интеллектуальным ИИ-ассистентом**, который помогает установить, автоматически диагностировать конфигурации, устранять неполадки и исправлять ошибки. 8 инструментов + 4 режима + интерактивный Q&A — удобное управление для новичков и экспертов.
+ClawPanel — это визуальная панель для нескольких фреймворков AI-агентов: [OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation), [Hermes Agent](https://github.com/nousresearch/hermes-agent), [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), [OpenCode](https://github.com/anomalyco/opencode) и экспериментального [Pi](https://github.com/earendil-works/pi). Встроенный интеллектуальный ИИ-ассистент помогает устанавливать, диагностировать конфигурации и устранять неполадки.
 
 > 🌐 **Сайт**: [claw.qt.cool](https://claw.qt.cool/) | 📦 **Скачать**: [официальный центр загрузки](https://claw.qt.cool/download) | Резерв: [GitHub Releases](https://github.com/qingchencloud/clawpanel/releases/latest)
 
-### 🧪 Бесплатное тестирование: QingChen Cloud
+### 🌐 Аккаунт сайта и официальные модели
 
-[QingChen Cloud](https://gpt.qt.cool/) — платформа тестирования ClawPanel с ежедневной отметкой. ClawPanel не содержит встроенный ключ QingChen Cloud и не считывает старые ключи автоматически. Зарегистрируйтесь, получите тестовый лимит и собственный API Key на [странице отметки](https://gpt.qt.cool/checkin), затем вставьте его в ClawPanel для настройки моделей. Текущие условия опубликованы на QingChen Cloud.
-
-### 🤝 Спонсор: CiyAPI
-
-> Стороннее спонсорское размещение; действуют актуальные правила, опубликованные CiyAPI.
-
-<p align="center">
-  <a href="https://ciyapi.79tian.com" rel="sponsored noopener noreferrer"><img src="https://img.shields.io/badge/🤝 CiyAPI-Sponsored-6366f1?style=for-the-badge" alt="Спонсорский сервис CiyAPI"></a>
-</p>
-
-- **Передовые модели** — GPT, Claude, Gemini, Grok, Kimi и другие
-- **Бонус пополнения** — ¥1 пополнения даёт $1 кредита на использование
-- **Скидочные маршруты** — Для части маршрутов действует скидочная цена
-- **Совместимость с OpenAI** — Получите API Key и подключите его через ClawPanel
-
-Зарегистрируйтесь в [CiyAPI](https://ciyapi.79tian.com/sign-up), создайте API Key и используйте `https://ciyapi.79tian.com/v1` как Base URL. Текущие модели и цены доступны в [каталоге моделей](https://ciyapi.79tian.com/pricing/).
+[claw.qt.cool](https://claw.qt.cool) — официальный сайт ClawPanel. Подключив аккаунт сайта, вы можете использовать **официальные модели** во встроенном помощнике и каждом движке без собственного API-ключа. Кредиты, использование и награды за приглашения управляются на сайте. Ваши ключи и локальная конфигурация остаются независимыми и переключаются в любой момент; вход можно пропустить и продолжать пользоваться своим ключом.
 
 ### 🔥 Поддержка плат разработки / Встраиваемых устройств
 
 - **Orange Pi / Raspberry Pi / RK3588** — `npm run serve` для запуска
 - **Docker ARM64** — `docker run ghcr.io/qingchencloud/openclaw:latest`
 - **Armbian / Debian / Ubuntu Server** — Автоопределение архитектуры
-- Без Rust / Tauri / GUI. ClawPanel Web требует **Node.js 18+**; OpenClaw Gateway проверяется по `engines.node` установленной версии OpenClaw, рекомендуется **Node.js 22.19.0+**.
+- Rust / Tauri / GUI не нужны. Базовый Web требует **Node.js 18+**; для проверки всех движков рекомендуется Node.js 24.16.0+ (24.x). OpenClaw проверяется по требованию `engines.node` установленной версии.
 
 ## Сообщество
 
@@ -75,7 +60,7 @@ ClawPanel — это визуальная панель управления, п�
 ## Возможности
 
 - **🤖 ИИ-ассистент (Новый)** — Встроенный ИИ-ассистент, 4 режима + 8 инструментов + интерактивный Q&A
-- **🧩 Мульти-движковая архитектура** — Поддержка OpenClaw и Hermes Agent, свободное переключение, независимое управление
+- **🧩 Мульти-движковая архитектура** — Поддержка OpenClaw, Hermes Agent, DeepSeek Harness, OpenCode и экспериментального Pi, свободное переключение и независимое управление
 - **🤖 Чат Hermes Agent** — Встроенный интерфейс чата Hermes Agent, визуализация вызовов инструментов, доступ к файлам, SSE стриминг
 - **🖼️ Распознавание изображений** — Вставьте скриншот или перетащите изображение, ИИ автоматически анализирует
 - **Панель мониторинга** — Обзор системы, мониторинг сервисов в реальном времени
@@ -90,7 +75,6 @@ ClawPanel — это визуальная панель управления, п�
 - **Запланированные задачи** — Выполнение по расписанию Cron, многоканальная доставка
 - **Просмотр логов** — Логи в реальном времени из нескольких источников и поиск
 - **Управление памятью** — Просмотр/редактирование файлов памяти, экспорт ZIP, переключение агентов
-- **Спонсорство CiyAPI** — GPT, Claude и другие модели; ¥1 даёт $1 кредита на использование
 - **Расширения** — Управление туннелями cftunnel, мониторинг ClawApp
 - **О программе** — Информация о версии, ссылки сообщества, связанные проекты
 
@@ -116,11 +100,11 @@ curl -fsSL https://raw.githubusercontent.com/qingchencloud/clawpanel/main/script
 ```bash
 docker run -d --name clawpanel --restart unless-stopped \
   -p 1420:1420 -v clawpanel-data:/root/.openclaw \
-  node:22-slim \
+  node:24.16.0-slim \
   sh -c "apt-get update && apt-get install -y git && \
-    npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com && \
+    npm install -g openclaw@2026.10.4 --registry https://registry.npmmirror.com && \
     git clone https://github.com/qingchencloud/clawpanel.git /app && \
-    cd /app && npm install && npm run build && npm run serve"
+    cd /app && npm ci && npm run build && npm run serve"
 ```
 
 ## Быстрый старт

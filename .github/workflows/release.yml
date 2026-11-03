@@ -2,6 +2,10 @@
 # 推送 v* 标签时自动构建跨平台产物并创建 GitHub Release
 name: Release
 
+# 默认测试/构建只读；唯一写权限由独立 publish-release job 声明。
+permissions:
+  contents: read
+
 on:
   push:
     tags:
@@ -28,6 +32,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: 验证 SemVer、Tag 绑定与 Release 唯一性
         id: release
@@ -73,6 +78,8 @@ jobs:
     steps:
       - name: 签出代码
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: 安装 Node.js
         uses: actions/setup-node@v4
@@ -85,6 +92,9 @@ jobs:
 
       - name: Node 单元测试
         run: node --test tests/*.test.js
+
+      - name: Pi 真实运行时协议验收
+        run: node scripts/test-pi-runtime.mjs
 
       - name: 安装 Rust 工具链
         uses: dtolnay/rust-toolchain@stable
@@ -150,6 +160,7 @@ jobs:
       - name: 签出代码
         uses: actions/checkout@v4
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: 安装 Node.js
@@ -256,6 +267,8 @@ jobs:
     steps:
       - name: 签出代码
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: 安装 Node.js
         uses: actions/setup-node@v4
@@ -312,6 +325,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # 仅独立发布 job 写入发布清单，测试/构建 job 不保留凭据。
+          persist-credentials: true
 
       - name: 下载全部 workflow artifacts
         uses: actions/download-artifact@v4

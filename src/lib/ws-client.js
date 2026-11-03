@@ -898,6 +898,18 @@ export class WsClient {
     return this.request('chat.history', { sessionKey, limit })
   }
 
+  questionsList() {
+    // 2026.7 之前的内核没有 question RPC；按能力探测，而非强制升级。
+    const methods = this._hello?.features?.methods
+    if (Array.isArray(methods) && !methods.includes('question.list')) return Promise.resolve(null)
+    return this.requestCompat('question.list', {})
+  }
+
+  questionResolve(id, answers, cancel = false) {
+    // 写操作必须收到真实成功响应，不能把不支持的 RPC 当作已回答。
+    return this.request('question.resolve', cancel ? { id, cancel: true } : { id, answers })
+  }
+
   chatAbort(sessionKey, runId) {
     const params = { sessionKey }
     if (runId) params.runId = runId

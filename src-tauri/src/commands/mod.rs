@@ -2,8 +2,6 @@ use std::net::IpAddr;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
-#[cfg(target_os = "windows")]
-use std::process::Command;
 use std::sync::RwLock;
 use std::time::Duration;
 
@@ -20,6 +18,7 @@ pub mod config;
 pub mod deepseek_harness;
 pub mod device;
 pub mod diagnose;
+pub mod engine_official;
 pub mod extensions;
 pub mod hermes;
 pub mod hermes_providers;
@@ -28,14 +27,19 @@ pub mod media;
 pub mod memory;
 pub mod messaging;
 pub mod model_channels;
+pub mod official_provider;
+pub mod openclaw_gateway_official;
 pub mod opencode;
 pub mod pairing;
+pub mod pi;
+pub mod platform;
 pub mod portable;
 pub mod service;
 pub mod site_api;
 pub mod skillhub;
 pub mod skills;
 pub mod update;
+mod weixin_compat;
 
 /// 默认 OpenClaw 配置目录
 /// Windows 上优先使用 USERPROFILE（与 Node.js os.homedir() 一致），
@@ -303,7 +307,7 @@ pub(crate) fn windows_npm_global_prefix() -> Option<String> {
     }
 
     const CREATE_NO_WINDOW: u32 = 0x08000000;
-    let mut cmd = Command::new("cmd");
+    let mut cmd = crate::utils::background_command("cmd");
     cmd.args(["/d", "/s", "/c", "npm config get prefix"]);
     cmd.creation_flags(CREATE_NO_WINDOW);
     if let Ok(output) = cmd.output() {

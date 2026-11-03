@@ -1,7 +1,7 @@
 /**
  * DeepSeek Harness Web 内嵌代理的纯函数。
  *
- * DSH 0.1.1-rc.2 的浏览器包使用 /plugins、/assets 与 /api 绝对路径，
+ * DSH 浏览器包使用 /plugins、/assets 与 /api 绝对路径，
  * 因此远程 Web 版不能只把首页挂在一个子路径下。这里把这些固定入口
  * 改写到带短期能力令牌的隔离路径；令牌只允许访问 DSH，不授予 ClawPanel API。
  */
@@ -132,7 +132,11 @@ export function rewriteDshProxyText(input, prefixValue, { contentType = 'text/ht
     }
   }
   if (type.includes('text/html')) {
+    // 0.1.5 的根 base 会把 ./assets 指向面板；相对模块与 CSS 必须留在代理中。
+    text = text.replace(/(<base\b[^>]*\bhref\s*=\s*["'])\/(\s*["'])/gi, `$1${prefix}/$2`)
     text = text.replace(/<script(?![^>]*\bcrossorigin\s*=)(?=[^>]*\bsrc\s*=)/gi, '<script crossorigin="anonymous"')
+    // 与动态 script 的匿名 CORS 模式一致，避免沙箱中预加载资源重复下载。
+    text = text.replace(/<link\b(?![^>]*\bcrossorigin\b)(?=[^>]*\bas\s*=\s*["']script["'])/gi, '<link crossorigin="anonymous"')
   }
   // Web App Manifest 的根 scope/start_url 也必须留在令牌路径中。
   if (type.includes('manifest')) {

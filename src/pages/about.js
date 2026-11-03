@@ -2,7 +2,7 @@
  * 关于页面
  * 版本信息、项目链接、相关项目、系统环境
  */
-import { api, safeTauriListen } from '../lib/tauri-api.js'
+import { api, safeTauriListen, isTauriRuntime, openExternalUrl } from '../lib/tauri-api.js'
 import { toast } from '../components/toast.js'
 import { showUpgradeModal, showConfirm, showContentModal } from '../components/modal.js'
 import { setUpgrading } from '../lib/app-state.js'
@@ -800,12 +800,19 @@ function renderCommunity(page) {
         <img src="https://qt.cool/c/feishu/qr.png" alt="${t('about.feishuGroup')}" style="width:140px;height:140px;border-radius:var(--radius-md);border:1px solid var(--border-primary);object-fit:contain;background:#fff">
         <div style="font-size:var(--font-size-sm);margin-top:8px;color:var(--text-secondary)">${t('about.feishuGroup')}</div>
       </div>
+      <div style="text-align:center">
+        <a href="https://t.me/+rjRE3PgVL9tmOGZk" target="_blank" rel="noopener noreferrer" data-telegram-invite="qr" style="display:inline-block">
+          <img src="/images/ClawPanel-Telegram.png" alt="${t('about.telegramGroup')}" style="display:block;width:140px;height:140px;border-radius:var(--radius-md);border:1px solid var(--border-primary);object-fit:contain;background:#fff">
+        </a>
+        <div style="font-size:var(--font-size-sm);margin-top:8px;color:var(--text-secondary)">${t('about.telegramGroup')}</div>
+      </div>
       <div style="flex:1;min-width:200px;display:flex;flex-direction:column;gap:8px;padding-top:4px">
         <div style="font-size:var(--font-size-sm);color:var(--text-secondary)">${t('about.communityWelcome')}</div>
         <div style="font-size:var(--font-size-sm);color:var(--text-secondary);font-style:italic">${t('about.communityWelcomeIntl')}</div>
         <div style="font-size:var(--font-size-sm);color:var(--text-secondary);margin-top:4px">${t('about.communityDesc')}</div>
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
           <a class="btn btn-sm" href="https://discord.gg/U9AttmsNHh" target="_blank" rel="noopener" style="background:#5865F2;color:#fff;display:inline-flex;align-items:center;gap:4px;border:none">${icon('message-circle', 14)} ${t('about.joinDiscord')}</a>
+          <a class="btn btn-primary btn-sm" href="https://t.me/+rjRE3PgVL9tmOGZk" target="_blank" rel="noopener noreferrer" data-telegram-invite="button">${icon('send', 14)} ${t('about.joinTelegram')}</a>
           <a class="btn btn-primary btn-sm" href="https://qt.cool/c/OpenClaw" target="_blank" rel="noopener">${t('about.joinQQ')}</a>
           <a class="btn btn-primary btn-sm" href="https://qt.cool/c/OpenClawWx" target="_blank" rel="noopener">${t('about.joinWechat')}</a>
           <a class="btn btn-primary btn-sm" href="https://qt.cool/c/OpenClawDY" target="_blank" rel="noopener">${t('about.joinDouyin')}</a>
@@ -818,6 +825,18 @@ function renderCommunity(page) {
       </div>
     </div>
   `
+  // Web保留普通anchor；桌面明确交给系统浏览器，不依赖target=_blank的webview行为。
+  el.querySelectorAll('[data-telegram-invite]').forEach(link => {
+    link.addEventListener('click', async event => {
+      if (!isTauriRuntime()) return
+      event.preventDefault()
+      try {
+        await openExternalUrl(link.href)
+      } catch (error) {
+        toast(t('about.telegramOpenFailed') + ': ' + (error.message || String(error)), 'error')
+      }
+    })
+  })
 }
 
 const PROJECTS = [

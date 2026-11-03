@@ -1,0 +1,122 @@
+[
+  {
+    "host": "2026.1.0",
+    "plugin": null,
+    "compatible": null,
+    "recommendedVersion": "1.0.3",
+    "installAllowed": true,
+    "updateAvailable": false
+  },
+  {
+    "host": "2026.3.21",
+    "plugin": "1.0.3",
+    "compatible": true,
+    "recommendedVersion": "1.0.3",
+    "installAllowed": true,
+    "updateAvailable": false
+  },
+  {
+    "host": "2026.3.21",
+    "plugin": "2.4.8",
+    "compatible": false,
+    "recommendedVersion": "1.0.3",
+    "installAllowed": true,
+    "updateAvailable": false
+  },
+  {
+    "host": "2026.3.22",
+    "plugin": "1.0.3",
+    "compatible": false,
+    "recommendedVersion": "2.4.4",
+    "installAllowed": true,
+    "updateAvailable": true
+  },
+  {
+    "host": "2026.3.22",
+    "plugin": "2.0.1",
+    "compatible": true,
+    "recommendedVersion": "2.4.4",
+    "installAllowed": true,
+    "updateAvailable": true
+  },
+  {
+    "host": "2026.5.11",
+    "plugin": "2.4.4",
+    "compatible": true,
+    "recommendedVersion": "2.4.4",
+    "installAllowed": true,
+    "updateAvailable": false
+  },
+  {
+    "host": "2026.5.11",
+    "plugin": "2.4.5",
+    "compatible": false,
+    "recommendedVersion": "2.4.4",
+    "installAllowed": true,
+    "updateAvailable": false
+  },
+  {
+    "host": "2026.5.12",
+    "plugin": "2.4.5",
+    "compatible": true,
+    "recommendedVersion": "2.4.9",
+    "installAllowed": true,
+    "updateAvailable": true
+  },
+  {
+    "host": "v2026.8.1-2-zh.1",
+    "plugin": "2.4.8",
+    "compatible": true,
+    "recommendedVersion": "2.4.9",
+    "installAllowed": true,
+    "updateAvailable": true
+  },
+  {
+    "host": "2026.9.4",
+    "plugin": "2.4.9",
+    "compatible": true,
+    "recommendedVersion": "2.4.9",
+    "installAllowed": true,
+    "updateAvailable": false
+  },
+  {
+    "host": "2026.9.4",
+    "plugin": "2.4.9-beta.0",
+    "compatible": null,
+    "recommendedVersion": null,
+    "installAllowed": false,
+    "updateAvailable": false
+  },
+  {
+    "host": "2026.9.4",
+    "plugin": null,
+    "compatible": null,
+    "recommendedVersion": "2.4.9",
+    "installAllowed": true,
+    "updateAvailable": false
+  },
+  {
+    "host": "2026.9.4-beta.1",
+    "plugin": "2.4.8",
+    "compatible": null,
+    "recommendedVersion": null,
+    "installAllowed": false,
+    "updateAvailable": false
+  },
+  {
+    "host": "unknown",
+    "plugin": "2.4.8",
+    "compatible": null,
+    "recommendedVersion": null,
+    "installAllowed": false,
+    "updateAvailable": false
+  },
+  {
+    "host": "2025.12.31",
+    "plugin": "1.0.3",
+    "compatible": false,
+    "recommendedVersion": null,
+    "installAllowed": false,
+    "updateAvailable": false
+  }
+]

@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  Painel de gestão OpenClaw & Hermes Agent com Assistente IA integrado — Gestão multi-motor de frameworks IA
+  Painel multi-motor de AI Agents com Assistente IA integrado — OpenClaw, Hermes, DSH, OpenCode e Pi
 </p>
 
 <p align="center">
@@ -25,38 +25,23 @@
 ---
 
 <p align="center">
-  <img src="docs/feature-showcase.gif" width="800" alt="ClawPanel Showcase">
+  <img src="docs/feature-showcase.gif" width="800" alt="Demonstração de configuração de modelos do ClawPanel">
 </p>
 
-ClawPanel é um painel de gestão visual que suporta múltiplos frameworks de AI Agent, atualmente com suporte dual para [OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation) e [Hermes Agent](https://github.com/nousresearch/hermes-agent). Possui um **assistente IA inteligente integrado** que ajuda a instalar, diagnosticar configurações automaticamente, resolver problemas e corrigir erros. 8 ferramentas + 4 modos + Q&A interativo — fácil de gerenciar para iniciantes e especialistas.
+ClawPanel é um painel visual para vários frameworks de AI Agent: [OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation), [Hermes Agent](https://github.com/nousresearch/hermes-agent), [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), [OpenCode](https://github.com/anomalyco/opencode) e o [Pi](https://github.com/earendil-works/pi) experimental. Possui um **assistente IA inteligente integrado** para instalação, diagnóstico de configuração e resolução de problemas.
 
 > 🌐 **Website**: [claw.qt.cool](https://claw.qt.cool/) | 📦 **Download**: [Centro de download oficial](https://claw.qt.cool/download) | Fallback: [GitHub Releases](https://github.com/qingchencloud/clawpanel/releases/latest)
 
-### 🧪 Teste gratuito: QingChen Cloud
+### 🌐 Conta do site e modelos oficiais
 
-[QingChen Cloud](https://gpt.qt.cool/) é a plataforma de testes com check-in do ClawPanel. O ClawPanel não inclui nem lê automaticamente chaves do QingChen Cloud. Cadastre-se, acesse a [página de check-in](https://gpt.qt.cool/checkin) para obter crédito de teste e sua própria API Key, e cole-a no ClawPanel para configurar os modelos. A disponibilidade e as regras atuais são exibidas no QingChen Cloud.
-
-### 🤝 Patrocinado: CiyAPI
-
-> Promoção patrocinada por terceiros; valem as regras atuais publicadas pelo CiyAPI.
-
-<p align="center">
-  <a href="https://ciyapi.79tian.com" rel="sponsored noopener noreferrer"><img src="https://img.shields.io/badge/🤝 CiyAPI-Sponsored-6366f1?style=for-the-badge" alt="Serviço patrocinado CiyAPI"></a>
-</p>
-
-- **Modelos de ponta** — GPT, Claude, Gemini, Grok, Kimi e outros
-- **Benefício de recarga** — Recarregue ¥1 e receba $1 em crédito de uso
-- **Rotas com desconto** — Algumas rotas têm preços reduzidos; consulte o mercado de modelos
-- **Compatível com OpenAI** — Obtenha uma API Key e conecte pelo ClawPanel
-
-Cadastre-se no [CiyAPI](https://ciyapi.79tian.com/sign-up), crie uma API Key e use `https://ciyapi.79tian.com/v1` como Base URL. Consulte o [mercado de modelos](https://ciyapi.79tian.com/pricing/) para modelos e preços atuais.
+[claw.qt.cool](https://claw.qt.cool) é o site oficial do ClawPanel. Ao conectar sua conta do site, você pode usar os **modelos oficiais** no assistente integrado e em cada engine sem precisar da sua própria API key. Créditos, uso e recompensas de indicação são gerenciados no site. Suas chaves e a configuração local permanecem independentes e podem ser alternadas a qualquer momento; você também pode pular o login e continuar usando sua própria chave.
 
 ### 🔥 Suporte a placas de desenvolvimento / Dispositivos embarcados
 
 - **Orange Pi / Raspberry Pi / RK3588** — `npm run serve` para executar
 - **Docker ARM64** — `docker run ghcr.io/qingchencloud/openclaw:latest`
 - **Armbian / Debian / Ubuntu Server** — Detecção automática de arquitetura
-- Sem necessidade de Rust / Tauri / GUI. O ClawPanel Web requer **Node.js 18+**; o OpenClaw Gateway é validado conforme o `engines.node` do OpenClaw instalado, com **Node.js 22.19.0+** recomendado.
+- Sem necessidade de Rust / Tauri / GUI. O Web básico requer **Node.js 18+**; para validar todos os motores, recomenda-se Node.js 24.16.0+ (24.x). O OpenClaw é validado conforme seu requisito `engines.node`.
 
 ## Comunidade
 
@@ -75,7 +60,7 @@ Uma comunidade de desenvolvedores e entusiastas apaixonados por AI Agents — ju
 ## Funcionalidades
 
 - **🤖 Assistente IA (Novo)** — Assistente IA integrado, 4 modos + 8 ferramentas + Q&A interativo
-- **🧩 Arquitetura multi-motor** — Suporta OpenClaw e Hermes Agent dual, comutação livre, gestão independente
+- **🧩 Arquitetura multi-motor** — Suporta OpenClaw, Hermes Agent, DeepSeek Harness, OpenCode e Pi experimental, comutação livre e gestão independente
 - **🤖 Chat Hermes Agent** — Interface de chat Hermes Agent integrada, visualização de chamadas de ferramentas, acesso a arquivos, streaming SSE
 - **🖼️ Reconhecimento de imagens** — Cole capturas ou arraste imagens, IA analisa automaticamente
 - **Painel** — Visão geral do sistema, monitoramento de serviços em tempo real
@@ -90,7 +75,6 @@ Uma comunidade de desenvolvedores e entusiastas apaixonados por AI Agents — ju
 - **Tarefas agendadas** — Execução agendada com Cron, entrega multicanal
 - **Visualizador de logs** — Logs em tempo real multi-fonte e busca por palavras-chave
 - **Gestão de memória** — Ver/editar arquivos de memória, exportar ZIP, trocar Agent
-- **Patrocínio CiyAPI** — GPT, Claude e outros modelos; ¥1 gera $1 em crédito de uso
 - **Ferramentas de extensão** — Gestão de túneis cftunnel, monitoramento do ClawApp
 - **Sobre** — Informações de versão, links da comunidade, projetos relacionados
 
@@ -116,11 +100,11 @@ curl -fsSL https://raw.githubusercontent.com/qingchencloud/clawpanel/main/script
 ```bash
 docker run -d --name clawpanel --restart unless-stopped \
   -p 1420:1420 -v clawpanel-data:/root/.openclaw \
-  node:22-slim \
+  node:24.16.0-slim \
   sh -c "apt-get update && apt-get install -y git && \
-    npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com && \
+    npm install -g openclaw@2026.10.4 --registry https://registry.npmmirror.com && \
     git clone https://github.com/qingchencloud/clawpanel.git /app && \
-    cd /app && npm install && npm run build && npm run serve"
+    cd /app && npm ci && npm run build && npm run serve"
 ```
 
 ## Início rápido

@@ -1,6 +1,8 @@
 import { api, isTauriRuntime } from '../../../lib/tauri-api.js'
 import { getDshPort } from '../../../lib/model-channels.js'
 import { t } from '../../../lib/i18n.js'
+import { getPlatformAccount, onPlatformAccountChange, platformErrorText } from '../../../lib/platform-account.js'
+import { consumeOfficialEngineIntent, adoptOfficialEngineIntent } from '../../../lib/platform-engine-access.js'
 
 const DSH_WEB_STORAGE_KEY = 'clawpanel-dsh-web-storage-v1'
 const DSH_WEB_STORAGE_MAX_CHARS = 2 * 1024 * 1024
@@ -49,6 +51,7 @@ function esc(value) {
 }
 
 export function render() {
+  const accessIntent = consumeOfficialEngineIntent('deepseek-harness')
   _cleanupCurrent?.()
   _cleanupCurrent = null
   const page = document.createElement('div')
@@ -64,8 +67,23 @@ export function render() {
     embedPort: null,
     embedExpiresAt: 0,
     port: getDshPort(),
+    official: null,
+    officialRequested: !!accessIntent,
+    officialBusy: false,
   }
-  if (!isTauriRuntime()) _cleanupCurrent = bindDshStorageBridge(page)
+  const dispose = []
+  if (!isTauriRuntime()) dispose.push(bindDshStorageBridge(page))
+  dispose.push(onPlatformAccountChange(account => {
+    if (state.official && (account.phase !== 'bound' || account.epoch !== state.official.epoch || account.member?.member_id !== state.official.memberId)) {
+      const epoch = state.official.epoch
+      state.official = null
+      state.embedUrl = ''
+      state.status = null
+      draw()
+      api.dshDisconnectOfficial(epoch).catch(() => {})
+    }
+  }))
+  _cleanupCurrent = () => dispose.forEach(fn => fn())
 
   function draw() {
     const status = state.status || {}
@@ -88,6 +106,7 @@ export function render() {
           <div><strong>${esc(t('deepseekHarness.workspaceTitle'))}</strong><span>${esc(t('deepseekHarness.workspacePageDesc'))}</span></div>
         </div>
         <div class="dsh-workspace-actions">
+          ${isTauriRuntime() ? `<button class="btn btn-primary btn-sm" data-action="official" ${state.officialBusy ? 'disabled' : ''}>${esc(t('platform.official'))}</button>${state.official ? `<button class="btn btn-secondary btn-sm" data-action="byok">${esc(t('platform.byok'))}</button>` : ''}` : ''}
           ${ready ? `<span class="dsh-workspace-status">${esc(t('deepseekHarness.running'))}</span>` : ''}
           <button class="btn btn-secondary btn-sm" data-action="refresh">${esc(t('deepseekHarness.refresh'))}</button>
           ${ready ? `<button class="btn btn-secondary btn-sm" data-action="reload-frame" ${!state.embedUrl ? 'disabled' : ''}>${esc(t('deepseekHarness.reloadWorkspace'))}</button><button class="btn btn-secondary btn-sm" data-action="fullscreen" ${!state.embedUrl ? 'disabled' : ''}>${esc(t('deepseekHarness.fullscreen'))}</button>` : ''}
@@ -95,6 +114,7 @@ export function render() {
         </div>
       </header>
       ${state.error || state.embedError ? `<div class="dsh-workspace-error">${esc(state.error || state.embedError)}</div>` : ''}
+      ${state.official?.textOnly || state.official?.toolsAvailable === false ? `<p class="form-hint" data-platform-workbench-text-only>${esc(t('platform.engineAccess.textOnly'))}</p>` : ''}
       <section class="dsh-workspace-shell">
         ${state.loading && !state.status
           ? `<div class="dsh-workspace-center">${esc(t('deepseekHarness.workspaceLoading'))}</div>`
@@ -106,23 +126,28 @@ export function render() {
   }
 
   async function refresh() {
+    if (state.official || state.officialRequested) {
+      state.loading = false
+      draw()
+      return
+    }
     state.loading = true
     state.error = ''
     state.embedError = ''
     try {
-      state.status = await api.dshStatus(state.port)
+      const status = await api.dshStatus(state.port)
+      if (state.official) return
+      state.status = status
       if (state.status?.running && state.status?.managed) {
-        if (isTauriRuntime()) {
-          state.embedUrl = `${state.status.url}/`
-          state.embedPort = state.status.port
-          state.embedExpiresAt = 0
-        } else if (!state.embedUrl || state.embedPort !== state.status.port || Date.now() > state.embedExpiresAt - 60000) {
+        if (!state.embedUrl || state.embedPort !== state.status.port || Date.now() > state.embedExpiresAt - 60000) {
           try {
             const session = await api.dshEmbedSession(state.status.port, readDshWebStorage())
+            if (state.official) return
             state.embedUrl = session.src
             state.embedPort = state.status.port
             state.embedExpiresAt = Number(session.expiresAt) || 0
           } catch (error) {
+            if (state.official) return
             state.embedUrl = ''
             state.embedPort = null
             state.embedExpiresAt = 0
@@ -135,6 +160,7 @@ export function render() {
         state.embedExpiresAt = 0
       }
     } catch (error) {
+      if (state.official) return
       state.status = null
       state.error = `${t('deepseekHarness.loadFailed')}: ${error?.message || error}`
     } finally {
@@ -147,11 +173,38 @@ export function render() {
     const button = event.target.closest('[data-action]')
     if (!button) return
     const action = button.dataset.action
+    if (action === 'official') {
+      const account = getPlatformAccount()
+      if (account.phase !== 'bound') { location.hash = '#/account'; return }
+      state.officialBusy = true
+      state.error = ''
+      draw()
+      try {
+        const connected = await api.dshConnectOfficial()
+        const current = getPlatformAccount()
+        if (current.phase !== 'bound' || current.epoch !== connected.epoch || current.member?.member_id !== connected.memberId || current.epoch !== account.epoch) { await api.dshDisconnectOfficial(connected.epoch).catch(() => {}); throw Error('platform_account_changed') }
+        state.official = connected
+        state.embedUrl = connected.src
+        state.embedPort = connected.port
+        state.embedExpiresAt = 0
+        state.status = { running: true, managed: true, port: connected.port }
+        state.loading = false
+      } catch (error) { state.error = platformErrorText(error) }
+      finally { state.officialBusy = false; draw() }
+      return
+    }
+    if (action === 'byok') { const epoch = state.official?.epoch; if (epoch != null) await api.dshDisconnectOfficial(epoch); state.officialRequested = false; state.official = null; state.embedUrl = ''; return refresh() }
     if (action === 'refresh') return refresh()
     if (action === 'reload-frame') {
-      if (isTauriRuntime()) {
-        const frame = page.querySelector('#dsh-workspace-frame')
-        if (frame && state.status?.url) frame.src = `${state.status.url}/?clawpanelReload=${Date.now()}`
+      if (state.official) {
+        const epoch = state.official.epoch
+        try {
+          const renewed = await api.dshConnectOfficial()
+          const account = getPlatformAccount()
+          if (!state.official || state.official.epoch !== epoch || account.epoch !== renewed.epoch || account.member?.member_id !== renewed.memberId) return
+          state.official = renewed
+          const frame = page.querySelector('#dsh-workspace-frame'); if (frame) frame.src = renewed.src
+        } catch (error) { state.error = platformErrorText(error); draw() }
         return
       }
       state.embedUrl = ''
@@ -162,7 +215,17 @@ export function render() {
   })
 
   draw()
-  refresh()
+  if (accessIntent) {
+    state.officialBusy = true; state.loading = false
+    ;(async () => {
+      try {
+        const connected = await adoptOfficialEngineIntent('deepseek-harness', accessIntent)
+        state.official = connected; state.embedUrl = connected.src; state.embedPort = connected.port; state.embedExpiresAt = 0
+        state.status = { running: true, managed: true, port: connected.port }
+      } catch { state.error = t('platform.engineAccess.intentExpired') }
+      finally { state.officialBusy = false; draw() }
+    })()
+  } else refresh()
   return page
 }
 

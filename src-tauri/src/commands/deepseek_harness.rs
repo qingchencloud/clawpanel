@@ -4,17 +4,390 @@
 //! 后端命令，不直接暴露 Harness 配置面和凭据接口。
 
 use serde_json::{json, Map, Value};
+use std::cmp::Ordering;
 use std::fs::{self, File, OpenOptions};
-use std::io::Read;
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
+struct OfficialRuntime {
+    child: std::process::Child,
+    output: BufReader<std::process::ChildStdout>,
+    connection: String,
+    result: Value,
+}
+
+static OFFICIAL_RUNTIMES: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, OfficialRuntime>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+pub(super) fn official_runtime_active(engine: &str) -> bool {
+    let Ok(mut runtimes) = OFFICIAL_RUNTIMES.lock() else {
+        return true;
+    };
+    runtimes.get_mut(engine).is_some_and(|runtime| {
+        // 不缓存存活布尔值：进程已退出后，允许正常维护；未知状态关闭维护。
+        !matches!(runtime.child.try_wait(), Ok(Some(_)))
+    })
+}
+
+fn ensure_official_stopped(engine: &str) -> Result<(), String> {
+    if official_runtime_active(engine) {
+        Err("official_runtime_active".into())
+    } else {
+        Ok(())
+    }
+}
+
+fn close_official_runtime(runtime: &mut OfficialRuntime) -> Result<(), String> {
+    if let Some(input) = runtime.child.stdin.as_mut() {
+        let _ = input.write_all(b"{\"action\":\"stop\"}\n");
+        let _ = input.flush();
+    }
+    let until = std::time::Instant::now() + Duration::from_secs(8);
+    while runtime.child.try_wait().ok().flatten().is_none() {
+        if std::time::Instant::now() >= until {
+            return Err("official_runtime_stop_pending".into());
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    Ok(())
+}
+
+pub(super) async fn disconnect_official_runtime(
+    engine: &'static str,
+    epoch: u64,
+) -> Result<Value, String> {
+    tokio::task::spawn_blocking(move || {
+        let mut runtimes = OFFICIAL_RUNTIMES
+            .lock()
+            .map_err(|_| "official_runtime_unavailable")?;
+        if runtimes
+            .get(engine)
+            .is_none_or(|runtime| runtime.result["epoch"].as_u64() != Some(epoch))
+        {
+            return Ok(json!({"disconnected":false,"superseded":true}));
+        }
+        let mut runtime = runtimes
+            .remove(engine)
+            .ok_or("official_runtime_unavailable")?;
+        if let Err(error) = close_official_runtime(&mut runtime) {
+            // 未确认退出的child必须继续跟踪，维护门保持关闭。
+            runtimes.insert(engine.to_string(), runtime);
+            return Err(error);
+        }
+        Ok(json!({"disconnected":true}))
+    })
+    .await
+    .map_err(|_| "official_runtime_unavailable".to_string())?
+}
+
+pub(super) async fn stop_all_official(expected: Option<&Value>) -> Result<(), String> {
+    let expected = expected
+        .map(|value| {
+            let member = value["memberId"]
+                .as_str()
+                .filter(|member| !member.is_empty())
+                .ok_or("official_connection_invalid")?;
+            let epoch = value["epoch"]
+                .as_u64()
+                .ok_or("official_connection_invalid")?;
+            Ok::<_, &str>((member.to_string(), epoch))
+        })
+        .transpose()?;
+    tokio::task::spawn_blocking(move || {
+        let mut runtimes = OFFICIAL_RUNTIMES
+            .lock()
+            .map_err(|_| "official_runtime_unavailable".to_string())?;
+        let engines: Vec<String> = runtimes.keys().cloned().collect();
+        let mut pending = false;
+        for engine in engines {
+            if expected.as_ref().is_some_and(|(member, epoch)| {
+                runtimes.get(&engine).is_some_and(|runtime| {
+                    runtime.result["memberId"].as_str() != Some(member.as_str())
+                        || runtime.result["epoch"].as_u64() != Some(*epoch)
+                })
+            }) {
+                continue;
+            }
+            if let Some(mut runtime) = runtimes.remove(&engine) {
+                // 只持有本backend创建的官方child；普通BYOK运行时不在此表中。
+                if close_official_runtime(&mut runtime).is_err() {
+                    runtimes.insert(engine, runtime);
+                    pending = true;
+                }
+            }
+        }
+        if pending {
+            Err("official_runtime_stop_pending".to_string())
+        } else {
+            Ok(())
+        }
+    })
+    .await
+    .map_err(|_| "official_runtime_unavailable".to_string())?
+}
+
+pub(super) async fn connect_official_runtime(
+    engine: &'static str,
+    port: Option<u16>,
+    entry: PathBuf,
+    base_root: PathBuf,
+) -> Result<Value, String> {
+    if !entry.is_file() {
+        return Err("official_runtime_not_installed".into());
+    }
+    let connection = super::platform::engine_connection(engine).await?;
+    connect_official_connection(engine, port, entry, base_root, connection).await
+}
+
+pub(super) async fn connect_official_selected(
+    engine: &'static str,
+    connection: Value,
+) -> Result<Value, String> {
+    let entry = if engine == "deepseek-harness" {
+        managed_entry()
+    } else {
+        super::opencode::official_managed_entry().ok_or("official_runtime_not_installed")?
+    };
+    let root = super::openclaw_dir()
+        .join("clawpanel/official-engines")
+        .join(engine);
+    connect_official_connection(engine, None, entry, root, connection).await
+}
+
+async fn connect_official_connection(
+    engine: &'static str,
+    port: Option<u16>,
+    entry: PathBuf,
+    base_root: PathBuf,
+    connection: Value,
+) -> Result<Value, String> {
+    if !entry.is_file() {
+        return Err("official_runtime_not_installed".into());
+    }
+    if !super::platform::engine_identity_current(&connection).await {
+        return Err("platform_account_changed".into());
+    }
+    let node = node_program()?;
+    let expected = connection.clone();
+    let handle = tokio::runtime::Handle::current();
+    let result = tokio::task::spawn_blocking(move || {
+        use sha2::{Digest, Sha256};
+        let mut runtimes = OFFICIAL_RUNTIMES
+            .lock()
+            .map_err(|_| "official_runtime_unavailable")?;
+        if !handle.block_on(super::platform::engine_identity_current(&connection)) { return Err("platform_account_changed".into()); }
+        let serialized = serde_json::to_string(&connection)
+            .map_err(|_| "official_connection_invalid")?;
+        if let Some(current) = runtimes.get_mut(engine) {
+            if current.connection == serialized
+                && current.child.try_wait().ok().flatten().is_none()
+            {
+                if engine == "opencode" || engine == "deepseek-harness" {
+                    let input = current.child.stdin.as_mut().ok_or("official_runtime_unavailable")?;
+                    input.write_all(b"{\"action\":\"ui_session\"}\n").map_err(|_| "official_runtime_unavailable")?;
+                    input.flush().map_err(|_| "official_runtime_unavailable")?;
+                    let mut line = String::new();
+                    Read::by_ref(&mut current.output).take(65536).read_line(&mut line).map_err(|_| "official_runtime_unavailable")?;
+                    let ready: Value = serde_json::from_str(&line).map_err(|_| "official_runtime_unavailable")?;
+                    if ready["ready"] != true || !ready["src"].is_string() { return Err("official_runtime_unavailable".into()); }
+                    current.result["src"] = ready["src"].clone();
+                }
+                return Ok(current.result.clone());
+            }
+        }
+        if let Some(mut previous) = runtimes.remove(engine) {
+            if let Err(error) = close_official_runtime(&mut previous) {
+                runtimes.insert(engine.to_string(), previous);
+                return Err(error);
+            }
+        }
+        let member = connection["memberId"]
+            .as_str()
+            .ok_or("official_connection_invalid")?;
+        let member_hash = format!("{:x}", Sha256::digest(member.as_bytes()));
+        let root = base_root.join("official").join(member_hash);
+        let scripts = base_root.join("official-launcher");
+        let marker = scripts.join(".clawpanel-official-owned");
+        if scripts.exists() && !marker.is_file() {
+            return Err("official_profile_not_owned".into());
+        }
+        fs::create_dir_all(&scripts).map_err(|_| "official_runtime_storage_unavailable")?;
+        fs::write(marker, "clawpanel-official-v1")
+            .map_err(|_| "official_runtime_storage_unavailable")?;
+        for (name, source) in [
+            ("package.json", "{\"type\":\"module\"}"),
+            ("deepseek-harness-official.mjs", include_str!("../../../scripts/deepseek-harness-official.mjs")),
+            ("opencode-official-transport.mjs", include_str!("../../../scripts/opencode-official-transport.mjs")),
+            ("opencode-official-proxy.mjs", include_str!("../../../scripts/opencode-official-proxy.mjs")),
+            ("opencode-proxy.js", include_str!("../../../scripts/opencode-proxy.js")),
+            ("deepseek-harness.js", include_str!("../../../scripts/deepseek-harness.js")),
+            ("opencode.js", include_str!("../../../scripts/opencode.js")),
+        ] {
+            fs::write(scripts.join(name), source)
+                .map_err(|_| "official_runtime_storage_unavailable")?;
+        }
+        let port = match port {
+            Some(value) if value >= 1024 => value,
+            Some(_) => return Err("official_port_invalid".into()),
+            None => std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+                .and_then(|listener| listener.local_addr().map(|address| address.port()))
+                .map_err(|_| "official_port_unavailable")?,
+        };
+        let mut command = Command::new(node);
+        command
+            .arg(scripts.join("deepseek-harness-official.mjs"))
+            .current_dir(&scripts)
+            .env("PATH", super::enhanced_path())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x08000000);
+        }
+        let mut child = command.spawn().map_err(|_| "official_runtime_start_failed")?;
+        let input = json!({"engine":engine,"port":port,"entry":entry,"root":root,"connection":connection});
+        let sent = child.stdin.as_mut().ok_or("official_runtime_start_failed")?;
+        writeln!(sent, "{input}").map_err(|_| "official_runtime_start_failed")?;
+        sent.flush().map_err(|_| "official_runtime_start_failed")?;
+        let mut line = String::new();
+        let mut output = BufReader::new(child.stdout.take().ok_or("official_runtime_start_failed")?);
+        Read::by_ref(&mut output)
+            .take(65536)
+            .read_line(&mut line)
+            .map_err(|_| "official_runtime_start_failed")?;
+        let ready: Value = serde_json::from_str(&line).map_err(|_| "official_runtime_start_failed")?;
+        if ready["ready"] != true {
+            let _ = child.wait();
+            return Err(ready["error"].as_str().unwrap_or("official_runtime_start_failed").to_string());
+        }
+        // 仅返回运行时内嵌入口，绝不透传平台连接cap、API Key或Cookie。
+        let result = json!({"connected":true,"engine":engine,"providerId":"clawpanel-official","memberId":ready["memberId"],"epoch":ready["epoch"],"port":port,"src":ready["src"],"modelId":ready["modelId"],"textOnly":ready["textOnly"],"toolsAvailable":ready["toolsAvailable"]});
+        runtimes.insert(engine.to_string(), OfficialRuntime { child, output, connection: serialized, result: result.clone() });
+        Ok(result)
+    })
+    .await
+    .map_err(|_| "official_runtime_unavailable".to_string())?;
+    if !super::platform::engine_identity_current(&expected).await {
+        let _ = stop_all_official(Some(&expected)).await;
+        return Err("platform_account_changed".into());
+    }
+    result
+}
+
+pub(super) fn official_status_local(engine: &str, expected: &Value) -> Result<Value, String> {
+    let mut runtimes = OFFICIAL_RUNTIMES
+        .lock()
+        .map_err(|_| "official_runtime_unavailable")?;
+    let Some(runtime) = runtimes.get_mut(engine) else {
+        return Ok(json!({"connected":false}));
+    };
+    if runtime
+        .child
+        .try_wait()
+        .map_err(|_| "official_runtime_unavailable")?
+        .is_some()
+    {
+        return Ok(json!({"connected":false}));
+    }
+    if runtime.result["memberId"] != expected["memberId"]
+        || runtime.result["epoch"] != expected["epoch"]
+    {
+        return Ok(json!({"connected":false}));
+    }
+    Ok(
+        json!({"connected":true,"memberId":runtime.result["memberId"],"epoch":runtime.result["epoch"],"modelId":runtime.result["modelId"],"running":false,"textOnly":runtime.result["textOnly"],"toolsAvailable":runtime.result["toolsAvailable"]}),
+    )
+}
+
+pub(super) async fn official_new_session(
+    engine: &'static str,
+    model_id: String,
+    expected: Value,
+) -> Result<Value, String> {
+    if !super::platform::engine_identity_current(&expected).await {
+        return Err("platform_account_changed".into());
+    }
+    let check = expected.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let mut runtimes = OFFICIAL_RUNTIMES
+            .lock()
+            .map_err(|_| "official_runtime_unavailable")?;
+        let current = runtimes
+            .get_mut(engine)
+            .ok_or("official_engine_not_connected")?;
+        if current.result["memberId"] != expected["memberId"]
+            || current.result["epoch"] != expected["epoch"]
+        {
+            return Err("platform_account_changed".into());
+        }
+        let input = current
+            .child
+            .stdin
+            .as_mut()
+            .ok_or("official_runtime_unavailable")?;
+        writeln!(
+            input,
+            "{}",
+            json!({"action":"new_session","modelId":model_id})
+        )
+        .map_err(|_| "official_runtime_unavailable")?;
+        input.flush().map_err(|_| "official_runtime_unavailable")?;
+        let mut line = String::new();
+        Read::by_ref(&mut current.output)
+            .take(65536)
+            .read_line(&mut line)
+            .map_err(|_| "official_runtime_unavailable")?;
+        let ready: Value =
+            serde_json::from_str(&line).map_err(|_| "official_runtime_unavailable")?;
+        if ready["ready"] != true {
+            return Err(ready["error"]
+                .as_str()
+                .unwrap_or("official_runtime_unavailable")
+                .to_string());
+        }
+        Ok(json!({"src":ready["src"],"sessionId":ready["sessionId"],"port":current.result["port"],"newSession":true}))
+    })
+    .await
+    .map_err(|_| "official_runtime_unavailable")?;
+    if !super::platform::engine_identity_current(&check).await {
+        return Err("platform_account_changed".into());
+    }
+    result
+}
+
+#[tauri::command]
+pub async fn dsh_connect_official(port: Option<u16>) -> Result<Value, String> {
+    let _guard = INSTALL_MUTEX
+        .try_lock()
+        .map_err(|_| "official_runtime_maintenance_busy")?;
+    let data_root = super::openclaw_dir()
+        .join("clawpanel")
+        .join("official-engines")
+        .join("deepseek-harness");
+    connect_official_runtime("deepseek-harness", port, managed_entry(), data_root).await
+}
+
+#[tauri::command]
+pub async fn dsh_disconnect_official(epoch: u64) -> Result<Value, String> {
+    let _guard = INSTALL_MUTEX
+        .try_lock()
+        .map_err(|_| "official_runtime_maintenance_busy")?;
+    disconnect_official_runtime("deepseek-harness", epoch).await
+}
+
 const DSH_PACKAGE_NAME: &str = "@deepseek-ai/dsh";
-const DSH_PACKAGE_VERSION: &str = "0.1.1-rc.2";
+const DSH_STABLE_VERSION: &str = "0.2.0-rc.2";
+const DSH_PREVIEW_VERSION: &str = "0.2.1-alpha.4";
+const DSH_PACKAGE_VERSION: &str = DSH_STABLE_VERSION;
 const DSH_DEFAULT_PORT: u16 = 3080;
 const DSH_NODE_REQUIREMENT: &str = "^22.19.0 || >=24.0.0";
-const DSH_PNPM_VERSION: &str = "11.7.0";
+const DSH_STABLE_PNPM_VERSION: &str = "11.28.5";
+const DSH_PREVIEW_PNPM_VERSION: &str = "11.28.5";
 const DSH_BUILD_PACKAGES: &[&str] = &[
     "@deepseek-ai/dsh-subprocess-local",
     "@google/genai",
@@ -26,6 +399,136 @@ const DSH_SETTINGS_NAMESPACE: &str = "llm-pi-ai";
 const DSH_DEFAULT_MODEL_NAMESPACE: &str = "agent-default-model";
 
 static INSTALL_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+#[derive(Clone)]
+struct DshAuthState {
+    pid: u32,
+    port: u16,
+    token: String,
+    cookie: String,
+}
+static DSH_AUTH: std::sync::Mutex<Option<DshAuthState>> = std::sync::Mutex::new(None);
+
+fn redact_dsh_output(text: &str) -> String {
+    regex::Regex::new(r"([?&]token=)[^\s)]+")
+        .unwrap()
+        .replace_all(text, "${1}[REDACTED]")
+        .into_owned()
+}
+
+fn observe_dsh_line(line: &str, pid: u32, port: u16) {
+    if let Some(raw) = line
+        .strip_prefix("dsh web: ")
+        .and_then(|v| v.split_whitespace().next())
+    {
+        if let Ok(url) = reqwest::Url::parse(raw) {
+            if url.scheme() == "http"
+                && url.host_str() == Some("127.0.0.1")
+                && url.port() == Some(port)
+                && url.path() == "/"
+            {
+                if let Some((_, token)) = url.query_pairs().find(|(key, _)| key == "token") {
+                    if regex::Regex::new(r"^[A-Za-z0-9_-]{43}$")
+                        .unwrap()
+                        .is_match(&token)
+                    {
+                        if let Ok(mut auth) = DSH_AUTH.lock() {
+                            if let Some(state) =
+                                auth.as_mut().filter(|s| s.pid == pid && s.port == port)
+                            {
+                                state.token = token.into_owned();
+                                state.cookie.clear();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn dsh_auth_redirect_is_root(location: Option<&str>) -> bool {
+    // 新版改用 ./；仍只接受已验证的根跳转，不跟随外部地址。
+    matches!(location, Some("/" | "./"))
+}
+
+async fn dsh_auth_cookie(port: u16) -> Result<String, String> {
+    let state = DSH_AUTH
+        .lock()
+        .ok()
+        .and_then(|s| s.clone())
+        .filter(|s| s.port == port);
+    let Some(state) = state else {
+        return Ok(String::new());
+    };
+    if state.token.is_empty() || !state.cookie.is_empty() {
+        return Ok(state.cookie);
+    }
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(8))
+        .build()
+        .map_err(|_| "创建 Harness 认证客户端失败")?;
+    let response = client
+        .get(format!("http://127.0.0.1:{port}/?token={}", state.token))
+        .send()
+        .await
+        .map_err(|_| "Harness 会话认证失败，请重新启动受管服务")?;
+    let cookie = response
+        .headers()
+        .get("set-cookie")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.split(';').next())
+        .unwrap_or_default()
+        .to_string();
+    if response.status().as_u16() != 303
+        || !dsh_auth_redirect_is_root(
+            response
+                .headers()
+                .get("location")
+                .and_then(|v| v.to_str().ok()),
+        )
+        || !regex::Regex::new(r"^dsh-auth-[A-Za-z0-9_-]+=[A-Za-z0-9_.-]+$")
+            .unwrap()
+            .is_match(&cookie)
+    {
+        return Err("Harness 会话认证失败，请重新启动受管服务".into());
+    }
+    if let Ok(mut current) = DSH_AUTH.lock() {
+        if let Some(s) = current
+            .as_mut()
+            .filter(|s| s.pid == state.pid && s.port == port)
+        {
+            s.cookie = cookie.clone();
+        }
+    }
+    Ok(cookie)
+}
+
+fn dsh_wire_method(method: &str, modern: bool) -> String {
+    if !modern {
+        return method.into();
+    }
+    match method {
+        "llm.providers" => "llm/listProviders".into(),
+        "llm.models" => "session/modelCatalog".into(),
+        _ => method.replace('.', "/"),
+    }
+}
+
+fn normalize_dsh_rpc_value(method: &str, value: Value, modern: bool) -> Value {
+    if !modern {
+        return value;
+    }
+    match method {
+        "credentials.describe" => json!({"credentials": value}),
+        "llm.providers" => json!({"providers": value.as_array().into_iter().flatten().map(|p| {
+            json!({"provider": p["id"], "active": true, "name": p["name"]})
+        }).collect::<Vec<_>>()}),
+        _ => value,
+    }
+}
 
 fn runtime_dir() -> PathBuf {
     super::openclaw_dir()
@@ -40,6 +543,10 @@ fn managed_entry() -> PathBuf {
         .join("dsh")
         .join("lib")
         .join("bin.js")
+}
+
+pub(super) fn official_installed_local() -> bool {
+    managed_entry().is_file()
 }
 
 fn package_json_path() -> PathBuf {
@@ -69,6 +576,52 @@ fn parse_version(value: &str) -> Option<[u64; 3]> {
     ])
 }
 
+fn dsh_release(channel: Option<&str>) -> Result<(&'static str, &'static str), String> {
+    match channel.unwrap_or("stable").trim() {
+        "stable" => Ok((DSH_STABLE_VERSION, DSH_STABLE_PNPM_VERSION)),
+        "preview" => Ok((DSH_PREVIEW_VERSION, DSH_PREVIEW_PNPM_VERSION)),
+        value => Err(format!("DeepSeek Harness 发行通道无效: {}", value.trim())),
+    }
+}
+
+fn dsh_prerelease(value: &str) -> Option<Vec<&str>> {
+    value
+        .split_once('-')
+        .map(|(_, raw)| raw.split('+').next().unwrap_or(raw).split('.').collect())
+}
+
+fn compare_dsh_prerelease(a: &[&str], b: &[&str]) -> Ordering {
+    for (left, right) in a.iter().zip(b.iter()) {
+        if left == right {
+            continue;
+        }
+        let left_number = left.parse::<u64>();
+        let right_number = right.parse::<u64>();
+        return match (left_number, right_number) {
+            (Ok(left), Ok(right)) => left.cmp(&right),
+            (Ok(_), Err(_)) => Ordering::Less,
+            (Err(_), Ok(_)) => Ordering::Greater,
+            (Err(_), Err(_)) => left.cmp(right),
+        };
+    }
+    a.len().cmp(&b.len())
+}
+
+fn dsh_has_update(current: &str, target: &str) -> bool {
+    let (Some(a), Some(b)) = (parse_version(current), parse_version(target)) else {
+        return false;
+    };
+    if a != b {
+        return a < b;
+    }
+    match (dsh_prerelease(current), dsh_prerelease(target)) {
+        (None, Some(_)) => false,
+        (Some(_), None) => true,
+        (Some(left), Some(right)) => compare_dsh_prerelease(&left, &right) == Ordering::Less,
+        (None, None) => false,
+    }
+}
+
 fn node_compatible(version: &str) -> bool {
     let Some([major, minor, _patch]) = parse_version(version) else {
         return false;
@@ -78,7 +631,10 @@ fn node_compatible(version: &str) -> bool {
 
 fn find_command(name: &str) -> Option<PathBuf> {
     let output = if cfg!(windows) {
-        Command::new("where.exe").arg(name).output().ok()?
+        crate::utils::background_command("where.exe")
+            .arg(name)
+            .output()
+            .ok()?
     } else {
         Command::new("which").arg(name).output().ok()?
     };
@@ -100,7 +656,7 @@ fn node_program() -> Result<PathBuf, String> {
 fn node_version() -> String {
     node_program()
         .and_then(|node| {
-            Command::new(node)
+            crate::utils::background_command(node)
                 .arg("--version")
                 .env("PATH", super::enhanced_path())
                 .output()
@@ -133,7 +689,7 @@ fn read_pid_record() -> Option<Value> {
 
 fn process_alive(pid: u32) -> bool {
     if cfg!(windows) {
-        Command::new("tasklist.exe")
+        crate::utils::background_command("tasklist.exe")
             .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
             .output()
             .ok()
@@ -154,7 +710,7 @@ fn process_command_line(pid: u32) -> String {
         let script = format!(
             "(Get-CimInstance Win32_Process -Filter \"ProcessId = {pid}\" -ErrorAction SilentlyContinue).CommandLine"
         );
-        return Command::new("powershell.exe")
+        return crate::utils::background_command("powershell.exe")
             .args(["-NoProfile", "-NonInteractive", "-Command", &script])
             .output()
             .ok()
@@ -219,23 +775,40 @@ async fn rpc(method: &str, payload: Value, port: u16) -> Result<Value, String> {
         return Err("DeepSeek Harness RPC 方法名无效".into());
     }
     let rpc_id = rpc_id();
+    let cookie = dsh_auth_cookie(port).await?;
+    let modern =
+        !cookie.is_empty() || parse_version(&managed_version()).is_some_and(|v| v >= [0, 1, 5]);
+    let wire_method = dsh_wire_method(method, modern);
+    let wire_payload = if modern {
+        json!({"args": payload})
+    } else {
+        payload
+    };
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(8))
         .no_proxy()
         .build()
         .map_err(|e| format!("创建 DeepSeek Harness HTTP 客户端失败: {e}"))?;
-    let response = client
-        .post(format!("http://127.0.0.1:{port}/api/{method}"))
+    let request = client
+        .post(format!("http://127.0.0.1:{port}/api/{wire_method}"))
         .json(&json!({
             "type": "client-request",
             "rpcId": rpc_id,
-            "method": method,
-            "payload": payload,
-        }))
-        .send()
-        .await
-        .map_err(|e| format!("DeepSeek Harness 不可达: {e}"))?;
+            "method": wire_method,
+            "payload": wire_payload,
+        }));
+    let response = if cookie.is_empty() {
+        request
+    } else {
+        request.header("cookie", cookie)
+    }
+    .send()
+    .await
+    .map_err(|e| format!("DeepSeek Harness 不可达: {e}"))?;
     let status = response.status();
+    if status.as_u16() == 401 {
+        return Err("Harness 需要会话认证，请停止后由 ClawPanel 重新启动受管服务".into());
+    }
     let body: Value = response
         .json()
         .await
@@ -263,10 +836,13 @@ async fn rpc(method: &str, payload: Value, port: u16) -> Result<Value, String> {
     if body.pointer("/result/ok").and_then(Value::as_bool) != Some(true) {
         return Err(error_message());
     }
-    Ok(body
-        .pointer("/result/value")
-        .cloned()
-        .unwrap_or_else(|| json!({})))
+    Ok(normalize_dsh_rpc_value(
+        method,
+        body.pointer("/result/value")
+            .cloned()
+            .unwrap_or_else(|| json!({})),
+        modern,
+    ))
 }
 
 fn namespace<'a>(describe: &'a Value, ns: &str) -> Option<&'a Value> {
@@ -362,6 +938,9 @@ pub async fn dsh_status(port: Option<u16>) -> Result<Value, String> {
         find_command(if cfg!(windows) { "dsh.cmd" } else { "dsh" }).or_else(|| find_command("dsh"))
     };
     let pid = managed_pid();
+    let owned = pid.is_some()
+        && read_pid_record().and_then(|r| r.get("port").and_then(Value::as_u64))
+            == Some(u64::from(port));
     let node_version = node_version();
     let is_port_open = port_open(port).await;
     let (running, summary, error) = if is_port_open {
@@ -372,18 +951,27 @@ pub async fn dsh_status(port: Option<u16>) -> Result<Value, String> {
     } else {
         (false, None, String::new())
     };
+    let version = if managed_installed {
+        managed_version()
+    } else {
+        String::new()
+    };
     Ok(json!({
         "installed": managed_installed || global.is_some(),
         "managedInstalled": managed_installed,
         "installRunning": INSTALL_MUTEX.try_lock().is_err(),
         "running": running,
-        "managed": running && pid.is_some(),
+        "managed": owned,
         "portOpen": is_port_open,
-        "foreignPort": is_port_open && !running,
+        "foreignPort": is_port_open && !running && !owned,
         "port": port,
         "url": format!("http://127.0.0.1:{port}"),
-        "version": if managed_installed { managed_version() } else { String::new() },
+        "version": version.clone(),
         "targetVersion": DSH_PACKAGE_VERSION,
+        "previewVersion": DSH_PREVIEW_VERSION,
+        "installedChannel": if version == DSH_PREVIEW_VERSION { "preview" } else if version == DSH_PACKAGE_VERSION { "stable" } else if version.is_empty() { "" } else { "custom" },
+        "updateAvailable": dsh_has_update(&version, DSH_PACKAGE_VERSION),
+        "previewAvailable": managed_installed && dsh_has_update(&version, DSH_PREVIEW_VERSION),
         "packageName": DSH_PACKAGE_NAME,
         "path": if managed_installed { entry.to_string_lossy().to_string() } else { global.as_ref().map(|value| value.to_string_lossy().to_string()).unwrap_or_default() },
         "runtimeDir": runtime_dir().to_string_lossy(),
@@ -397,45 +985,25 @@ pub async fn dsh_status(port: Option<u16>) -> Result<Value, String> {
     }))
 }
 
-async fn run_install_command(runtime: PathBuf) -> Result<(), String> {
+async fn run_install_command(runtime: PathBuf, channel: Option<&str>) -> Result<(), String> {
+    let (version, pnpm_version) = dsh_release(channel)?;
     let path = super::enhanced_path();
-    let pnpm_available = if cfg!(windows) {
-        Command::new("cmd.exe")
-            .args(["/D", "/S", "/C", "pnpm", "--version"])
-            .env("PATH", &path)
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
-    } else {
-        Command::new("pnpm")
-            .arg("--version")
-            .env("PATH", &path)
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
-    };
     let mut command = if cfg!(windows) {
-        let mut command = tokio::process::Command::new("cmd.exe");
-        if pnpm_available {
-            command.args(["/D", "/S", "/C", "pnpm"]);
-        } else {
-            command.args([
-                "/D",
-                "/S",
-                "/C",
-                "npm",
-                "exec",
-                "--yes",
-                &format!("pnpm@{DSH_PNPM_VERSION}"),
-                "--",
-            ]);
-        }
+        let mut command = crate::utils::background_command_async("cmd.exe");
+        command.args([
+            "/D",
+            "/S",
+            "/C",
+            "npm",
+            "exec",
+            "--yes",
+            &format!("pnpm@{pnpm_version}"),
+            "--",
+        ]);
         command
-    } else if pnpm_available {
-        tokio::process::Command::new("pnpm")
     } else {
         let mut command = tokio::process::Command::new("npm");
-        command.args(["exec", "--yes", &format!("pnpm@{DSH_PNPM_VERSION}"), "--"]);
+        command.args(["exec", "--yes", &format!("pnpm@{pnpm_version}"), "--"]);
         command
     };
     command.args(["add", "--dir"]);
@@ -444,7 +1012,7 @@ async fn run_install_command(runtime: PathBuf) -> Result<(), String> {
     for package in DSH_BUILD_PACKAGES {
         command.arg(format!("--allow-build={package}"));
     }
-    command.arg(format!("{DSH_PACKAGE_NAME}@{DSH_PACKAGE_VERSION}"));
+    command.arg(format!("{DSH_PACKAGE_NAME}@{version}"));
     command.env("PATH", path);
     #[cfg(windows)]
     {
@@ -474,14 +1042,19 @@ async fn run_install_command(runtime: PathBuf) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn dsh_install() -> Result<Value, String> {
+pub async fn dsh_install(channel: Option<String>) -> Result<Value, String> {
+    let (expected_version, _pnpm_version) = dsh_release(channel.as_deref())?;
     let _guard = INSTALL_MUTEX
         .try_lock()
         .map_err(|_| "DeepSeek Harness 安装任务正在运行".to_string())?;
+    ensure_official_stopped("deepseek-harness")?;
+    if managed_pid().is_some() {
+        return Err("请先停止 ClawPanel 管理的 DeepSeek Harness，再更新运行时".into());
+    }
     let node = node_version();
     if !node_compatible(&node) {
         return Err(format!(
-            "DeepSeek Harness {DSH_PACKAGE_VERSION} 要求 Node.js {DSH_NODE_REQUIREMENT}，当前为 {}",
+            "DeepSeek Harness {expected_version} 要求 Node.js {DSH_NODE_REQUIREMENT}，当前为 {}",
             if node.is_empty() {
                 "未检测到"
             } else {
@@ -490,13 +1063,15 @@ pub async fn dsh_install() -> Result<Value, String> {
         ));
     }
     fs::create_dir_all(runtime_dir()).map_err(|e| format!("创建 Harness 运行目录失败: {e}"))?;
-    run_install_command(runtime_dir()).await?;
+    run_install_command(runtime_dir(), channel.as_deref()).await?;
     if !managed_entry().is_file() {
         return Err("pnpm 安装完成，但未找到 DeepSeek Harness 入口文件".into());
     }
-    let version = managed_version();
-    if version != DSH_PACKAGE_VERSION {
-        return Err(format!("DeepSeek Harness 安装版本回读不一致: {version}"));
+    let installed_version = managed_version();
+    if installed_version != expected_version {
+        return Err(format!(
+            "DeepSeek Harness 安装版本回读不一致: {installed_version}，期望 {expected_version}"
+        ));
     }
     dsh_status(Some(DSH_DEFAULT_PORT)).await
 }
@@ -519,6 +1094,7 @@ pub async fn dsh_uninstall() -> Result<Value, String> {
     let _guard = INSTALL_MUTEX
         .try_lock()
         .map_err(|_| "DeepSeek Harness 安装或卸载任务正在运行".to_string())?;
+    ensure_official_stopped("deepseek-harness")?;
     if managed_pid().is_some() {
         return Err("请先停止 ClawPanel 管理的 DeepSeek Harness，再卸载受管运行时".into());
     }
@@ -571,26 +1147,36 @@ fn spawn_web(port: u16) -> Result<u32, String> {
             .ok_or_else(|| "DeepSeek Harness 未安装".to_string())?;
         (command.clone(), Vec::new(), command)
     };
+    if entry.is_file() && parse_version(&managed_version()).is_some_and(|v| v >= [0, 1, 5]) {
+        let overlay = runtime_dir().join("clawpanel-web.yml");
+        fs::write(
+            &overlay,
+            include_str!("../../../scripts/deepseek-harness-web.yml"),
+        )
+        .map_err(|e| format!("写入 Harness Web 启动层失败: {e}"))?;
+        args.extend([
+            "--profile".into(),
+            "web".into(),
+            "--patch".into(),
+            overlay.to_string_lossy().to_string(),
+        ]);
+    } else {
+        args.push("web".into());
+    }
     args.extend([
-        "web".into(),
         "--host".into(),
         "127.0.0.1".into(),
         "--port".into(),
         port.to_string(),
         "--no-open".into(),
     ]);
-    let log = append_log_file()?;
-    let err_log = log
-        .try_clone()
-        .map_err(|e| format!("复制 Harness 日志句柄失败: {e}"))?;
-
     let mut command = if cfg!(windows)
         && program
             .extension()
             .and_then(|value| value.to_str())
             .is_some_and(|value| value.eq_ignore_ascii_case("cmd"))
     {
-        let mut command = Command::new("cmd.exe");
+        let mut command = crate::utils::background_command("cmd.exe");
         command.args(["/D", "/S", "/C"]);
         command.arg(&program);
         command
@@ -603,19 +1189,69 @@ fn spawn_web(port: u16) -> Result<u32, String> {
         .env("PATH", super::enhanced_path())
         .env("CLAWPANEL_DSH_MANAGED", "1")
         .stdin(Stdio::null())
-        .stdout(Stdio::from(log))
-        .stderr(Stdio::from(err_log));
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x08000000);
     }
-    let child = command
+    let mut child = command
         .spawn()
         .map_err(|e| format!("启动 DeepSeek Harness 失败: {e}"))?;
     let pid = child.id();
+    if let Ok(mut auth) = DSH_AUTH.lock() {
+        *auth = Some(DshAuthState {
+            pid,
+            port,
+            token: String::new(),
+            cookie: String::new(),
+        });
+    }
+    let stdout = child.stdout.take().ok_or("缺少 Harness stdout")?;
+    let stderr = child.stderr.take().ok_or("缺少 Harness stderr")?;
+    for pipe in [
+        Box::new(stdout) as Box<dyn Read + Send>,
+        Box::new(stderr) as Box<dyn Read + Send>,
+    ] {
+        std::thread::spawn(move || {
+            for line in BufReader::new(pipe).lines().map_while(Result::ok) {
+                observe_dsh_line(&line, pid, port);
+                if let Ok(mut log) = append_log_file() {
+                    let _ = writeln!(log, "{}", redact_dsh_output(&line));
+                }
+            }
+        });
+    }
     write_pid_record(pid, port, &record_entry)?;
     Ok(pid)
+}
+
+// 桌面 WebView 通过上游官方启动 URL 完成 HttpOnly Cookie 交换；不放进状态响应。
+#[tauri::command]
+pub async fn dsh_embed_session(port: Option<u16>) -> Result<Value, String> {
+    let port = port.unwrap_or(DSH_DEFAULT_PORT);
+    let pid = managed_pid().ok_or("请先由 ClawPanel 启动 Harness")?;
+    if read_pid_record().and_then(|r| r.get("port").and_then(Value::as_u64))
+        != Some(u64::from(port))
+    {
+        return Err("请求端口与受管 Harness 不一致".into());
+    }
+    let state = DSH_AUTH
+        .lock()
+        .ok()
+        .and_then(|s| s.clone())
+        .filter(|s| s.pid == pid && s.port == port);
+    let suffix = state
+        .filter(|s| !s.token.is_empty())
+        .map(|s| format!("?token={}", s.token))
+        .unwrap_or_default();
+    if suffix.is_empty() && parse_version(&managed_version()).is_some_and(|v| v >= [0, 1, 5]) {
+        return Err("Harness 会话认证已失效，请停止后重新启动以恢复内嵌页面".into());
+    }
+    Ok(
+        json!({"src": format!("http://127.0.0.1:{port}/{suffix}"), "expiresAt": chrono::Utc::now().timestamp_millis() + 30 * 60 * 1000}),
+    )
 }
 
 #[tauri::command]
@@ -667,7 +1303,7 @@ pub async fn dsh_start(port: Option<u16>) -> Result<Value, String> {
     Err(if tail.trim().is_empty() {
         "DeepSeek Harness 启动失败".into()
     } else {
-        format!("DeepSeek Harness 启动失败: {tail}")
+        format!("DeepSeek Harness 启动失败: {}", redact_dsh_output(&tail))
     })
 }
 
@@ -685,7 +1321,7 @@ pub async fn dsh_stop(port: Option<u16>) -> Result<Value, String> {
         return Ok(current);
     };
     if cfg!(windows) {
-        let _ = Command::new("taskkill.exe")
+        let _ = crate::utils::background_command("taskkill.exe")
             .args(["/PID", &pid.to_string(), "/T", "/F"])
             .output();
     } else {
@@ -701,6 +1337,9 @@ pub async fn dsh_stop(port: Option<u16>) -> Result<Value, String> {
         let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
     }
     let _ = fs::remove_file(pid_path());
+    if let Ok(mut auth) = DSH_AUTH.lock() {
+        *auth = None;
+    }
     let current = dsh_status(Some(port)).await?;
     if current.get("running").and_then(Value::as_bool) == Some(true) {
         return Err("DeepSeek Harness 进程停止后服务仍可达，请检查是否存在其他实例".into());
@@ -1010,6 +1649,90 @@ impl OrElseEmpty for String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rpc_contract_preserves_legacy_and_maps_modern_results() {
+        assert_eq!(dsh_wire_method("settings.mutate", false), "settings.mutate");
+        assert_eq!(dsh_wire_method("settings.mutate", true), "settings/mutate");
+        assert_eq!(dsh_wire_method("llm.models", true), "session/modelCatalog");
+        assert_eq!(dsh_wire_method("llm.providers", true), "llm/listProviders");
+        let value = json!({"KEY": {"configured": true}});
+        assert_eq!(
+            normalize_dsh_rpc_value("credentials.describe", value.clone(), false),
+            value
+        );
+        assert_eq!(
+            normalize_dsh_rpc_value("credentials.describe", value.clone(), true),
+            json!({"credentials": value})
+        );
+        let providers = normalize_dsh_rpc_value(
+            "llm.providers",
+            json!([{"id": "local", "name": "Local"}]),
+            true,
+        );
+        assert_eq!(
+            providers.pointer("/providers/0/provider"),
+            Some(&json!("local"))
+        );
+        assert_eq!(providers.pointer("/providers/0/active"), Some(&json!(true)));
+    }
+
+    #[test]
+    fn authentication_supports_new_root_redirect_without_accepting_other_targets() {
+        for location in ["/", "./"] {
+            assert!(dsh_auth_redirect_is_root(Some(location)));
+        }
+        for location in [
+            "https://example.test/",
+            "//example.test/",
+            "/other",
+            "./?token=leak",
+            "./#leak",
+        ] {
+            assert!(!dsh_auth_redirect_is_root(Some(location)));
+        }
+        assert!(!dsh_auth_redirect_is_root(None));
+    }
+
+    #[test]
+    fn update_does_not_downgrade_stable_or_newer_rc() {
+        for v in [
+            "0.1.1-rc.2",
+            "0.1.5-rc.2",
+            "0.1.7-rc.2",
+            "0.2.0-rc.1",
+            "0.2.0-alpha.2",
+        ] {
+            assert!(dsh_has_update(v, DSH_PACKAGE_VERSION), "{v}");
+        }
+        for v in ["", "0.2.0-rc.2", "0.2.0-rc.3", "0.2.0", "0.2.1-alpha.1"] {
+            assert!(!dsh_has_update(v, DSH_PACKAGE_VERSION), "{v}");
+        }
+    }
+
+    #[test]
+    fn release_channels_keep_stable_default_and_allow_explicit_preview() {
+        assert_eq!(
+            dsh_release(None).unwrap(),
+            (DSH_STABLE_VERSION, DSH_STABLE_PNPM_VERSION)
+        );
+        assert_eq!(
+            dsh_release(Some("preview")).unwrap(),
+            (DSH_PREVIEW_VERSION, DSH_PREVIEW_PNPM_VERSION)
+        );
+        assert!(dsh_release(Some("nightly")).is_err());
+        assert!(dsh_has_update(DSH_PACKAGE_VERSION, DSH_PREVIEW_VERSION));
+        assert!(!dsh_has_update(DSH_PREVIEW_VERSION, DSH_PREVIEW_VERSION));
+        assert!(!dsh_has_update("0.2.1", DSH_PACKAGE_VERSION));
+    }
+
+    #[test]
+    fn readiness_tokens_never_reach_logs() {
+        let token = "A".repeat(43);
+        let text = format!("dsh web: http://127.0.0.1:3080/?token={token}");
+        assert!(!redact_dsh_output(&text).contains(&token));
+        assert!(redact_dsh_output(&text).contains("[REDACTED]"));
+    }
 
     #[test]
     fn provider_profile_preserves_context_capacity() {

@@ -1,0 +1,66 @@
+/* 海报在弹窗内预览，设置区滚动时仍保留返回与保存操作。 */
+[data-invitation-dialog] .invitation-modal.invitation-poster-host {
+  width: 900px; height: min(740px, calc(100dvh - 32px)); max-height: calc(100dvh - 32px);
+  padding: 24px; overflow: hidden; scrollbar-gutter: auto;
+}
+.invitation-poster-panel { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: 100%; min-height: 0; }
+.invitation-poster-heading { display: flex; align-items: flex-start; gap: 16px; padding-right: 30px; padding-bottom: 20px; }
+.invitation-poster-heading [data-poster-back] { flex: none; margin-top: 3px; }
+.invitation-poster-heading h2 { margin: 0 0 5px; font-size: 22px; line-height: 1.35; }
+.invitation-poster-heading p { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
+.invitation-poster-workspace { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(260px, 1fr); gap: 24px; min-height: 0; }
+.invitation-poster-preview { display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; padding: 16px; border-radius: 12px; background: var(--bg-tertiary); overflow: hidden; }
+.invitation-poster-preview canvas { display: block; width: auto; height: 100%; max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; }
+.invitation-poster-preview canvas[hidden] { display: none; }
+.invitation-poster-sidebar { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.invitation-poster-controls { display: flex; flex-direction: column; gap: 24px; }
+.invitation-poster-style-field > p, .invitation-poster-language > span { display: block; margin: 0 0 10px; font-size: 13px; color: var(--text-secondary); }
+.invitation-poster-styles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.invitation-poster-styles button { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; padding: 10px 8px; border: 1px solid var(--border-primary); border-radius: 9px; background: var(--bg-secondary); color: var(--text-secondary); cursor: pointer; font: inherit; font-size: 12px; }
+.invitation-poster-styles button[aria-pressed="true"] { border-color: var(--accent); color: var(--text-primary); box-shadow: inset 0 0 0 1px var(--accent); }
+.invitation-poster-styles img { display: block; width: 45px; height: 60px; object-fit: cover; border-radius: 4px; }
+.invitation-poster-language { display: block; }
+.invitation-poster-language select { box-sizing: border-box; width: 100%; padding: 10px 11px; border: 1px solid var(--border-primary); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); font: inherit; font-size: 13px; }
+.invitation-poster-rule-details, .invitation-poster-saved-details { margin-top: 24px; border-top: 1px solid var(--border-primary); padding-top: 16px; color: var(--text-secondary); font-size: 12px; line-height: 1.65; }
+.invitation-poster-rule-details summary, .invitation-poster-saved-details summary { cursor: pointer; padding: 2px 0; }
+.invitation-poster-rule-details ul { margin: 12px 0; padding-left: 18px; }
+.invitation-poster-rule-details li + li { margin-top: 6px; }
+.invitation-poster-rule-details p { margin-bottom: 0; }
+.invitation-poster-saved-details output { display: block; margin-top: 10px; overflow-wrap: anywhere; color: var(--text-secondary); }
+.invitation-poster-panel [hidden] { display: none; }
+.invitation-poster-feedback { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border-primary); }
+.invitation-poster-feedback [data-poster-status] { flex: 1; min-width: 0; margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
+.invitation-poster-actions { display: flex; flex: none; align-items: center; justify-content: flex-end; gap: 10px; }
+.invitation-poster-actions .btn { justify-content: center; white-space: nowrap; }
+.invitation-poster-panel button:focus-visible, .invitation-poster-panel select:focus-visible, .invitation-poster-panel summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.invitation-poster-panel button:disabled { cursor: default; opacity: .55; }
+@media (max-width: 680px) {
+  [data-invitation-dialog] .invitation-modal.invitation-poster-host { padding: 20px; }
+  .invitation-poster-heading { gap: 12px; padding-bottom: 16px; }
+  .invitation-poster-heading h2 { font-size: 20px; }
+  .invitation-poster-heading [data-poster-back] { max-width: 112px; white-space: normal; }
+  .invitation-poster-workspace { display: flex; flex-direction: column; gap: 20px; overflow-y: auto; overscroll-behavior: contain; }
+  .invitation-poster-preview { flex: none; height: min(54dvh, 440px); padding: 12px; }
+  .invitation-poster-sidebar { flex: none; overflow: visible; padding: 0 2px 4px; }
+  .invitation-poster-controls { gap: 18px; }
+  .invitation-poster-styles button { flex-direction: row; justify-content: center; gap: 6px; }
+  .invitation-poster-styles img { width: 27px; height: 36px; }
+  .invitation-poster-feedback { gap: 12px; margin-top: 16px; padding-top: 14px; }
+  .invitation-poster-actions { flex-wrap: wrap; gap: 8px; }
+}
+@media (max-width: 390px) {
+  [data-invitation-dialog] .invitation-modal.invitation-poster-host { padding: 16px; }
+  .invitation-poster-heading { flex-wrap: wrap; gap: 9px; }
+  .invitation-poster-heading > div { flex-basis: 100%; }
+  .invitation-poster-heading h2 { font-size: 19px; }
+  .invitation-poster-styles img { display: none; }
+  .invitation-poster-feedback { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .invitation-poster-actions { width: 100%; }
+}
+@media (min-width: 681px) and (max-height: 560px) {
+  [data-invitation-dialog] .invitation-modal.invitation-poster-host { padding: 16px 20px; }
+  .invitation-poster-heading { padding-bottom: 12px; }
+  .invitation-poster-heading h2 { font-size: 20px; }
+  .invitation-poster-feedback { margin-top: 12px; padding-top: 12px; }
+  .invitation-poster-preview { padding: 10px; }
+}

@@ -4,7 +4,9 @@
 import { navigate, getCurrentRoute, reloadCurrentRoute } from '../router.js'
 import { toggleTheme, getTheme } from '../lib/theme.js'
 import { isOpenclawReady } from '../lib/app-state.js'
-import { api } from '../lib/tauri-api.js'
+import { api, isTauriRuntime } from '../lib/tauri-api.js'
+import { getPlatformAccount } from '../lib/platform-account.js'
+import { showInvitationDialog } from './engagement.js'
 import { toast } from './toast.js'
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0'
 import { t, getLang, setLang, getAvailableLangs } from '../lib/i18n.js'
@@ -127,6 +129,7 @@ function NAV_ITEMS_ENGINE_SELECT() { return [
 function COMMON_NAV_ITEMS() { return [{
   section: t('sidebar.sectionCommon'),
   items: [
+    { route: '/assistant', label: t('sidebar.assistant'), icon: 'assistant' },
     { route: '/model-channels', label: t('sidebar.modelChannels'), icon: 'channels-hub' },
     { route: '/media', label: t('sidebar.media'), icon: 'media' },
   ],
@@ -134,8 +137,9 @@ function COMMON_NAV_ITEMS() { return [{
 
 function withCommonNavItems(navItems) {
   const items = Array.isArray(navItems) ? navItems : []
-  const hasMedia = items.some(section => section.items?.some(item => item.route === '/media'))
-  return hasMedia ? items : [...items, ...COMMON_NAV_ITEMS()]
+  const present = new Set(items.flatMap(section => (section.items || []).map(item => item.route)))
+  const common = COMMON_NAV_ITEMS().map(section => ({ ...section, items: section.items.filter(item => !present.has(item.route)) })).filter(section => section.items.length)
+  return [...items, ...common]
 }
 
 const ICONS = {
@@ -228,6 +232,12 @@ function _setDesktopSidebarCollapsed(collapsed) {
   if (btn) btn.textContent = collapsed ? '»' : '«'
 }
 
+// 账户通知只影响已有账户文案，避免后台刷新打断菜单、搜索与滚动。
+export function updateSidebarAccount(el) {
+  const label = el?.querySelector('[data-platform-account] .sidebar-platform-copy small')
+  if (label) label.textContent = getPlatformAccount().member?.email_masked || t('platform.guest')
+}
+
 export function renderSidebar(el) {
   const current = getCurrentRoute()
   el.classList.remove('lang-menu-open')
@@ -262,10 +272,11 @@ export function renderSidebar(el) {
       if (item.gate && engine && !engine.isFeatureAvailable(item.gate)) continue
       if (item.gate && !engine && !isFeatureAvailable(item.gate)) continue
       const active = current === item.route ? ' active' : ''
-      html += `<div class="nav-item${active}" data-route="${item.route}">
+      const assistantEntry = item.route === '/assistant'
+      html += `<${assistantEntry ? 'a' : 'div'} class="nav-item${active}" data-route="${item.route}"${assistantEntry ? ' href="#/assistant" data-platform-assistant-entry' : ''}>
         ${ICONS[item.icon] || ''}
         <span>${item.label}</span>
-      </div>`
+      </${assistantEntry ? 'a' : 'div'}>`
     }
     html += '</div>'
   }
@@ -285,11 +296,11 @@ export function renderSidebar(el) {
   const checkIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><polyline points="20 6 9 17 4 12"/></svg>'
 
   const langOptions = langs.map(l => `
-    <div class="lang-option${l.code === langCode ? ' active' : ''}" data-lang="${l.code}">
+    <button type="button" class="lang-option${l.code === langCode ? ' active' : ''}" data-lang="${l.code}" aria-pressed="${l.code === langCode}">
       <span class="lang-option-label">${l.label}</span>
       <span class="lang-option-code">${l.code}</span>
       ${l.code === langCode ? `<span class="lang-option-check">${checkIcon}</span>` : ''}
-    </div>
+    </button>
   `).join('')
 
   // 内核可升级卡片（仅 openclaw 引擎、已连接、低于推荐版时显示）
@@ -297,6 +308,8 @@ export function renderSidebar(el) {
 
   html += `
     <div class="sidebar-footer">
+      ${isTauriRuntime() ? `<button class="sidebar-platform-account sidebar-invitation-entry" type="button" data-invitation-entry title="${_escSidebar(t('platform.invite'))}" aria-label="${_escSidebar(t('platform.invite'))}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 12v9H4v-9M2 7h20v5H2zM12 7v14"/><path d="M12 7H7.5a2.5 2.5 0 112.45-3C10.6 5.2 12 7 12 7zm0 0h4.5a2.5 2.5 0 10-2.45-3C13.4 5.2 12 7 12 7z"/></svg><span>${_escSidebar(t('platform.invite'))}</span></button>` : ''}
+      ${isTauriRuntime() ? `<button type="button" class="sidebar-platform-account" data-platform-account title="${_escSidebar(t('platform.title'))}" aria-label="${_escSidebar(t('platform.title'))}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0116 0v2"/></svg><span class="sidebar-platform-copy"><strong>${_escSidebar(t('platform.title'))}</strong><small>${_escSidebar(getPlatformAccount().member?.email_masked || t('platform.guest'))}</small></span></button>` : ''}
       <div class="sidebar-tools" aria-label="ClawPanel tools">
         <button class="sidebar-tool-btn site-message-trigger" type="button" title="${t('siteMessages.title')}" aria-label="${t('siteMessages.title')}">
           ${bellIcon}
@@ -306,7 +319,7 @@ export function renderSidebar(el) {
           ${isDark ? sunIcon : moonIcon}
         </button>
         <div class="lang-switcher" id="lang-switcher">
-          <button class="sidebar-tool-btn lang-trigger" id="btn-lang-toggle" type="button" title="${currentLang.label}" aria-label="${currentLang.label}">
+          <button class="sidebar-tool-btn lang-trigger" id="btn-lang-toggle" type="button" title="${currentLang.label}" aria-label="${currentLang.label}" aria-expanded="false" aria-controls="lang-dropdown">
             ${globeIcon}
           </button>
           <div class="lang-dropdown" id="lang-dropdown">
@@ -337,9 +350,12 @@ export function renderSidebar(el) {
   if (!_delegated) {
     _delegated = true
     el.addEventListener('click', async (e) => {
+      if (e.target.closest('[data-platform-account]')) { navigate('/account'); return }
+      if (e.target.closest('[data-invitation-entry]')) { showInvitationDialog({ manual: true }); return }
       // 导航点击
       const navItem = e.target.closest('.nav-item[data-route]')
       if (navItem) {
+        e.preventDefault()
         navigate(navItem.dataset.route)
         _closeMobileSidebar()
         return
@@ -404,6 +420,7 @@ export function renderSidebar(el) {
           renderSidebar(el)
           reloadCurrentRoute()
           if (shouldCloseMobile) _closeMobileSidebar()
+          document.getElementById(shouldCloseMobile ? 'btn-mobile-menu' : 'btn-lang-toggle')?.focus({ preventScroll: true })
         } else {
           _closeLangDropdown()
         }
@@ -465,6 +482,16 @@ export function renderSidebar(el) {
       }
       if (!e.target.closest('.lang-switcher')) {
         _closeLangDropdown()
+      }
+    })
+
+    // 语言列表支持键盘退出，焦点回到打开它的按钮。
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && document.getElementById('lang-dropdown')?.classList.contains('open')) {
+        e.preventDefault()
+        e.stopPropagation()
+        _closeLangDropdown()
+        document.getElementById('btn-lang-toggle')?.focus({ preventScroll: true })
       }
     })
 
@@ -571,6 +598,7 @@ function _closeLangDropdown() {
   if (dd) dd.classList.remove('open')
   if (sw) sw.classList.remove('open')
   if (sidebar) sidebar.classList.remove('lang-menu-open')
+  document.getElementById('btn-lang-toggle')?.setAttribute('aria-expanded', 'false')
 }
 
 function _toggleLangDropdown(sidebarEl) {
@@ -579,12 +607,11 @@ function _toggleLangDropdown(sidebarEl) {
   const sidebar = sidebarEl?.id === 'sidebar' ? sidebarEl : document.getElementById('sidebar')
   if (!dd) return
   if (dd.classList.contains('open')) {
-    dd.classList.remove('open')
-    if (sw) sw.classList.remove('open')
-    if (sidebar) sidebar.classList.remove('lang-menu-open')
+    _closeLangDropdown()
     return
   }
   dd.classList.add('open')
+  document.getElementById('btn-lang-toggle')?.setAttribute('aria-expanded', 'true')
   if (sw) sw.classList.add('open')
   if (sidebar) sidebar.classList.add('lang-menu-open')
   const searchInput = dd.querySelector('#lang-search')

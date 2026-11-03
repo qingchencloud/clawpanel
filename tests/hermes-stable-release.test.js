@@ -6,9 +6,9 @@ import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const EXPECTED_VERSION = '0.20.5'
-const EXPECTED_TAG = 'v2026.8.19'
-const EXPECTED_COMMIT = 'fcbd1076a93841fa88855acce810e342a5b78101'
+const EXPECTED_VERSION = '0.21.5'
+const EXPECTED_TAG = 'v2026.9.24'
+const EXPECTED_COMMIT = 'f97608f178d1ffeca59860195ab7da295f7c8e5f'
 
 function readSource(relativePath) {
   return fs.readFileSync(path.join(root, relativePath), 'utf8')
@@ -22,13 +22,14 @@ test('Web and Tauri installers pin the supported Hermes stable release and immut
   assert.match(webSource, new RegExp(`HERMES_STABLE_TAG = '${EXPECTED_TAG.replaceAll('.', '\\.')}'`))
   assert.match(webSource, new RegExp(`HERMES_STABLE_COMMIT = '${EXPECTED_COMMIT}'`))
   assert.match(webSource, /raw\.githubusercontent\.com\/NousResearch\/hermes-agent\/\$\{HERMES_STABLE_COMMIT\}\/scripts/)
-  assert.match(webSource, /74225bf244253bfa5bc2b1d16fa3bb8618e199a53d1c0344b37ab9930696d3ba/)
-  assert.match(webSource, /0582d9b1562efcb6e0ac62f4451021667830b830a72ce7d91eaea9fee8b6c09b/)
+  assert.match(webSource, /0a80dfeb7434229933bac32e73140d10086dff81bd84b156e71be9abc87cddf2/)
+  assert.match(webSource, /2017ddf0cc7bc6cfb70d40dc9fba1d916f47dbcccf5fe73bdee2cf93a11262af/)
 
   assert.match(tauriSource, new RegExp(`HERMES_STABLE_VERSION: &str = "${EXPECTED_VERSION}"`))
   assert.match(tauriSource, new RegExp(`HERMES_STABLE_TAG: &str = "${EXPECTED_TAG.replaceAll('.', '\\.')}"`))
   assert.match(tauriSource, new RegExp(`HERMES_STABLE_COMMIT: &str = "${EXPECTED_COMMIT}"`))
   assert.match(tauriSource, new RegExp(`raw\\.githubusercontent\\.com/NousResearch/hermes-agent/${EXPECTED_COMMIT}/scripts`))
+  assert.match(readSource('src/lib/feature-catalog.js'), /hermes:\s*\{\s*default: '0\.21\.5'/)
 })
 
 test('Web install and update paths share the supported source installer', () => {
@@ -53,9 +54,9 @@ test('Hermes version detection supports the 0.20.5 --version-only CLI', () => {
   const webSource = readSource('scripts/dev-api.js')
   const tauriSource = readSource('src-tauri/src/commands/hermes.rs')
 
-  assert.match(webSource, /function runHermesVersionSilent\(\)[^]*?\['version'\][^]*?\['--version'\]/)
-  assert.match(tauriSource, /fn hermes_version_at_path\(path: &str\)[^]*?&\["version"\][^]*?&\["--version"\]/)
-  assert.match(webSource, /const ver = runHermesVersionSilent\(\)/)
+  assert.match(webSource, /function runHermesVersionSilent\(\)[^]*?\['--version'\][^]*?\['version'\]/)
+  assert.match(tauriSource, /fn hermes_version_at_path\(path: &str\)[^]*?&\["--version"\][^]*?&\["version"\]/)
+  assert.match(webSource, /const ver = await runHermesVersionSilent\(\)/)
   assert.match(tauriSource, /match hermes_version_at_path\(&enhanced\)/)
 })
 
@@ -63,12 +64,13 @@ test('source installer uses upstream stage protocol without mutating user PATH',
   const webSource = readSource('scripts/dev-api.js')
   const tauriSource = readSource('src-tauri/src/commands/hermes.rs')
 
-  assert.match(webSource, /stages: \['uv', 'python', 'git', 'repository', 'venv', 'dependencies', 'config-templates', 'platform-sdks', 'bootstrap-marker'\]/)
-  assert.match(webSource, /stages: \['repository', 'venv', 'python-deps', 'config', 'complete'\]/)
+  assert.match(webSource, /stages: \['uv', 'git', 'node', 'repository', 'python', 'venv', 'dependencies', 'node-deps', 'config-templates', 'platform-sdks', 'bootstrap-marker'\]/)
+  assert.match(webSource, /stages: \['repository', 'venv', 'python-deps', 'node-deps', 'config', 'complete'\]/)
   assert.match(webSource, /'-Commit', HERMES_STABLE_COMMIT, '-ForceCommit'/)
   assert.match(webSource, /'--commit', HERMES_STABLE_COMMIT, '--force-commit'/)
   assert.match(tauriSource, /"config-templates",\s*"platform-sdks",\s*"bootstrap-marker"/)
-  assert.match(tauriSource, /\["repository", "venv", "python-deps", "config", "complete"\]/)
+  assert.match(tauriSource, /\[\s*"repository",\s*"venv",\s*"python-deps",\s*"node-deps",\s*"config",\s*"complete",?\s*\]/)
+  assert.match(tauriSource, /"repository",\s*"python",\s*"venv",\s*"dependencies",\s*"node-deps"/)
   assert.match(tauriSource, /\.arg\(HERMES_STABLE_COMMIT\)[^]*?\.arg\("-ForceCommit"\)/)
   assert.match(tauriSource, /\.arg\(HERMES_STABLE_COMMIT\)[^]*?\.arg\("--force-commit"\)/)
 })
@@ -160,8 +162,8 @@ test('Web and Tauri Dashboard launchers use the managed dist without opening a b
   assert.ok(webStartBody, 'Web hermes_dashboard_start handler must be present')
   assert.ok(tauriStartBody, 'Tauri hermes_dashboard_start command must be present')
   assert.match(webStartBody, /envVars\.HERMES_WEB_DIST = ensureHermesDashboardFallbackDist\(home\)/)
-  assert.match(webStartBody, /spawn\('hermes', \['dashboard', '--no-open'\]/)
+  assert.match(webStartBody, /spawn\('hermes', \['dashboard', '--no-open', '--port', String\(port\)\]/)
   assert.match(tauriStartBody, /ensure_hermes_dashboard_fallback_dist\(&home\)/)
-  assert.match(tauriStartBody, /cmd\.args\(\["dashboard", "--no-open"\]\)/)
+  assert.match(tauriStartBody, /cmd\.args\(\["dashboard", "--no-open", "--port", &port\.to_string\(\)\]\)/)
   assert.match(tauriStartBody, /cmd\.env\("HERMES_WEB_DIST", dashboard_dist\)/)
 })

@@ -11,6 +11,12 @@ import { t } from '../lib/i18n.js'
 import { listAgentsCompat } from '../lib/api-compat.js'
 import { hasFeature } from '../lib/kernel.js'
 import { termHelpHtml, attachTermTooltips } from '../lib/term-tooltip.js'
+import { agentDefaultMode, findAgentConfig, listAgentConfigs, setAgentDefault } from '../lib/openclaw-agent-roster.js'
+import { gatewayOfficialStatus, isGatewayOfficialAgent, GATEWAY_OFFICIAL_PROVIDER } from '../lib/openclaw-official-provider.js'
+
+function esc(value) {
+  return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
 
 export async function render() {
   const page = document.createElement('div')
@@ -24,6 +30,7 @@ export async function render() {
         <p class="page-subhint">${t('agents.detailHint')}</p>
       </div>
       <div class="page-actions">
+        <button class="btn btn-secondary" id="btn-agent-default" disabled>${t('agents.configureDefault')}</button>
         <button class="btn btn-primary" id="btn-add-agent">${t('agents.addAgent')}</button>
       </div>
     </div>
@@ -32,11 +39,12 @@ export async function render() {
     </div>
   `
 
-  const state = { agents: [], bindings: [] }
+  const state = { agents: [], bindings: [], defaultAvailable: false }
   // 非阻塞：先返回 DOM，后台加载数据
   loadAgents(page, state)
 
   page.querySelector('#btn-add-agent').addEventListener('click', () => showAddAgentDialog(page, state))
+  page.querySelector('#btn-agent-default').addEventListener('click', () => showAgentDefaultDialog(page, state))
 
   return page
 }
@@ -62,9 +70,18 @@ async function loadAgents(page, state) {
     const [agents, config] = await Promise.all([
       listAgentsCompat(),
       api.readOpenclawConfig().catch(() => null),
+      gatewayOfficialStatus().catch(() => null),
     ])
     state.agents = agents
     state.bindings = Array.isArray(config?.bindings) ? config.bindings : []
+    const defaultButton = page.querySelector('#btn-agent-default')
+    // 版本探测可能联网；只影响新增入口，不阻塞原有列表展示。
+    api.getVersionInfo().catch(() => null).then(version => {
+      state.installedVersion = version?.current || ''
+      state.defaultAvailable = !!config && !!agents.length && !!agentDefaultMode(config, state.installedVersion)
+      defaultButton.disabled = !state.defaultAvailable
+      defaultButton.title = defaultButton.disabled ? t('agents.defaultUnsupported') : t('agents.configureDefault')
+    })
     renderAgents(page, state)
 
     // 只在第一次加载时绑定事件（避免重复绑定）
@@ -76,6 +93,54 @@ async function loadAgents(page, state) {
     container.innerHTML = '<div style="color:var(--error);padding:20px">' + t('agents.loadFailed') + ': ' + String(e).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>'
     toast(humanizeError(e, t('agents.loadListFailed')), 'error')
   }
+}
+
+async function showAgentDefaultDialog(page, state) {
+  const button = page.querySelector('#btn-agent-default')
+  button.disabled = true
+  try {
+    invalidate('read_openclaw_config')
+    const config = await api.readOpenclawConfig()
+    const mode = agentDefaultMode(config, state.installedVersion)
+    if (!mode) throw new Error(t('agents.defaultUnsupported'))
+    const agents = listAgentConfigs(config)
+    const selected = mode === 'systemAgent'
+      ? config.agents?.defaults?.systemAgent?.agentId || ''
+      : agents.find(agent => agent.default === true)?.id || agents[0]?.id || ''
+    const sessionOwner = config.agents?.defaults?.sessionStore?.agentId || t('agents.notSet')
+    showModal({
+      title: t(mode === 'systemAgent' ? 'agents.systemDefaultTitle' : 'agents.configureDefault'),
+      fields: [{
+        name: 'agentId', type: 'select', label: t('agentDetail.defaultAgent'), value: selected,
+        options: [
+          { value: '', label: t('agents.notSet') },
+          ...agents.map(agent => ({ value: esc(agent.id), label: esc(agent.id) })),
+        ],
+        hint: mode === 'systemAgent'
+          ? `${t('agents.systemDefaultHint')}<br>${t('agents.sessionStoreOwner')}: <code>${esc(sessionOwner)}</code>`
+          : t('agents.legacyDefaultHint'),
+      }],
+      onConfirm: async ({ agentId }) => {
+        if (!agentId) { toast(t('agents.chooseDefault'), 'warning'); return }
+        button.disabled = true
+        try {
+          // 保存前重新读取，避免用打开弹窗时的旧配置覆盖用户刚改的其它 surface。
+          invalidate('read_openclaw_config')
+          const latest = await api.readOpenclawConfig()
+          if (!findAgentConfig(latest, agentId)) throw new Error(t('agents.defaultTargetMissing'))
+          setAgentDefault(latest, agentId, state.installedVersion)
+          await api.writeOpenclawConfig(latest)
+          invalidate('list_agents')
+          toast(t('agents.defaultSaved'), 'success')
+          await loadAgents(page, state)
+        } catch (error) {
+          toast(humanizeError(error, t('agents.defaultSaveFailed')), 'error')
+        } finally { button.disabled = !state.defaultAvailable }
+      },
+    })
+  } catch (error) {
+    toast(humanizeError(error, t('agents.defaultSaveFailed')), 'error')
+  } finally { button.disabled = !state.defaultAvailable }
 }
 
 /** 为指定 agent 生成绑定渠道的 badge HTML */
@@ -133,7 +198,8 @@ function renderAgents(page, state) {
 
   container.innerHTML = state.agents.map(a => {
     const isDefault = a.isDefault === true
-    const isProtected = isDefault || a.id === 'main'
+    const managed = isGatewayOfficialAgent(a)
+    const isProtected = isDefault || a.id === 'main' || managed
     const name = a.identityName ? a.identityName.split(',')[0].trim() : t('agents.noDesc')
     return `
       <div class="agent-card" data-id="${a.id}">
@@ -144,8 +210,7 @@ function renderAgents(page, state) {
           </div>
           <div class="agent-card-actions">
             <button class="btn btn-sm btn-primary" data-action="detail" data-id="${a.id}">${t('agents.detail')}</button>
-            <button class="btn btn-sm btn-secondary" data-action="backup" data-id="${a.id}">${t('agents.backup')}</button>
-            <button class="btn btn-sm btn-secondary" data-action="edit" data-id="${a.id}">${t('agents.edit')}</button>
+            ${managed ? `<a class="btn btn-sm btn-secondary" href="#/models">${t('platform.gatewayOfficial.title')}</a>` : `<button class="btn btn-sm btn-secondary" data-action="backup" data-id="${a.id}">${t('agents.backup')}</button><button class="btn btn-sm btn-secondary" data-action="edit" data-id="${a.id}">${t('agents.edit')}</button>`}
             ${!isProtected ? `<button class="btn btn-sm btn-danger" data-action="delete" data-id="${a.id}">${t('agents.delete')}</button>` : ''}
           </div>
         </div>
@@ -184,6 +249,7 @@ function attachAgentEvents(page, state) {
     if (btn) {
       const action = btn.dataset.action
       const id = btn.dataset.id
+      if (['edit', 'delete', 'backup'].includes(action) && isGatewayOfficialAgent(state.agents.find(agent => agent.id === id))) return
       if (action === 'detail') location.hash = `#/agent-detail?id=${encodeURIComponent(id)}`
       else if (action === 'edit') showEditAgentDialog(page, state, id)
       else if (action === 'delete') await deleteAgent(page, state, id)
@@ -206,6 +272,7 @@ async function showAddAgentDialog(page, state) {
     const config = await api.readOpenclawConfig()
     const providers = config?.models?.providers || {}
     for (const [pk, pv] of Object.entries(providers)) {
+      if (pk === GATEWAY_OFFICIAL_PROVIDER) continue
       for (const m of (pv.models || [])) {
         const id = typeof m === 'string' ? m : m.id
         if (id) models.push({ value: `${pk}/${id}`, label: `${pk}/${id}` })
@@ -263,7 +330,7 @@ async function showAddAgentDialog(page, state) {
 
 async function showEditAgentDialog(page, state, id) {
   const agent = state.agents.find(a => a.id === id)
-  if (!agent) return
+  if (!agent || isGatewayOfficialAgent(agent)) return
 
   const name = agent.identityName ? agent.identityName.split(',')[0].trim() : ''
 
@@ -273,6 +340,7 @@ async function showEditAgentDialog(page, state, id) {
     const config = await api.readOpenclawConfig()
     const providers = config?.models?.providers || {}
     for (const [pk, pv] of Object.entries(providers)) {
+      if (pk === GATEWAY_OFFICIAL_PROVIDER) continue
       for (const m of (pv.models || [])) {
         const mid = typeof m === 'string' ? m : m.id
         if (mid) models.push({ value: `${pk}/${mid}`, label: `${pk}/${mid}` })

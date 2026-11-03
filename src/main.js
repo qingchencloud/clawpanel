@@ -6,7 +6,7 @@
 window._jsLoaded = true
 
 import { registerRoute, initRouter, navigate, setDefaultRoute } from './router.js'
-import { renderSidebar, openMobileSidebar } from './components/sidebar.js'
+import { renderSidebar, updateSidebarAccount, openMobileSidebar } from './components/sidebar.js'
 import { initTheme } from './lib/theme.js'
 import { detectOpenclawStatus, isOpenclawReady, isUpgrading, isGatewayRunning, isGatewayForeign, onGatewayChange, startGatewayPoll, onGuardianGiveUp, resetAutoRestart, loadActiveInstance, getActiveInstance, onInstanceChange } from './lib/app-state.js'
 import { wsClient } from './lib/ws-client.js'
@@ -27,8 +27,11 @@ import openclawEngine from './engines/openclaw/index.js'
 import hermesEngine from './engines/hermes/index.js'
 import deepseekHarnessEngine from './engines/deepseek-harness/index.js'
 import openCodeEngine from './engines/opencode/index.js'
+import piEngine from './engines/pi/index.js'
 import xintianEngine from './engines/xintian/index.js'
 import { showGatewayStartDiagnostics } from './lib/gateway-start-diagnostics.js'
+import { restorePlatformAccount, installPlatformAccountReturnRefresh, onPlatformAccountChange } from './lib/platform-account.js'
+import './style/platform-account.css'
 
 // 样式
 import './style/variables.css'
@@ -644,10 +647,12 @@ async function boot() {
   registerEngine(hermesEngine)
   registerEngine(deepseekHarnessEngine)
   registerEngine(openCodeEngine)
+  registerEngine(piEngine)
   registerEngine(xintianEngine)
   registerRoute('/engine-select', () => import('./pages/engine-select.js'))
   registerRoute('/media', () => import('./pages/media.js'))
   registerRoute('/model-channels', () => import('./pages/model-channels.js'))
+  registerRoute('/account', () => import('./pages/account.js'))
 
   // 初始化引擎管理器：读取 clawpanel.json 的 engineMode，注册对应路由
   await initEngineManager()
@@ -688,6 +693,12 @@ async function boot() {
 
   renderSidebar(sidebar)
   initRouter(content)
+  // 官网离线或系统凭据库不可用均不阻塞本地工作区。
+  if (isTauriRuntime()) {
+    onPlatformAccountChange(() => updateSidebarAccount(sidebar))
+    void restorePlatformAccount().catch(() => {})
+    installPlatformAccountReturnRefresh()
+  }
 
   // 移动端顶栏（汉堡菜单 + 标题）
   const mainCol = document.getElementById('main-col')

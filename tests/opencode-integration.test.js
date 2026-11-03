@@ -20,6 +20,11 @@ const rustLib = read('../src-tauri/src/lib.rs')
 const rustModule = read('../src-tauri/src/commands/opencode.rs')
 const locales = read('../src/locales/index.js')
 
+test('安装确认只显示后端目标版本，不用旧版本常量伪装推荐值', () => {
+  assert.match(dashboard, /version: state\.status\?\.targetVersion \|\| '—'/)
+  assert.doesNotMatch(dashboard, /targetVersion \|\| '\d+\.\d+\.\d+'/)
+})
+
 test('OpenCode 引擎、独立工作台、入口和语言包注册完整', () => {
   assert.match(main, /import openCodeEngine/)
   assert.match(main, /registerEngine\(openCodeEngine\)/)
@@ -70,7 +75,7 @@ test('卸载可自动停止受管服务并保留配置、凭据和工作区', ()
 })
 
 test('安装链固定版本且隔离运行时、配置、凭据与工作区', () => {
-  for (const source of [adapter, rustModule]) assert.match(source, /1\.18\.21/)
+  for (const source of [adapter, rustModule]) assert.match(source, /1\.19\.2/)
   assert.match(devApi, /OPENCODE_PACKAGE_VERSION/)
   for (const source of [devApi, rustModule]) {
     assert.match(source, /--ignore-scripts/)

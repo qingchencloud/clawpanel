@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  Bảng quản lý OpenClaw & Hermes Agent với Trợ lý AI tích hợp — Quản lý đa động cơ AI Framework
+  Bảng quản lý AI Agent đa động cơ với Trợ lý AI tích hợp — OpenClaw, Hermes, DSH, OpenCode và Pi
 </p>
 
 <p align="center">
@@ -25,38 +25,23 @@
 ---
 
 <p align="center">
-  <img src="docs/feature-showcase.gif" width="800" alt="ClawPanel Showcase">
+  <img src="docs/feature-showcase.gif" width="800" alt="Minh họa cấu hình mô hình ClawPanel">
 </p>
 
-ClawPanel là bảng quản lý trực quan hỗ trợ nhiều AI Agent framework, hiện tại hỗ trợ [OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation) và [Hermes Agent](https://github.com/nousresearch/hermes-agent) động cơ kép. Tích hợp **trợ lý AI thông minh**, giúp bạn cài đặt, tự động chẩn đoán cấu hình, xử lý sự cố và sửa lỗi. 8 công cụ + 4 chế độ + hỏi đáp tương tác — dễ dàng quản lý cho cả người mới và chuyên gia.
+ClawPanel là bảng quản lý trực quan cho nhiều AI Agent framework: [OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation), [Hermes Agent](https://github.com/nousresearch/hermes-agent), [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), [OpenCode](https://github.com/anomalyco/opencode) và [Pi](https://github.com/earendil-works/pi) thử nghiệm. Tích hợp **trợ lý AI thông minh** để cài đặt, chẩn đoán cấu hình và xử lý sự cố.
 
 > 🌐 **Website**: [claw.qt.cool](https://claw.qt.cool/) | 📦 **Tải xuống**: [Trung tâm tải xuống chính thức](https://claw.qt.cool/download) | Dự phòng: [GitHub Releases](https://github.com/qingchencloud/clawpanel/releases/latest)
 
-### 🧪 Thử nghiệm miễn phí: QingChen Cloud
+### 🌐 Tài khoản website và mô hình chính thức
 
-[QingChen Cloud](https://gpt.qt.cool/) là nền tảng thử nghiệm điểm danh dành cho ClawPanel. ClawPanel không tích hợp hoặc tự đọc khóa QingChen Cloud. Hãy tự đăng ký, truy cập [trang điểm danh](https://gpt.qt.cool/checkin) để nhận hạn mức thử nghiệm và API Key của bạn, rồi dán vào ClawPanel để cấu hình mô hình. Trạng thái và quy tắc hiện hành được hiển thị trên QingChen Cloud.
-
-### 🤝 Tài trợ: CiyAPI
-
-> Nội dung quảng bá được tài trợ bởi bên thứ ba; áp dụng các quy tắc mới nhất trên trang CiyAPI.
-
-<p align="center">
-  <a href="https://ciyapi.79tian.com" rel="sponsored noopener noreferrer"><img src="https://img.shields.io/badge/🤝 CiyAPI-Sponsored-6366f1?style=for-the-badge" alt="CiyAPI sponsored service"></a>
-</p>
-
-- **Mô hình tiên tiến** — GPT, Claude, Gemini, Grok, Kimi và nhiều mô hình khác
-- **Ưu đãi nạp tiền** — Nạp ¥1 nhận $1 tín dụng sử dụng trên nền tảng
-- **Tuyến giảm giá** — Một số tuyến có giá chiết khấu; xem bảng giá mô hình
-- **Tương thích OpenAI** — Lấy API Key và kết nối qua ClawPanel
-
-Đăng ký tại [CiyAPI](https://ciyapi.79tian.com/sign-up), tạo API Key và dùng `https://ciyapi.79tian.com/v1` làm Base URL. Xem [bảng giá mô hình](https://ciyapi.79tian.com/pricing/) để biết danh sách và giá hiện tại.
+[claw.qt.cool](https://claw.qt.cool) là website chính thức của ClawPanel. Khi kết nối tài khoản website, bạn có thể dùng **mô hình chính thức** trong trợ lý tích hợp và từng engine mà không cần API key riêng. Điểm, lịch sử sử dụng và phần thưởng giới thiệu được quản lý trên website. Khóa riêng và cấu hình cục bộ vẫn độc lập và có thể chuyển đổi bất cứ lúc nào; bạn cũng có thể bỏ qua đăng nhập và tiếp tục dùng khóa riêng.
 
 ### 🔥 Hỗ trợ Bo mạch phát triển / Thiết bị nhúng
 
 - **Orange Pi / Raspberry Pi / RK3588** — `npm run serve` để chạy
 - **Docker ARM64** — `docker run ghcr.io/qingchencloud/openclaw:latest`
 - **Armbian / Debian / Ubuntu Server** — Tự động phát hiện kiến trúc
-- Không cần Rust / Tauri / GUI. ClawPanel Web cần **Node.js 18+**; OpenClaw Gateway được kiểm tra theo `engines.node` của bản OpenClaw đã cài, khuyến nghị **Node.js 22.19.0+**.
+- Không cần Rust / Tauri / GUI. Web cơ bản cần **Node.js 18+**; để kiểm tra đầy đủ các engine nên dùng Node.js 24.16.0+ (24.x). OpenClaw được kiểm tra theo yêu cầu `engines.node` của phiên bản đã cài.
 
 ## Cộng đồng
 
@@ -75,7 +60,7 @@ Cộng đồng các nhà phát triển và người dùng đam mê AI Agent — 
 ## Tính năng
 
 - **🤖 Trợ lý AI (Mới)** — Trợ lý AI tích hợp, 4 chế độ + 8 công cụ + hỏi đáp tương tác
-- **🧩 Kiến trúc đa động cơ** — Hỗ trợ cả OpenClaw và Hermes Agent, chuyển đổi tự do, quản lý độc lập
+- **🧩 Kiến trúc đa động cơ** — Hỗ trợ OpenClaw, Hermes Agent, DeepSeek Harness, OpenCode và Pi thử nghiệm, chuyển đổi tự do và quản lý độc lập
 - **🤖 Hermes Agent Chat** — Giao diện chat Hermes Agent tích hợp, hiển thị công cụ, chuyển đổi truy cập tệp, SSE streaming
 - **🖼️ Nhận dạng hình ảnh** — Dán ảnh chụp màn hình hoặc kéo thả hình ảnh, AI tự động phân tích
 - **Bảng điều khiển** — Tổng quan hệ thống, giám sát dịch vụ thời gian thực
@@ -90,7 +75,6 @@ Cộng đồng các nhà phát triển và người dùng đam mê AI Agent — 
 - **Tác vụ định kỳ** — Thực thi theo lịch Cron, gửi đa kênh
 - **Xem nhật ký** — Nhật ký thời gian thực đa nguồn và tìm kiếm
 - **Quản lý bộ nhớ** — Xem/sửa tệp bộ nhớ, xuất ZIP, chuyển Agent
-- **Tài trợ CiyAPI** — GPT, Claude và các mô hình khác; nạp ¥1 nhận $1 tín dụng sử dụng
 - **Công cụ mở rộng** — Quản lý tunnel cftunnel, giám sát ClawApp
 - **Giới thiệu** — Thông tin phiên bản, liên kết cộng đồng, dự án liên quan
 
@@ -116,11 +100,11 @@ curl -fsSL https://raw.githubusercontent.com/qingchencloud/clawpanel/main/script
 ```bash
 docker run -d --name clawpanel --restart unless-stopped \
   -p 1420:1420 -v clawpanel-data:/root/.openclaw \
-  node:22-slim \
+  node:24.16.0-slim \
   sh -c "apt-get update && apt-get install -y git && \
-    npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com && \
+    npm install -g openclaw@2026.10.4 --registry https://registry.npmmirror.com && \
     git clone https://github.com/qingchencloud/clawpanel.git /app && \
-    cd /app && npm install && npm run build && npm run serve"
+    cd /app && npm ci && npm run build && npm run serve"
 ```
 
 ## Bắt đầu nhanh

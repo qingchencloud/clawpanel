@@ -16,6 +16,12 @@ const LATEST_JSON_URL: &str = "https://claw.qt.cool/update/latest.json";
 /// 检查前端是否有新版本可用
 #[tauri::command]
 pub async fn check_frontend_update() -> Result<Value, String> {
+    // 仅显式隔离 debug 场景跳过外部自动更新，避免本地 E2E 出网或安装新版。
+    if super::platform::isolated_debug_enabled() {
+        return Ok(
+            serde_json::json!({"currentVersion":env!("CARGO_PKG_VERSION"),"latestVersion":env!("CARGO_PKG_VERSION"),"hasUpdate":false,"compatible":true,"updateReady":false,"manifest":{}}),
+        );
+    }
     let client = super::build_http_client(std::time::Duration::from_secs(10), Some("ClawPanel"))
         .map_err(|e| format!("HTTP 客户端错误: {e}"))?;
 
@@ -86,6 +92,9 @@ pub async fn download_frontend_update(
     expected_hash: String,
     version: String,
 ) -> Result<Value, String> {
+    if super::platform::isolated_debug_enabled() {
+        return Err("隔离联调不下载或应用外部更新".into());
+    }
     let client = super::build_http_client(std::time::Duration::from_secs(120), Some("ClawPanel"))
         .map_err(|e| format!("HTTP 客户端错误: {e}"))?;
 

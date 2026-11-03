@@ -71,12 +71,57 @@ function ensureAgentsObject(config) {
   return config.agents
 }
 
-function normalizeCanonicalOwnership(agents) {
-  const entries = isRecord(agents.entries) ? agents.entries : {}
+export function normalizeCanonicalOwnership(agents) {
+  if (!isRecord(agents?.entries)) return
+  const entries = agents.entries
   const values = Object.values(entries).filter(isRecord)
-  for (const entry of values) delete entry.default
-  if (values.length > 1) agents.ownership = 'explicit'
+  // 旧标记的官方迁移还涉及渠道、认证和会话存储；普通编辑不得只删标记后换 owner。
+  const retainLegacyMarker = agents.ownership !== 'explicit' && values.some(entry =>
+    Object.hasOwn(entry, 'default') && entry.default !== false,
+  )
+  for (const entry of values) {
+    delete entry.id
+    delete entry.isDefault
+    if (!retainLegacyMarker) delete entry.default
+  }
+  if (values.length > 1 && !retainLegacyMarker) agents.ownership = 'explicit'
   else if (values.length === 0) delete agents.ownership
+}
+
+/** 仅对已核实 schema 的版本提供现代系统任务 owner 设置；不猜测未知内核。 */
+export function agentDefaultMode(config, installedVersion = '') {
+  const version = String(installedVersion).trim().replace(/^v/, '')
+  // 仅官方稳定版、数字 hotfix 和已知汉化后缀；beta/rc/nightly/未知构建不借基础版号放行。
+  if (!/^\d{4}\.\d+\.\d+(?:-\d+)?(?:-zh\.\d+)?$/.test(version)) return null
+  if (agentRosterKind(config, version) === 'entries') {
+    return versionAtLeast(version, '2026.9.4') ? 'systemAgent' : null
+  }
+  return supportsAgentEntries(version) ? null : 'legacy'
+}
+
+/** 用户明确设置默认：现代只改 systemAgent，旧 list 保留原协议。 */
+export function setAgentDefault(config, id, installedVersion = '') {
+  const mode = agentDefaultMode(config, installedVersion)
+  if (!mode) throw new Error('当前内核/注册表尚未验证默认设置支持，请先升级或运行 OpenClaw doctor')
+  const target = findAgentConfig(config, id)
+  if (!target) throw new Error('目标 Agent 不存在，请刷新后重试')
+  const agents = config.agents
+  if (mode === 'legacy') {
+    for (const entry of agents.list.filter(isRecord)) {
+      if (String(entry.id || 'main').trim().toLowerCase() === String(target.id).toLowerCase()) entry.default = true
+      else delete entry.default
+    }
+    return
+  }
+  if (agents.ownership !== 'explicit' && Object.values(agents.entries).filter(isRecord).some(entry =>
+    Object.hasOwn(entry, 'default') && entry.default !== false,
+  )) throw new Error('旧默认标记需要由 OpenClaw doctor 完整迁移，请先迁移后重试')
+  if (agents.defaults !== undefined && !isRecord(agents.defaults)) throw new Error('agents.defaults 格式错误')
+  const defaults = agents.defaults || {}
+  if (defaults.systemAgent !== undefined && !isRecord(defaults.systemAgent)) throw new Error('systemAgent 格式错误')
+  normalizeCanonicalOwnership(agents)
+  agents.defaults = defaults
+  defaults.systemAgent = { ...defaults.systemAgent, agentId: String(target.id).toLowerCase() }
 }
 
 function pruneAgentReferences(config, id) {
@@ -110,7 +155,10 @@ export function ensureMutableAgentConfig(config, id, options = {}) {
     if (!isRecord(agents.entries)) agents.entries = {}
     delete agents.list
     const key = Object.keys(agents.entries).find(candidate => candidate.toLowerCase() === normalizedId)
-    if (key) return agents.entries[key]
+    if (key) {
+      normalizeCanonicalOwnership(agents)
+      return agents.entries[key]
+    }
     if (!options.create) return null
     agents.entries[normalizedId] = {}
     normalizeCanonicalOwnership(agents)
@@ -133,7 +181,7 @@ export function addAgentConfig(config, id, values = {}, options = {}) {
   const entry = ensureMutableAgentConfig(config, id, { ...options, create: true })
   const kind = agentRosterKind(config, options.installedVersion)
   for (const [key, value] of Object.entries(values || {})) {
-    if (kind === 'entries' && key === 'id') continue
+    if (kind === 'entries' && ['id', 'default', 'isDefault'].includes(key)) continue
     entry[key] = value
   }
   if (kind === 'entries') normalizeCanonicalOwnership(config.agents)

@@ -33,9 +33,17 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
   clearScreen: false,
+  // 仅扫描应用入口，避免临时验收/归档 HTML 拖慢首次依赖预构建。
+  optimizeDeps: {
+    entries: ['index.html'],
+  },
   server: {
     port: 1420,
     strictPort: true,
+    // Windows 为大批归档文件注册 fs.watch 会阻塞 HTTP；源码仍保留 HMR。
+    watch: {
+      ignored: ['**/.tmp*/**', '**/.worktrees/**', '**/output/**', '**/src-tauri/**'],
+    },
     proxy: {
       '/ws': {
         target: `ws://127.0.0.1:${gatewayPort}`,

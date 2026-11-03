@@ -1,0 +1,183 @@
+/* 官网账户沿用面板字体、色彩与组件；留出清楚的操作层级。 */
+.platform-account-page { width:100%; max-width:1050px; margin:0 auto; }
+.platform-account-page .page-header { margin-bottom:24px; }
+.platform-account-page .card { background:var(--bg-secondary); }
+.platform-account-page .card:hover { background:var(--bg-secondary); border-color:var(--border-primary); }
+.platform-account-page h2 { margin:0; font-size:22px; font-weight:600; line-height:1.35; letter-spacing:-.35px; overflow-wrap:anywhere; }
+.platform-account-page h3 { font-size:14px; font-weight:600; margin:0 0 14px; }
+.platform-account-page p { margin:0; line-height:1.7; color:var(--text-secondary); font-size:13px; overflow-wrap:anywhere; }
+.platform-account-page :is(a,button):focus-visible,[data-platform-assistant-entry]:focus-visible,.sidebar-platform-account:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+.platform-account-page .btn { justify-content:center; min-height:36px; white-space:normal; text-align:center; }
+.platform-account-page .btn:active { transform:translateY(1px); }
+.platform-account-page .btn[disabled] { opacity:.55; cursor:wait; transform:none; }
+.platform-eyebrow { font-size:12px; color:var(--text-secondary); }
+.platform-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.platform-login-actions { display:flex; align-items:center; gap:12px; flex-wrap:wrap; width:100%; margin:2px 0 0; }
+.platform-account-page .platform-login-cta { width:100%; max-width:360px; min-height:46px; font-size:15px; font-weight:600; }
+.platform-welcome-secondary { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding-top:2px; }
+.platform-welcome { display:grid; grid-template-columns:minmax(0,1.05fr) minmax(0,1fr); gap:30px; padding:28px; }
+.platform-welcome-main { display:flex; align-items:flex-start; flex-direction:column; gap:16px; min-width:0; }
+.platform-welcome-main h2 { font-size:25px; }
+.platform-welcome-main>p { max-width:42ch; text-wrap:balance; }
+.platform-assistant-mark { display:grid; place-items:center; width:42px; height:42px; border-radius:var(--radius-md); background:var(--accent-muted); color:var(--accent); }
+.platform-welcome-account { border-left:1px solid var(--border-primary); padding-left:30px; min-width:0; }
+.platform-welcome-account>p { margin:10px 0 14px; }
+.platform-benefits { display:grid; gap:16px; list-style:none; margin:0 0 20px; padding:0; }
+.platform-benefits li { display:flex; align-items:flex-start; gap:10px; }
+.platform-benefits li>svg { margin-top:2px; color:var(--text-secondary); flex-shrink:0; }
+.platform-benefits strong { display:block; color:var(--text-primary); font-size:13px; font-weight:500; margin-bottom:2px; }
+.platform-benefits p { font-size:12px; }
+.platform-state { display:inline-flex; align-items:center; gap:6px; padding:5px 8px; border-radius:var(--radius-sm); color:var(--text-secondary); background:var(--bg-tertiary); font-size:12px; line-height:1.5; }
+.platform-state-dot { width:6px; height:6px; flex-shrink:0; border-radius:50%; background:var(--text-tertiary); }
+.platform-state[data-state="bound"] .platform-state-dot { background:var(--success); }
+.platform-identity { padding:24px; }
+.platform-identity-row { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; padding-bottom:20px; border-bottom:1px solid var(--border-primary); }
+.platform-identity-row .platform-eyebrow { margin-bottom:6px; }
+.platform-summary { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr); gap:28px; padding:24px 0; }
+.platform-credit { font-size:42px; font-weight:600; line-height:1.25; margin:8px 0 10px; letter-spacing:-1.2px; overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
+.platform-credit span { font-size:14px; letter-spacing:0; font-weight:400; color:var(--text-secondary); }
+.platform-balance .form-hint { margin-top:12px; font-size:12px; }
+.platform-entitlements { border-left:1px solid var(--border-primary); padding-left:28px; min-width:0; }
+.platform-entitlements h2 { margin:6px 0 16px; font-size:20px; }
+.platform-account-page dl { display:grid; grid-template-columns:minmax(0,auto) minmax(0,1fr); gap:10px 16px; font-size:12px; margin:0; }
+.platform-account-page dt { color:var(--text-secondary); }
+.platform-account-page dd { margin:0; text-align:right; color:var(--text-primary); overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
+.platform-detail-grid,.platform-records-grid { display:grid; grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr); gap:16px; margin-top:16px; }
+.platform-detail-grid>.card,.platform-records-grid>.card { min-width:0; padding:20px; }
+.platform-detail-grid h2 { font-size:17px; margin-bottom:14px; }
+.platform-detail-grid .form-hint { font-size:12px; margin-top:14px; }
+.platform-section,.platform-binding { margin-top:16px; }
+.platform-tag { display:inline-block; background:var(--bg-tertiary); color:var(--text-secondary); padding:4px 8px; border-radius:var(--radius-sm); font-size:12px; overflow-wrap:anywhere; }
+.platform-balance .platform-tag { margin-top:10px; }
+.platform-models { display:flex; flex-wrap:wrap; gap:8px; }
+.platform-benefit-guide { margin-top:16px; padding:24px; }
+.platform-benefit-heading h2 { font-size:18px; margin-bottom:6px; }
+.platform-benefit-heading>p { max-width:70ch; }
+.platform-howto { display:flex; flex-wrap:wrap; gap:12px 22px; list-style:none; padding:0; margin:18px 0 24px; }
+.platform-howto li { display:flex; align-items:center; gap:8px; color:var(--text-primary); font-size:12px; }
+.platform-howto li>span { display:grid; place-items:center; width:21px; height:21px; flex-shrink:0; border:1px solid var(--border-primary); border-radius:50%; color:var(--text-secondary); font-size:11px; }
+.platform-invitation-benefit { border-top:1px solid var(--border-primary); padding-top:20px; }
+.platform-invitation-heading { display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px; }
+.platform-invitation-heading>div { flex:1; min-width:180px; }
+.platform-invitation-heading h3 { margin-bottom:5px; overflow-wrap:anywhere; }
+.platform-invitation-heading>div>p { font-size:12px; }
+.platform-reward-offers { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin:18px 0; }
+.platform-reward-offers>div { padding:14px 16px; border:1px solid var(--border-primary); border-radius:var(--radius-md); min-width:0; }
+.platform-reward-offers>div>span { display:block; color:var(--text-secondary); font-size:12px; margin-bottom:5px; }
+.platform-reward-offers strong { display:block; color:var(--text-primary); font-size:23px; font-weight:600; overflow-wrap:anywhere; }
+.platform-reward-offers small { color:var(--text-secondary); font-size:12px; font-weight:400; }
+.platform-account-page .platform-benefit-notice { margin-top:14px; color:var(--warning); font-size:12px; }
+.platform-account-page .platform-benefit-empty { margin:14px 0; }
+.platform-account-page .platform-invitation-steps { margin-top:14px; }
+.platform-account-page .platform-reward-conditions { font-size:12px; margin-top:6px; }
+.platform-reward-rule-details { margin-top:12px; font-size:12px; color:var(--text-secondary); }
+.platform-reward-rule-details>summary { cursor:pointer; color:var(--text-secondary); line-height:1.6; }
+.platform-reward-rule-details>summary:focus-visible { outline:2px solid var(--accent); outline-offset:4px; }
+.platform-account-page .platform-benefit-progress { color:var(--text-primary); font-size:12px; margin:10px 0; }
+.platform-invitation-benefit>.form-hint { margin-top:10px; font-size:12px; }
+.platform-binding-benefit,.platform-registration-intro { margin-top:20px; padding-top:18px; border-top:1px solid var(--border-primary); }
+.platform-binding-benefit h3,.platform-registration-intro h3 { margin-bottom:7px; }
+.platform-binding-benefit>p+p { margin-top:5px; font-size:12px; }
+.platform-technical-details { align-self:start; }
+.platform-technical-details>summary { color:var(--text-primary); cursor:pointer; font-size:13px; font-weight:500; line-height:1.6; }
+.platform-technical-details>summary:focus-visible { outline:2px solid var(--accent); outline-offset:4px; }
+.platform-grants>div { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px 14px; padding:12px 0; border-bottom:1px solid var(--border-primary); font-size:12px; }
+.platform-grants>div:first-child { padding-top:0; }
+.platform-grants>div:last-child { border-bottom:0; }
+.platform-grants>div strong { font-weight:500; font-variant-numeric:tabular-nums; }
+.platform-grants>div>:last-child { grid-column:1/-1; color:var(--text-secondary); overflow-wrap:anywhere; }
+.platform-records-grid .form-hint { margin-top:10px; font-size:12px; }
+.platform-usage-stats { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:18px 0 12px; }
+.platform-usage-stats span { display:block; color:var(--text-secondary); font-size:12px; margin-bottom:6px; }
+.platform-usage-stats strong { font-size:20px; font-weight:600; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.platform-account-page .platform-usage-range { font-size:11px; }
+.platform-binding { padding:22px; border-left:3px solid var(--accent); }
+.platform-binding>p { margin-bottom:16px; }
+.platform-display-code { display:block; font-family:var(--font-mono); font-size:30px; letter-spacing:3px; margin-bottom:20px; overflow-wrap:anywhere; }
+.platform-binding dl { max-width:600px; }
+.platform-request { display:flex; justify-content:space-between; gap:12px; align-items:center; margin:10px 0; font-size:13px; }
+.platform-feedback { display:flex; gap:10px; margin-top:16px; padding:12px 14px; border-radius:var(--radius-md); background:var(--bg-tertiary); }
+.platform-feedback>svg { flex-shrink:0; margin-top:2px; }
+.platform-connection>div { min-width:0; }
+.platform-connection strong { display:block; font-size:13px; font-weight:600; line-height:1.6; }
+.platform-connection .form-hint { margin-top:6px; font-size:12px; }
+.platform-account-page .platform-error { color:var(--error); background:var(--error-muted); }
+.platform-account-page .platform-error p { color:inherit; }
+.platform-feedback-warning { background:var(--warning-muted); color:var(--warning); }
+.platform-access { display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:12px; border-top:1px solid var(--border-primary); padding-top:18px; margin-top:24px; }
+.platform-access>span { font-size:12px; color:var(--text-secondary); padding-top:7px; }
+.platform-text-button { border:0; background:transparent; color:var(--text-secondary); padding:6px 8px; font:inherit; font-size:12px; border-radius:var(--radius-sm); cursor:pointer; }
+.platform-text-button:hover { background:var(--bg-glass-hover); color:var(--text-primary); }
+.platform-text-button[data-platform-action="unlink"]:hover { color:var(--error); background:var(--error-muted); }
+.platform-account-footer { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-top:18px; }
+.platform-account-page .platform-scope { font-size:12px; max-width:64ch; }
+.platform-updated { font-size:11px; color:var(--text-secondary); flex-shrink:0; text-align:right; }
+.platform-account-page .platform-loading { display:flex; align-items:center; gap:7px; font-size:12px; }
+.platform-loading>svg { color:var(--text-secondary); }
+.sidebar-platform-account { width:100%; display:flex; align-items:center; gap:8px; padding:9px 10px; margin-bottom:10px; border:1px solid var(--border-primary); border-radius:var(--radius-md); background:var(--bg-secondary); color:var(--text-secondary); cursor:pointer; font:inherit; font-size:12px; text-align:left; }
+.sidebar-platform-account span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sidebar-platform-account svg { flex-shrink:0; }
+.sidebar-platform-account:hover { color:var(--text-primary); border-color:var(--border-focus); }
+.sidebar-platform-account .sidebar-platform-copy { display:grid; gap:2px; }
+.sidebar-platform-copy strong { font-size:12px; font-weight:500; }
+.sidebar-platform-copy small { font-size:11px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; }
+:where(.lang-options)>button.lang-option { width:100%; border:0; background:transparent; color:inherit; font-family:inherit; text-align:left; }
+.lang-option:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+#sidebar.sidebar-collapsed .sidebar-platform-account { justify-content:center; padding:10px; }
+#sidebar.sidebar-collapsed .sidebar-platform-account span { display:none; }
+.ast-platform-controls { display:flex; gap:10px; flex-wrap:wrap; align-items:center; padding:10px 20px; border-bottom:1px solid var(--border-primary); font-size:12px; background:var(--bg-secondary); }
+.ast-platform-controls label { display:flex; gap:6px; align-items:center; }
+.ast-platform-controls .form-input { width:auto; max-width:260px; padding:5px 8px; font-size:12px; }
+#ast-official-status { flex-basis:100%; color:var(--text-secondary); line-height:1.5; }
+.ast-platform-recover { display:flex; gap:8px; align-items:center; margin-top:6px; }
+/* 宽窗口的账户操作和更新时间避开固定助手。 */
+@media(min-width:851px) { .platform-access,.platform-account-footer { padding-right:72px; } }
+@media(max-width:850px) {
+  /* 给固定助手留出侧边与页尾空间，避免正文和账户操作被遮住。 */
+  .page.platform-account-page { padding-right:88px; padding-bottom:88px; }
+  .platform-welcome,.platform-summary,.platform-detail-grid,.platform-records-grid { grid-template-columns:1fr; }
+  .platform-welcome { padding:22px; gap:24px; }
+  .platform-welcome-account { border-left:0; padding:22px 0 0; border-top:1px solid var(--border-primary); }
+  .platform-entitlements { border-left:0; padding:22px 0 0; border-top:1px solid var(--border-primary); }
+  .platform-identity { padding:20px; }
+  .platform-summary { gap:22px; }
+  .platform-account-footer { flex-direction:column; gap:10px; }
+  .platform-updated { text-align:left; }
+  .platform-credit { font-size:36px; }
+  .ast-platform-controls { padding:8px 12px; }
+}
+
+/* 会员视图：账户头部与指标行（与官网一致的紧凑排版） */
+.platform-member { padding:22px 24px; }
+.platform-member-head { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+.platform-avatar { width:42px; height:42px; flex-shrink:0; display:grid; place-items:center; border-radius:50%; background:var(--accent-muted); color:var(--accent); font-size:16px; font-weight:600; }
+.platform-member-meta { flex:1; min-width:180px; display:grid; gap:6px; min-width:0; }
+.platform-member-meta h2 { margin:0; font-size:17px; font-weight:600; line-height:1.35; overflow-wrap:anywhere; }
+.platform-pills { display:flex; flex-wrap:wrap; gap:6px; }
+.platform-pill { display:inline-flex; align-items:center; gap:6px; padding:2px 9px; border:1px solid var(--border-primary); border-radius:999px; color:var(--text-secondary); font-size:11px; line-height:1.75; }
+.platform-pill-ok { color:var(--success,#16a34a); border-color:color-mix(in srgb,var(--success,#16a34a) 32%,var(--border-primary)); background:color-mix(in srgb,var(--success,#16a34a) 8%,transparent); }
+.platform-pill-dot { width:6px; height:6px; flex-shrink:0; border-radius:50%; background:currentColor; }
+.platform-member-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.platform-member-actions .btn { min-height:32px; }
+.platform-metrics { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(0,1fr) minmax(0,1fr); margin-top:20px; padding-top:18px; border-top:1px solid var(--border-primary); }
+.platform-metric { display:grid; gap:4px; min-width:0; padding:0 24px; border-left:1px solid var(--border-primary); }
+.platform-metric:first-child { padding-left:0; border-left:0; }
+.platform-metric-label { color:var(--text-secondary); font-size:12px; }
+.platform-metric-value { font-size:28px; font-weight:600; line-height:1.15; letter-spacing:-.6px; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.platform-metric-value small { margin-left:5px; font-size:12px; font-weight:400; letter-spacing:0; color:var(--text-secondary); }
+.platform-metric-plan { font-size:18px; letter-spacing:-.2px; }
+.platform-metric-sub { color:var(--text-tertiary); font-size:11px; line-height:1.5; }
+.platform-note { padding:0 20px; }
+.platform-note > summary { display:flex; align-items:center; gap:8px; padding:13px 0; color:var(--text-secondary); font-size:12px; line-height:1.6; cursor:pointer; list-style:none; }
+.platform-note > summary::-webkit-details-marker { display:none; }
+.platform-note > summary::before { content:'▸'; color:var(--text-tertiary); transition:transform .15s; }
+.platform-note[open] > summary::before { transform:rotate(90deg); }
+.platform-note-body { padding:0 0 14px; color:var(--text-secondary); font-size:12px; line-height:1.7; }
+.platform-note-body p { margin:0 0 4px; }
+.platform-note-body p:last-child { margin-bottom:0; }
+@media(max-width:760px) {
+  .platform-member { padding:18px; }
+  .platform-member-actions { width:100%; }
+  .platform-metrics { grid-template-columns:1fr; gap:14px; }
+  .platform-metric { padding:0; border-left:0; }
+}

@@ -225,9 +225,13 @@ const OPENCLAW_NODE_22_19_VERSION_FLOOR: &str = "2026.6.5";
 const OPENCLAW_NODE_22_19_REQUIREMENT: &str = ">=22.19.0";
 const OPENCLAW_NODE_7_1_VERSION_FLOOR: &str = "2026.7.1";
 const OPENCLAW_NODE_7_1_REQUIREMENT: &str = ">=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0";
+const OPENCLAW_NODE_9_4_REQUIREMENT: &str = ">=24.16.0 <25 || >=26.1.0";
 
 fn fallback_openclaw_node_requirement(version: &str) -> Option<&'static str> {
     let version = parse_version(&base_version(version));
+    if version >= parse_version("2026.9.4") {
+        return Some(OPENCLAW_NODE_9_4_REQUIREMENT);
+    }
     if version >= parse_version(OPENCLAW_NODE_7_1_VERSION_FLOOR) {
         return Some(OPENCLAW_NODE_7_1_REQUIREMENT);
     }
@@ -241,7 +245,7 @@ fn cli_source_prefers_zh_package(cli_source: &str) -> bool {
     matches!(cli_source, "npm-zh" | "standalone" | "portable")
 }
 
-fn find_openclaw_package_json(cli_path: &std::path::Path) -> Option<PathBuf> {
+pub(crate) fn find_openclaw_package_json(cli_path: &std::path::Path) -> Option<PathBuf> {
     let dir = cli_path.parent()?;
     let cli_source = crate::utils::classify_cli_source(&cli_path.to_string_lossy());
     let pkg_names: &[&str] = if cli_source_prefers_zh_package(&cli_source) {
@@ -306,7 +310,7 @@ fn standalone_bundled_node_bin(cli_path: &str) -> Option<PathBuf> {
 }
 
 fn node_version_from_bin(node_bin: &std::path::Path) -> Option<String> {
-    let mut cmd = Command::new(node_bin);
+    let mut cmd = crate::utils::background_command(node_bin);
     cmd.arg("--version");
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
@@ -606,7 +610,7 @@ fn configure_git_https_rules() -> usize {
         GIT_HTTPS_REWRITES.iter().map(|(t, _)| *t).collect();
     for target in &targets {
         let key = format!("url.{target}.insteadOf");
-        let mut unset = Command::new(&git);
+        let mut unset = crate::utils::background_command(&git);
         unset.args(["config", "--global", "--unset-all", &key]);
         #[cfg(target_os = "windows")]
         unset.creation_flags(0x08000000);
@@ -616,7 +620,7 @@ fn configure_git_https_rules() -> usize {
     let mut success = 0;
     for (target, from) in GIT_HTTPS_REWRITES {
         let key = format!("url.{target}.insteadOf");
-        let mut cmd = Command::new(&git);
+        let mut cmd = crate::utils::background_command(&git);
         cmd.args(["config", "--global", "--add", &key, from]);
         #[cfg(target_os = "windows")]
         cmd.creation_flags(0x08000000);
@@ -686,7 +690,7 @@ fn npm_command() -> Command {
     #[cfg(target_os = "windows")]
     {
         const CREATE_NO_WINDOW: u32 = 0x08000000;
-        let mut cmd = Command::new("cmd");
+        let mut cmd = crate::utils::background_command("cmd");
         cmd.args(["/c", "npm", "--registry", &registry]);
         cmd.env("PATH", super::enhanced_path());
         crate::commands::apply_proxy_env(&mut cmd);
@@ -848,7 +852,7 @@ fn pre_install_cleanup() {
     {
         // 杀死所有运行 openclaw gateway 的 node.exe 进程（通过命令行匹配）
         // 使用 PowerShell Get-CimInstance（兼容 Windows 11，wmic 已废弃）（10s 超时）
-        if let Ok(child) = Command::new("powershell")
+        if let Ok(child) = crate::utils::background_command("powershell")
             .args(["-NoProfile", "-Command",
                 "Get-CimInstance Win32_Process -Filter \"CommandLine like '%openclaw%gateway%'\" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty ProcessId"])
             .stdout(std::process::Stdio::piped())
@@ -859,7 +863,7 @@ fn pre_install_cleanup() {
                 let text = String::from_utf8_lossy(&output.stdout);
                 for line in text.lines() {
                     if let Ok(_pid) = line.trim().parse::<u32>() {
-                        let _ = Command::new("taskkill").args(["/F", "/PID", line.trim()]).output();
+                        let _ = crate::utils::background_command("taskkill").args(["/F", "/PID", line.trim()]).output();
                     }
                 }
             }
@@ -876,7 +880,7 @@ fn pre_install_cleanup() {
                     "Get-Process -Name node -ErrorAction SilentlyContinue | Where-Object {{ $_.Path -and $_.Path.ToLower().Contains('{}') }} | Select-Object -ExpandProperty Id",
                     dir_lower
                 );
-                if let Ok(child) = Command::new("powershell")
+                if let Ok(child) = crate::utils::background_command("powershell")
                     .args(["-NoProfile", "-Command", &ps_script])
                     .stdout(std::process::Stdio::piped())
                     .stderr(std::process::Stdio::null())
@@ -886,7 +890,7 @@ fn pre_install_cleanup() {
                         let text = String::from_utf8_lossy(&output.stdout);
                         for line in text.lines() {
                             if let Ok(_pid) = line.trim().parse::<u32>() {
-                                let _ = Command::new("taskkill")
+                                let _ = crate::utils::background_command("taskkill")
                                     .args(["/F", "/PID", line.trim()])
                                     .output();
                             }
@@ -1205,7 +1209,7 @@ fn validate_openclaw_model_candidate(config: &Value) -> Result<(), String> {
     Ok(())
 }
 
-fn write_verified_json_with_backup(path: &Path, value: &Value) -> Result<(), String> {
+pub(crate) fn write_verified_json_with_backup(path: &Path, value: &Value) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| "配置路径缺少父目录".to_string())?;
@@ -2589,6 +2593,8 @@ fn strip_ui_fields(mut val: Value) -> Value {
                         }
                     }
                 }
+                // 在递归 merge 后清理退役标记，保留不同 surface 与旧迁移语义。
+                super::agent::normalize_entries_ownership(agents_obj);
             }
         }
     }
@@ -2806,7 +2812,7 @@ async fn get_local_version() -> Option<String> {
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
-        if let Ok(o) = std::process::Command::new("where")
+        if let Ok(o) = crate::utils::background_command("where")
             .arg("openclaw")
             .creation_flags(0x08000000)
             .output()
@@ -3341,7 +3347,7 @@ fn scan_all_installations(
                 drive
             )));
         }
-        let mut where_cmd = Command::new("where");
+        let mut where_cmd = crate::utils::background_command("where");
         where_cmd.arg("openclaw");
         where_cmd.creation_flags(0x08000000);
         if let Ok(output) = where_cmd.output() {
@@ -3527,7 +3533,7 @@ fn find_git_path() -> Option<String> {
     let enhanced = super::enhanced_path();
     #[cfg(target_os = "windows")]
     {
-        let mut cmd = Command::new("where");
+        let mut cmd = crate::utils::background_command("where");
         cmd.arg("git");
         cmd.creation_flags(0x08000000);
         cmd.env("PATH", &enhanced);
@@ -3797,7 +3803,7 @@ fn npm_global_modules_dir() -> Option<PathBuf> {
     #[cfg(target_os = "linux")]
     {
         // 尝试 npm config get prefix
-        if let Ok(output) = Command::new("npm")
+        if let Ok(output) = crate::utils::background_command("npm")
             .args(["config", "get", "prefix"])
             .output()
         {
@@ -3833,7 +3839,7 @@ fn npm_global_bin_dir() -> Option<PathBuf> {
     }
     #[cfg(target_os = "linux")]
     {
-        if let Ok(output) = Command::new("npm")
+        if let Ok(output) = crate::utils::background_command("npm")
             .args(["config", "get", "prefix"])
             .output()
         {
@@ -4326,7 +4332,7 @@ async fn try_standalone_install(
             .any(|p| p.eq_ignore_ascii_case(&install_str))
         {
             // 写入用户 PATH（注册表）
-            let _ = Command::new("powershell")
+            let _ = crate::utils::background_command("powershell")
                 .args([
                     "-NoProfile",
                     "-Command",
@@ -4606,7 +4612,7 @@ async fn try_r2_install(
         #[cfg(target_os = "windows")]
         {
             use std::os::windows::process::CommandExt;
-            let status = Command::new("tar")
+            let status = crate::utils::background_command("tar")
                 .args([
                     "-xzf",
                     &archive_path.to_string_lossy(),
@@ -5132,7 +5138,7 @@ async fn upgrade_openclaw_inner(
                         "Get-Process -Name node -ErrorAction SilentlyContinue | Where-Object {{ $_.Path -and $_.Path.ToLower().Contains('{}') }} | Select-Object -ExpandProperty Id",
                         dir_lower
                     );
-                    if let Ok(output) = Command::new("powershell")
+                    if let Ok(output) = crate::utils::background_command("powershell")
                         .args(["-NoProfile", "-Command", &ps_script])
                         .output()
                     {
@@ -5141,7 +5147,7 @@ async fn upgrade_openclaw_inner(
                             if let Ok(pid) = line.trim().parse::<u32>() {
                                 let _ =
                                     app.emit("upgrade-log", format!("终止占用进程 PID {pid}..."));
-                                let _ = Command::new("taskkill")
+                                let _ = crate::utils::background_command("taskkill")
                                     .args(["/F", "/PID", &pid.to_string()])
                                     .output();
                             }
@@ -5418,7 +5424,7 @@ async fn uninstall_openclaw_inner(
                     "Get-Process -Name node -ErrorAction SilentlyContinue | Where-Object {{ $_.Path -and $_.Path.ToLower().Contains('{}') }} | Select-Object -ExpandProperty Id",
                     dir_lower
                 );
-                if let Ok(output) = Command::new("powershell")
+                if let Ok(output) = crate::utils::background_command("powershell")
                     .args(["-NoProfile", "-Command", &ps_script])
                     .output()
                 {
@@ -5426,7 +5432,7 @@ async fn uninstall_openclaw_inner(
                     for line in text.lines() {
                         if let Ok(pid) = line.trim().parse::<u32>() {
                             let _ = app.emit("upgrade-log", format!("终止占用进程 PID {pid}..."));
-                            let _ = Command::new("taskkill")
+                            let _ = crate::utils::background_command("taskkill")
                                 .args(["/F", "/PID", &pid.to_string()])
                                 .output();
                         }
@@ -5639,7 +5645,7 @@ pub fn check_node() -> Result<Value, String> {
     let node_path = find_node_path(&enhanced);
 
     if let Some(path) = node_path {
-        let mut cmd = Command::new(&path);
+        let mut cmd = crate::utils::background_command(&path);
         cmd.arg("--version");
         #[cfg(target_os = "windows")]
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
@@ -5674,7 +5680,7 @@ fn find_node_path(enhanced_path: &str) -> Option<String> {
     #[cfg(target_os = "windows")]
     {
         // Windows: 使用 where 命令
-        let mut cmd = Command::new("where");
+        let mut cmd = crate::utils::background_command("where");
         cmd.arg("node");
         cmd.creation_flags(0x08000000);
         // 设置 PATH 为 enhanced_path，优先查找 node
@@ -5798,7 +5804,7 @@ pub fn check_node_at_path(node_dir: String) -> Result<Value, String> {
         return Ok(Value::Object(result));
     }
 
-    let mut cmd = Command::new(&node_bin);
+    let mut cmd = crate::utils::background_command(&node_bin);
     cmd.arg("--version");
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000);
@@ -6019,7 +6025,7 @@ pub fn scan_node_paths() -> Result<Value, String> {
             }
             seen_paths.insert(node_path_str.clone());
 
-            let mut cmd = Command::new(&node_bin);
+            let mut cmd = crate::utils::background_command(&node_bin);
             cmd.arg("--version");
             #[cfg(target_os = "windows")]
             cmd.creation_flags(0x08000000);
@@ -6303,7 +6309,7 @@ fn supports_native_config_reload(version: &str) -> bool {
     !version.is_empty() && version >= parse_version(OPENCLAW_NATIVE_CONFIG_RELOAD_VERSION_FLOOR)
 }
 
-fn installed_openclaw_version_from_files() -> Option<String> {
+pub(crate) fn installed_openclaw_version_from_files() -> Option<String> {
     let cli_path = crate::utils::resolve_openclaw_cli_path()?;
     read_version_from_installation(std::path::Path::new(&cli_path))
 }
@@ -7691,7 +7697,7 @@ pub fn uninstall_gateway() -> Result<String, String> {
     #[cfg(target_os = "windows")]
     {
         // 直接杀死 gateway 相关的 node.exe 进程，不走慢 CLI
-        let _ = Command::new("taskkill")
+        let _ = crate::utils::background_command("taskkill")
             .args(["/f", "/im", "node.exe", "/fi", "WINDOWTITLE eq openclaw*"])
             .creation_flags(0x08000000)
             .output();
@@ -7902,7 +7908,7 @@ pub fn check_git() -> Result<Value, String> {
     // #Compat-4: 优先用 find_git_path 拿到的绝对路径执行 --version（避免依赖子进程 PATH），
     // 回退到 "git" 时也把 enhanced_path 注入子进程 PATH，让刚装完 git 的场景立即可识别。
     let exec = git_path.as_deref().unwrap_or(&git);
-    let mut cmd = Command::new(exec);
+    let mut cmd = crate::utils::background_command(exec);
     cmd.arg("--version");
     cmd.env("PATH", super::enhanced_path());
     #[cfg(target_os = "windows")]
@@ -8073,7 +8079,7 @@ pub fn scan_git_paths() -> Result<Value, String> {
         }
         seen.insert(canonical.clone());
 
-        let mut cmd = Command::new(path);
+        let mut cmd = crate::utils::background_command(path);
         cmd.arg("--version");
         #[cfg(target_os = "windows")]
         cmd.creation_flags(0x08000000);
@@ -8105,7 +8111,7 @@ pub async fn auto_install_git(app: tauri::AppHandle) -> Result<String, String> {
         use std::io::{BufRead, BufReader};
         // 尝试 winget
         let _ = app.emit("upgrade-log", "尝试使用 winget 安装 Git...");
-        let mut child = Command::new("winget")
+        let mut child = crate::utils::background_command("winget")
             .args([
                 "install",
                 "--id",
@@ -8287,7 +8293,7 @@ pub async fn auto_install_node(app: tauri::AppHandle) -> Result<String, String> 
             if mode == "upgrade" {
                 args.push("--silent");
             }
-            let mut cmd = Command::new("winget");
+            let mut cmd = crate::utils::background_command("winget");
             cmd.args(args)
                 .creation_flags(0x08000000)
                 .stdout(Stdio::piped())
@@ -8427,6 +8433,29 @@ mod write_openclaw_config_merge_tests {
     use super::write_verified_json_with_backup;
     use serde_json::{json, Value};
     use std::path::{Path, PathBuf};
+
+    #[test]
+    fn post_merge_owner_cleanup_preserves_surface_semantics() {
+        let config = json!({
+            "agents": {"ownership":"explicit", "defaults": {
+                "systemAgent":{"agentId":"beta"}, "sessionStore":{"agentId":"alpha"}
+            }, "entries": {"alpha":{"default":true,"isDefault":true,"tools":{"deny":["exec"]}},"beta":{}}},
+            "gateway":{"auth":{"mode":"token","token":"isolated-fixture-no-secret"}}
+        });
+        let cleaned = strip_ui_fields(config.clone());
+        assert_eq!(
+            cleaned["agents"]["entries"]["alpha"],
+            json!({"tools":{"deny":["exec"]}})
+        );
+        assert_eq!(cleaned["agents"]["defaults"], config["agents"]["defaults"]);
+        assert_eq!(cleaned["gateway"], config["gateway"]);
+        for legacy in [
+            json!({"agents":{"entries":{"alpha":{"default":true},"beta":{}}}}),
+            json!({"agents":{"list":[{"id":"alpha","default":true},{"id":"beta"}]}}),
+        ] {
+            assert_eq!(strip_ui_fields(legacy.clone()), legacy);
+        }
+    }
 
     fn unique_temp_dir(name: &str) -> PathBuf {
         let suffix = std::time::SystemTime::now()

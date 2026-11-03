@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="{{LANG}}" data-outcome="{{OUTCOME}}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>{{DOCUMENT_TITLE}}</title>
+  <style>{{STYLE}}</style>
+</head>
+<body>
+  <header class="page-header">
+    <div class="brand" aria-label="ClawPanel">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M29 3c-7-1-13 1-17 6l-5 1-4 7 7 1 4 4 1 7 7-4 1-5c5-4 7-10 6-17ZM21 8a3 3 0 1 1 0 6 3 3 0 0 1 0-6ZM7 22c-3 0-4 3-4 7 4 0 7-1 7-4l-3-3Z"/></svg>
+      <span>ClawPanel</span>
+    </div>
+    <nav class="language-switch" aria-label="Language / 语言">
+      <button type="button" lang="zh-CN" data-language="zh-CN" aria-pressed="{{ZH_PRESSED}}">中文</button>
+      <span class="language-divider" aria-hidden="true"></span>
+      <button type="button" lang="en" data-language="en" aria-pressed="{{EN_PRESSED}}">English</button>
+    </nav>
+  </header>
+  <main>
+    <section class="receipt" aria-labelledby="receipt-title">
+      <div class="status-mark" aria-hidden="true">
+        <svg data-status-icon="received" viewBox="0 0 48 48"><path d="m13 25 8 8 16-19"/></svg>
+        <svg data-status-icon="denied" viewBox="0 0 48 48"><path d="M14 24h20"/></svg>
+        <svg data-status-icon="rejected" viewBox="0 0 48 48"><path d="M24 12v15m0 8h.01"/></svg>
+      </div>
+      <h1 id="receipt-title" data-copy="heading">{{HEADING}}</h1>
+      <p class="return-hint" data-copy="returnHint">{{RETURN_HINT}}</p>
+      <p class="result-hint" data-copy="resultHint">{{RESULT_HINT}}</p>
+      <div class="return-instruction">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="13"/><path d="M16 14v8m0-13h.01"/></svg>
+        <p><span data-copy="instruction">{{INSTRUCTION}}</span><br><span data-copy="instructionDetail">{{INSTRUCTION_DETAIL}}</span></p>
+      </div>
+      <button class="close-button" type="button" data-close data-copy="close">{{CLOSE}}</button>
+      <div class="close-feedback" aria-live="polite">
+        <p data-close-fallback data-copy="closeFallback" hidden>{{CLOSE_FALLBACK}}</p>
+      </div>
+    </section>
+  </main>
+  <footer data-copy="footer">{{FOOTER}}</footer>
+  <script>{{SCRIPT}}</script>
+</body>
+</html>

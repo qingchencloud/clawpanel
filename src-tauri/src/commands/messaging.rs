@@ -6,10 +6,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+// 两个安装入口共享配置，拒绝并发操作，避免备份和回滚覆盖另一项安装。
+static CHANNEL_PLUGIN_INSTALL_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 fn platform_storage_key(platform: &str) -> &str {
     match platform {
         "dingtalk" | "dingtalk-connector" => "dingtalk-connector",
-        "weixin" => "openclaw-weixin",
+        "weixin" | "wechat" => "openclaw-weixin",
         _ => platform,
     }
 }
@@ -17,7 +20,7 @@ fn platform_storage_key(platform: &str) -> &str {
 fn platform_list_id(platform: &str) -> &str {
     match platform {
         "dingtalk-connector" => "dingtalk",
-        "openclaw-weixin" => "weixin",
+        "openclaw-weixin" | "wechat" => "weixin",
         _ => platform,
     }
 }
@@ -2584,11 +2587,7 @@ pub async fn save_messaging_platform(
                 account_id.as_deref(),
                 entry,
             )?;
-            ensure_plugin_allowed(&mut cfg, "openclaw-lark")?;
-            // 禁用旧版 feishu 插件，防止新旧插件同时运行冲突
-            disable_legacy_plugin(&mut cfg, "feishu");
-            let _ = cleanup_legacy_plugin_backup_dir("feishu");
-            let _ = cleanup_legacy_plugin_backup_dir("openclaw-lark");
+            // 插件选择和启用由安装入口负责。保存配置不切换飞书实现，也不禁用官方 feishu。
         }
         "dingtalk" | "dingtalk-connector" => {
             let client_id = form_obj
@@ -3894,25 +3893,18 @@ pub async fn verify_bot_token(platform: String, form: Value) -> Result<Value, St
 /// 检测微信插件安装状态与版本
 #[tauri::command]
 pub async fn check_weixin_plugin_status() -> Result<Value, String> {
-    let ext_dir = super::openclaw_dir()
-        .join("extensions")
-        .join("openclaw-weixin");
-    let mut installed = false;
-    let mut installed_version: Option<String> = None;
-
-    // 检查本地安装
-    let pkg_json = ext_dir.join("package.json");
-    if pkg_json.is_file() {
-        installed = true;
-        if let Ok(content) = std::fs::read_to_string(&pkg_json) {
-            if let Ok(pkg) = serde_json::from_str::<Value>(&content) {
-                installed_version = pkg
-                    .get("version")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-            }
-        }
-    }
+    let status = get_channel_plugin_status("openclaw-weixin".into()).await?;
+    let ext_dir = std::path::PathBuf::from(status["path"].as_str().unwrap_or_default());
+    let installed =
+        status["installed"].as_bool() == Some(true) || status["builtin"].as_bool() == Some(true);
+    let installed_version = if installed {
+        fs::read_to_string(ext_dir.join("package.json"))
+            .ok()
+            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+            .and_then(|pkg| pkg["version"].as_str().map(String::from))
+    } else {
+        None
+    };
 
     // 从 npm registry 获取最新版本
     let mut latest_version: Option<String> = None;
@@ -3932,56 +3924,29 @@ pub async fn check_weixin_plugin_status() -> Result<Value, String> {
         }
     }
 
-    let update_available = match (&installed_version, &latest_version) {
-        (Some(cur), Some(lat)) if cur != lat => {
-            // 简单 semver 比较：按 . 分割为数字段逐段比较
-            let parse =
-                |s: &str| -> Vec<u32> { s.split('.').filter_map(|p| p.parse().ok()).collect() };
-            let cv = parse(cur);
-            let lv = parse(lat);
-            lv > cv
-        }
-        _ => false,
-    };
+    let host = super::config::installed_openclaw_version_from_files().unwrap_or_default();
+    let mut result = super::weixin_compat::status(&host, installed_version.as_deref());
+    result["installed"] = json!(installed);
+    result["installedVersion"] = json!(installed_version);
+    result["latestVersion"] = json!(latest_version);
+    result["extensionDir"] = json!(ext_dir.to_string_lossy());
+    Ok(result)
+}
 
-    // 兼容性检查：微信插件要求 OpenClaw >= 2026.3.22，通过版本号判断
-    let mut compatible = true;
-    let mut compat_error = String::new();
-    if installed {
-        let oc_ver = crate::utils::resolve_openclaw_cli_path()
-            .and_then(|_| {
-                let out = crate::utils::openclaw_command()
-                    .arg("--version")
-                    .output()
-                    .ok()?;
-                let raw = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                raw.split_whitespace()
-                    .find(|w| w.chars().next().is_some_and(|c| c.is_ascii_digit()))
-                    .map(String::from)
-            })
-            .unwrap_or_default();
-        let oc_nums: Vec<u32> = oc_ver
-            .split(|c: char| !c.is_ascii_digit())
-            .filter_map(|s| s.parse().ok())
-            .collect();
-        if oc_nums < vec![2026, 3, 22] {
-            compatible = false;
-            compat_error = format!(
-                "插件版本与当前 OpenClaw {} 不兼容（要求 >= 2026.3.22），请先升级 OpenClaw 或在终端执行: npx -y @tencent-weixin/openclaw-weixin-cli@latest install",
-                oc_ver
-            );
-        }
+async fn verify_weixin_installed_version(expected: &str) -> Result<(), String> {
+    let status = get_channel_plugin_status("openclaw-weixin".into()).await?;
+    let package = Path::new(status["path"].as_str().unwrap_or_default()).join("package.json");
+    let actual = fs::read_to_string(package)
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok());
+    if status["installed"].as_bool() != Some(true)
+        || actual.as_ref().and_then(|pkg| pkg["version"].as_str()) != Some(expected)
+    {
+        return Err(format!(
+            "微信插件版本回读不一致（预期 {expected}），请检查安装日志"
+        ));
     }
-
-    Ok(json!({
-        "installed": installed,
-        "installedVersion": installed_version,
-        "latestVersion": latest_version,
-        "updateAvailable": update_available,
-        "extensionDir": ext_dir.to_string_lossy(),
-        "compatible": compatible,
-        "compatError": compat_error,
-    }))
+    Ok(())
 }
 
 #[tauri::command]
@@ -3996,223 +3961,68 @@ pub async fn run_channel_action(
     use std::sync::{Arc, Mutex};
     use tauri::Emitter;
 
-    let platform = platform.trim().to_string();
+    let platform = platform_list_id(platform_storage_key(platform.trim())).to_string();
     let action = action.trim().to_string();
     if platform.is_empty() || action.is_empty() {
         return Err("platform 和 action 不能为空".into());
     }
 
-    // weixin install 走 npx 而非 openclaw CLI
+    // 安装复用统一检测/回读链路；更新交给 CLI，不预先删除插件或渠道配置。
+    let mut _update_guard = None;
+    let mut install_target = None;
     if platform == "weixin" && action == "install" {
-        // 微信 CLI 版本号独立于 OpenClaw（1.0.x / 2.0.x），不能用 OpenClaw 版本号 pin
-        // v2.0.1 需要 OpenClaw >= 2026.3.22 的 SDK，旧版用 v1.0.3（最后兼容版）
-        let weixin_spec = if version.as_deref().is_some_and(|v| !v.is_empty()) {
-            format!(
-                "@tencent-weixin/openclaw-weixin-cli@{}",
-                version.as_deref().unwrap()
-            )
-        } else {
-            // 检测 OpenClaw 版本，决定装哪个
-            let oc_ver = crate::utils::resolve_openclaw_cli_path()
-                .and_then(|_| {
-                    let out = crate::utils::openclaw_command()
-                        .arg("--version")
-                        .output()
-                        .ok()?;
-                    let raw = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                    // 输出格式: "OpenClaw 2026.3.24 (hash)" → 取第二个词（版本号）
-                    raw.split_whitespace()
-                        .find(|w| w.chars().next().is_some_and(|c| c.is_ascii_digit()))
-                        .map(String::from)
-                })
-                .unwrap_or_default();
-            let oc_nums: Vec<u32> = oc_ver
-                .split(|c: char| !c.is_ascii_digit())
-                .filter_map(|s| s.parse().ok())
-                .collect();
-            let needs_legacy = oc_nums < vec![2026, 3, 22];
-            if needs_legacy {
-                // 微信插件所有版本都依赖 OpenClaw >= 2026.3.22 的 SDK
-                // 给用户两个选择：升级 OpenClaw 或手动尝试安装
-                let _ = app.emit(
-                    "channel-action-log",
-                    json!({ "platform": &platform, "action": &action, "kind": "error",
-                        "message": format!("⚠ 微信插件要求 OpenClaw >= 2026.3.22，当前版本 {}。", oc_ver) }),
-                );
-                let _ = app.emit(
-                    "channel-action-log",
-                    json!({ "platform": &platform, "action": &action, "kind": "info",
-                        "message": "建议方案 1（推荐）：先升级 OpenClaw，再安装微信插件" }),
-                );
-                let _ = app.emit(
-                    "channel-action-log",
-                    json!({ "platform": &platform, "action": &action, "kind": "info",
-                        "message": "  → 前往「服务管理」页面点击升级" }),
-                );
-                let _ = app.emit(
-                    "channel-action-log",
-                    json!({ "platform": &platform, "action": &action, "kind": "info",
-                        "message": "建议方案 2：在终端手动尝试安装（可能存在兼容问题）" }),
-                );
-                let _ = app.emit(
-                    "channel-action-log",
-                    json!({ "platform": &platform, "action": &action, "kind": "info",
-                        "message": "  → npx -y @tencent-weixin/openclaw-weixin-cli@latest install" }),
-                );
-                let _ = app.emit(
-                    "channel-action-log",
-                    json!({ "platform": &platform, "action": &action, "kind": "info",
-                        "message": "后续版本将升级推荐内核到最新版以完整支持微信插件。" }),
-                );
-                let _ = app.emit(
+        use tauri::Listener;
+        let checked = check_weixin_plugin_status().await?;
+        if checked["installAllowed"].as_bool() != Some(true) {
+            return Err(checked["installError"]
+                .as_str()
+                .unwrap_or("微信插件版本尚未核实")
+                .into());
+        }
+        let target = super::weixin_compat::resolve_version(
+            checked["hostVersion"].as_str().unwrap_or_default(),
+            version.as_deref(),
+        )?;
+        install_target = Some(target.clone());
+        let status = get_channel_plugin_status("openclaw-weixin".into()).await?;
+        if status["installed"].as_bool() != Some(true) {
+            let log_app = app.clone();
+            let log_listener = app.listen("plugin-log", move |event| {
+                let message = serde_json::from_str::<String>(event.payload())
+                    .unwrap_or_else(|_| event.payload().to_string());
+                let _ = log_app.emit("channel-action-log", json!({
+                    "platform": "weixin", "action": "install", "kind": "info", "message": message
+                }));
+            });
+            let progress_app = app.clone();
+            let progress_listener = app.listen("plugin-progress", move |event| {
+                let progress = serde_json::from_str::<u32>(event.payload()).unwrap_or(0);
+                let _ = progress_app.emit(
                     "channel-action-progress",
-                    json!({ "platform": &platform, "action": &action, "progress": 100 }),
+                    json!({
+                        "platform": "weixin", "action": "install", "progress": progress
+                    }),
                 );
-                return Err(format!(
-                    "微信插件要求 OpenClaw >= 2026.3.22（当前 {}），请先升级 OpenClaw 或在终端手动安装",
-                    oc_ver
-                ));
+            });
+            let result = install_channel_plugin(
+                app.clone(),
+                "@tencent-weixin/openclaw-weixin".into(),
+                "openclaw-weixin".into(),
+                Some(target.clone()),
+            )
+            .await;
+            app.unlisten(log_listener);
+            app.unlisten(progress_listener);
+            if result.is_ok() {
+                verify_weixin_installed_version(&target).await?;
             }
-            "@tencent-weixin/openclaw-weixin-cli@latest".to_string()
-        };
-        // 先清理旧的不兼容插件目录 + openclaw.json 中的残留配置
-        // （否则 OpenClaw 配置校验会报 unknown channel / plugin not found）
-        let weixin_ext_dir = super::openclaw_dir()
-            .join("extensions")
-            .join("openclaw-weixin");
-        if weixin_ext_dir.exists() {
-            let _ = app.emit(
-                "channel-action-log",
-                json!({ "platform": &platform, "action": &action, "kind": "info", "message": "清理旧版微信插件目录..." }),
-            );
-            let _ = std::fs::remove_dir_all(&weixin_ext_dir);
+            return result;
         }
-        // 清理 openclaw.json 中的微信残留配置
-        if let Ok(mut cfg) = super::config::load_openclaw_json() {
-            let mut changed = false;
-            if let Some(channels) = cfg.get_mut("channels").and_then(|c| c.as_object_mut()) {
-                if channels.remove("openclaw-weixin").is_some() {
-                    changed = true;
-                }
-            }
-            if let Some(plugins) = cfg.get_mut("plugins").and_then(|p| p.as_object_mut()) {
-                if let Some(allow) = plugins.get_mut("allow").and_then(|a| a.as_array_mut()) {
-                    let before = allow.len();
-                    allow.retain(|v| v.as_str() != Some("openclaw-weixin"));
-                    if allow.len() != before {
-                        changed = true;
-                    }
-                }
-                if let Some(entries) = plugins.get_mut("entries").and_then(|e| e.as_object_mut()) {
-                    if entries.remove("openclaw-weixin").is_some() {
-                        changed = true;
-                    }
-                }
-            }
-            if changed {
-                let _ = super::config::save_openclaw_json(&cfg);
-                let _ = app.emit(
-                    "channel-action-log",
-                    json!({ "platform": &platform, "action": &action, "kind": "info", "message": "已清理 openclaw.json 中的微信插件残留配置" }),
-                );
-            }
-        }
-
-        let _ = app.emit(
-            "channel-action-log",
-            json!({
-                "platform": &platform, "action": &action, "kind": "info",
-                "message": format!("开始安装微信插件: npx -y {} install", weixin_spec),
-            }),
+        _update_guard = Some(
+            CHANNEL_PLUGIN_INSTALL_LOCK
+                .try_lock()
+                .map_err(|_| "已有渠道插件正在安装，请等待完成后再试")?,
         );
-        let _ = app.emit(
-            "channel-action-progress",
-            json!({ "platform": &platform, "action": &action, "progress": 5 }),
-        );
-
-        let path_env = super::enhanced_path();
-        #[cfg(target_os = "windows")]
-        let mut cmd = {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x08000000;
-            let mut c = std::process::Command::new("cmd");
-            c.args(["/c", "npx", "-y", &weixin_spec, "install"]);
-            c.creation_flags(CREATE_NO_WINDOW);
-            c
-        };
-        #[cfg(not(target_os = "windows"))]
-        let mut cmd = {
-            let mut c = std::process::Command::new("npx");
-            c.args(["-y", &weixin_spec, "install"]);
-            c
-        };
-        cmd.env("PATH", &path_env);
-        cmd.stdout(Stdio::piped());
-        cmd.stderr(Stdio::piped());
-        crate::commands::apply_proxy_env(&mut cmd);
-
-        let mut child = cmd.spawn().map_err(|e| format!("启动 npx 失败: {}", e))?;
-
-        let stderr = child.stderr.take();
-        let app2 = app.clone();
-        let platform2 = platform.clone();
-        let action2 = action.clone();
-        let lines: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-        let err_lines = lines.clone();
-        let handle = std::thread::spawn(move || {
-            if let Some(pipe) = stderr {
-                for line in BufReader::new(pipe).lines().map_while(Result::ok) {
-                    if let Ok(mut guard) = err_lines.lock() {
-                        guard.push(line.clone());
-                    }
-                    let _ = app2.emit("channel-action-log", json!({ "platform": platform2, "action": action2, "message": line, "kind": "stderr" }));
-                }
-            }
-        });
-
-        let mut progress: u32 = 15;
-        if let Some(pipe) = child.stdout.take() {
-            for line in BufReader::new(pipe).lines().map_while(Result::ok) {
-                if let Ok(mut guard) = lines.lock() {
-                    guard.push(line.clone());
-                }
-                let _ = app.emit("channel-action-log", json!({ "platform": &platform, "action": &action, "message": line, "kind": "stdout" }));
-                if progress < 90 {
-                    progress += 5;
-                    let _ = app.emit(
-                        "channel-action-progress",
-                        json!({ "platform": &platform, "action": &action, "progress": progress }),
-                    );
-                }
-            }
-        }
-
-        let _ = handle.join();
-        let status = child
-            .wait()
-            .map_err(|e| format!("等待命令结束失败: {}", e))?;
-        let text = lines.lock().ok().map(|g| g.join("\n")).unwrap_or_default();
-        let _ = app.emit(
-            "channel-action-progress",
-            json!({ "platform": &platform, "action": &action, "progress": 100 }),
-        );
-        if status.success() {
-            let _ = app.emit(
-                "channel-action-done",
-                json!({ "platform": &platform, "action": &action }),
-            );
-            return Ok(text);
-        } else {
-            let _ = app.emit(
-                "channel-action-error",
-                json!({ "platform": &platform, "action": &action, "message": "安装失败" }),
-            );
-            return Err(format!(
-                "微信插件安装失败 (exit {})\n{}",
-                status.code().unwrap_or(-1),
-                text
-            ));
-        }
     }
 
     // weixin login 映射到 openclaw-weixin channel id
@@ -4223,6 +4033,17 @@ pub async fn run_channel_action(
     };
 
     let args: Vec<String> = match action.as_str() {
+        "install" if platform == "weixin" => {
+            vec![
+                "plugins".into(),
+                "install".into(),
+                format!(
+                    "@tencent-weixin/openclaw-weixin@{}",
+                    install_target.as_deref().unwrap()
+                ),
+                "--force".into(),
+            ]
+        }
         "login" => {
             vec![
                 "channels".into(),
@@ -4336,21 +4157,30 @@ pub async fn run_channel_action(
         .unwrap_or_else(|| "操作完成".into());
 
     if status.success() {
-        // 微信登录成功后写入 channels.openclaw-weixin.enabled 以便 list_configured_platforms 检测
+        if platform == "weixin" && action == "install" {
+            verify_weixin_installed_version(install_target.as_deref().unwrap()).await?;
+            let mut cfg = super::config::load_openclaw_json()?;
+            ensure_plugin_allowed(&mut cfg, "openclaw-weixin")?;
+            super::config::save_openclaw_json(&cfg)?;
+        }
+        // 登录只更新启用标记，保留账户、路由与访问控制；保存失败必须明确报告。
         if platform == "weixin" && action == "login" {
-            if let Ok(mut cfg) = super::config::load_openclaw_json() {
-                let channels = cfg
-                    .as_object_mut()
-                    .map(|r| r.entry("channels").or_insert_with(|| json!({})))
-                    .and_then(|c| c.as_object_mut());
-                if let Some(ch) = channels {
-                    let entry = ch.entry("openclaw-weixin").or_insert_with(|| json!({}));
-                    if let Some(obj) = entry.as_object_mut() {
-                        obj.insert("enabled".into(), json!(true));
-                    }
-                    let _ = super::config::save_openclaw_json(&cfg);
-                }
-            }
+            let mut cfg = super::config::load_openclaw_json()?;
+            let channels = cfg
+                .as_object_mut()
+                .ok_or("配置格式错误")?
+                .entry("channels")
+                .or_insert_with(|| json!({}));
+            let channel = channels
+                .as_object_mut()
+                .ok_or("channels 格式错误")?
+                .entry("openclaw-weixin")
+                .or_insert_with(|| json!({}));
+            channel
+                .as_object_mut()
+                .ok_or("微信渠道配置格式错误")?
+                .insert("enabled".into(), json!(true));
+            super::config::save_openclaw_json(&cfg)?;
         }
 
         progress_payload(100);
@@ -4830,6 +4660,7 @@ pub async fn list_configured_platforms() -> Result<Value, String> {
 #[tauri::command]
 pub async fn get_channel_plugin_status(plugin_id: String) -> Result<Value, String> {
     let plugin_id = plugin_id.trim();
+    validate_channel_plugin_id(plugin_id)?;
     if plugin_id.is_empty() {
         return Err("plugin_id 不能为空".into());
     }
@@ -4841,12 +4672,12 @@ pub async fn get_channel_plugin_status(plugin_id: String) -> Result<Value, Strin
         (false, None)
     };
     // QQ 官方包落在 extensions/openclaw-qqbot，运行时插件 id 仍为 qqbot
-    let installed = if plugin_id == OPENCLAW_QQBOT_PLUGIN_ID {
+    let mut installed = if plugin_id == OPENCLAW_QQBOT_PLUGIN_ID {
         qq_ext_ok
     } else {
         plugin_dir.is_dir() && plugin_install_marker_exists(&plugin_dir)
     };
-    let path_display: PathBuf = if plugin_id == OPENCLAW_QQBOT_PLUGIN_ID {
+    let mut path_display: PathBuf = if plugin_id == OPENCLAW_QQBOT_PLUGIN_ID {
         match qq_ext_loc {
             Some("openclaw-qqbot") => generic_plugin_dir(OPENCLAW_QQBOT_EXTENSION_FOLDER),
             Some("qqbot") => qqbot_plugin_dir(),
@@ -4858,7 +4689,48 @@ pub async fn get_channel_plugin_status(plugin_id: String) -> Result<Value, Strin
     let legacy_backup_detected = legacy_plugin_backup_dir(plugin_id).exists();
 
     // 检测插件是否为 OpenClaw 内置（新版 openclaw/openclaw-zh 打包了 feishu 等插件）
-    let builtin = is_plugin_builtin(plugin_id);
+    let mut builtin = is_plugin_builtin(plugin_id);
+    if !installed && !builtin && super::openclaw_dir().join("npm/projects").is_dir() {
+        let output = tokio::time::timeout(
+            Duration::from_secs(30),
+            crate::utils::openclaw_command_async()
+                .args(["plugins", "list", "--json"])
+                .kill_on_drop(true)
+                .output(),
+        )
+        .await
+        .map_err(|_| "读取插件注册表超时")?
+        .map_err(|e| format!("读取插件注册表失败: {e}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "读取插件注册表失败: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+        let inventory: Value = serde_json::from_slice(&output.stdout)
+            .map_err(|e| format!("插件注册表 JSON 无效: {e}"))?;
+        if let Some(entry) = inventory
+            .get("plugins")
+            .and_then(Value::as_array)
+            .and_then(|items| {
+                items
+                    .iter()
+                    .find(|p| p.get("id").and_then(Value::as_str) == Some(plugin_id))
+            })
+        {
+            if let Some(dir) = entry
+                .get("rootDir")
+                .and_then(Value::as_str)
+                .map(PathBuf::from)
+            {
+                if plugin_directory_matches(&dir, plugin_id) {
+                    builtin = entry.get("origin").and_then(Value::as_str) == Some("bundled");
+                    installed = !builtin;
+                    path_display = dir;
+                }
+            }
+        }
+    }
 
     let cfg = super::config::load_openclaw_json().unwrap_or_else(|_| json!({}));
     let allowed = cfg
@@ -5028,7 +4900,7 @@ pub async fn install_plugin(package_name: String) -> Result<Value, String> {
 
     let cli = crate::utils::resolve_openclaw_cli_path()
         .ok_or_else(|| "找不到 OpenClaw CLI，请先安装".to_string())?;
-    let output = std::process::Command::new(&cli)
+    let output = crate::utils::background_command(&cli)
         .args(["plugins", "install", &package_name])
         .current_dir(dirs::home_dir().unwrap_or_default())
         .output()
@@ -5593,59 +5465,83 @@ fn cleanup_failed_extension_install(
 
 /// 检测插件是否为 OpenClaw 内置（作为 npm 依赖打包在 openclaw/openclaw-zh 中）
 fn is_plugin_builtin(plugin_id: &str) -> bool {
-    // 插件 ID → npm 包名映射
-    let pkg_name = match plugin_id {
-        "feishu" => "@openclaw/feishu",
-        "openclaw-lark" => "@larksuite/openclaw-lark",
-        "dingtalk-connector" => "@dingtalk-real-ai/dingtalk-connector",
-        _ => return false,
+    // 只检查当前绑定 CLI，避免另一套安装的插件造成误判。
+    let Some(cli) = crate::utils::resolve_openclaw_cli_path() else {
+        return false;
     };
-    // 在全局 npm node_modules 中查找 openclaw 安装目录
-    let npm_dirs: Vec<PathBuf> = {
-        let mut dirs = Vec::new();
-        #[cfg(target_os = "windows")]
-        if let Some(appdata) = std::env::var_os("APPDATA") {
-            let base = PathBuf::from(appdata).join("npm").join("node_modules");
-            dirs.push(base.join("@qingchencloud").join("openclaw-zh"));
-            dirs.push(base.join("openclaw"));
-        }
-        #[cfg(target_os = "macos")]
-        {
-            dirs.push(PathBuf::from(
-                "/opt/homebrew/lib/node_modules/@qingchencloud/openclaw-zh",
-            ));
-            dirs.push(PathBuf::from("/opt/homebrew/lib/node_modules/openclaw"));
-            dirs.push(PathBuf::from(
-                "/usr/local/lib/node_modules/@qingchencloud/openclaw-zh",
-            ));
-            dirs.push(PathBuf::from("/usr/local/lib/node_modules/openclaw"));
-        }
-        #[cfg(target_os = "linux")]
-        {
-            dirs.push(PathBuf::from(
-                "/usr/local/lib/node_modules/@qingchencloud/openclaw-zh",
-            ));
-            dirs.push(PathBuf::from("/usr/local/lib/node_modules/openclaw"));
-            dirs.push(PathBuf::from(
-                "/usr/lib/node_modules/@qingchencloud/openclaw-zh",
-            ));
-            dirs.push(PathBuf::from("/usr/lib/node_modules/openclaw"));
-        }
-        dirs
+    let Some(pkg) = super::config::find_openclaw_package_json(Path::new(&cli)) else {
+        return false;
     };
-    // 插件包名拆分成路径片段，如 @openclaw/feishu → @openclaw/feishu
-    let pkg_path: PathBuf = pkg_name.split('/').collect();
-    for base in &npm_dirs {
-        let candidate = base.join("node_modules").join(&pkg_path);
-        if candidate.join("package.json").is_file() {
-            return true;
-        }
-    }
-    false
+    let Some(root) = pkg.parent() else {
+        return false;
+    };
+    let package_name = match plugin_id {
+        "openclaw-lark" => "@larksuite/openclaw-lark".to_string(),
+        "dingtalk-connector" => "@dingtalk-real-ai/dingtalk-connector".to_string(),
+        _ => format!("@openclaw/{plugin_id}"),
+    };
+    [
+        root.join("extensions").join(plugin_id),
+        root.join("dist/extensions").join(plugin_id),
+        root.join("node_modules").join(package_name),
+    ]
+    .iter()
+    .any(|dir| plugin_directory_matches(dir, plugin_id))
 }
 
 fn generic_plugin_dir(plugin_id: &str) -> PathBuf {
     super::openclaw_dir().join("extensions").join(plugin_id)
+}
+
+fn plugin_directory_matches(dir: &Path, plugin_id: &str) -> bool {
+    let manifest = fs::read(dir.join("openclaw.plugin.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
+    if let Some(id) = manifest
+        .as_ref()
+        .and_then(|m| m.get("id"))
+        .and_then(Value::as_str)
+    {
+        return id == plugin_id;
+    }
+    dir.join("package.json").is_file()
+}
+
+fn channel_plugin_install_spec(
+    package_name: &str,
+    version: Option<&str>,
+) -> Result<String, String> {
+    // 替换 @latest 而非再次追加 @version；严格限制 npm 规格避免 Windows Shell 元字符。
+    let re = regex::Regex::new(r"^(@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)(?:@([a-zA-Z0-9][a-zA-Z0-9._+-]*))?$").unwrap();
+    let caps = re
+        .captures(package_name.trim())
+        .ok_or("插件 npm 包名或版本格式无效")?;
+    let selected = version
+        .filter(|v| !v.is_empty())
+        .map(str::trim)
+        .or_else(|| caps.get(2).map(|v| v.as_str()));
+    if let Some(v) = selected {
+        if !regex::Regex::new(r"^[a-zA-Z0-9][a-zA-Z0-9._+-]*$")
+            .unwrap()
+            .is_match(v)
+        {
+            return Err("插件版本格式无效".into());
+        }
+        Ok(format!("{}@{v}", &caps[1]))
+    } else {
+        Ok(caps[1].to_string())
+    }
+}
+
+fn validate_channel_plugin_id(id: &str) -> Result<(), String> {
+    if id.contains("..")
+        || !regex::Regex::new(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
+            .unwrap()
+            .is_match(id)
+    {
+        return Err("插件 ID 格式无效".into());
+    }
+    Ok(())
 }
 
 fn generic_plugin_backup_dir(plugin_id: &str) -> PathBuf {
@@ -5693,6 +5589,9 @@ pub async fn install_channel_plugin(
     plugin_id: String,
     version: Option<String>,
 ) -> Result<String, String> {
+    let _install_guard = CHANNEL_PLUGIN_INSTALL_LOCK
+        .try_lock()
+        .map_err(|_| "已有渠道插件正在安装，请等待完成后再试")?;
     use std::io::{BufRead, BufReader};
     use std::process::Stdio;
     use tauri::Emitter;
@@ -5702,17 +5601,25 @@ pub async fn install_channel_plugin(
     if package_name.is_empty() || plugin_id.is_empty() {
         return Err("package_name 和 plugin_id 不能为空".into());
     }
-    // 拼接版本号：package@version（兼容用户 OpenClaw 版本的插件）
-    let install_spec = match &version {
-        Some(v) if !v.is_empty() => format!("{}@{}", package_name, v),
-        _ => package_name.to_string(),
-    };
+    validate_channel_plugin_id(plugin_id)?;
+    let install_spec = channel_plugin_install_spec(package_name, version.as_deref())?;
     let plugin_dir = generic_plugin_dir(plugin_id);
     let plugin_backup = generic_plugin_backup_dir(plugin_id);
     let config_path = super::openclaw_dir().join("openclaw.json");
     let config_backup = generic_plugin_config_backup_path(plugin_id);
     let had_existing_plugin = plugin_dir.exists();
     let had_existing_config = config_path.exists();
+
+    // 重复点击安装不搬走仍被运行中的配置引用的插件。
+    let existing_status = get_channel_plugin_status(plugin_id.to_string()).await?;
+    if existing_status["installed"].as_bool() == Some(true)
+        || existing_status["builtin"].as_bool() == Some(true)
+    {
+        let mut cfg = super::config::load_openclaw_json()?;
+        ensure_plugin_allowed(&mut cfg, plugin_id)?;
+        super::config::save_openclaw_json(&cfg)?;
+        return Ok("插件已就绪".into());
+    }
 
     let _ = app.emit("plugin-log", format!("正在安装插件 {} ...", package_name));
     let _ = app.emit("plugin-progress", 10);
@@ -5741,8 +5648,20 @@ pub async fn install_channel_plugin(
     }
 
     let _ = app.emit("plugin-log", format!("安装规格: {}", install_spec));
-    let spawn_result = crate::utils::openclaw_command()
-        .args(["plugins", "install", &install_spec])
+    let mut command = crate::utils::openclaw_command();
+    command.args(["plugins", "install", &install_spec]);
+    if super::config::installed_openclaw_version_from_files().is_some_and(|v| {
+        let parts: Vec<u32> = v
+            .split(['.', '-'])
+            .take(3)
+            .filter_map(|n| n.parse().ok())
+            .collect();
+        parts.as_slice() >= [2026, 9, 4].as_slice()
+    }) {
+        command.arg("--force");
+    }
+    let spawn_result = command
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn();
@@ -5816,7 +5735,7 @@ pub async fn install_channel_plugin(
             return Err("插件安装失败：当前 OpenClaw 版本过低，请先升级后重试".into());
         }
         return if rollback_err.is_empty() {
-            Err(format!("插件安装失败：{}", package_name))
+            Err(format!("插件安装失败：{}\n{}", package_name, all_stderr))
         } else {
             Err(format!(
                 "插件安装失败：{}；回退失败：{}",
@@ -5825,7 +5744,17 @@ pub async fn install_channel_plugin(
         };
     }
 
+    let installed_status = get_channel_plugin_status(plugin_id.to_string()).await;
     let finalize = (|| -> Result<(), String> {
+        let detected = installed_status?;
+        if detected["installed"].as_bool() != Some(true)
+            && detected["builtin"].as_bool() != Some(true)
+        {
+            return Err(format!(
+                "安装进程已结束，但未检测到插件 {} 的有效文件",
+                plugin_id
+            ));
+        }
         let mut cfg = super::config::load_openclaw_json()?;
         ensure_plugin_allowed(&mut cfg, plugin_id)?;
         super::config::save_openclaw_json(&cfg)?;
@@ -5864,14 +5793,23 @@ pub async fn install_qqbot_plugin(
     app: tauri::AppHandle,
     version: Option<String>,
 ) -> Result<String, String> {
+    let _install_guard = CHANNEL_PLUGIN_INSTALL_LOCK
+        .try_lock()
+        .map_err(|_| "已有渠道插件正在安装，请等待完成后再试")?;
     use std::io::{BufRead, BufReader};
     use std::process::Stdio;
     use tauri::Emitter;
 
-    let install_spec = match &version {
-        Some(v) if !v.is_empty() => format!("{}@{}", TENCENT_OPENCLAW_QQBOT_PACKAGE, v),
-        _ => TENCENT_OPENCLAW_QQBOT_PACKAGE.to_string(),
-    };
+    let install_spec =
+        channel_plugin_install_spec(TENCENT_OPENCLAW_QQBOT_PACKAGE, version.as_deref())?;
+    let existing = get_channel_plugin_status(OPENCLAW_QQBOT_PLUGIN_ID.to_string()).await?;
+    if existing["installed"].as_bool() == Some(true) || existing["builtin"].as_bool() == Some(true)
+    {
+        let mut cfg = super::config::load_openclaw_json()?;
+        ensure_plugin_allowed(&mut cfg, OPENCLAW_QQBOT_PLUGIN_ID)?;
+        super::config::save_openclaw_json(&cfg)?;
+        return Ok("插件已就绪".into());
+    }
 
     let plugin_dir = generic_plugin_dir(OPENCLAW_QQBOT_EXTENSION_FOLDER);
     let plugin_backup = generic_plugin_backup_dir(OPENCLAW_QQBOT_EXTENSION_FOLDER);
@@ -5910,8 +5848,20 @@ pub async fn install_qqbot_plugin(
     }
 
     let _ = app.emit("plugin-log", format!("安装规格: {}", install_spec));
-    let spawn_result = crate::utils::openclaw_command()
-        .args(["plugins", "install", &install_spec])
+    let mut command = crate::utils::openclaw_command();
+    command.args(["plugins", "install", &install_spec]);
+    if super::config::installed_openclaw_version_from_files().is_some_and(|v| {
+        let parts: Vec<u32> = v
+            .split(['.', '-'])
+            .take(3)
+            .filter_map(|n| n.parse().ok())
+            .collect();
+        parts.as_slice() >= [2026, 9, 4].as_slice()
+    }) {
+        command.arg("--force");
+    }
+    let spawn_result = command
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn();
@@ -6033,7 +5983,10 @@ pub async fn install_qqbot_plugin(
         return Err("QQ 插件安装失败：openclaw plugins install 进程退出码非零".into());
     }
 
-    if !plugin_install_marker_exists(&plugin_dir) {
+    let installed = get_channel_plugin_status(OPENCLAW_QQBOT_PLUGIN_ID.to_string()).await?;
+    if installed["installed"].as_bool() != Some(true)
+        && installed["builtin"].as_bool() != Some(true)
+    {
         let _ = app.emit(
             "plugin-log",
             format!("未在 {} 检测到插件文件，正在回退", plugin_dir.display()),
@@ -7663,5 +7616,59 @@ mod tests {
         });
 
         assert!(value_has_messaging_credential(&account));
+    }
+}
+#[cfg(test)]
+mod channel_plugin_install_regression_tests {
+    use super::*;
+
+    #[test]
+    fn replaces_existing_npm_selector_instead_of_appending() {
+        assert_eq!(
+            channel_plugin_install_spec("@openclaw/line@latest", Some("2026.9.4")).unwrap(),
+            "@openclaw/line@2026.9.4"
+        );
+        assert_eq!(
+            channel_plugin_install_spec("@openclaw/line", Some("2026.7.1-2")).unwrap(),
+            "@openclaw/line@2026.7.1-2"
+        );
+        assert_eq!(
+            channel_plugin_install_spec("@larksuite/openclaw-lark@latest", None).unwrap(),
+            "@larksuite/openclaw-lark@latest"
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_specs_and_paths_before_any_install_or_backup() {
+        for spec in [
+            "@openclaw/line@latest@2026.8.2",
+            "../outside",
+            "x & whoami",
+            "x;cmd",
+        ] {
+            assert!(channel_plugin_install_spec(spec, None).is_err());
+        }
+        assert!(channel_plugin_install_spec("line", Some("1 & cmd")).is_err());
+        assert!(validate_channel_plugin_id("../outside").is_err());
+        assert!(validate_channel_plugin_id("line").is_ok());
+    }
+
+    #[test]
+    fn manifest_id_must_match_the_requested_channel() {
+        let root = std::env::temp_dir().join(format!(
+            "clawpanel-plugin-manifest-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("package.json"), "{}").unwrap();
+        fs::write(root.join("openclaw.plugin.json"), r#"{"id":"qqbot"}"#).unwrap();
+        assert!(plugin_directory_matches(&root, "qqbot"));
+        assert!(!plugin_directory_matches(&root, "other"));
+        assert!(!plugin_directory_matches(&root.join("absent"), "qqbot"));
+        fs::remove_dir_all(root).unwrap();
     }
 }

@@ -16,7 +16,7 @@ NPM_REGISTRY="https://registry.npmmirror.com"
 PANEL_NODE_MIN_VERSION="18.0.0"
 # 新安装默认官方稳定版；显式 OPENCLAW_SOURCE=chinese 时仍安装汉化稳定版。
 OPENCLAW_SOURCE="${OPENCLAW_SOURCE:-official}"
-OPENCLAW_OFFICIAL_RECOMMENDED_VERSION="2026.8.2"
+OPENCLAW_OFFICIAL_RECOMMENDED_VERSION="2026.10.4"
 OPENCLAW_CHINESE_RECOMMENDED_VERSION="2026.7.1-2-zh.1"
 case "$OPENCLAW_SOURCE" in
     official) OPENCLAW_RECOMMENDED_VERSION="$OPENCLAW_OFFICIAL_RECOMMENDED_VERSION" ;;
@@ -30,6 +30,7 @@ OPENCLAW_NODE_22_19_FLOOR_VERSION="2026.6.5"
 OPENCLAW_NODE_7_1_FLOOR_VERSION="2026.7.1"
 OPENCLAW_NODE_22_19_REQUIREMENT=">=22.19.0"
 OPENCLAW_7_1_NODE_REQUIREMENT=">=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0"
+OPENCLAW_9_4_NODE_REQUIREMENT=">=24.16.0 <25 || >=26.1.0"
 NODE_MIN_VERSION="$PANEL_NODE_MIN_VERSION"
 NODE_REQUIREMENT=">=${PANEL_NODE_MIN_VERSION}"
 
@@ -171,7 +172,10 @@ node_version_satisfies_7_1() {
 }
 
 node_version_satisfies_requirement() {
-    if [ "$NODE_REQUIREMENT" = "$OPENCLAW_7_1_NODE_REQUIREMENT" ]; then
+    if [ "$NODE_REQUIREMENT" = "$OPENCLAW_9_4_NODE_REQUIREMENT" ]; then
+        local actual="${1#v}"
+        { version_ge "$actual" "24.16.0" && ! version_ge "$actual" "25.0.0"; } || version_ge "$actual" "26.1.0"
+    elif [ "$NODE_REQUIREMENT" = "$OPENCLAW_7_1_NODE_REQUIREMENT" ]; then
         node_version_satisfies_7_1 "$1"
     else
         version_ge "$1" "$NODE_MIN_VERSION"
@@ -192,13 +196,15 @@ install_node() {
     fi
 
     echo "📦 安装 Node.js LTS（要求 ${NODE_REQUIREMENT}）..."
+    local node_major=22
+    if [ "$NODE_REQUIREMENT" = "$OPENCLAW_9_4_NODE_REQUIREMENT" ]; then node_major=24; fi
     case "$OS" in
         ubuntu|debian|linuxmint|pop)
-            curl -fsSL https://deb.nodesource.com/setup_22.x | run_pkg_cmd bash -
+            curl -fsSL "https://deb.nodesource.com/setup_${node_major}.x" | run_pkg_cmd bash -
             run_pkg_cmd apt-get install -y nodejs
             ;;
         centos|rhel|fedora|rocky|alma)
-            curl -fsSL https://rpm.nodesource.com/setup_22.x | run_pkg_cmd bash -
+            curl -fsSL "https://rpm.nodesource.com/setup_${node_major}.x" | run_pkg_cmd bash -
             run_pkg_cmd yum install -y nodejs
             ;;
         alpine)
@@ -224,7 +230,11 @@ install_node() {
 ensure_node_for_openclaw_version() {
     local openclaw_version="$1"
     local base_version="${openclaw_version%%-*}"
-    if [ -n "$base_version" ] && version_ge "$base_version" "$OPENCLAW_NODE_7_1_FLOOR_VERSION"; then
+    if [ -n "$base_version" ] && version_ge "$base_version" "2026.9.4"; then
+        NODE_MIN_VERSION="24.16.0"
+        NODE_REQUIREMENT="$OPENCLAW_9_4_NODE_REQUIREMENT"
+        install_node
+    elif [ -n "$base_version" ] && version_ge "$base_version" "$OPENCLAW_NODE_7_1_FLOOR_VERSION"; then
         NODE_MIN_VERSION="22.22.3"
         NODE_REQUIREMENT="$OPENCLAW_7_1_NODE_REQUIREMENT"
         echo "ℹ️  OpenClaw ${openclaw_version} 需要 Node.js ${NODE_REQUIREMENT}"

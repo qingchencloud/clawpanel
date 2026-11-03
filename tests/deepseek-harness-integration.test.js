@@ -29,7 +29,9 @@ test('DeepSeek Harness 引擎、页面和语言包注册完整', () => {
   assert.match(engine, /path:\s*'\/dsh\/dashboard'/)
   assert.match(engine, /path:\s*'\/dsh\/workspace'/)
   assert.match(engine, /route:\s*'\/dsh\/workspace'/)
-  assert.match(dashboard, /api\.dshInstall\(\)/)
+  assert.match(dashboard, /api\.dshInstall\(isPreview \? 'preview' : 'stable'\)/)
+  assert.match(dashboard, /data-action="preview"/)
+  assert.match(dashboard, /data-action="stable"/)
   assert.match(dashboard, /api\.dshUninstall\(\)/)
   assert.doesNotMatch(dashboard, /dsh-workspace-frame/)
   assert.match(workspace, /api\.dshEmbedSession\(state\.status\.port, readDshWebStorage\(\)\)/)
@@ -55,7 +57,7 @@ test('Web 版通过专用令牌和沙箱代理内嵌完整 Harness 页面', () =
 })
 
 test('Web 与 Tauri 同名命令链完整且 Web 命令固定本机处理', () => {
-  for (const command of ['dsh_status', 'dsh_install', 'dsh_uninstall', 'dsh_start', 'dsh_stop', 'dsh_sync_provider']) {
+  for (const command of ['dsh_status', 'dsh_install', 'dsh_uninstall', 'dsh_start', 'dsh_stop', 'dsh_sync_provider', 'dsh_embed_session']) {
     assert.match(devApi, new RegExp(`${command}\\(`), `dev-api 缺少 ${command}`)
     assert.match(devApi, new RegExp(`'${command}'`), `${command} 必须加入 ALWAYS_LOCAL`)
     assert.match(rustLib, new RegExp(`deepseek_harness::${command}`), `Rust invoke handler 缺少 ${command}`)
@@ -65,17 +67,43 @@ test('Web 与 Tauri 同名命令链完整且 Web 命令固定本机处理', () =
   }
 })
 
+test('更新不自动降级或覆盖运行进程，刷新保留操作错误', () => {
+  assert.match(dashboard, /status\.updateAvailable && !status\.managed && !status\.running/)
+  assert.match(dashboard, /preserveError: true/)
+  assert.match(dashboard, /esc\(state\.error \|\| status\.error\)/)
+  assert.match(devApi, /dshHasUpdate\(/)
+  assert.match(rustModule, /dsh_has_update\(/)
+})
+
+test('新版受管工作台固定网页选目录，叠加层同时包含在 Web 包和桌面后端', () => {
+  const overlay = read('../scripts/deepseek-harness-web.yml')
+  assert.match(overlay, /id: directory-picker\s+disabled: true/)
+  assert.match(overlay, /@deepseek-ai\/dsh-host-directory-picker-browse/)
+  assert.match(overlay, /@deepseek-ai\/dsh-client-ui-directory-picker-browse/)
+  for (const source of [devApi, rustModule]) {
+    assert.match(source, /deepseek-harness-web\.yml/)
+    assert.match(source, /--patch/)
+  }
+})
+
 test('安装链固定 DSH 与 pnpm 版本，并显式允许所需原生构建', () => {
   for (const source of [adapter, rustModule]) {
-    assert.match(source, /0\.1\.1-rc\.2/)
+    assert.match(source, /0\.2\.0-rc\.2/)
+    assert.match(source, /0\.2\.1-alpha\.4/)
+  }
+  for (const source of [adapter, rustModule]) {
+    assert.doesNotMatch(source, /11\.7\.0/)
+    assert.match(source, /11\.28\.5/)
   }
   for (const source of [devApi, rustModule]) {
-    assert.match(source, /11\.7\.0/)
     for (const dependency of ['dsh-subprocess-local', 'koffi', 'node-pty', 'protobufjs']) {
       assert.match(source, new RegExp(dependency))
     }
     assert.match(source, /allow-build/)
   }
+  assert.match(tauriApi, /dshInstall: \(channel = 'stable'\)/)
+  assert.match(devApi, /dsh_install\(\{ channel = 'stable' \} = \{\}\)/)
+  assert.match(rustModule, /pub async fn dsh_install\(channel: Option<String>\)/)
 })
 
 test('Harness 服务只绑定回环地址且不会终止非受管进程', () => {

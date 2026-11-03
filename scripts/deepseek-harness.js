@@ -6,10 +6,41 @@
  */
 
 export const DSH_PACKAGE_NAME = '@deepseek-ai/dsh'
-export const DSH_PACKAGE_VERSION = '0.1.1-rc.2'
+export const DSH_STABLE_VERSION = '0.2.0-rc.2'
+export const DSH_PREVIEW_VERSION = '0.2.1-alpha.4'
+export const DSH_PACKAGE_VERSION = DSH_STABLE_VERSION
+export const DSH_STABLE_PNPM_VERSION = '11.28.5'
+export const DSH_PREVIEW_PNPM_VERSION = '11.28.5'
+export const DSH_RELEASE_CHANNELS = Object.freeze({
+  stable: Object.freeze({ channel: 'stable', version: DSH_STABLE_VERSION, pnpmVersion: DSH_STABLE_PNPM_VERSION }),
+  preview: Object.freeze({ channel: 'preview', version: DSH_PREVIEW_VERSION, pnpmVersion: DSH_PREVIEW_PNPM_VERSION }),
+})
 export const DSH_DEFAULT_PORT = 3080
 export const DSH_SETTINGS_NAMESPACE = 'llm-pi-ai'
 export const DSH_DEFAULT_MODEL_NAMESPACE = 'agent-default-model'
+
+/** 只允许面板声明过的发行通道，默认始终保持稳定版。 */
+export function dshReleaseChannel(value = 'stable') {
+  const channel = String(value || 'stable').trim().toLowerCase()
+  if (!Object.hasOwn(DSH_RELEASE_CHANNELS, channel)) throw new Error(`DeepSeek Harness 发行通道无效: ${channel || '-'}`)
+  return channel
+}
+
+export function dshHasUpdate(current, target = DSH_PACKAGE_VERSION) {
+  const parse = value => String(value || '').match(/^(\d+)\.(\d+)\.(\d+)(?:-([\w.-]+))?(?:\+[\w.-]+)?$/)
+  const a = parse(current), b = parse(target)
+  if (!a || !b) return false
+  for (let i = 1; i <= 3; i++) if (+a[i] !== +b[i]) return +a[i] < +b[i]
+  if (!a[4] || !b[4]) return !!a[4] && !b[4]
+  const ap = a[4].split('.'), bp = b[4].split('.')
+  for (let i = 0; i < Math.max(ap.length, bp.length); i++) {
+    if (ap[i] === bp[i]) continue
+    if (ap[i] === undefined || bp[i] === undefined) return ap[i] === undefined
+    const an = /^\d+$/.test(ap[i]), bn = /^\d+$/.test(bp[i])
+    return an && bn ? +ap[i] < +bp[i] : an !== bn ? an : ap[i] < bp[i]
+  }
+  return false
+}
 
 const DSH_PROTOCOL_MAP = {
   'openai-completions': 'openai-completions',
@@ -117,11 +148,29 @@ function rpcErrorMessage(method, result) {
   return String(error?.message || error?.code || error || `${method} 调用失败`)
 }
 
+// 保留旧适配器的业务接口；新版 Typert 使用斜线路径和命名参数封套。
+export function dshWireRequest(method, payload, modern = false) {
+  if (!modern) return { method, payload }
+  const names = { 'llm.providers': 'llm/listProviders', 'llm.models': 'session/modelCatalog' }
+  return { method: names[method] || method.replaceAll('.', '/'), payload: { args: payload } }
+}
+
+export function normalizeDshRpcValue(method, value, modern = false) {
+  if (!modern) return value
+  if (method === 'credentials.describe') return { credentials: value }
+  if (method === 'llm.providers') return {
+    providers: (Array.isArray(value) ? value : []).map(p => ({ ...p, provider: p.id, active: true })),
+  }
+  return value
+}
+
 /** 调用 Harness Web carrier 的单次回环 RPC。 */
 export async function dshRpc(method, payload = {}, {
   port = DSH_DEFAULT_PORT,
   fetchImpl = globalThis.fetch,
   timeoutMs = 8000,
+  modern = false,
+  headers = {},
 } = {}) {
   const normalizedPort = normalizeDshPort(port)
   if (typeof fetchImpl !== 'function') throw new Error('当前运行时缺少 fetch')
@@ -130,11 +179,12 @@ export async function dshRpc(method, payload = {}, {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   let response
+  const wire = dshWireRequest(method, payload, modern)
   try {
-    response = await fetchImpl(`http://127.0.0.1:${normalizedPort}/api/${method}`, {
+    response = await fetchImpl(`http://127.0.0.1:${normalizedPort}/api/${wire.method}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'client-request', rpcId, method, payload }),
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'client-request', rpcId, ...wire }),
       signal: controller.signal,
     })
   } catch (error) {
@@ -143,6 +193,7 @@ export async function dshRpc(method, payload = {}, {
   } finally {
     clearTimeout(timer)
   }
+  if (response.status === 401) throw new Error('DeepSeek Harness 需要会话认证，请停止后由 ClawPanel 重新启动受管服务')
   const text = await response.text()
   let body
   try { body = text ? JSON.parse(text) : {} } catch { throw new Error(`DeepSeek Harness 返回非 JSON 响应: HTTP ${response.status}`) }
@@ -151,7 +202,7 @@ export async function dshRpc(method, payload = {}, {
     throw new Error(`DeepSeek Harness RPC 响应不匹配: ${method}`)
   }
   if (!body?.result?.ok) throw new Error(rpcErrorMessage(method, body?.result))
-  return body.result.value
+  return normalizeDshRpcValue(method, body.result.value, modern)
 }
 
 function namespaceOf(describe, ns) {

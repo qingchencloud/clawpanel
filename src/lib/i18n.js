@@ -6,18 +6,20 @@ import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 
 const LANG_KEY = 'clawpanel_lang'
 const FALLBACK = 'zh-CN'
+// Vite 将 JSON 转为 JS 模块；直接 Node 导入仍需 JSON 类型声明。
+const jsonImportOptions = import.meta.env ? undefined : { with: { type: 'json' } }
 const LOCALE_LOADERS = {
   'zh-CN': async () => zhCN,
-  'zh-TW': async () => (await import('../locales/zh-TW.json', { with: { type: 'json' } })).default,
-  en: async () => (await import('../locales/en.json', { with: { type: 'json' } })).default,
-  ja: async () => (await import('../locales/ja.json', { with: { type: 'json' } })).default,
-  ko: async () => (await import('../locales/ko.json', { with: { type: 'json' } })).default,
-  vi: async () => (await import('../locales/vi.json', { with: { type: 'json' } })).default,
-  es: async () => (await import('../locales/es.json', { with: { type: 'json' } })).default,
-  pt: async () => (await import('../locales/pt.json', { with: { type: 'json' } })).default,
-  ru: async () => (await import('../locales/ru.json', { with: { type: 'json' } })).default,
-  fr: async () => (await import('../locales/fr.json', { with: { type: 'json' } })).default,
-  de: async () => (await import('../locales/de.json', { with: { type: 'json' } })).default,
+  'zh-TW': async () => (await import('../locales/zh-TW.json', jsonImportOptions)).default,
+  en: async () => (await import('../locales/en.json', jsonImportOptions)).default,
+  ja: async () => (await import('../locales/ja.json', jsonImportOptions)).default,
+  ko: async () => (await import('../locales/ko.json', jsonImportOptions)).default,
+  vi: async () => (await import('../locales/vi.json', jsonImportOptions)).default,
+  es: async () => (await import('../locales/es.json', jsonImportOptions)).default,
+  pt: async () => (await import('../locales/pt.json', jsonImportOptions)).default,
+  ru: async () => (await import('../locales/ru.json', jsonImportOptions)).default,
+  fr: async () => (await import('../locales/fr.json', jsonImportOptions)).default,
+  de: async () => (await import('../locales/de.json', jsonImportOptions)).default,
 }
 const LOCALE_CACHE = new Map([[FALLBACK, zhCN]])
 

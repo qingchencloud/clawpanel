@@ -2,6 +2,25 @@
  * AI 助手页面样式
  */
 
+.ast-channel-guidance { display:flex; align-items:center; gap:12px; flex:1 1 260px; min-width:0; color:var(--text-secondary); line-height:1.6; }
+.ast-channel-guidance > span { text-wrap:pretty; }
+.ast-channel-guidance a, .ast-channel-action { flex-shrink:0; color:var(--accent); font:inherit; text-decoration:none; }
+.ast-channel-action { padding:2px 0; border:0; border-bottom:1px solid transparent; background:none; cursor:pointer; }
+.ast-channel-guidance a:hover, .ast-channel-action:hover { text-decoration:underline; }
+.ast-channel-guidance a:focus-visible, .ast-channel-action:focus-visible { outline:2px solid var(--accent); outline-offset:4px; border-radius:2px; }
+.ast-platform-price { display:block; font-size:11px; font-variant-numeric:tabular-nums; margin-top:3px; }
+.ast-guide-hint { display:block; margin-top:4px; color:var(--text-secondary); }
+.ast-official-billing { flex:1 1 100%; max-width:760px; padding:2px 12px; border:1px solid var(--border-primary); border-radius:10px; background:var(--bg-secondary); }
+.ast-official-billing summary { padding:7px 0; color:var(--text-secondary); font-size:12px; line-height:1.6; cursor:pointer; list-style:none; }
+.ast-official-billing summary::-webkit-details-marker { display:none; }
+.ast-official-billing summary::before { content:'▸'; display:inline-block; margin-right:6px; color:var(--text-tertiary); transition:transform .15s; }
+.ast-official-billing[open] summary::before { transform:rotate(90deg); }
+.ast-official-billing-body { padding:0 0 9px; color:var(--text-secondary); font-size:12px; line-height:1.7; }
+.ast-official-billing-body p { margin:0 0 4px; }
+.ast-official-billing-status { color:var(--text-tertiary); }
+.ast-official-problem { flex:1 1 100%; display:flex; align-items:center; gap:8px; flex-wrap:wrap; color:var(--warning, #b45309); font-size:12px; line-height:1.6; }
+@media(max-width:760px) { .ast-channel-guidance { flex-basis:100%; flex-wrap:wrap; gap:4px 12px; } }
+
 .ast-page {
   display: flex;
   flex-direction: row;

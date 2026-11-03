@@ -48,7 +48,7 @@ pub fn read_log_tail(log_name: String, lines: Option<u32>) -> Result<String, Str
     let mut raw = Vec::new();
     file.read_to_end(&mut raw)
         .map_err(|e| format!("读取日志失败: {e}"))?;
-    let buf = String::from_utf8_lossy(&raw).into_owned();
+    let buf = crate::utils::decode_text(&raw);
 
     let mut all_lines: Vec<&str> = buf.lines().collect();
 

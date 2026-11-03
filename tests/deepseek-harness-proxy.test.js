@@ -28,6 +28,8 @@ test('内嵌 URL 只接受高熵令牌并精确剥离代理前缀', () => {
 test('HTML、插件脚本和 Manifest 的绝对入口全部留在令牌路径', () => {
   const htmlSource = [
     '<!doctype html><html><head>',
+    '<base href="/"><script type="module" src="./assets/app.js"></script>',
+    '<link rel="preload" as="script" href="/plugins/bundle.js">',
     '<script src="/plugins/pkg/client.js"></script>',
     '<script src="/assets/index.js"></script>',
     '<link href="/manifest.webmanifest"><link href="/favicon.svg">',
@@ -44,6 +46,8 @@ test('HTML、插件脚本和 Manifest 的绝对入口全部留在令牌路径', 
     }
   }
   assert.match(result, /__CLAWPANEL_DSH_SANDBOX__/)
+  assert.ok(result.includes(`<base href="${PREFIX}/">`))
+  assert.match(result, /<link crossorigin="anonymous" rel="preload"/)
   assert.match(result, /proxyRoots=\['\/api','\/plugins','\/assets'/)
   assert.match(result, /<script crossorigin="anonymous" src=/)
   assert.match(result, /document\.createElement=\(name,options\)=>/)

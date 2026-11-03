@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 
 import * as presets from '../src/lib/model-presets.js'
 
-const { API_TYPES, PROVIDER_PRESETS, MODEL_PRESETS, QTCOOL, CIYAPI } = presets
+const { API_TYPES, PROVIDER_PRESETS, MODEL_PRESETS } = presets
 
 test('OpenClaw 7.1 API 类型与上游契约一致', () => {
   assert.deepEqual(API_TYPES.map(item => item.value), [
@@ -54,36 +54,19 @@ test('Atlas Cloud 预设使用 OpenAI-compatible 端点和嵌套模型 ID', () =
   ])
 })
 
-test('词元 API 赞助预设使用独立 provider 与大陆加速地址', () => {
-  const ciyapi = PROVIDER_PRESETS.find(p => p.key === 'ciyapi')
-  assert.ok(ciyapi)
-  assert.equal(ciyapi.label, '词元 API')
-  assert.equal(ciyapi.badge, '赞助')
-  assert.equal(ciyapi.sponsored, true)
-  assert.equal(ciyapi.baseUrl, 'https://ciyapi.79tian.com/v1')
-  assert.equal(ciyapi.api, 'openai-completions')
-  assert.equal(CIYAPI.providerKey, 'ciyapi')
-  assert.equal(CIYAPI.keyUrl, 'https://ciyapi.79tian.com/keys/')
-  assert.equal(CIYAPI.pricingUrl, 'https://ciyapi.79tian.com/pricing/')
-  assert.equal(CIYAPI.walletUrl, 'https://ciyapi.79tian.com/wallet/')
+test('服务商预设不再包含晴辰云和词元推广', () => {
+  assert.equal(PROVIDER_PRESETS.some(item => ['qtcool', 'ciyapi'].includes(item.key)), false)
+  assert.equal('QTCOOL' in presets, false)
+  assert.equal('CIYAPI' in presets, false)
 })
 
-test('晴辰云免费测试预设与词元赞助预设并存且互不覆盖', () => {
-  const qtcool = PROVIDER_PRESETS.find(p => p.key === 'qtcool')
-  const ciyapi = PROVIDER_PRESETS.find(p => p.key === 'ciyapi')
-  assert.ok(qtcool)
-  assert.ok(ciyapi)
-  assert.equal(qtcool.label, '晴辰云')
-  assert.equal(qtcool.badge, '免费测试')
-  assert.equal(qtcool.baseUrl, 'https://gpt.qt.cool/v1')
-  assert.equal(QTCOOL.providerKey, 'qtcool')
-  assert.equal(QTCOOL.checkinUrl, 'https://gpt.qt.cool/checkin')
-  assert.equal(QTCOOL.defaultKey, '')
-  assert.equal(CIYAPI.defaultKey, '')
-  assert.notEqual(QTCOOL.providerKey, CIYAPI.providerKey)
+test('官方和本地普通服务商预设保持可选', () => {
+  for (const key of ['openai', 'anthropic', 'deepseek', 'google', 'ollama']) {
+    assert.ok(PROVIDER_PRESETS.some(item => item.key === key), `${key} 普通预设丢失`)
+  }
 })
 
-test('快捷模型列表未提供密钥时不发请求也不读取旧配置', async () => {
+test('读取普通模型预设不会自动发请求，旧快捷请求接口已移除', () => {
   const originalFetch = globalThis.fetch
   let calls = 0
   globalThis.fetch = async () => {
@@ -91,8 +74,9 @@ test('快捷模型列表未提供密钥时不发请求也不读取旧配置', as
     throw new Error('不应发起请求')
   }
   try {
-    assert.deepEqual(await presets.fetchQtcoolModels(''), [])
-    assert.deepEqual(await presets.fetchCiyapiModels(), [])
+    assert.ok(PROVIDER_PRESETS.length > 0)
+    assert.equal('fetchQtcoolModels' in presets, false)
+    assert.equal('fetchCiyapiModels' in presets, false)
     assert.equal(calls, 0)
   } finally {
     globalThis.fetch = originalFetch

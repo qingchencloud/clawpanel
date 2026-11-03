@@ -1093,7 +1093,7 @@ mod tests {
 
     #[cfg(windows)]
     fn create_directory_link(link: &Path, target: &Path) {
-        let status = std::process::Command::new("cmd")
+        let status = crate::utils::background_command("cmd")
             .args([
                 "/C",
                 "mklink",

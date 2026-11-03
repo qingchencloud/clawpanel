@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  AI 어시스턴트 내장 OpenClaw & Hermes Agent 관리 패널 — 멀티엔진 AI 프레임워크 관리
+  AI 어시스턴트가 내장된 멀티엔진 AI Agent 관리 패널 — OpenClaw, Hermes, DSH, OpenCode, Pi
 </p>
 
 <p align="center">
@@ -25,38 +25,23 @@
 ---
 
 <p align="center">
-  <img src="docs/feature-showcase.gif" width="800" alt="ClawPanel 기능 쇼케이스">
+  <img src="docs/feature-showcase.gif" width="800" alt="ClawPanel 모델 설정 데모">
 </p>
 
-ClawPanel은 여러 AI Agent 프레임워크를 지원하는 시각적 관리 패널으로, 현재 [OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation) 및 [Hermes Agent](https://github.com/nousresearch/hermes-agent) 듀얼 엔진을 지원합니다. **지능형 AI 어시스턴트를 내장**하여 원클릭 설치, 자동 설정 진단, 문제 해결 및 오류 수정을 지원합니다. 8개 도구 + 4가지 모드 + 대화형 Q&A로 초보자부터 전문가까지 쉽게 관리할 수 있습니다.
+ClawPanel은 여러 AI Agent 프레임워크를 관리하는 시각적 패널로, [OpenClaw](https://github.com/1186258278/OpenClawChineseTranslation), [Hermes Agent](https://github.com/nousresearch/hermes-agent), [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), [OpenCode](https://github.com/anomalyco/opencode), 실험 버전 [Pi](https://github.com/earendil-works/pi)를 지원합니다. **지능형 AI 어시스턴트를 내장**하여 설치, 설정 진단 및 문제 해결을 지원합니다.
 
 > 🌐 **웹사이트**: [claw.qt.cool](https://claw.qt.cool/) | 📦 **다운로드**: [공식 다운로드 센터](https://claw.qt.cool/download) | 예비: [GitHub Releases](https://github.com/qingchencloud/clawpanel/releases/latest)
 
-### 🧪 무료 테스트: QingChen Cloud
+### 🌐 공식 웹사이트 계정과 공식 모델
 
-[QingChen Cloud](https://gpt.qt.cool/)는 ClawPanel용 체크인 테스트 플랫폼입니다. ClawPanel에는 QingChen Cloud 키가 내장되어 있지 않으며 기존 키도 자동으로 읽지 않습니다. 직접 가입하고 [체크인 페이지](https://gpt.qt.cool/checkin)에서 테스트 크레딧과 API Key를 받은 뒤 ClawPanel에 붙여 넣어 모델을 설정하세요. 운영 상태와 규칙은 QingChen Cloud 페이지를 기준으로 합니다.
-
-### 🤝 스폰서: CiyAPI
-
-> 제3자 스폰서 프로모션이며 CiyAPI 페이지의 최신 규칙이 적용됩니다.
-
-<p align="center">
-  <a href="https://ciyapi.79tian.com" rel="sponsored noopener noreferrer"><img src="https://img.shields.io/badge/🤝 CiyAPI-Sponsored-6366f1?style=for-the-badge" alt="CiyAPI sponsored service"></a>
-</p>
-
-- **주요 최신 모델** — GPT, Claude, Gemini, Grok, Kimi 등 지원
-- **충전 혜택** — ¥1 충전 시 $1 플랫폼 사용 크레딧
-- **할인 라우트** — 일부 라우트 할인 과금, 자세한 내용은 모델 마켓 참고
-- **OpenAI 호환** — API Key를 발급받아 ClawPanel에서 연결
-
-[CiyAPI](https://ciyapi.79tian.com/sign-up)에서 가입하고 API Key를 만든 뒤 Base URL에 `https://ciyapi.79tian.com/v1`을 사용하세요. 모델과 가격은 [모델 마켓](https://ciyapi.79tian.com/pricing/)을 확인하세요.
+[claw.qt.cool](https://claw.qt.cool)은 ClawPanel의 공식 웹사이트입니다. 웹사이트 계정을 연결하면 내장 어시스턴트와 각 엔진에서 **공식 모델**을 별도의 API 키 없이 사용할 수 있습니다. 크레딧, 사용 기록, 초대 보상은 웹사이트에서 관리됩니다. 자체 키와 로컬 설정은 그대로 독립적으로 유지되며 언제든 전환할 수 있고, 로그인을 건너뛰고 자체 키를 계속 사용할 수도 있습니다.
 
 ### 🔥 개발 보드 / 임베디드 디바이스 지원
 
 - **Orange Pi / Raspberry Pi / RK3588** — `npm run serve`로 실행
 - **Docker ARM64** — `docker run ghcr.io/qingchencloud/openclaw:latest`
 - **Armbian / Debian / Ubuntu Server** — 아키텍처 자동 감지
-- Rust / Tauri / GUI 불필요. ClawPanel Web은 **Node.js 18+**가 필요하며, OpenClaw Gateway는 설치된 OpenClaw의 `engines.node` 요구사항에 따라 검사됩니다. **Node.js 22.19.0+**를 권장합니다.
+- Rust / Tauri / GUI가 필요하지 않습니다. 기본 Web은 **Node.js 18+**, 전체 엔진 검증에는 Node.js 24.16.0+ (24.x)를 권장하며 OpenClaw는 설치된 버전의 `engines.node` 요구사항으로 검사합니다.
 
 ## 커뮤니티
 
@@ -75,7 +60,7 @@ AI Agent에 열정적인 개발자와 사용자 커뮤니티 — 함께하세요
 ## 기능
 
 - **🤖 AI 어시스턴트 (신규)** — 내장 AI 어시스턴트, 4가지 모드 + 8개 도구 + 대화형 Q&A
-- **🧩 멀티엔진 아키텍처** — OpenClaw 및 Hermes Agent 듀얼 엔진 지원, 자유롭게 전환, 각각 독립 관리
+- **🧩 멀티엔진 아키텍처** — OpenClaw, Hermes Agent, DeepSeek Harness, OpenCode 및 실험 버전 Pi를 지원하며 자유롭게 전환하고 독립적으로 관리
 - **🤖 Hermes Agent 채팅** — 내장 Hermes Agent 채팅 인터페이스, 도구 호출 시각화, 파일 시스템 액세스 토글, SSE 스트리밍
 - **🖼️ 이미지 인식** — 스크린샷 붙여넣기 또는 이미지 드래그로 AI 자동 분석
 - **대시보드** — 시스템 개요, 실시간 서비스 모니터링, 빠른 작업
@@ -90,7 +75,6 @@ AI Agent에 열정적인 개발자와 사용자 커뮤니티 — 함께하세요
 - **예약 작업** — Cron 기반 예약 실행, 멀티 채널 배달
 - **로그 뷰어** — 멀티 소스 실시간 로그 및 키워드 검색
 - **메모리 관리** — 메모리 파일 보기/편집, ZIP 내보내기, Agent 전환
-- **CiyAPI 스폰서** — GPT, Claude 등 모델, ¥1 충전 시 $1 사용 크레딧
 - **확장 도구** — cftunnel 터널 관리, ClawApp 상태 모니터링
 - **정보** — 버전 정보, 커뮤니티 링크, 관련 프로젝트
 
@@ -116,11 +100,11 @@ curl -fsSL https://raw.githubusercontent.com/qingchencloud/clawpanel/main/script
 ```bash
 docker run -d --name clawpanel --restart unless-stopped \
   -p 1420:1420 -v clawpanel-data:/root/.openclaw \
-  node:22-slim \
+  node:24.16.0-slim \
   sh -c "apt-get update && apt-get install -y git && \
-    npm install -g @qingchencloud/openclaw-zh --registry https://registry.npmmirror.com && \
+    npm install -g openclaw@2026.10.4 --registry https://registry.npmmirror.com && \
     git clone https://github.com/qingchencloud/clawpanel.git /app && \
-    cd /app && npm install && npm run build && npm run serve"
+    cd /app && npm ci && npm run build && npm run serve"
 ```
 
 ## 빠른 시작

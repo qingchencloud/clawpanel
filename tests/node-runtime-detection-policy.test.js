@@ -1,7 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { nodeVersionSatisfiesRequirement } from '../scripts/dev-api.js'
+import { nodeVersionSatisfiesRequirement, fallbackOpenclawNodeRequirement } from '../scripts/dev-api.js'
+
+test('OpenClaw 9.4 安装前检查升级后的 Node 版本下限，保留旧内核支持', () => {
+  const requirement = fallbackOpenclawNodeRequirement('2026.9.4')
+  assert.equal(requirement, '>=24.16.0 <25 || >=26.1.0')
+  for (const v of ['22.22.3', '24.15.0', '25.9.0', '26.0.0']) assert.equal(nodeVersionSatisfiesRequirement(v, requirement), false, v)
+  for (const v of ['24.16.0', '26.1.0']) assert.equal(nodeVersionSatisfiesRequirement(v, requirement), true, v)
+  assert.notEqual(fallbackOpenclawNodeRequirement('2026.8.2'), requirement)
+})
 
 const devApi = readFileSync(new URL('../scripts/dev-api.js', import.meta.url), 'utf8')
 const rustConfig = readFileSync(new URL('../src-tauri/src/commands/config.rs', import.meta.url), 'utf8')

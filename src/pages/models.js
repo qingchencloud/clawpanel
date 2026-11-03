@@ -2,7 +2,8 @@
  * 模型配置页面
  * 服务商管理 + 模型增删改查 + 主模型选择
  */
-import { api } from '../lib/tauri-api.js'
+import { api, isTauriRuntime } from '../lib/tauri-api.js'
+import { GATEWAY_OFFICIAL_PROVIDER } from '../lib/openclaw-official-provider.js'
 import { toast } from '../components/toast.js'
 import { humanizeError } from '../lib/humanize-error.js'
 import { showModal, showConfirm } from '../components/modal.js'
@@ -10,11 +11,7 @@ import { icon, statusIcon } from '../lib/icons.js'
 import {
   API_TYPES,
   PROVIDER_PRESETS,
-  QTCOOL,
-  CIYAPI,
   MODEL_PRESETS,
-  fetchQtcoolModels,
-  fetchCiyapiModels,
   isSupportedModelApiType,
   modelApiTypeOptions,
   normalizeModelApiType,
@@ -28,35 +25,6 @@ import { syncExplicitModelPolicyAllow } from '../lib/openclaw-model-policy.js'
 function escapeHtml(str) {
   if (str == null) return ''
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-}
-
-function quickProviderCard({ prefix, provider, actionUrl, actionIcon, links, moreUrl = provider.site, sponsored = false }) {
-  const rel = sponsored ? 'noopener noreferrer sponsored' : 'noopener noreferrer'
-  return `
-    <section id="${prefix}-promo" style="border-radius:var(--radius-lg);border:1px solid var(--border-primary);border-left:3px solid ${sponsored ? 'var(--primary)' : 'var(--success, #22c55e)'};background:var(--bg-secondary);padding:16px 20px">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:12px">
-        <div style="flex:1;min-width:200px">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-            <span style="font-weight:700;font-size:var(--font-size-base);color:var(--text-primary)">${icon('zap', 15)} ${t(`models.${prefix}Name`)}</span>
-            <span style="font-size:10px;background:${sponsored ? 'var(--primary)' : 'var(--success, #22c55e)'};color:#fff;padding:1px 7px;border-radius:8px">${t(`models.${prefix}Recommend`)}</span>
-          </div>
-          <div style="font-size:var(--font-size-xs);color:var(--text-secondary);line-height:1.5">
-            ${t(`models.${prefix}Desc`)}
-            <a href="${moreUrl}" target="_blank" rel="${rel}" style="color:var(--primary);text-decoration:none">${t(`models.${prefix}More`)}</a>
-          </div>
-        </div>
-        <a href="${actionUrl}" target="_blank" rel="${rel}" class="btn ${sponsored ? 'btn-primary' : 'btn-secondary'} btn-sm">${icon(actionIcon, 12)} ${t(`models.${prefix}Checkin`)}</a>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <input class="form-input" id="${prefix}-apikey" placeholder="${t(`models.${prefix}KeyPlaceholder`)}" style="font-size:12px;padding:6px 10px;flex:1;min-width:180px">
-        <button class="btn btn-primary btn-sm" id="btn-${prefix}-oneclick">${icon('plus', 14)} ${t(`models.${prefix}FetchModels`)}</button>
-      </div>
-      <div style="font-size:11px;color:var(--text-tertiary);margin-top:6px">
-        ${t(`models.${prefix}NoKey`)}
-        ${links.map(link => `<a href="${link.url}" target="_blank" rel="${rel}" style="color:var(--primary)">${t(`models.${prefix}${link.label}`)}</a>`).join(' · ')}
-      </div>
-    </section>
-  `
 }
 
 export async function render() {
@@ -79,33 +47,6 @@ export async function render() {
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:var(--space-md);padding:10px 14px;background:var(--bg-secondary);border:1px solid var(--border-primary);border-left:3px solid var(--primary);border-radius:var(--radius-md);font-size:var(--font-size-sm);color:var(--text-secondary)">
       <span>${t('models.channelsGuide')}</span>
       <button class="btn btn-sm btn-secondary" id="btn-goto-channels" type="button" style="white-space:nowrap;flex-shrink:0">${t('models.channelsGuideBtn')}</button>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:var(--space-md);margin-bottom:var(--space-md)">
-      ${quickProviderCard({
-        prefix: 'qtcool',
-        provider: QTCOOL,
-        actionUrl: QTCOOL.checkinUrl,
-        actionIcon: 'gift',
-        links: [
-          { url: QTCOOL.checkinUrl, label: 'CheckinPage' },
-          { url: QTCOOL.keyUrl, label: 'Dashboard' },
-          { url: QTCOOL.docsUrl, label: 'Docs' },
-        ],
-      })}
-      ${quickProviderCard({
-        prefix: 'ciyapi',
-        provider: CIYAPI,
-        actionUrl: CIYAPI.signupUrl,
-        actionIcon: 'external-link',
-        moreUrl: CIYAPI.pricingUrl,
-        sponsored: true,
-        links: [
-          { url: CIYAPI.signupUrl, label: 'Signup' },
-          { url: CIYAPI.keyUrl, label: 'Dashboard' },
-          { url: CIYAPI.pricingUrl, label: 'Pricing' },
-          { url: CIYAPI.walletUrl, label: 'Wallet' },
-        ],
-      })}
     </div>
     <div id="default-model-bar"></div>
     <div style="margin-bottom:var(--space-md)">
@@ -134,19 +75,10 @@ export async function render() {
 async function loadConfig(page, state) {
   const listEl = page.querySelector('#providers-list')
   try {
-    state.config = await api.readOpenclawConfig()
-    // 自动修复现有配置中的 baseUrl(如 Ollama 缺少 /v1),一次性迁移
-    const before = JSON.stringify(state.config?.models?.providers || {})
+    // 只在页面副本中规范化显示；打开页面不能改配置或 API 缓存。
+    state.config = structuredClone(await api.readOpenclawConfig())
     normalizeProviderUrls(state.config)
-    const after = JSON.stringify(state.config?.models?.providers || {})
-    const oldPrimary = getCurrentPrimary(state.config)
-    const normalizedModel = normalizeDefaultModelSelection(state.config)
-    if (before !== after || normalizedModel.changed) {
-      console.log('[models] 自动修复了模型配置,正在保存...')
-      await api.writeOpenclawConfig(state.config)
-      if (oldPrimary !== normalizedModel.primary) toast(t('models.primaryAutoSwitch', { model: normalizedModel.primary || t('models.notConfigured') }), 'info')
-      else if (before !== after) toast(t('models.autoFixUrl'), 'info')
-    }
+    normalizeDefaultModelSelection(state.config)
     renderDefaultBar(page, state)
     renderProviders(page, state)
   } catch (e) {
@@ -198,6 +130,7 @@ function collectAllModels(config) {
   const result = []
   const providers = config?.models?.providers || {}
   for (const [pk, pv] of Object.entries(providers)) {
+    if (pk === GATEWAY_OFFICIAL_PROVIDER) continue
     for (const m of (pv.models || [])) {
       const id = typeof m === 'string' ? m : m.id
       if (id) result.push({ provider: pk, modelId: id, full: `${pk}/${id}` })
@@ -237,6 +170,10 @@ function dedupeValidFallbacks(fallbacks, validModels, primary) {
 
 function normalizeDefaultModelSelection(config) {
   const allModels = collectAllModels(config)
+  // 受管模型只供专属 Agent 使用；没有普通模型时保留原默认配置。
+  if (!allModels.length && Object.hasOwn(config?.models?.providers || {}, GATEWAY_OFFICIAL_PROVIDER)) {
+    return { changed: false, primary: getCurrentPrimary(config) }
+  }
   const validModels = new Set(allModels.map(m => m.full))
   const modelConfig = ensureConfigDefaultModelConfig(config)
   let changed = false
@@ -330,6 +267,7 @@ function renderFallbackWaterfall(state) {
   const providers = state.config?.models?.providers || {}
   const candidatesByProvider = {}
   Object.keys(providers).forEach(pKey => {
+    if (pKey === GATEWAY_OFFICIAL_PROVIDER) return
     const pModels = providers[pKey].models || []
     const filtered = pModels.map(m => typeof m === 'string' ? m : m.id)
       .filter(mId => {
@@ -637,6 +575,7 @@ function renderProviders(page, state) {
 
   listEl.innerHTML = keys.map(key => {
     const p = providers[key]
+    if (key === GATEWAY_OFFICIAL_PROVIDER) return `<div class="config-section" data-provider="${key}"><div class="config-section-title">${escapeHtml(t('platform.gatewayOfficial.title'))}</div><p class="form-hint">${escapeHtml(t('platform.gatewayOfficial.managed'))}</p></div>`
     const models = p.models || []
     const filtered = search
       ? models.filter((m) => {
@@ -798,7 +737,8 @@ function autoSave(state) {
 function normalizeProviderUrls(config) {
   const providers = config?.models?.providers
   if (!providers) return
-  for (const [, p] of Object.entries(providers)) {
+  for (const [key, p] of Object.entries(providers)) {
+    if (key === GATEWAY_OFFICIAL_PROVIDER) continue
     // 修复 API 类型
     if (p.api) {
       const lower = p.api.toLowerCase().trim()
@@ -1066,6 +1006,7 @@ function bindProviderButtons(listEl, page, state) {
 
 // 统一处理按钮动作
 async function handleAction(action, btn, card, section, providerKey, provider, page, state) {
+  if (providerKey === GATEWAY_OFFICIAL_PROVIDER) return
   switch (action) {
     case 'edit-provider':
       editProvider(page, state, providerKey)
@@ -1145,6 +1086,7 @@ async function handleAction(action, btn, card, section, providerKey, provider, p
 
 // 设置主模型入口
 function setPrimary(state, full) {
+  if (full.startsWith(GATEWAY_OFFICIAL_PROVIDER + '/')) return
   const oldPrimary = getCurrentPrimary(state.config)
   if (oldPrimary === full) return
 
@@ -1214,146 +1156,6 @@ function bindTopActions(page, state) {
   const gotoChannels = page.querySelector('#btn-goto-channels')
   if (gotoChannels) gotoChannels.onclick = () => { window.location.hash = '#/model-channels' }
   page.querySelector('#btn-undo').onclick = () => undo(page, state)
-
-  bindQuickProviderAction(page, state, {
-    prefix: 'qtcool',
-    provider: QTCOOL,
-    fetchModels: fetchQtcoolModels,
-    keyHelpUrl: QTCOOL.checkinUrl,
-  })
-  bindQuickProviderAction(page, state, {
-    prefix: 'ciyapi',
-    provider: CIYAPI,
-    fetchModels: fetchCiyapiModels,
-    keyHelpUrl: CIYAPI.keyUrl,
-    sponsored: true,
-  })
-}
-
-// 快捷服务入口：填写密钥 → 获取模型 → 勾选并写入对应 Provider。
-function bindQuickProviderAction(page, state, { prefix, provider, fetchModels, keyHelpUrl, sponsored = false }) {
-  page.querySelector(`#btn-${prefix}-oneclick`).onclick = async () => {
-    if (!state.config) { toast(t('models.configNotReady'), 'warning'); return }
-
-    const bannerKeyInput = page.querySelector(`#${prefix}-apikey`)
-    const bannerKey = bannerKeyInput ? bannerKeyInput.value.trim() : ''
-    const existingProvider = (state.config.models?.providers || {})[provider.providerKey]
-    if (!bannerKey) {
-      toast(t(`models.${prefix}NoKeyWarn`), 'warning')
-      bannerKeyInput?.focus()
-      return
-    }
-
-    const btn = page.querySelector(`#btn-${prefix}-oneclick`)
-    btn.textContent = t(`models.${prefix}Fetching`)
-    btn.disabled = true
-
-    const models = await fetchModels(bannerKey)
-
-    btn.innerHTML = `${icon('plus', 14)} ${t(`models.${prefix}FetchModels`)}`
-    btn.disabled = false
-
-    if (!models.length) {
-      toast(t('models.fetchRemoteFailed'), 'error')
-      return
-    }
-
-    // 已有的模型 ID
-    const existingIds = new Set((existingProvider?.models || []).map(m => typeof m === 'string' ? m : m.id))
-    const rel = sponsored ? 'noopener noreferrer sponsored' : 'noopener noreferrer'
-
-    // 弹窗让用户勾选要添加的模型
-    const overlay = document.createElement('div')
-    overlay.className = 'modal-overlay'
-    overlay.innerHTML = `
-      <div class="modal" style="max-height:80vh;overflow-y:auto">
-        <div class="modal-title">${t(`models.${prefix}SelectTitle`)}</div>
-        <div class="form-hint" style="margin-bottom:12px">${t(`models.${prefix}SelectHint`, { count: models.length })}</div>
-        ${!existingProvider ? `<div style="margin-bottom:12px">
-          <label class="form-label" style="font-size:var(--font-size-xs)">${t(`models.${prefix}KeyLabel`)} <a href="${keyHelpUrl}" target="_blank" rel="${rel}" style="color:var(--primary);font-weight:400">${t(`models.${prefix}KeyCheckinLink`)}</a></label>
-          <input class="form-input" id="${prefix}-select-apikey" placeholder="${t(`models.${prefix}KeyPlaceholder2`)}" style="font-size:12px">
-        </div>` : ''}
-        <div style="margin-bottom:12px;display:flex;gap:8px">
-          <button class="btn btn-sm btn-secondary" id="${prefix}-select-all">${t('models.selectAll')}</button>
-          <button class="btn btn-sm btn-secondary" id="${prefix}-select-none">${t('models.selectNone')}</button>
-        </div>
-        <div id="${prefix}-model-list" style="display:flex;flex-direction:column;gap:6px;max-height:40vh;overflow-y:auto;padding-right:4px">
-          ${models.map(m => {
-            const already = existingIds.has(m.id)
-            return `<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:var(--radius-md);cursor:pointer;background:var(--bg-tertiary);opacity:${already ? '0.5' : '1'}">
-              <input type="checkbox" value="${escapeHtml(m.id)}" ${already ? `disabled title="${t('models.alreadyAdded')}"` : 'checked'} style="accent-color:var(--primary)">
-              <span style="font-size:var(--font-size-sm);flex:1">${escapeHtml(m.id)}</span>
-              ${already ? `<span style="font-size:10px;color:var(--text-tertiary)">${t('models.already')}</span>` : ''}
-            </label>`
-          }).join('')}
-        </div>
-        <div class="modal-actions" style="margin-top:16px">
-          <button class="btn btn-primary" id="${prefix}-select-confirm">${icon('plus', 14)} ${t(`models.${prefix}AddSelected`)}</button>
-          <button class="btn btn-secondary" id="${prefix}-select-cancel">${t('common.cancel')}</button>
-        </div>
-      </div>
-    `
-    document.body.appendChild(overlay)
-    // 从横幅预填充 key
-    const dialogKeyInput = overlay.querySelector(`#${prefix}-select-apikey`)
-    if (dialogKeyInput) dialogKeyInput.value = bannerKey
-    overlay.querySelector(`#${prefix}-select-cancel`).onclick = () => overlay.remove()
-    overlay.querySelector(`#${prefix}-select-all`).onclick = () => {
-      overlay.querySelectorAll(`#${prefix}-model-list input:not(:disabled)`).forEach(cb => cb.checked = true)
-    }
-    overlay.querySelector(`#${prefix}-select-none`).onclick = () => {
-      overlay.querySelectorAll(`#${prefix}-model-list input:not(:disabled)`).forEach(cb => cb.checked = false)
-    }
-    overlay.querySelector(`#${prefix}-select-confirm`).onclick = () => {
-      const selected = [...overlay.querySelectorAll(`#${prefix}-model-list input:checked:not(:disabled)`)].map(cb => cb.value)
-      if (!selected.length) { toast(t(`models.${prefix}NoneSelected`), 'info'); return }
-
-      // 新建服务商时需要 API Key
-      const keyInput = overlay.querySelector(`#${prefix}-select-apikey`)
-      const apiKey = keyInput ? keyInput.value.trim() : bannerKey
-      if (!apiKey) {
-        toast(t(`models.${prefix}NoKeyWarn`), 'warning')
-        keyInput?.focus()
-        return
-      }
-      overlay.remove()
-
-      pushUndo(state)
-      if (!state.config.models) state.config.models = {}
-      if (!state.config.models.providers) state.config.models.providers = {}
-
-      const selectedModels = models.filter(m => selected.includes(m.id))
-      if (existingProvider) {
-        existingProvider.baseUrl = provider.baseUrl
-        existingProvider.api = provider.api
-        existingProvider.apiKey = apiKey
-        if (!Array.isArray(existingProvider.models)) existingProvider.models = []
-        let added = 0
-        for (const m of selectedModels) {
-          if (!existingIds.has(m.id)) { existingProvider.models.push({ ...m }); added++ }
-        }
-        toast(added ? t(`models.${prefix}Added`, { count: added }) : t(`models.${prefix}AllExist`), added ? 'success' : 'info')
-      } else {
-        state.config.models.providers[provider.providerKey] = {
-          baseUrl: provider.baseUrl,
-          apiKey: apiKey,
-          api: provider.api,
-          models: selectedModels.map(m => ({ ...m })),
-        }
-        if (!getCurrentPrimary(state.config) && selectedModels.length) {
-          if (!state.config.agents) state.config.agents = {}
-          if (!state.config.agents.defaults) state.config.agents.defaults = {}
-          if (!state.config.agents.defaults.model) state.config.agents.defaults.model = {}
-          state.config.agents.defaults.model.primary = provider.providerKey + '/' + selectedModels[0].id
-        }
-        toast(t(`models.${prefix}ProviderAdded`, { count: selectedModels.length }), 'success')
-      }
-      renderProviders(page, state)
-      renderDefaultBar(page, state)
-      updateUndoBtn(page, state)
-      autoSave(state)
-    }
-  }
 }
 
 function uniqueProviderKey(providers, desired) {
@@ -1920,7 +1722,7 @@ async function handleBatchTest(section, state, providerKey) {
 async function fetchRemoteModels(btn, page, state, providerKey) {
   const provider = state.config.models.providers[providerKey]
   btn.disabled = true
-  btn.textContent = t('models.qtcoolFetching')
+  btn.textContent = t('models.fetchingModels')
 
   try {
     const remoteIds = await api.listRemoteModels(provider.baseUrl, provider.apiKey || '', provider.api || 'openai-completions')
@@ -2000,7 +1802,7 @@ async function fetchRemoteModels(btn, page, state, providerKey) {
       renderDefaultBar(page, state)
       updateUndoBtn(page, state)
       autoSave(state)
-      toast(t('models.qtcoolAdded', { count: selected.length }), 'success')
+      toast(t('models.modelsAdded', { count: selected.length }), 'success')
     }
 
     filterInput.focus()

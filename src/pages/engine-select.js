@@ -3,6 +3,7 @@ import { t } from '../lib/i18n.js'
 import { applyEngineSelection } from '../lib/engine-manager.js'
 import { toast } from '../components/toast.js'
 import { humanizeError } from '../lib/humanize-error.js'
+import { isTauriRuntime } from '../lib/tauri-api.js'
 
 const PRIMARY_OPTIONS = [
   {
@@ -20,6 +21,7 @@ const PRIMARY_OPTIONS = [
 ]
 
 const SECONDARY_OPTIONS = [
+  { id: 'pi', activeEngineId: 'pi', enabledEngineIds: ['pi'], targetRoute: '/pi/dashboard' },
   {
     id: 'opencode',
     activeEngineId: 'opencode',
@@ -79,6 +81,11 @@ export async function render() {
       ${renderContent('hermes')}
 
       <div class="es-secondary">
+        <button type="button" class="es-secondary-link" data-platform-entry="assistant">${esc(t('platform.directUse'))}</button>
+        <span class="es-secondary-sep" aria-hidden="true">·</span>
+        ${isTauriRuntime() ? `<button type="button" class="es-secondary-link" data-platform-entry="account">${esc(t('platform.login'))}</button><span class="es-secondary-sep" aria-hidden="true">·</span>` : ''}
+        <button type="button" class="es-secondary-link" data-secondary="pi">Pi · ${esc(t('pi.title'))}</button>
+        <span class="es-secondary-sep" aria-hidden="true">·</span>
         <button type="button" class="es-secondary-link" data-secondary="opencode">${esc(t('engine.choiceSecondaryOpenCode'))}</button>
         <span class="es-secondary-sep" aria-hidden="true">·</span>
         <button type="button" class="es-secondary-link" data-secondary="deepseek-harness">${esc(t('engine.choiceSecondaryDsh'))}</button>
@@ -151,6 +158,15 @@ function bindHover(page) {
 
 function bindClick(page) {
   const stage = page.querySelector('.es-stage')
+
+  // 独立入口不保存引擎选择，访客和官网账户均可直接进入。
+  page.querySelectorAll('[data-platform-entry]').forEach(btn => {
+    btn.addEventListener('click', event => {
+      event.stopPropagation()
+      if (_busy) return
+      navigate(btn.dataset.platformEntry === 'account' ? '/account' : '/assistant')
+    })
+  })
 
   // 主区：点击三角形选引擎
   stage.addEventListener('click', (event) => {

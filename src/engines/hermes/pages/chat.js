@@ -21,6 +21,8 @@ import { showConfirm } from '../../../components/modal.js'
 import { getChatStore, getSourceLabel } from '../lib/chat-store.js'
 import { svgIcon } from '../lib/svg-icons.js'
 import { t } from '../../../lib/i18n.js'
+import { createOfficialEngineChat } from '../../../components/official-engine-chat.js'
+import '../../../style/official-engine-chat.css'
 
 // ----------------------------------------------------------- helpers
 
@@ -278,6 +280,7 @@ export function render() {
   const el = document.createElement('div')
   el.className = 'hermes-chat-page'
   el.dataset.engine = 'hermes'
+  const officialChat = createOfficialEngineChat('hermes', official => el.classList.toggle('has-official-channel', official))
 
   const store = getChatStore()
 
@@ -297,6 +300,7 @@ export function render() {
   // rebuilds innerHTML. Without this, typing `/` would wipe the composed text
   // when the slash menu triggers a redraw.
   let inputValue = ''
+  let inputProfile = store.state.activeProfile || 'default'
   let inputFocused = false
   let inputCaret = 0                  // caret position restored after re-render
   // Batch 3 §K: 多模态图片附件（仅 chat 这一帧暂存，发送后清掉）
@@ -650,6 +654,11 @@ export function render() {
     `
   }
 
+  function updateSendButton() {
+    const button = el.querySelector('#hm-chat-send')
+    if (button) button.disabled = !store.activeSession() || (!inputValue.trim() && !pendingAttachments.length) || hermesInstalled === false || !gwOnline || store.state.streaming
+  }
+
   function renderInput() {
     const active = store.activeSession()
     const streaming = store.state.streaming
@@ -806,6 +815,14 @@ export function render() {
   // ----------------------------------------------------------- draw
 
   function draw() {
+    const profile = store.state.activeProfile || 'default'
+    // innerHTML移除旧输入框会同步触发blur；先保存焦点，避免初始回包抢走正在输入的目标。
+    const restoreInputFocus = inputFocused && inputProfile === profile
+    if (inputProfile !== profile) {
+      resetInput()
+      pendingAttachments = []
+      inputProfile = profile
+    }
     const scrollTop = el.querySelector('.hm-chat-messages')?.scrollTop
     const wasNearBottom = isMessagesNearBottom()
     const activeSessionId = store.state.activeSessionId
@@ -832,6 +849,7 @@ export function render() {
         </section>
       </div>
     `
+    el.prepend(officialChat.element)
     bind()
 
     // Restore / auto-scroll.
@@ -850,7 +868,7 @@ export function render() {
     // remains smooth even when store mutations trigger a full DOM rebuild.
     const input = el.querySelector('#hm-chat-input')
     if (input) {
-      if (inputFocused) {
+      if (restoreInputFocus) {
         input.focus()
         try {
           const pos = Math.min(inputCaret, inputValue.length)
@@ -1174,6 +1192,8 @@ export function render() {
       input.addEventListener('input', () => {
         inputValue = input.value
         inputCaret = input.selectionStart || inputValue.length
+        // 普通输入刻意不重绘整页，但发送按钮必须同步更新。
+        updateSendButton()
         const wasShowing = showSlash
         if (inputValue.startsWith('/') && !inputValue.includes(' ')) {
           showSlash = true
@@ -1643,6 +1663,7 @@ export function render() {
   // MutationObserver watches our parent; when `el` is detached, we run the
   // full teardown (stream listeners, subscription, search modal, keydown).
   const teardown = () => {
+    officialChat.destroy()
     document.removeEventListener('keydown', onGlobalKey)
     document.removeEventListener('click', onGlobalClick)
     closeSearch()

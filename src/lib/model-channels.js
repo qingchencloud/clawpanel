@@ -12,6 +12,11 @@
  */
 import { api, isTauriRuntime } from './tauri-api.js'
 import { normalizeModelApiType } from './model-presets.js'
+import { t } from './i18n.js'
+
+function assertOrdinaryChannel(channel) {
+  if (channel?.presetKey === 'clawpanel-official-gateway' || channel?.providerId === 'clawpanel-official-gateway') throw new Error(t('platform.gatewayOfficial.managed'))
+}
 
 export const ASSISTANT_STORAGE_KEY = 'clawpanel-assistant'
 export const DSH_PORT_STORAGE_KEY = 'clawpanel-dsh-port'
@@ -58,6 +63,18 @@ export function dshSyncSupported(channel) {
 
 export function openCodeSyncSupported(channel) {
   return !channel?.apiKeyRef && OPENCODE_SUPPORTED_API_TYPES.has(normalizeModelApiType(channel?.apiType))
+}
+
+export function piSyncSupported(channel) {
+  return !channel?.apiKeyRef && ['openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai', 'ollama'].includes(normalizeModelApiType(channel?.apiType))
+}
+
+/** Pi 密钥由本机后端读取；浏览器只提交渠道 ID。 */
+export async function syncChannelToPi(channel, { setDefault = false } = {}) {
+  assertOrdinaryChannel(channel)
+  if (!piSyncSupported(channel)) throw new Error('unsupported-pi')
+  if (!channel?.apiKeySaved) throw new Error('no-key')
+  return api.piSyncProvider({ channelId: channel.id, setDefault })
 }
 
 export function getDshPort() {
@@ -163,6 +180,7 @@ async function applyOpenclawModelConfig() {
  * 展开旧对象保留未知字段；渠道模型为准但保留目标已有模型的测试元数据。
  */
 export async function syncChannelToOpenclaw(channel, { setDefault = false } = {}) {
+  assertOrdinaryChannel(channel)
   const apiKeyRef = asObject(channel?.apiKeyRef)
   const apiKeyValue = Object.keys(apiKeyRef).length
     ? apiKeyRef
@@ -245,6 +263,7 @@ export async function resolveHermesTarget(channel) {
  * OpenAI 兼容渠道的自定义 Base URL 写 baseUrlEnvVar；可选设为默认模型（config.yaml，自带备份）。
  */
 export async function syncChannelToHermes(channel, { setDefault = false } = {}) {
+  assertOrdinaryChannel(channel)
   const target = await resolveHermesTarget(channel)
   if (!target) throw new Error('unsupported')
   const apiKey = await api.revealModelChannelKey(channel.id)
@@ -268,6 +287,7 @@ export async function syncChannelToHermes(channel, { setDefault = false } = {}) 
 
 /** 同步到 DeepSeek Harness：由后端通过回环 RPC 写入并执行三源回读核对。 */
 export async function syncChannelToDsh(channel, { setDefault = false, port = getDshPort() } = {}) {
+  assertOrdinaryChannel(channel)
   if (!dshSyncSupported(channel)) throw new Error('unsupported-dsh')
   if (!channel?.apiKeySaved) throw new Error('no-key')
   return api.dshSyncProvider({ channelId: channel.id, setDefault, port })
@@ -275,6 +295,7 @@ export async function syncChannelToDsh(channel, { setDefault = false, port = get
 
 /** 同步到 OpenCode：后端写独立凭据文件和 opencode.json，并执行回读核对。 */
 export async function syncChannelToOpenCode(channel, { setDefault = false } = {}) {
+  assertOrdinaryChannel(channel)
   if (!openCodeSyncSupported(channel)) throw new Error('unsupported-opencode')
   if (!channel?.apiKeySaved) throw new Error('no-key')
   return api.openCodeSyncProvider({ channelId: channel.id, setDefault })
@@ -285,6 +306,7 @@ export async function syncChannelToOpenCode(channel, { setDefault = false } = {}
  * apiKey 由调用方 reveal 后传入，避免本模块内多次取明文。
  */
 export function syncChannelToAssistant(channel, apiKey, model = '') {
+  assertOrdinaryChannel(channel)
   if (/^\$\{?[A-Za-z_][A-Za-z0-9_]*\}?$/.test(String(apiKey || '').trim())) {
     throw new Error('环境变量引用不能直接保存到浏览器助手，请改用明文 Key 或通过后端代理')
   }
@@ -320,6 +342,7 @@ export async function importChannelsFromOpenclaw(existingChannels = []) {
   const taken = new Set(existingChannels.map(c => c.presetKey).filter(Boolean))
   const imported = []
   for (const [key, provider] of Object.entries(providers)) {
+    if (key === 'clawpanel-official-gateway') continue
     if (!provider || typeof provider !== 'object' || taken.has(key)) continue
     const models = (Array.isArray(provider.models) ? provider.models : [])
       .map(m => (typeof m === 'string'

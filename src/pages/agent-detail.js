@@ -9,6 +9,7 @@ import { showConfirm } from '../components/modal.js'
 import { CHANNEL_LABELS } from '../lib/channel-labels.js'
 import { t } from '../lib/i18n.js'
 import { navigate } from '../router.js'
+import { gatewayOfficialStatus, isGatewayOfficialAgent, GATEWAY_OFFICIAL_PROVIDER } from '../lib/openclaw-official-provider.js'
 
 function esc(str) {
   if (!str) return ''
@@ -74,6 +75,7 @@ async function loadDetail(page, state) {
       api.getAgentDetail(state.agentId),
       api.readOpenclawConfig().catch(() => null),
       api.skillsList().catch(() => ({ skills: [] })),
+      gatewayOfficialStatus().catch(() => null),
     ])
     state.detail = detail
     // 解析可用模型
@@ -97,6 +99,7 @@ function parseModelList(config) {
   const models = []
   const providers = config?.models?.providers || {}
   for (const [pk, pv] of Object.entries(providers)) {
+    if (pk === GATEWAY_OFFICIAL_PROVIDER) continue
     for (const m of (pv.models || [])) {
       const id = typeof m === 'string' ? m : m.id
       if (id) models.push(`${pk}/${id}`)
@@ -107,6 +110,10 @@ function parseModelList(config) {
 
 function switchTab(page, state, tab) {
   const content = page.querySelector('#agent-tab-content')
+  if (isGatewayOfficialAgent(state.detail) && !['overview', 'channels', 'tools'].includes(tab)) {
+    content.innerHTML = `<p class="form-hint">${esc(t('platform.gatewayOfficial.managed'))}</p><a class="btn btn-secondary" href="#/models">${esc(t('platform.gatewayOfficial.title'))}</a>`
+    return
+  }
   if (tab === 'overview') renderOverview(content, state)
   else if (tab === 'files') renderFiles(content, state)
   else if (tab === 'channels') renderChannels(content, state)
@@ -202,6 +209,10 @@ function renderOverview(container, state) {
 
   // 保存
   container.querySelector('#btn-save-overview').addEventListener('click', () => saveOverview(container, state))
+  if (isGatewayOfficialAgent(d)) {
+    container.querySelectorAll('input,select,button').forEach(element => { element.disabled = true })
+    container.insertAdjacentHTML('afterbegin', `<p class="form-hint">${esc(t('platform.gatewayOfficial.managed'))}</p><a class="btn btn-sm btn-secondary" href="#/models">${esc(t('platform.gatewayOfficial.title'))}</a>`)
+  }
 }
 
 function renderModelSelect(id, selected, models) {
@@ -241,6 +252,7 @@ function renderFallbackRow(value, models, idx) {
 }
 
 async function saveOverview(container, state) {
+  if (isGatewayOfficialAgent(state.detail)) return
   const btn = container.querySelector('#btn-save-overview')
   btn.disabled = true
   btn.textContent = t('agentDetail.saving')

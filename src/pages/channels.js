@@ -5,6 +5,8 @@
 import { api, invalidate, safeTauriListen } from '../lib/tauri-api.js'
 import { toast } from '../components/toast.js'
 import { humanizeError } from '../lib/humanize-error.js'
+import { buildChannelPluginSpec, channelPluginHostVersion } from '../lib/channel-plugin-spec.js'
+import { selectFeishuPlugin } from '../lib/feishu-plugin-selection.js'
 import { showContentModal, showConfirm } from '../components/modal.js'
 import { icon } from '../lib/icons.js'
 import { CHANNEL_LABELS } from '../lib/channel-labels.js'
@@ -119,8 +121,8 @@ const PLATFORM_REGISTRY = {
       { key: 'groupPolicy', label: t('channels.groupPolicy'), type: 'select', options: GROUP_POLICY_OPTIONS(t('channels.groupAllGroups'), { mention: true }), required: false },
       { key: 'allowFrom', label: 'Allow From', placeholder: t('channels.allowFromPh'), required: false, hint: t('channels.allowFromHint') },
     ],
-    pluginRequired: '@larksuite/openclaw-lark@latest',
-    pluginId: 'openclaw-lark',
+    pluginRequired: '@openclaw/feishu@latest',
+    pluginId: 'feishu',
     pairingChannel: 'feishu',
   },
   telegram: {
@@ -199,6 +201,7 @@ const PLATFORM_REGISTRY = {
       { key: 'responsePrefix', label: 'Response Prefix', placeholder: t('channels.optionalEg', { example: '[AI]' }), required: false },
     ],
     configKey: 'zalouser',
+    actions: [{ id: 'login', label: t('channels.weixinLogin'), hint: t('channels.zalouserManualLoginHint') }],
     pluginRequired: '@openclaw/zalouser@latest',
     pluginId: 'zalouser',
   },
@@ -710,6 +713,7 @@ const PLATFORM_REGISTRY = {
     actions: [
       { id: 'install', label: t('channels.weixinInstall'), hint: t('channels.weixinInstallHint') },
       { id: 'login', label: t('channels.weixinLogin'), hint: t('channels.weixinLoginHint') },
+      { id: 'restart', label: t('channels.weixinRestart'), hint: t('channels.weixinRestartHint') },
     ],
     fields: [],
     configKey: 'openclaw-weixin',
@@ -1909,7 +1913,7 @@ function getManualCommandSpecs(pid, reg) {
         id: 'install',
         title: t('channels.manualInstallCommand'),
         hint: t('channels.manualInstallHint', { platform: reg.label }),
-        command: 'npx -y @tencent-weixin/openclaw-weixin-cli@latest install',
+        command: '', // 检测后填写精确兼容版本，避免手动命令又安装 latest。
       },
       {
         id: 'login',
@@ -1958,7 +1962,7 @@ function buildManualCommandPanel(commandSpecs) {
               </div>
               <button type="button" class="btn btn-xs btn-secondary" data-manual-copy="${escapeAttr(spec.id)}">${t('common.copy')}</button>
             </div>
-            <pre style="margin:8px 0 0;font-family:var(--font-mono);font-size:11px;white-space:pre-wrap;word-break:break-all;color:var(--text-primary)">${escapeAttr(spec.command)}</pre>
+            <pre data-manual-command="${escapeAttr(spec.id)}" style="margin:8px 0 0;font-family:var(--font-mono);font-size:11px;white-space:pre-wrap;word-break:break-all;color:var(--text-primary)">${escapeAttr(spec.command || t('channels.detectingPlugin'))}</pre>
           </div>
         `).join('')}
       </div>
@@ -1987,10 +1991,11 @@ async function copyTextToClipboard(text) {
 function bindManualCommandCopy(root, commandSpecs) {
   if (!root || !commandSpecs.length) return
 
-  const commandMap = new Map(commandSpecs.map(spec => [spec.id, spec.command]))
+  const commandMap = new Map(commandSpecs.map(spec => [spec.id, spec]))
   root.querySelectorAll('[data-manual-copy]').forEach(btn => {
+    btn.disabled = !commandMap.get(btn.dataset.manualCopy)?.command
     btn.addEventListener('click', async () => {
-      const command = commandMap.get(btn.dataset.manualCopy)
+      const command = commandMap.get(btn.dataset.manualCopy)?.command
       if (!command) return
       const prev = btn.textContent
       try {
@@ -2312,52 +2317,68 @@ async function openConfigDialog(pid, page, state, accountId) {
       }
     })
 
-    // 微信插件状态检测
-    if (pid === 'weixin') {
+    // 两端共享兼容性状态；未知版本不伪装成已兼容，安装目标与 npm 最新版分别展示。
+    const refreshWeixinStatus = async () => {
+      if (pid !== 'weixin') return
       const statusEl = modal.querySelector('#weixin-plugin-status')
-      if (statusEl) {
-        api.checkWeixinPluginStatus().then(s => {
-          if (!s) { statusEl.textContent = t('channels.pluginStatusFailed'); return }
-          const parts = []
-          const installBtn = modal.querySelector('[data-channel-action="install"]')
-          if (s.installed && s.compatible === false) {
-            parts.push(`<span style="color:var(--error);font-weight:600">⚠ ${t('channels.pluginIncompatible')}</span>`)
-            parts.push(`${t('channels.version')} <strong>${s.installedVersion || '?'}</strong>`)
-            parts.push(`<br><span style="color:var(--error);font-size:var(--font-size-xs)">${s.compatError || t('channels.pluginCompatErrorHint')}</span>`)
-            if (installBtn) {
-              installBtn.textContent = t('channels.reinstallCompatible')
-              installBtn.style.background = 'var(--error)'
-            }
-          } else if (s.installed) {
-            parts.push(`<span style="color:var(--success);font-weight:600">● ${t('channels.pluginInstalled')}</span>`)
-            parts.push(`${t('channels.version')} <strong>${s.installedVersion || t('channels.unknown')}</strong>`)
-            if (s.updateAvailable && s.latestVersion) {
-              parts.push(`<span style="color:var(--warning)">→ ${t('channels.newVersionAvailable', { version: s.latestVersion })}</span>`)
-              if (installBtn) installBtn.textContent = t('channels.upgradePlugin')
-            } else if (s.latestVersion) {
-              parts.push(`<span style="color:var(--text-tertiary)">(${t('channels.upToDate')})</span>`)
-            }
-          } else {
-            parts.push(`<span style="color:var(--text-tertiary)">○ ${t('channels.pluginNotInstalled')}</span>`)
-            if (s.latestVersion) parts.push(`${t('channels.latestVersion')} ${s.latestVersion}`)
-            parts.push(t('channels.clickInstallBelow'))
-          }
-          statusEl.innerHTML = parts.join(' ')
-        }).catch(() => { statusEl.textContent = t('channels.pluginStatusFailed') })
+      const installBtn = modal.querySelector('[data-channel-action="install"]')
+      const loginBtn = modal.querySelector('[data-channel-action="login"]')
+      const restartBtn = modal.querySelector('[data-channel-action="restart"]')
+      const manualInstall = manualCommandSpecs.find(spec => spec.id === 'install')
+      const copyInstall = modal.querySelector('[data-manual-copy="install"]')
+      const commandEl = modal.querySelector('[data-manual-command="install"]')
+      if (!statusEl) return
+      installBtn.disabled = true
+      loginBtn.disabled = true
+      restartBtn.disabled = true
+      copyInstall.disabled = true
+      manualInstall.command = ''
+      try {
+        const s = await api.checkWeixinPluginStatus()
+        if (!s) throw new Error(t('channels.pluginStatusFailed'))
+        const parts = []
+        const installed = s.installed || s.builtin
+        const tone = installed && s.compatible === true ? 'success' : installed ? 'warning' : 'text-secondary'
+        const label = !installed ? t('channels.pluginNotInstalled') : s.compatible === true
+          ? t('channels.pluginInstalled') : s.compatible === false ? t('channels.pluginIncompatible') : t('channels.weixinCompatUnknown')
+        parts.push(`<span style="color:var(--${tone})">${escapeAttr(label)}</span>`)
+        if (s.installedVersion) parts.push(escapeAttr(`${t('channels.version')} ${s.installedVersion}`))
+        if (s.recommendedVersion) parts.push(`<br>${escapeAttr(t('channels.weixinRecommended', { version: s.recommendedVersion, host: s.hostVersion }))}`)
+        if (s.latestVersion) parts.push(`<br>${escapeAttr(t('channels.weixinPublished', { version: s.latestVersion }))}`)
+        const error = s.installError || (installed ? s.compatError : '')
+        if (error) parts.push(`<br><span style="color:var(--warning)">${escapeAttr(error)}</span>`)
+        statusEl.innerHTML = parts.join(' ')
+        installBtn.disabled = s.installAllowed !== true
+        installBtn.textContent = installed && s.compatible === false ? t('channels.reinstallCompatible')
+          : s.updateAvailable ? t('channels.upgradePlugin') : t('channels.weixinInstall')
+        loginBtn.disabled = !installed || s.compatible !== true
+        restartBtn.disabled = !installed || s.compatible !== true
+        if (s.installAllowed && /^\d+\.\d+\.\d+$/.test(s.recommendedVersion)) {
+          manualInstall.command = `openclaw plugins install @tencent-weixin/openclaw-weixin@${s.recommendedVersion} --force`
+          commandEl.textContent = manualInstall.command
+          copyInstall.disabled = false
+        } else {
+          commandEl.textContent = s.installError || t('channels.weixinCompatUnknown')
+        }
+      } catch {
+        statusEl.textContent = t('channels.pluginStatusFailed')
+        commandEl.textContent = t('channels.pluginStatusFailed')
       }
     }
+    refreshWeixinStatus()
 
     const actionResultEl = modal.querySelector('#channel-action-result')
     modal.querySelectorAll('[data-channel-action]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const actionId = btn.dataset.channelAction
         if (!actionId || !actionResultEl) return
+        modal.querySelectorAll('[data-channel-action]').forEach(b => { b.disabled = true })
 
         actionResultEl.innerHTML = `
           <div style="background:var(--bg-secondary);border:1px solid var(--border-primary);border-radius:var(--radius-md);padding:12px">
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
               ${icon('zap', 14)}
-              <span style="font-size:var(--font-size-sm);font-weight:600">${t('channels.executing')}</span>
+              <span data-channel-action-title style="font-size:var(--font-size-sm);font-weight:600">${t('channels.executing')}</span>
               <span id="channel-action-progress-text" style="font-size:var(--font-size-xs);color:var(--text-tertiary);margin-left:auto">0%</span>
             </div>
             <div style="height:6px;background:var(--bg-tertiary);border-radius:999px;overflow:hidden;margin-bottom:10px">
@@ -2436,17 +2457,16 @@ async function openConfigDialog(pid, page, state, accountId) {
               _qrTimer = setTimeout(_flushQr, 500)
             } else if (!isQrLine) {
               if (_qrBuf.length && !_qrDone) _flushQr()
-              // 检测微信扫码 URL 并渲染为可扫描的二维码
+              // 展示微信登录链接；二维码继续由下方 CLI 字符矩阵本地绘制
               const weixinUrlMatch = msg.match(/(https:\/\/liteapp\.weixin\.qq\.com\/q\/[^\s]+)/)
-              if (weixinUrlMatch && !_qrDone) {
-                _qrDone = true
+              if (weixinUrlMatch && !logBox.querySelector('[data-weixin-login-link]')) {
                 const qrUrl = weixinUrlMatch[1]
                 const wrap = document.createElement('div')
                 wrap.style.cssText = 'text-align:center;margin:12px 0;padding:16px;background:#fff;border-radius:var(--radius-md);border:1px solid var(--border-primary)'
                 wrap.innerHTML = `
                   <div style="font-size:var(--font-size-sm);font-weight:600;color:#000;margin-bottom:8px">${t('channels.weixinScanQr')}</div>
-                  <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrUrl)}" alt="WeChat QR" style="width:200px;height:200px;image-rendering:pixelated;border-radius:4px;margin:0 auto;display:block" loading="eager">
-                  <div style="margin-top:8px"><a href="${escapeAttr(qrUrl)}" target="_blank" rel="noopener" style="color:var(--accent);font-size:var(--font-size-xs);word-break:break-all">${t('channels.weixinOpenInBrowser')}</a></div>
+                  <!-- 登录链接仅在本地展示；二维码使用 CLI 输出的字符矩阵绘制，不上传到外部服务。 -->
+                  <div style="margin-top:8px"><a data-weixin-login-link href="${escapeAttr(qrUrl)}" target="_blank" rel="noopener" style="color:var(--accent);font-size:var(--font-size-xs);word-break:break-all">${t('channels.weixinOpenInBrowser')}</a></div>
                 `
                 logBox.appendChild(wrap)
               } else if (msg.trim()) {
@@ -2467,34 +2487,27 @@ async function openConfigDialog(pid, page, state, accountId) {
           })
 
           // runChannelAction 的版本由后端自动检测（微信/QQ 版本号独立于 OpenClaw）
-          const output = await api.runChannelAction(pid, actionId, null)
+          const output = actionId === 'restart' && pid === 'weixin'
+            ? await api.restartGateway()
+            : await api.runChannelAction(pid, actionId, null)
           _flushQr() // 命令结束后刷新残留 QR 缓冲
           if (progressBar) progressBar.style.width = '100%'
           if (progressText) progressText.textContent = '100%'
-          toast(t('channels.executionDone'), 'success')
-          // 安装完成后刷新插件状态
-          if (pid === 'weixin' && actionId === 'install') {
-            const statusEl = modal.querySelector('#weixin-plugin-status')
-            if (statusEl) {
-              statusEl.textContent = t('channels.reDetecting')
-              api.checkWeixinPluginStatus().then(s => {
-                if (!s) return
-                const p = []
-                if (s.installed) {
-                  p.push(`<span style="color:var(--success);font-weight:600">● ${t('channels.pluginInstalled')}</span>`)
-                  p.push(`${t('channels.version')} <strong>${s.installedVersion || t('channels.unknown')}</strong>`)
-                  if (s.latestVersion) p.push(`<span style="color:var(--text-tertiary)">(${t('channels.upToDate')})</span>`)
-                }
-                statusEl.innerHTML = p.join(' ') || t('channels.pluginInstalled')
-              }).catch(() => {})
-            }
+          const actionTitle = actionResultEl.querySelector('[data-channel-action-title]')
+          if (actionTitle) actionTitle.textContent = t('channels.executionDone')
+          if (logBox && output) {
+            const finalLine = document.createElement('div')
+            finalLine.textContent = String(output)
+            logBox.appendChild(finalLine)
           }
+          toast(t('channels.executionDone'), 'success')
+          if (pid === 'weixin' && actionId === 'install') await refreshWeixinStatus()
           // 登录成功后：显示成功提示 + 刷新渠道列表 + 自动关闭弹窗
           if (actionId === 'login') {
             if (logBox) {
               const banner = document.createElement('div')
               banner.style.cssText = 'margin-top:12px;padding:12px 16px;background:var(--success-bg, #e8f5e9);border:1px solid var(--success, #4caf50);border-radius:var(--radius-md);color:var(--success, #2e7d32);font-weight:600;text-align:center'
-              banner.textContent = t('channels.channelConnected')
+              banner.textContent = t(pid === 'weixin' ? 'channels.weixinLoginSaved' : 'channels.channelConnected')
               logBox.appendChild(banner)
               logBox.scrollTop = logBox.scrollHeight
             }
@@ -2502,10 +2515,12 @@ async function openConfigDialog(pid, page, state, accountId) {
             invalidate('list_configured_platforms')
             loadPlatforms(page, state).then(() => renderConfigured(page, state)).catch(() => {})
             // 2 秒后自动关闭弹窗
-            setTimeout(() => { modal.close?.() || modal.remove?.() }, 2000)
+            if (pid !== 'weixin') setTimeout(() => { modal.close?.() || modal.remove?.() }, 2000)
           }
         } catch (e) {
           _flushQr()
+          const actionTitle = actionResultEl.querySelector('[data-channel-action-title]')
+          if (actionTitle) actionTitle.textContent = t('channels.executionFailed')
           toast(humanizeError(e, t('channels.executionFailed')), 'error')
           if (logBox) {
             const div = document.createElement('div')
@@ -2515,8 +2530,9 @@ async function openConfigDialog(pid, page, state, accountId) {
           }
         } finally {
           cleanup()
-          btn.disabled = false
+          modal.querySelectorAll('[data-channel-action]').forEach(b => { b.disabled = false })
           btn.textContent = reg.actions.find(a => a.id === actionId)?.label || t('channels.execute')
+          if (pid === 'weixin') await refreshWeixinStatus()
         }
       })
     })
@@ -2842,7 +2858,7 @@ async function openConfigDialog(pid, page, state, accountId) {
           }
         })
 
-        // 微信/QQ 等第三方插件版本号独立，不 pin；run_channel_action 的 version 参数仅用于 npx 包名
+        // 微信/QQ 等第三方插件版本号独立，不跟随 OpenClaw 内核版本 pin
         const output = await api.runChannelAction(pid, actionId, null)
         toast(t('channels.actionDone'), 'success')
         if (logBox && output && !String(output).includes(logBox.textContent)) {
@@ -2976,9 +2992,15 @@ async function openConfigDialog(pid, page, state, accountId) {
     try {
       // 如果需要安装插件，先安装并显示日志
       if (reg.pluginRequired) {
-        const pluginPackage = reg.pluginRequired
-        const pluginId = reg.pluginId || pid
-        const pluginStatus = await api.getChannelPluginStatus(pluginId)
+        let pluginPackage = reg.pluginRequired
+        let pluginId = reg.pluginId || pid
+        let pluginStatus = await api.getChannelPluginStatus(pluginId)
+        if (pid === 'feishu') {
+          const selection = selectFeishuPlugin(pluginStatus, await api.getChannelPluginStatus('openclaw-lark'))
+          pluginPackage = selection.packageName
+          pluginId = selection.pluginId
+          pluginStatus = selection.status
+        }
         // 跳过安装：插件已安装或已内置
         if (!pluginStatus?.installed && !pluginStatus?.builtin) {
           btnSave.textContent = t('channels.installingPlugin')
@@ -3018,17 +3040,23 @@ async function openConfigDialog(pid, page, state, accountId) {
             if (pluginPackage && pluginPackage.startsWith('@openclaw/')) {
               try {
                 const vInfo = await api.getVersionInfo()
-                if (vInfo?.current) pluginVersion = vInfo.current.split('-')[0]
+                if (vInfo?.current) pluginVersion = channelPluginHostVersion(vInfo.current)
               } catch {}
             }
-            // QQ 必须用专用安装命令：官方包目录为 openclaw-qqbot，与 install_channel_plugin(…, "qqbot") 的备份路径不一致
-            if (pid === 'qqbot') {
-              await api.installQqbotPlugin(null)
-            } else {
-              await api.installChannelPlugin(pluginPackage, pluginId, pluginVersion)
-            }
+            const installSpec = buildChannelPluginSpec(pluginPackage, pluginVersion)
+            await api.installChannelPluginWithLogs(installSpec, pluginId, null, event => {
+              if (event.event === 'plugin-log') {
+                logBox.textContent = (logBox.textContent + event.payload + '\n').slice(-24000)
+                logBox.scrollTop = logBox.scrollHeight
+              } else if (event.event === 'plugin-progress') {
+                progressBar.style.width = event.payload + '%'
+                progressText.textContent = event.payload + '%'
+              }
+            })
           } catch (e) {
-            toast(humanizeError(e, t('channels.pluginInstallFailed')), 'error')
+            const errorInfo = humanizeError(e, t('channels.pluginInstallFailed'))
+            logBox.textContent += '\n' + String(e?.message || e || errorInfo.message)
+            toast(errorInfo, 'error')
             btnSave.disabled = false
             btnVerify.disabled = false
             btnSave.textContent = isEdit ? t('channels.save') : t('channels.connectAndSave')
@@ -3039,6 +3067,7 @@ async function openConfigDialog(pid, page, state, accountId) {
           if (unlistenLog) unlistenLog()
           if (unlistenProgress) unlistenProgress()
         } else {
+          if (pid === 'feishu') await api.togglePlugin(pluginId, true)
           resultEl.innerHTML = `
             <div style="background:var(--accent-muted);color:var(--accent);padding:10px 14px;border-radius:var(--radius-md);font-size:var(--font-size-sm)">
               ${icon('check', 14)} ${t('channels.pluginDetected')}
@@ -3078,6 +3107,7 @@ function getChannelBindingKey(pid) {
     feishu: 'feishu',
     dingtalk: 'dingtalk-connector',
     weixin: 'openclaw-weixin',
+    wechat: 'openclaw-weixin',
   }
   return map[pid] || pid
 }

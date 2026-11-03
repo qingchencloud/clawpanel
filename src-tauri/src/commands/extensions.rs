@@ -102,7 +102,7 @@ fn cftunnel_bin() -> String {
 fn cftunnel_cmd(bin: &str) -> Command {
     #[cfg(target_os = "windows")]
     {
-        let mut cmd = Command::new(bin);
+        let mut cmd = crate::utils::background_command(bin);
         cmd.creation_flags(0x08000000);
         cmd
     }
@@ -135,7 +135,7 @@ fn check_cftunnel_process() -> Option<(Option<u64>, bool)> {
     #[cfg(target_os = "windows")]
     {
         // Windows: 通过 tasklist 检测 cftunnel.exe 进程
-        let mut cmd = Command::new("tasklist");
+        let mut cmd = crate::utils::background_command("tasklist");
         cmd.args(["/FI", "IMAGENAME eq cftunnel.exe", "/FO", "CSV", "/NH"]);
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
         let output = cmd.output().ok()?;
@@ -306,7 +306,7 @@ pub fn get_clawapp_status() -> Result<Value, String> {
 fn check_clawapp_installed() -> bool {
     #[cfg(target_os = "windows")]
     {
-        let mut cmd = Command::new("cmd");
+        let mut cmd = crate::utils::background_command("cmd");
         cmd.args(["/c", "npm", "list", "-g", "clawapp"]);
         cmd.creation_flags(0x08000000);
         if let Ok(out) = cmd.output() {
@@ -382,7 +382,7 @@ Write-Output '安装完成'
                 )
             })
             .unwrap_or_else(|_| "powershell.exe".to_string());
-        Command::new(&ps_path)
+        crate::utils::background_command(&ps_path)
             .args([
                 "-NoProfile",
                 "-ExecutionPolicy",
@@ -486,7 +486,7 @@ Write-Output '安装完成'
                 )
             })
             .unwrap_or_else(|_| "powershell.exe".to_string());
-        let mut cmd = Command::new(&ps_path);
+        let mut cmd = crate::utils::background_command(&ps_path);
         cmd.args([
             "-NoProfile",
             "-ExecutionPolicy",

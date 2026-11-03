@@ -3,7 +3,7 @@ import { _ } from '../helper.js'
 // 统一模型渠道页面（t('modelChannels.*')）
 export default {
   title: _('模型渠道', 'Model Channels', '模型渠道'),
-  desc: _('一处维护模型接入配置（地址、密钥、模型列表），一键同步到 OpenClaw、Hermes、DeepSeek Harness、OpenCode 和晴辰助手。', 'Maintain model access (base URL, API key, models) in one place and sync it to OpenClaw, Hermes, DeepSeek Harness, OpenCode, and the assistant.', '一處維護模型接入設定（位址、金鑰、模型清單），一鍵同步到 OpenClaw、Hermes、DeepSeek Harness、OpenCode 和晴辰助手。'),
+  desc: _('一处维护模型接入配置（地址、密钥、模型列表），一键同步到 OpenClaw、Hermes、DeepSeek Harness、OpenCode、Pi 和晴辰助手。', 'Maintain model access (base URL, API key, models) in one place and sync it to OpenClaw, Hermes, DeepSeek Harness, OpenCode, Pi, and the assistant.', '一處維護模型接入設定（位址、金鑰、模型清單），一鍵同步到 OpenClaw、Hermes、DeepSeek Harness、OpenCode、Pi 和晴辰助手。'),
   localOnlyHint: _('渠道只保存在本机，密钥读取时仅显示掩码。', 'Channels are stored locally; keys are always masked when read.', '渠道只儲存在本機，金鑰讀取時僅顯示遮罩。'),
   addChannel: _('新建渠道', 'New Channel', '新建渠道'),
   importExisting: _('从现有配置导入', 'Import Existing', '從現有設定匯入'),
@@ -18,6 +18,7 @@ export default {
   namePlaceholder: _('例如：我的 OpenAI', 'e.g. My OpenAI', '例如：我的 OpenAI'),
   preset: _('服务商预设', 'Provider Preset', '服務商預設'),
   presetCustom: _('自定义', 'Custom', '自訂'),
+  presetExistingCustom: _('现有配置（自定义）', 'Existing configuration (custom)', '現有設定（自訂）'),
   presetHint: _('选择预设会自动填入接口地址与 API 类型', 'Picking a preset fills in the base URL and API type', '選擇預設會自動填入介面位址與 API 類型'),
   baseUrl: _('接口地址 (Base URL)', 'Base URL', '介面位址 (Base URL)'),
   apiType: _('API 类型', 'API Type', 'API 類型'),

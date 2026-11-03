@@ -12,7 +12,9 @@ const ANNOUNCEMENTS_PATH: &str = "/api/v1/announcements";
 const HEARTBEAT_PATH: &str = "/api/v1/client/heartbeat";
 
 pub fn cache_busted_site_url(path: &str, params: &[(&str, String)]) -> String {
-    let mut url = Url::parse(SITE_BASE_URL).expect("site base url is valid");
+    // 隔离 debug 模式的公共官网请求也限定到同一测试 origin，生产地址保持固定。
+    let origin = super::platform::isolated_origin().unwrap_or_else(|| SITE_BASE_URL.to_string());
+    let mut url = Url::parse(&origin).expect("site base url is valid");
     url.set_path(path);
     {
         let mut pairs = url.query_pairs_mut();
@@ -241,6 +243,11 @@ fn select_recommended_asset_for(assets: &[Value], platform: &str, arch: &str) ->
 }
 
 pub async fn site_latest_for_panel_update() -> Result<Value, String> {
+    if super::platform::isolated_debug_enabled() {
+        return Ok(
+            json!({"latest":env!("CARGO_PKG_VERSION"),"url":"","source":"isolated-debug","downloadUrl":"","assets":[],"recommendedAsset":null}),
+        );
+    }
     let client = super::build_http_client(Duration::from_secs(10), Some("ClawPanel"))
         .map_err(|e| format!("创建 HTTP 客户端失败: {e}"))?;
     let mut latest = fetch_site_latest(&client).await?;
@@ -315,6 +322,9 @@ async fn fetch_site_latest(client: &reqwest::Client) -> Result<Value, String> {
 
 #[tauri::command]
 pub async fn check_site_announcements(locale: Option<String>) -> Result<Value, String> {
+    if super::platform::isolated_debug_enabled() {
+        return Ok(json!({"notifications":[],"announcements":[]}));
+    }
     let client = super::build_http_client(Duration::from_secs(10), Some("ClawPanel"))
         .map_err(|e| format!("创建 HTTP 客户端失败: {e}"))?;
     let raw_locale = locale

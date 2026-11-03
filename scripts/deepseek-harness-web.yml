@@ -1,0 +1,9 @@
+# 面板内嵌部署使用网页目录选择器，不在服务器显示器上打开系统对话框。
+# 仅用于 0.1.5+ 启动叠加层，不修改用户的 Harness Profile。
+- id: directory-picker
+  disabled: true
+- insert:
+    - id: directory-picker-browse
+      name: '@deepseek-ai/dsh-host-directory-picker-browse'
+    - id: ui-directory-picker-browse
+      name: '@deepseek-ai/dsh-client-ui-directory-picker-browse'

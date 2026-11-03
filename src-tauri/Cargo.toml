@@ -1,6 +1,7 @@
 [package]
 name = "clawpanel"
-version = "0.21.6"
+default-run = "clawpanel"
+version = "0.22.13"
 edition = "2021"
 description = "ClawPanel - OpenClaw 可视化管理面板"
 authors = ["qingchencloud"]
@@ -31,8 +32,22 @@ sha2 = "0.10"
 rand = "0.8"
 base64 = "0.22"
 urlencoding = "2"
+encoding_rs = "0.8"
 regex = "1"
-tokio = { version = "1", features = ["process", "time", "sync"] }
+p256 = { version = "0.13", features = ["ecdsa"] }
+keyring = { version = "3.6", default-features = false }
+open = "5"
+zeroize = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["process", "time", "sync", "net", "io-util", "io-std", "macros", "rt-multi-thread"] }
+
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3.6", features = ["windows-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3.6", features = ["apple-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3.6", features = ["sync-secret-service", "crypto-rust", "vendored"] }
 
 [target.'cfg(unix)'.dependencies]
 flate2 = "1"
@@ -40,3 +55,7 @@ tar = "0.4"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-autostart = "2"
+
+[dev-dependencies]
+# 与reqwest复用实际Rustls；最低0.23.45防止已知TLS加密层边界漏洞复发。
+rustls = { version = "0.23.45", default-features = false, features = ["ring", "std", "tls12"] }

@@ -6,7 +6,7 @@
  */
 
 export const OPENCODE_PACKAGE_NAME = 'opencode-ai'
-export const OPENCODE_PACKAGE_VERSION = '1.18.21'
+export const OPENCODE_PACKAGE_VERSION = '1.19.2'
 export const OPENCODE_DEFAULT_PORT = 4096
 export const OPENCODE_CONFIG_SCHEMA = 'https://opencode.ai/config.json'
 

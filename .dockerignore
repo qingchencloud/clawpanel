@@ -66,6 +66,10 @@ docs/
 .npm/
 .yarn/
 .vite/
+node_modules/
+dist/
+output/
+.playwright-cli/
 
 # 但保留必要的配置文件
 !vite.config.js
@@ -75,13 +79,7 @@ docs/
 # -----------------------------------------------------------------------------
 # 脚本文件
 # -----------------------------------------------------------------------------
-scripts/*.js
-scripts/*.sh
-!scripts/serve.js
-!scripts/dev-api.js
-!scripts/media-background-queue.js
-!scripts/lib/
-!scripts/lib/**
+# 前端构建和 Web 服务端共用引擎模块，保留 scripts 的完整源码依赖。
 
 # -----------------------------------------------------------------------------
 # CI/CD 配置
@@ -122,5 +120,4 @@ BLOCKING_ISSUES_REPORT.md
 LOBSTER-LEGION-ARCHIVE.md
 SECURITY.md
 CONTRIBUTING.md
-openclaw-version-policy.json
 __clawapp-chat-ref.js

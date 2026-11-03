@@ -1,0 +1,47 @@
+/* 配置、安装与运行是三个独立事实；短行操作保持账户卡片风格。 */
+.platform-engine-access { width: 100%; max-width: 1160px; box-sizing: border-box; }
+.platform-engine-access-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.platform-engine-access-heading h3 { margin: 0 0 6px; font-size: 17px; line-height: 1.4; }
+.platform-engine-access-heading .form-hint { margin: 0; max-width: 72ch; }
+.platform-engine-access-heading > .btn { flex: none; }
+.platform-engine-access-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 20px; margin-top: 22px; }
+.platform-engine-access-model-field { flex: 1 1 330px; min-width: 0; }
+.platform-engine-access-model-field > label, .platform-engine-access-model-label { display: block; margin-bottom: 8px; color: var(--text-secondary); font-size: 12px; }
+.platform-engine-access-model-trigger { width: 100%; min-height: 38px; text-align: left; }
+.platform-engine-access-model-field select { flex: 1; min-width: 0; width: 100%; }
+.platform-engine-access-model-field button { flex: none; }
+.platform-engine-access-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.platform-engine-access-model-hint { margin: 9px 0 16px; min-height: 18px; }
+.platform-engine-access-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border-primary); }
+.platform-engine-access-list > li { display: grid; grid-template-columns: minmax(160px, 1.1fr) minmax(260px, 1.6fr) minmax(90px, auto); align-items: center; gap: 14px 20px; padding: 15px 0; border-bottom: 1px solid var(--border-primary); }
+.platform-engine-access-name strong { display: inline; font-size: 14px; }
+.platform-engine-access-current { display: inline-block; margin-left: 8px; padding: 2px 6px; border-radius: 4px; background: var(--bg-tertiary); color: var(--text-secondary); font-size: 10px; white-space: nowrap; }
+.platform-engine-access-name p { margin: 7px 0 0; font-size: 12px; line-height: 1.5; }
+.platform-engine-access .platform-engine-access-facts { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; margin: 0; }
+.platform-engine-access-fact { min-width: 0; }
+.platform-engine-access .platform-engine-access-fact dt { margin-bottom: 5px; text-align: left; color: var(--text-tertiary); font-size: 11px; }
+.platform-engine-access .platform-engine-access-fact dd { margin: 0; text-align: left; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; color: var(--text-secondary); }
+.platform-engine-access .platform-engine-access-fact [data-state="configured"], .platform-engine-access .platform-engine-access-fact [data-state="running"] { color: var(--text-primary); }
+.platform-engine-access-row-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.platform-engine-access-row-actions .btn { font-size: 12px; }
+.platform-engine-access-result { margin: 16px 0 0; line-height: 1.6; }
+.platform-engine-access-gateway { display: flex; flex-wrap: wrap; gap: 5px 14px; align-items: baseline; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-primary); }
+.platform-engine-access-gateway .form-hint { margin: 0; }
+@media (max-width: 820px) {
+  .platform-engine-access-list > li { grid-template-columns: minmax(0,1fr) auto; gap: 10px 12px; }
+  .platform-engine-access-facts { grid-column: 1 / -1; grid-row: 2; }
+  .platform-engine-access-row-actions { grid-column: 2; grid-row: 1; }
+  .platform-engine-access-model-field { flex-basis: 100%; }
+}
+@media (max-width: 480px) {
+  .platform-engine-access { padding: 16px; }
+  .platform-engine-access-heading { gap: 10px; }
+  .platform-engine-access-heading h3 { font-size: 16px; }
+  .platform-engine-access-heading > .btn { font-size: 11px; padding-left: 8px; padding-right: 8px; }
+  .platform-engine-access-model-field > div { flex-wrap: wrap; }
+  .platform-engine-access-model-field select { flex-basis: 100%; }
+  .platform-engine-access-actions { width: 100%; }
+  .platform-engine-access-actions .btn { flex: 1 1 100%; }
+  .platform-engine-access-row-actions .btn { padding: 5px 8px; }
+  .platform-engine-access-current { display: table; margin: 5px 0 0; }
+}

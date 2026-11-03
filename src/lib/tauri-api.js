@@ -11,10 +11,24 @@ export function isTauriRuntime() {
   return !!window.__TAURI_INTERNALS__ || !!window.__TAURI__ || window.location?.hostname === 'tauri.localhost'
 }
 
+/** 仅打开普通网页；桌面走既有shell能力，错误交给调用页显示。 */
+export async function openExternalUrl(url) {
+  const target = new URL(url)
+  if (!['http:', 'https:'].includes(target.protocol) || target.username || target.password) {
+    throw new Error(t('common.operationFailed'))
+  }
+  if (isTauriRuntime()) {
+    const { open } = await import('@tauri-apps/plugin-shell')
+    return open(target.href)
+  }
+  return window.open(target.href, '_blank', 'noopener,noreferrer')
+}
+
 let _tauriListenFn = null
+const _webChannelListeners = new Map()
 
 /**
- * 安全订阅 Tauri 事件。Web 模式下返回 noop unsubscriber，
+ * 安全订阅 Tauri 事件。Web 渠道操作订阅本地流式事件，其余返回 noop unsubscriber，
  * 避免动态 import `@tauri-apps/api/event` 时触碰
  * `window.__TAURI_INTERNALS__.transformCallback` 引发
  * "Cannot read properties of undefined" 报错（issue #256）。
@@ -24,7 +38,12 @@ let _tauriListenFn = null
  *   unlisten()  // 取消订阅
  */
 export async function safeTauriListen(event, cb) {
-  if (!isTauriRuntime()) return () => {}
+  if (!isTauriRuntime()) {
+    if (!event.startsWith('channel-action-')) return () => {}
+    if (!_webChannelListeners.has(event)) _webChannelListeners.set(event, new Set())
+    _webChannelListeners.get(event).add(cb)
+    return () => _webChannelListeners.get(event)?.delete(cb)
+  }
   if (!_tauriListenFn) {
     const mod = await import('@tauri-apps/api/event')
     _tauriListenFn = mod.listen
@@ -133,6 +152,13 @@ function invalidate(...cmds) {
 
 // 导出 invalidate 供外部使用
 export { invalidate }
+
+// 官网账户与模型只走原生命令；正文及账户状态不进入通用请求日志。
+async function platformInvoke(command, args = {}) {
+  if (!isTauriRuntime()) throw new Error('desktop_required')
+  const nativeInvoke = await getTauriInvoke()
+  return nativeInvoke('platform_call', { command, args })
+}
 
 async function invoke(cmd, args = {}) {
   const start = Date.now()
@@ -272,6 +298,26 @@ function _debouncedReloadGateway() {
 
 // 导出 API
 export const api = {
+  platformPublicBenefits: () => platformInvoke('public_benefits'),
+  platformGetInvitationPoster: () => platformInvoke('read_invitation_poster'),
+  platformSaveInvitationPoster: (args) => platformInvoke('save_invitation_poster', args),
+  platformSnapshot: () => platformInvoke('snapshot'),
+  platformRestore: () => platformInvoke('restore'),
+  platformLogin: (args = {}) => platformInvoke('login', args),
+  platformLoginCancel: () => platformInvoke('login_cancel'),
+  platformBind: (deviceName = '', args = {}) => platformInvoke('bind', { ...args, deviceName }),
+  platformRefresh: () => platformInvoke('refresh'),
+  platformLogout: (localOnly = false) => platformInvoke('logout', { localOnly }),
+  platformUnbind: () => platformInvoke('unbind'),
+  platformOpenMember: (section = 'account') => platformInvoke('open_member', { section }),
+  platformModels: (modelId = '') => platformInvoke('models', modelId ? { modelId } : {}),
+  platformSend: (operationId, body) => platformInvoke('send', { operationId, body }),
+  platformCancel: (operationId) => platformInvoke('cancel', { operationId }),
+  platformRecover: (operationId) => platformInvoke('recover', { operationId }),
+  // Pi：共用受管运行时，桌面 IPC / Web HTTP 提供一致的事件游标与管理接口。
+  piStatus: () => cachedInvoke('pi_call', { command: 'status' }, 2000),
+  piCall: (command, args = {}) => { if (command !== 'events') invalidate('pi_call'); return invoke('pi_call', { command, args }) },
+  piSyncProvider: ({ channelId, setDefault = false }) => { invalidate('pi_call'); return invoke('pi_call', { command: 'sync_provider', args: { channelId, setDefault } }) },
   // 服务管理（状态用短缓存，操作不缓存）
   getServicesStatus: () => cachedInvoke('get_services_status', {}, 10000),
   startService: (label) => { invalidate('get_services_status'); return invoke('start_service', { label }).finally(() => invalidate('get_services_status')) },
@@ -294,6 +340,7 @@ export const api = {
   getVersionInfo: () => cachedInvoke('get_version_info', {}, 30000),
   getStatusSummary: () => cachedInvoke('get_status_summary', {}, 60000),
   readOpenclawConfig: () => cachedInvoke('read_openclaw_config'),
+  openclawGatewayOfficial: (action, args = {}) => invoke('openclaw_gateway_official', { action, args }),
   calibrateOpenclawConfig: (mode = 'inherit') => { invalidate('read_openclaw_config', 'check_installation', 'list_backups', 'get_services_status', 'get_status_summary'); return invoke('calibrate_openclaw_config', { mode }).then(r => { _debouncedReloadGateway(); return r }) },
   writeOpenclawConfig: (config, opts = {}) => { invalidate('read_openclaw_config'); return invoke('write_openclaw_config', { config }).then(r => { if (opts.noReload !== true) _debouncedReloadGateway(); return r }) },
   deleteOpenclawModelProvider: (providerKey, opts = {}) => {
@@ -339,11 +386,27 @@ export const api = {
   revealModelChannelKey: (channelId) => invoke('reveal_model_channel_key', { channelId }),
 
   // DeepSeek Harness（回环服务；Web 与 Tauri 使用同名后端命令）
+  // 官方模型：作为普通 provider 一键接入引擎配置（凭据仍由本机代理托管）
+  officialProviderStatus: () => invoke('official_provider_status'),
+  officialProviderInstall: (engine) => invoke('official_provider_install', { engine }),
+  officialProviderRemove: (engine) => invoke('official_provider_remove', { engine }),
+  officialEngineConnect: (engine, modelId, expected = null) => invoke('official_engine_connect', { engine, modelId, expected }),
+  officialEngineAccess: async (action, args = {}) => {
+    if (!isTauriRuntime()) throw new Error('desktop_required')
+    const nativeInvoke = await getTauriInvoke()
+    return nativeInvoke('official_engine_access', { action, args })
+  },
+  officialEngineRun: (engine, input, sessionId = null, expected) => invoke('official_engine_run', { engine, input, sessionId, expected }),
+  officialEngineStatus: (engine, expected = null) => invoke('official_engine_status', { engine, expected }),
+  officialEngineDisconnect: (engine, expected) => invoke('official_engine_disconnect', { engine, expected }),
+  officialEngineCancel: (engine, expected) => invoke('official_engine_cancel', { engine, expected }),
   dshStatus: (port = 3080) => cachedInvoke('dsh_status', { port }, 2000),
-  dshInstall: () => { invalidate('dsh_status'); return invoke('dsh_install') },
+  dshInstall: (channel = 'stable') => { invalidate('dsh_status'); return invoke('dsh_install', { channel }) },
   dshUninstall: () => { invalidate('dsh_status'); return invoke('dsh_uninstall') },
   dshEmbedSession: (port = 3080, storage = {}) => invoke('dsh_embed_session', { port, storage }),
   dshStart: (port = 3080) => { invalidate('dsh_status'); return invoke('dsh_start', { port }) },
+  dshConnectOfficial: () => invoke('dsh_connect_official'),
+  dshDisconnectOfficial: (epoch) => invoke('dsh_disconnect_official', { epoch }),
   dshStop: (port = 3080) => { invalidate('dsh_status'); return invoke('dsh_stop', { port }) },
   dshSyncProvider: ({ channelId, setDefault = false, port = 3080 }) => {
     invalidate('dsh_status')
@@ -356,8 +419,10 @@ export const api = {
   openCodeCheckUpdate: () => invoke('opencode_check_update'),
   openCodeUpdate: () => { invalidate('opencode_status'); return invoke('opencode_update') },
   openCodeUninstall: () => { invalidate('opencode_status'); return invoke('opencode_uninstall') },
-  openCodeEmbedSession: (port = 4096) => invoke('opencode_embed_session', { port }),
+  openCodeEmbedSession: (port = 4096, storage = {}) => invoke('opencode_embed_session', { port, storage }),
   openCodeStart: (port = 4096) => { invalidate('opencode_status'); return invoke('opencode_start', { port }) },
+  openCodeConnectOfficial: () => invoke('opencode_connect_official'),
+  openCodeDisconnectOfficial: (epoch) => invoke('opencode_disconnect_official', { epoch }),
   openCodeStop: (port = 4096) => { invalidate('opencode_status'); return invoke('opencode_stop', { port }) },
   openCodeSyncProvider: ({ channelId, setDefault = false }) => {
     invalidate('opencode_status')
@@ -413,7 +478,33 @@ export const api = {
   getChannelPluginStatus: (pluginId) => invoke('get_channel_plugin_status', { pluginId }),
   installQqbotPlugin: (version = null) => invoke('install_qqbot_plugin', { version }),
   installChannelPlugin: (packageName, pluginId, version = null) => invoke('install_channel_plugin', { packageName, pluginId, version }),
-  runChannelAction: (platform, action, version = null) => invoke('run_channel_action', { platform, action, version }),
+  installChannelPluginWithLogs: async (packageName, pluginId, version = null, onEvent = () => {}) => {
+    if (isTauriRuntime()) {
+      return pluginId === 'qqbot' ? api.installQqbotPlugin(version) : api.installChannelPlugin(packageName, pluginId, version)
+    }
+    let result, failure
+    await webStreamInvoke('channel_plugin_install_stream', { packageName, pluginId, version }, event => {
+      if (event.event === 'result') result = event.result
+      else if (event.event === 'error') failure = event.error
+      else onEvent(event)
+    })
+    if (failure) throw new Error(failure)
+    if (result === undefined) throw new Error('安装连接已中断，请检查插件状态后重试')
+    invalidate('list_all_plugins')
+    return result
+  },
+  runChannelAction: async (platform, action, version = null) => {
+    if (isTauriRuntime()) return invoke('run_channel_action', { platform, action, version })
+    let result, failure
+    await webStreamInvoke('channel_action_stream', { platform, action, version }, event => {
+      if (event.event === 'result') result = event.result
+      else if (event.event === 'error') failure = event.error
+      else for (const cb of _webChannelListeners.get(event.event) || []) cb({ payload: event.payload })
+    })
+    if (failure) throw new Error(failure)
+    if (result === undefined) throw new Error('渠道操作连接已中断，请检查状态后重试')
+    return result
+  },
   checkWeixinPluginStatus: () => invoke('check_weixin_plugin_status'),
 
   // Agent 渠道绑定管理

@@ -1,6 +1,13 @@
 import { api, isTauriRuntime } from '../../../lib/tauri-api.js'
 import { getOpenCodePort } from '../../../lib/model-channels.js'
 import { t } from '../../../lib/i18n.js'
+import { bindOpenCodeStorageBridge, readOpenCodeStorage } from '../../../lib/opencode-storage-bridge.js'
+import { getPlatformAccount, onPlatformAccountChange, platformErrorText } from '../../../lib/platform-account.js'
+import { consumeOfficialEngineIntent, adoptOfficialEngineIntent } from '../../../lib/platform-engine-access.js'
+
+let cleanupStorage = null
+let _cleanupCurrent = null
+export function cleanup() { cleanupStorage?.(); cleanupStorage = null; _cleanupCurrent?.(); _cleanupCurrent = null }
 
 function esc(value) {
   return String(value ?? '')
@@ -11,9 +18,12 @@ function esc(value) {
 }
 
 export function render() {
+  const accessIntent = consumeOfficialEngineIntent('opencode')
+  cleanup()
   const page = document.createElement('div')
   page.className = 'page oc-workspace-page'
   page.dataset.engine = 'opencode'
+  if (!isTauriRuntime()) cleanupStorage = bindOpenCodeStorageBridge(page)
 
   const state = {
     loading: true,
@@ -24,7 +34,20 @@ export function render() {
     embedPort: null,
     embedExpiresAt: 0,
     port: getOpenCodePort(),
+    official: null,
+    officialRequested: !!accessIntent,
+    officialBusy: false,
   }
+  _cleanupCurrent = onPlatformAccountChange(account => {
+    if (state.official && (account.phase !== 'bound' || account.epoch !== state.official.epoch || account.member?.member_id !== state.official.memberId)) {
+      const epoch = state.official.epoch
+      state.official = null
+      state.embedUrl = ''
+      state.status = null
+      draw()
+      api.openCodeDisconnectOfficial(epoch).catch(() => {})
+    }
+  })
   function draw() {
     const status = state.status || {}
     const desktopAuthRestart = Boolean(isTauriRuntime() && status.requiresManagedAuth)
@@ -47,6 +70,7 @@ export function render() {
           <div><strong>${esc(t('openCode.workspaceTitle'))}</strong><span>${esc(t('openCode.workspacePageDesc'))}</span></div>
         </div>
         <div class="oc-workspace-actions">
+          ${isTauriRuntime() ? `<button class="btn btn-primary btn-sm" data-action="official" ${state.officialBusy ? 'disabled' : ''}>${esc(t('platform.official'))}</button>${state.official ? `<button class="btn btn-secondary btn-sm" data-action="byok">${esc(t('platform.byok'))}</button>` : ''}` : ''}
           ${ready ? `<span class="oc-workspace-status">${esc(t('openCode.running'))}</span>` : ''}
           <button class="btn btn-secondary btn-sm" data-action="refresh">${esc(t('openCode.refresh'))}</button>
           ${ready ? `<button class="btn btn-secondary btn-sm" data-action="reload-frame" ${!state.embedUrl ? 'disabled' : ''}>${esc(t('openCode.reloadWorkspace'))}</button><button class="btn btn-secondary btn-sm" data-action="fullscreen" ${!state.embedUrl ? 'disabled' : ''}>${esc(t('openCode.fullscreen'))}</button>` : ''}
@@ -54,6 +78,7 @@ export function render() {
         </div>
       </header>
       ${state.error || state.embedError ? `<div class="oc-workspace-error">${esc(state.error || state.embedError)}</div>` : ''}
+      ${state.official?.textOnly || state.official?.toolsAvailable === false ? `<p class="form-hint" data-platform-workbench-text-only>${esc(t('platform.engineAccess.textOnly'))}</p>` : ''}
       <section class="oc-workspace-shell">
         ${state.loading && !state.status
           ? `<div class="oc-workspace-center">${esc(t('openCode.workspaceLoading'))}</div>`
@@ -65,11 +90,14 @@ export function render() {
   }
 
   async function refresh() {
+    if (state.official || state.officialRequested) { state.loading = false; draw(); return }
     state.loading = true
     state.error = ''
     state.embedError = ''
     try {
-      state.status = await api.openCodeStatus(state.port)
+      const status = await api.openCodeStatus(state.port)
+      if (state.official) return
+      state.status = status
       if (state.status?.running && state.status?.managed) {
         if (isTauriRuntime()) {
           state.embedUrl = `${state.status.url}/`
@@ -77,11 +105,13 @@ export function render() {
           state.embedExpiresAt = 0
         } else if (!state.embedUrl || state.embedPort !== state.status.port || Date.now() > state.embedExpiresAt - 60000) {
           try {
-            const session = await api.openCodeEmbedSession(state.status.port)
-            state.embedUrl = session.src
+            const session = await api.openCodeEmbedSession(state.status.port, readOpenCodeStorage())
+            if (state.official) return
+            state.embedUrl = session.uiSrc || session.src
             state.embedPort = state.status.port
             state.embedExpiresAt = Number(session.expiresAt) || 0
           } catch (error) {
+            if (state.official) return
             state.embedUrl = ''
             state.embedPort = null
             state.embedExpiresAt = 0
@@ -94,6 +124,7 @@ export function render() {
         state.embedExpiresAt = 0
       }
     } catch (error) {
+      if (state.official) return
       state.status = null
       state.error = `${t('openCode.loadFailed')}: ${error?.message || error}`
     } finally {
@@ -106,8 +137,40 @@ export function render() {
     const button = event.target.closest('[data-action]')
     if (!button) return
     const action = button.dataset.action
+    if (action === 'official') {
+      const account = getPlatformAccount()
+      if (account.phase !== 'bound') { location.hash = '#/account'; return }
+      state.officialBusy = true
+      state.error = ''
+      draw()
+      try {
+        const connected = await api.openCodeConnectOfficial()
+        const current = getPlatformAccount()
+        if (current.phase !== 'bound' || current.epoch !== connected.epoch || current.member?.member_id !== connected.memberId || current.epoch !== account.epoch) { await api.openCodeDisconnectOfficial(connected.epoch).catch(() => {}); throw Error('platform_account_changed') }
+        state.official = connected
+        state.embedUrl = connected.src
+        state.embedPort = connected.port
+        state.embedExpiresAt = 0
+        state.status = { running: true, managed: true, port: connected.port }
+        state.loading = false
+      } catch (error) { state.error = platformErrorText(error) }
+      finally { state.officialBusy = false; draw() }
+      return
+    }
+    if (action === 'byok') { const epoch = state.official?.epoch; if (epoch != null) await api.openCodeDisconnectOfficial(epoch); state.officialRequested = false; state.official = null; state.embedUrl = ''; return refresh() }
     if (action === 'refresh') return refresh()
     if (action === 'reload-frame') {
+      if (state.official) {
+        const epoch = state.official.epoch
+        try {
+          const renewed = await api.openCodeConnectOfficial()
+          const account = getPlatformAccount()
+          if (!state.official || state.official.epoch !== epoch || account.epoch !== renewed.epoch || account.member?.member_id !== renewed.memberId) return
+          state.official = renewed
+          const frame = page.querySelector('#oc-workspace-frame'); if (frame) frame.src = renewed.src
+        } catch (error) { state.error = platformErrorText(error); draw() }
+        return
+      }
       if (isTauriRuntime()) {
         const frame = page.querySelector('#oc-workspace-frame')
         if (frame && state.status?.url) frame.src = `${state.status.url}/?clawpanelReload=${Date.now()}`
@@ -121,6 +184,16 @@ export function render() {
   })
 
   draw()
-  refresh()
+  if (accessIntent) {
+    state.officialBusy = true; state.loading = false
+    ;(async () => {
+      try {
+        const connected = await adoptOfficialEngineIntent('opencode', accessIntent)
+        state.official = connected; state.embedUrl = connected.src; state.embedPort = connected.port; state.embedExpiresAt = 0
+        state.status = { running: true, managed: true, port: connected.port }
+      } catch { state.error = t('platform.engineAccess.intentExpired') }
+      finally { state.officialBusy = false; draw() }
+    })()
+  } else refresh()
   return page
 }

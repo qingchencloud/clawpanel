@@ -4,8 +4,9 @@ mod tray;
 mod utils;
 
 use commands::{
-    agent, assistant, cli_conflict, config, deepseek_harness, device, diagnose, extensions, hermes,
-    hermes_providers, logs, media, memory, messaging, model_channels, opencode, pairing, portable,
+    agent, assistant, cli_conflict, config, deepseek_harness, device, diagnose, engine_official,
+    extensions, hermes, hermes_providers, logs, media, memory, messaging, model_channels,
+    official_provider, openclaw_gateway_official, opencode, pairing, pi, platform, portable,
     service, site_api, skills, update,
 };
 
@@ -71,12 +72,20 @@ pub fn run() {
             }
         })
         .setup(|app| {
-            service::start_backend_guardian(app.handle().clone());
-            site_api::start_heartbeat_loop();
+            // 显式隔离的 debug 联调不启动真实实例守护，也不发送外网心跳。
+            if !platform::isolated_debug_enabled() {
+                service::start_backend_guardian(app.handle().clone());
+                site_api::start_heartbeat_loop();
+            }
             tray::setup_tray(app.handle())?;
+            // 已有官方模型接入时，按持久化端口恢复本机代理；失败不影响启动。
+            tauri::async_runtime::spawn(async {
+                commands::platform::ensure_official_proxy().await;
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            platform::platform_call,
             // 配置
             config::read_openclaw_config,
             config::write_openclaw_config,
@@ -206,11 +215,26 @@ pub fn run() {
             model_channels::read_model_channels,
             model_channels::write_model_channels,
             model_channels::reveal_model_channel_key,
+            // Pi：私有 Node 桥，共用 Web 运行时适配
+            pi::pi_call,
+            engine_official::official_engine_connect,
+            engine_official::official_engine_access,
+            official_provider::official_provider_status,
+            official_provider::official_provider_install,
+            official_provider::official_provider_remove,
+            openclaw_gateway_official::openclaw_gateway_official,
+            engine_official::official_engine_run,
+            engine_official::official_engine_status,
+            engine_official::official_engine_disconnect,
+            engine_official::official_engine_cancel,
             // DeepSeek Harness 回环服务与模型同步
             deepseek_harness::dsh_status,
+            deepseek_harness::dsh_embed_session,
             deepseek_harness::dsh_install,
             deepseek_harness::dsh_uninstall,
             deepseek_harness::dsh_start,
+            deepseek_harness::dsh_connect_official,
+            deepseek_harness::dsh_disconnect_official,
             deepseek_harness::dsh_stop,
             deepseek_harness::dsh_sync_provider,
             // OpenCode 回环服务与模型同步
@@ -220,6 +244,8 @@ pub fn run() {
             opencode::opencode_update,
             opencode::opencode_uninstall,
             opencode::opencode_start,
+            opencode::opencode_connect_official,
+            opencode::opencode_disconnect_official,
             opencode::opencode_stop,
             opencode::opencode_sync_provider,
             // 云端媒体生成
@@ -444,7 +470,35 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("启动 ClawPanel 失败")
-        .run(|_app, _event| {});
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { api, code, .. } = &event {
+                static STOPPING: std::sync::atomic::AtomicBool =
+                    std::sync::atomic::AtomicBool::new(false);
+                if !STOPPING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                    api.prevent_exit();
+                    let app = app.clone();
+                    let code = code.unwrap_or(0);
+                    tauri::async_runtime::spawn(async move {
+                        let _ = tokio::time::timeout(
+                            std::time::Duration::from_secs(12),
+                            platform::stop_official_runtimes(None),
+                        )
+                        .await;
+                        pi::shutdown();
+                        app.exit(code);
+                    });
+                }
+            }
+            if matches!(event, tauri::RunEvent::Exit) {
+                pi::shutdown();
+            }
+        });
+}
+
+/// 仅 debug 测试进程复用相同原生服务；生产构建没有此入口。
+#[cfg(debug_assertions)]
+pub async fn run_platform_harness() -> Result<(), String> {
+    commands::platform::run_harness().await
 }
 
 /// 启动时清理落后版本的热更新目录（issue #261）。

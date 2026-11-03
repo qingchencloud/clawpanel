@@ -1,165 +1,252 @@
-/**
- * 社区引导浮窗 — 适时提醒用户加群 & Star
- *
- * 触发条件（全部满足才弹出）：
- *   1. 累计打开 ≥ 2 次
- *   2. 首次打开距今 ≥ 1 天
- *   3. 今天未关闭过（每天最多弹一次）
- *   4. 未被永久关闭
- *   5. 由外部在"正向时机"主动调用 tryShow()（如保存配置成功、Gateway 启动成功）
- *   6. 不在聊天/助手页面时触发（避免打断对话）
- */
-
-import { t } from '../lib/i18n.js'
+/** 邀请与社区入口。本人链接只读，自动提示保持节制。 */
+import { getLang, onLangChange, t } from '../lib/i18n.js'
+import { isTauriRuntime } from '../lib/tauri-api.js'
+import * as platformAccount from '../lib/platform-account.js'
+import '../style/engagement.css'
 
 const KEYS = {
-  firstOpen: 'clawpanel_first_open',
-  openCount: 'clawpanel_open_count',
-  lastShown: 'clawpanel_engage_shown',
-  never: 'clawpanel_engage_never',
-  todayDismiss: 'clawpanel_engage_today',
+  firstOpen: 'clawpanel_first_open', openCount: 'clawpanel_open_count',
+  lastShown: 'clawpanel_engage_shown', never: 'clawpanel_engage_never', todayDismiss: 'clawpanel_engage_today',
 }
-
 const DAY = 86400000
-const MIN_OPENS = 2
-const MIN_DAYS = 1
-const COOLDOWN_DAYS = 1
-const AUTO_DISMISS_MS = 25000
+const PROJECT_URL = 'https://claw.qt.cool'
+const STAR_URL = 'https://github.com/qingchencloud/clawpanel'
+const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char])
+const read = key => { try { return localStorage.getItem(key) } catch { return null } }
+const write = (key, value) => { try { localStorage.setItem(key, value) } catch {} }
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}` }
+let activeDialog = null
 
-// 启动时记录打开次数
-function _track() {
-  const now = Date.now()
-  if (!localStorage.getItem(KEYS.firstOpen)) {
-    localStorage.setItem(KEYS.firstOpen, String(now))
-  }
-  const count = parseInt(localStorage.getItem(KEYS.openCount) || '0') + 1
-  localStorage.setItem(KEYS.openCount, String(count))
-}
-_track()
+if (!read(KEYS.firstOpen)) write(KEYS.firstOpen, String(Date.now()))
+write(KEYS.openCount, String((parseInt(read(KEYS.openCount) || '0') || 0) + 1))
 
-function _todayKey() {
-  const d = new Date()
-  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
+function canShowAutomatically() {
+  if (read(KEYS.never) === '1' || read(KEYS.todayDismiss) === today()) return false
+  if (Number(read(KEYS.openCount)) < 2 || Date.now() - Number(read(KEYS.firstOpen)) < DAY) return false
+  if (/\/(chat|assistant)(?:[/?#]|$)/.test(location.hash)) return false
+  if (document.activeElement?.matches('input,textarea,select,[contenteditable]:not([contenteditable="false"])')) return false
+  return !document.querySelector('.modal-overlay,[role="dialog"],.site-message-overlay,.engage-overlay')
 }
 
-function _canShow() {
-  if (localStorage.getItem(KEYS.never) === '1') return false
-  const count = parseInt(localStorage.getItem(KEYS.openCount) || '0')
-  if (count < MIN_OPENS) return false
-  const first = parseInt(localStorage.getItem(KEYS.firstOpen) || '0')
-  if (Date.now() - first < MIN_DAYS * DAY) return false
-  // 今天已经弹过/关闭过 → 不再弹
-  if (localStorage.getItem(KEYS.todayDismiss) === _todayKey()) return false
-  // 避免在聊天/助手页面打断对话
-  const hash = location.hash || ''
-  if (hash.includes('/chat') || hash.includes('/assistant')) return false
-  return true
+// 链接与邀请码必须成对匹配；不能由成员ID或缺失的邀请码自行拼接。
+function ownInvitation(state) {
+  if (!isTauriRuntime() || !['logged_in', 'bound'].includes(state?.phase) || !state.member || state.benefits?.status !== 'ready') return null
+  const { invite_code: code, invite_url: raw } = state.benefits.referrals || {}
+  if (typeof code !== 'string' || !/^[A-Za-z0-9_-]{6,64}$/.test(code) || typeof raw !== 'string') return null
+  try {
+    const origin = new URL(state.origin)
+    const url = new URL(raw)
+    const query = [...url.searchParams.entries()]
+    if (!['http:', 'https:'].includes(origin.protocol) || origin.username || origin.password || origin.pathname !== '/' || origin.search || origin.hash) return null
+    if (url.origin !== origin.origin || url.pathname !== '/member' || url.username || url.password || url.hash) return null
+    if (query.length !== 1 || query[0][0] !== 'invite' || query[0][1] !== code) return null
+    return raw
+  } catch { return null }
 }
 
-let _showing = false
+function identity(state) { return `${state?.epoch ?? ''}:${state?.member?.member_id ?? ''}` }
+function invitationCopy(state) {
+  const copy = state?.benefits?.invitationCopy
+  const language = getLang().startsWith('zh') ? 'zh' : 'en'
+  const title = typeof copy?.[`title_${language}`] === 'string' ? copy[`title_${language}`] : ''
+  const subtitle = typeof copy?.[`subtitle_${language}`] === 'string' ? copy[`subtitle_${language}`] : ''
+  return { title, subtitle }
+}
+function guestOffer(offer) {
+  if (!offer) return t('engagement.offerLoading')
+  if (offer.simulation === true) return t('engagement.offerSimulation')
+  const amount = offer.offer?.amount_micro_cny
+  const hasHours = offer.offer && Object.hasOwn(offer.offer, 'valid_hours')
+  const duration = hasHours ? offer.offer.valid_hours : offer.offer?.valid_days
+  if (offer.status !== 'offered' || offer.registration_rewards_enabled !== true || !/^\d+$/.test(String(amount ?? '')) || !Number.isSafeInteger(duration) || duration < 1 || duration > (hasHours ? 720 : 30)) return t('engagement.offerWebsite')
+  if (BigInt(amount) === 0n) return t('engagement.offerZero')
+  return t(hasHours ? 'engagement.offerAvailableHours' : 'engagement.offerAvailable', { credits: platformAccount.formatCredits(amount), hours: duration, days: duration })
+}
 
-/**
- * 在正向时机调用（如 Gateway 启动成功、配置保存成功）
- * 满足条件才弹出，否则静默返回
- */
-export function tryShowEngagement() {
-  if (_showing || !_canShow()) return
-  if (document.querySelector('.engage-overlay')) return
-  _showing = true
-  localStorage.setItem(KEYS.lastShown, String(Date.now()))
+// 摘要只读取当前招募活动；本人冻结规则、注册礼和累计收益不能替代当前面额。
+function currentInvitationRewards(state) {
+  const campaign = state.benefits?.currentCampaign
+  const result = (status, key, inviter = null, invitee = null) => ({ state: status, key: `engagement.${key}`, inviter, invitee })
+  if (state.benefits?.status !== 'ready') return result('unavailable', 'campaignUnavailable')
+  if (campaign?.simulation === true || state.benefits?.referrals?.simulation === true || state.platformStatus?.fixture_mode === true) return result('simulation', 'rewardsSimulation')
+  if (campaign?.reward_delivery_enabled === false || state.benefits?.referrals?.reward_delivery_enabled === false || state.platformStatus?.referral_rewards_enabled === false) return result('closed', 'rewardsClosed')
+  if (!campaign || campaign.reward_delivery_enabled !== true) return result('unavailable', 'campaignUnavailable')
+  const starts = Date.parse(campaign.starts_at), ends = Date.parse(campaign.ends_at), now = Date.now()
+  if (!Number.isFinite(starts) || !Number.isFinite(ends) || starts >= ends) return result('unavailable', 'campaignUnavailable')
+  if (ends <= now || ['ended', 'expired'].includes(campaign.status)) return result('ended', 'campaignEnded')
+  if (starts > now) return result('upcoming', 'campaignUpcoming')
+  if (campaign.status !== 'active') return result('closed', 'rewardsClosed')
+  const amount = value => (typeof value === 'string' || Number.isSafeInteger(value)) && /^\d{1,32}$/.test(String(value)) ? BigInt(value).toString() : null
+  const inviter = amount(campaign.inviter_credits), invitee = amount(campaign.invitee_credits)
+  return inviter === null || invitee === null ? result('unavailable', 'campaignUnavailable') : result('active', 'campaignHint', inviter, invitee)
+}
 
-  const shareText = t('engagement.shareText')
-
+/** 手动入口不受“今日不再提醒”限制；不主动登录、报名或生成邀请码。 */
+export function showInvitationDialog({ manual = true } = {}) {
+  if (activeDialog?.isConnected) return activeDialog
+  if (!manual && !canShowAutomatically()) return null
+  const trigger = document.activeElement
   const overlay = document.createElement('div')
   overlay.className = 'engage-overlay'
-  overlay.innerHTML = `
-    <div class="engage-modal">
-      <button class="engage-close" title="${t('common.close')}">&times;</button>
+  overlay.dataset.invitationDialog = ''
+  activeDialog = overlay
+  let closed = false
+  let feedback = null
+  let busy = false
+  let posterPanel = null, posterOpening = false
+  const unsubscribers = []
+  const disclosureState = { copy: false, community: false }
+  write(KEYS.lastShown, String(Date.now()))
+  write(KEYS.todayDismiss, today())
 
-      <div class="engage-header">
-        <div class="engage-icon">
-          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
-        </div>
-        <div class="engage-title">${t('engagement.title')}</div>
-      </div>
+  function close(restoreFocus = true) {
+    if (closed) return
+    closed = true
+    posterPanel?.dispose(); posterPanel = null
+    for (const unsubscribe of unsubscribers) unsubscribe?.()
+    overlay.remove()
+    if (activeDialog === overlay) activeDialog = null
+    if (restoreFocus && trigger?.isConnected && document.activeElement === document.body) trigger.focus({ preventScroll: true })
+  }
 
-      <div class="engage-message">
-        ${t('engagement.message')}
-      </div>
+  function rememberDisclosures() {
+    for (const details of overlay.querySelectorAll('details[data-invitation-disclosure]')) disclosureState[details.dataset.invitationDisclosure] = details.open;
+  }
 
-      <div class="engage-actions-grid">
-        <a class="engage-action-card" href="https://github.com/qingchencloud/clawpanel" target="_blank" rel="noopener">
-          <div class="engage-action-icon engage-action-star">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="#f59e0b" stroke="#f59e0b" stroke-width="1"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-          </div>
-          <div class="engage-action-text">
-            <div class="engage-action-title">${t('engagement.starTitle')}</div>
-            <div class="engage-action-desc">${t('engagement.starDesc')}</div>
-          </div>
-        </a>
-        <div class="engage-action-card engage-action-share" data-action="copy-share">
-          <div class="engage-action-icon engage-action-link">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-          </div>
-          <div class="engage-action-text">
-            <div class="engage-action-title">${t('engagement.shareTitle')}</div>
-            <div class="engage-action-desc">${t('engagement.shareDesc')}</div>
-          </div>
-        </div>
-      </div>
+  function draw() {
+    if (closed || posterPanel) return
+    const state = platformAccount.getPlatformAccount()
+    const ownUrl = ownInvitation(state)
+    const copy = invitationCopy(state)
+    const hasCopy = Boolean(copy.title.trim() || copy.subtitle.trim())
+    const desktop = isTauriRuntime()
+    const member = !!state.member
+    const bound = state.phase === 'bound'
+    const rewards = currentInvitationRewards(state)
+    const focused = overlay.contains(document.activeElement) ? document.activeElement : null
+    const focusHook = focused ? [...focused.attributes].find(attr => attr.name.startsWith('data-invitation-'))?.name : null
+    const scrollTop = overlay.querySelector('.engage-modal')?.scrollTop || 0
+    rememberDisclosures()
+    let stateText = t('engagement.guestState')
+    if (ownUrl) stateText = t(hasCopy ? 'engagement.personalState' : 'engagement.personalLinkState')
+    else if (!desktop) stateText = t('engagement.webState')
+    else if (member && !bound) stateText = t(['reauth_required', 'storage_error'].includes(state.phase) ? 'engagement.reauthorizeState' : 'engagement.connectState')
+    else if (bound && state.benefits?.status === 'scope_required') stateText = t('engagement.scopeState')
+    else if (bound && !ownUrl) stateText = t('engagement.unavailableState')
+    const posterAction = desktop && member && ['logged_in', 'bound'].includes(state.phase) ? `<button type="button" class="btn btn-secondary" data-invitation-poster>${escape(t('engagement.posterEntry'))}</button>` : ''
+    overlay.innerHTML = `
+      <section class="engage-modal invitation-modal" role="dialog" aria-modal="true" aria-labelledby="invitation-title" aria-describedby="invitation-state" tabindex="-1">
+        <button type="button" class="engage-close" data-invitation-close aria-label="${escape(t('common.close'))}">&times;</button>
+        <header class="invitation-heading"><p class="invitation-eyebrow">ClawPanel</p><h2 id="invitation-title">${escape(t('engagement.inviteTitle'))}</h2></header>
+        ${member ? `<p class="invitation-account">${escape(state.member.email_masked || t('engagement.connectedAccount'))}</p>` : ''}
+        <p id="invitation-state" class="invitation-description" data-invitation-state>${escape(stateText)}</p>
+        ${member ? `<section class="invitation-rewards" data-invitation-rewards data-campaign-state="${rewards.state}" aria-label="${escape(t('engagement.currentCampaign'))}">
+          <div class="invitation-reward-grid">${[['inviter', 'forInviter'], ['invitee', 'forFriend']].map(([role, label]) => `<div class="invitation-reward-item" data-invitation-reward-item="${role}"><span>${escape(t(`engagement.${label}`))}</span><div class="invitation-reward-amount"><strong data-invitation-reward="${role}">${escape(rewards[role] ?? '—')}</strong>${rewards[role] !== null ? `<span>${escape(t('engagement.credits'))}</span>` : ''}</div>${rewards[role] === '0' ? `<small>${escape(t('engagement.noReward'))}</small>` : ''}</div>`).join('')}</div>
+          <div class="invitation-campaign-guidance"><p class="${['simulation', 'closed'].includes(rewards.state) ? 'invitation-reward-restriction' : ''}" ${['simulation', 'closed'].includes(rewards.state) ? 'data-invitation-reward-restriction' : ''} data-invitation-campaign-hint>${escape(t(rewards.key))}</p>${desktop ? `<button type="button" class="invitation-rule-link" data-invitation-official>${escape(t('engagement.rulesProgress'))} ↗</button>` : ''}</div>
+        </section>` : ''}
+        ${ownUrl ? `
+          <div class="invitation-personal">
+            <label for="invitation-url">${escape(t('engagement.linkLabel'))}</label>
+            <input id="invitation-url" data-invitation-url type="url" readonly spellcheck="false" value="${escape(ownUrl)}">
+            <div class="invitation-primary-actions"><button type="button" class="btn btn-primary" data-invitation-copy-link>${escape(t(hasCopy ? 'engagement.copyLink' : 'engagement.copyInvitationLink'))}</button>${posterAction}${hasCopy ? `<button type="button" class="btn btn-secondary" data-invitation-copy-text>${escape(t('engagement.copyText'))}</button>` : ''}</div>
+            ${hasCopy ? `<details class="invitation-copy-details" data-invitation-copy-details data-invitation-disclosure="copy" ${disclosureState.copy ? 'open' : ''}><summary data-invitation-copy-summary>${escape(t('engagement.copyDetails'))}</summary><div class="invitation-copy-preview">${copy.title.trim() ? `<strong data-invitation-copy-title>${escape(copy.title)}</strong>` : ''}${copy.subtitle.trim() ? `<p data-invitation-copy-subtitle>${escape(copy.subtitle)}</p>` : ''}</div></details>` : ''}
+          </div>` : `
+          ${desktop && !member ? `<p class="invitation-offer" data-invitation-offer>${escape(guestOffer(platformAccount.getPlatformPublicOffer?.()))}</p>` : ''}
+          <div class="invitation-primary-actions">${desktop && (!member || !bound) ? `<a class="btn btn-primary" data-invitation-account href="#/account">${escape(t(member ? 'engagement.connectAccount' : 'engagement.loginRegister'))}</a>` : ''}${desktop && bound ? `<a class="btn btn-secondary" data-invitation-account href="#/account">${escape(t('engagement.manageAuthorization'))}</a>` : ''}${posterAction}</div>
+        `}
+        ${!member ? `<p class="invitation-reward-note">${escape(t('engagement.rewardNote'))}</p>` : ''}
+        <p class="invitation-feedback" data-invitation-feedback data-state="${feedback?.state || ''}" role="status" aria-live="polite">${feedback ? escape(t(feedback.key)) : ''}</p>
+        <section class="invitation-support-section"><h3>${escape(t('engagement.supportTitle'))}</h3><div class="invitation-support"><a data-invitation-star href="${STAR_URL}" target="_blank" rel="noopener noreferrer">☆ ${escape(t('engagement.starTitle'))} ↗</a></div>
+        <p class="invitation-support-note">${escape(t('engagement.genericNote'))}</p>
+        <div class="invitation-generic-share"><p class="invitation-generic-text">${escape(genericShareText())}</p><button type="button" class="btn btn-secondary btn-sm" data-invitation-generic-copy>${escape(t('engagement.genericCopy'))}</button></div>
+        <details class="invitation-community" data-invitation-disclosure="community" ${disclosureState.community ? 'open' : ''}><summary data-invitation-community-summary>${escape(t('engagement.communityTitle'))}</summary><nav aria-label="${escape(t('engagement.communityTitle'))}">${[
+          ['https://qt.cool/c/OpenClaw', 'qqLabel'], ['https://qt.cool/c/OpenClawWx', 'wechatLabel'],
+          ['https://qt.cool/c/OpenClawDY', 'douyinLabel'], ['https://qt.cool/c/feishu', 'feishuLabel'],
+          ['https://t.me/+rjRE3PgVL9tmOGZk', 'telegramLabel'],
+        ].map(([url, key]) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${escape(t(`engagement.${key}`))} ↗</a>`).join('')}</nav></details></section>
+        <footer class="invitation-footer"><button type="button" data-invitation-dismiss>${escape(t('engagement.dismissToday'))}</button></footer>
+      </section>`
+    overlay.querySelector('.engage-modal').scrollTop = scrollTop
+    if (focused && focusHook) overlay.querySelector(`[${focusHook}]`)?.focus({ preventScroll: true })
+  }
 
-      <div class="engage-section-label">${t('engagement.communityLabel')}</div>
-      <div class="engage-qrcodes">
-        <a class="engage-qr-item" href="https://qt.cool/c/OpenClaw" target="_blank" rel="noopener">
-          <img src="/images/OpenClaw-QQ.png" alt="${t('engagement.qqAlt')}" />
-          <div class="engage-qr-label">${t('engagement.qqLabel')}</div>
-        </a>
-        <a class="engage-qr-item" href="https://qt.cool/c/OpenClawWx" target="_blank" rel="noopener">
-          <img src="/images/OpenClawWx.png" alt="${t('engagement.wechatAlt')}" />
-          <div class="engage-qr-label">${t('engagement.wechatLabel')}</div>
-        </a>
-        <a class="engage-qr-item" href="https://qt.cool/c/OpenClawDY" target="_blank" rel="noopener">
-          <img src="/images/OpenClaw-DY.png" alt="${t('engagement.douyinAlt')}" />
-          <div class="engage-qr-label">${t('engagement.douyinLabel')}</div>
-        </a>
-        <a class="engage-qr-item" href="https://qt.cool/c/feishu" target="_blank" rel="noopener">
-          <img src="https://qt.cool/c/feishu/qr.png" alt="${t('engagement.feishuAlt')}" />
-          <div class="engage-qr-label">${t('engagement.feishuLabel')}</div>
-        </a>
-      </div>
+  async function openPoster() {
+    if (closed || posterPanel || posterOpening || busy) return
+    const before = identity(platformAccount.getPlatformAccount())
+    posterOpening = true
+    try {
+      const { createInvitationPosterPanel } = await import('./invitation-poster.js')
+      if (closed || before !== identity(platformAccount.getPlatformAccount())) return
+      posterPanel = createInvitationPosterPanel({ onBack() {
+        posterPanel?.dispose(); posterPanel = null
+        draw()
+        overlay.querySelector('[data-invitation-poster]')?.focus({ preventScroll: true })
+      } })
+      const modal = overlay.querySelector('.engage-modal')
+      modal.classList.add('invitation-poster-host'); modal.setAttribute('aria-labelledby', 'invitation-poster-title'); modal.removeAttribute('aria-describedby')
+      modal.replaceChildren()
+      const closeButton = document.createElement('button')
+      closeButton.type = 'button'; closeButton.className = 'engage-close'; closeButton.dataset.invitationClose = ''; closeButton.setAttribute('aria-label', t('common.close')); closeButton.textContent = '×'
+      modal.append(closeButton, posterPanel.element); modal.scrollTop = 0
+      posterPanel.element.querySelector('[data-poster-back]')?.focus({ preventScroll: true })
+    } catch { if (!closed && before === identity(platformAccount.getPlatformAccount())) { feedback = { state: 'error', key: 'engagement.posterFailed' }; draw() } }
+    finally { posterOpening = false }
+  }
 
-      <div class="engage-footer">
-        <span class="engage-today-dismiss">${t('engagement.dismissToday')}</span>
-      </div>
-    </div>
-  `
+  const genericShareText = () => `${t('engagement.genericText')}\n${PROJECT_URL}`
+
+  async function copyText(kind) {
+    if (busy) return
+    const state = platformAccount.getPlatformAccount()
+    const before = identity(state)
+    const url = ownInvitation(state)
+    if (kind !== 'generic' && !url) { feedback = null; draw(); return }
+    const copy = invitationCopy(state)
+    const text = kind === 'link' ? url : kind === 'personal' ? [copy.title, copy.subtitle, url].filter(value => value.trim()).join('\n\n') : genericShareText()
+    busy = true
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('clipboard_unavailable')
+      await navigator.clipboard.writeText(text)
+      if (!closed && before === identity(platformAccount.getPlatformAccount())) feedback = { state: 'success', key: 'engagement.copySuccess' }
+    } catch {
+      if (!closed && before === identity(platformAccount.getPlatformAccount())) feedback = { state: 'error', key: 'engagement.copyFailure' }
+    } finally { busy = false; draw() }
+  }
+
+  overlay.addEventListener('click', async event => {
+    rememberDisclosures()
+    const target = event.target.closest('button,a')
+    if (event.target === overlay || target?.matches('[data-invitation-close],[data-invitation-dismiss]')) { close(); return }
+    if (target?.matches('[data-invitation-account]')) { close(false); return }
+    if (target?.matches('[data-invitation-poster]')) { await openPoster(); return }
+    if (target?.matches('[data-invitation-copy-link]')) { await copyText('link'); return }
+    if (target?.matches('[data-invitation-copy-text]')) { await copyText('personal'); return }
+    if (target?.matches('[data-invitation-generic-copy]')) { await copyText('generic'); return }
+    if (target?.matches('[data-invitation-official]') && !busy) {
+      const before = identity(platformAccount.getPlatformAccount())
+      busy = true
+      try { await platformAccount.openPlatformMember('referrals') }
+      catch { if (before === identity(platformAccount.getPlatformAccount())) feedback = { state: 'error', key: 'engagement.openFailure' } }
+      finally { busy = false; draw() }
+    }
+  })
+  overlay.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); return }
+    if (event.key !== 'Tab') return
+    const controls = [...overlay.querySelectorAll('button,a[href],input,textarea,select,summary')].filter(node => !node.disabled && node.getClientRects().length)
+    const first = controls[0], last = controls.at(-1)
+    if (!first) { event.preventDefault(); overlay.querySelector('.engage-modal').focus(); return }
+    if (event.shiftKey && (document.activeElement === first || !controls.includes(document.activeElement))) { event.preventDefault(); last.focus() }
+    else if (!event.shiftKey && (document.activeElement === last || !controls.includes(document.activeElement))) { event.preventDefault(); first.focus() }
+  })
+  unsubscribers.push(platformAccount.onPlatformAccountChange(() => { feedback = null; draw() }), onLangChange(() => { feedback = null; draw() }))
+  if (platformAccount.onPlatformPublicOfferChange) unsubscribers.push(platformAccount.onPlatformPublicOfferChange(draw))
+  draw()
   document.body.appendChild(overlay)
-  requestAnimationFrame(() => overlay.classList.add('engage-visible'))
-
-  function dismiss(markToday = true) {
-    if (markToday) localStorage.setItem(KEYS.todayDismiss, _todayKey())
-    overlay.classList.remove('engage-visible')
-    setTimeout(() => { overlay.remove(); _showing = false }, 250)
-  }
-
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) dismiss() })
-  overlay.querySelector('.engage-close').onclick = () => dismiss()
-  overlay.querySelector('.engage-today-dismiss').onclick = () => dismiss(true)
-  overlay.querySelector('[data-action="copy-share"]').onclick = () => {
-    navigator.clipboard.writeText(shareText).then(() => {
-      const desc = overlay.querySelector('[data-action="copy-share"] .engage-action-desc')
-      if (desc) { desc.textContent = t('engagement.shareCopied'); setTimeout(() => { desc.textContent = t('engagement.shareDesc') }, 2000) }
-    })
-  }
+  requestAnimationFrame(() => { if (!closed) { overlay.classList.add('engage-visible'); overlay.querySelector('[data-invitation-close]')?.focus({ preventScroll: true }) } })
+  if (isTauriRuntime() && !platformAccount.getPlatformAccount().member && platformAccount.loadPlatformPublicOffer) platformAccount.loadPlatformPublicOffer().catch(() => {})
+  return overlay
 }
 
-// 测试用：绕过条件直接弹出（浏览器控制台输入 __testEngagement()）
-window.__testEngagement = function() {
-  _showing = false
-  document.querySelector('.engage-overlay')?.remove()
-  localStorage.removeItem(KEYS.never)
-  localStorage.setItem(KEYS.openCount, '99')
-  localStorage.setItem(KEYS.firstOpen, '0')
-  localStorage.removeItem(KEYS.lastShown)
-  tryShowEngagement()
-}
+/** 外部在成功保存配置、服务就绪等正向时机调用，避免打断用户任务。 */
+export function tryShowEngagement() { return showInvitationDialog({ manual: false }) }

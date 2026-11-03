@@ -25,4 +25,7 @@ export const CHANNEL_LABELS = {
   twitch: 'Twitch',
   'openclaw-weixin': '微信',
   weixin: '微信',
+  wechat: '微信',
+  yuanbao: '腾讯元宝',
+  'openclaw-zaloclawbot': 'Zalo ClawBot',
 }

@@ -147,7 +147,7 @@ export function render() {
         return refresh()
       }
       if (action === 'install') {
-        const ok = await showConfirm(t('openCode.installConfirm', { version: state.status?.targetVersion || '1.18.21' }), { variant: 'primary' })
+        const ok = await showConfirm(t('openCode.installConfirm', { version: state.status?.targetVersion || '—' }), { variant: 'primary' })
         if (!ok) return
         state.busy = 'install'; draw()
         await api.openCodeInstall()

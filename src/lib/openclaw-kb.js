@@ -226,49 +226,16 @@ npm install -g openclaw@latest
 7. WhatsApp 不回消息 → 检查配对是否已 approve
 8. 认证错误 → 检查 auth-profiles.json 或重新 \`openclaw onboard\`
 
-## 十二、快捷模型服务
+## 十二、模型接入
 
-### 晴辰云：免费签到测试平台
-晴辰云是 ClawPanel 配套的免费测试平台，适合模型体验和功能验证。用户可以通过签到活动领取测试额度，具体开放状态和额度规则以晴辰云页面为准。
+### 桌面客户端：官网账户与官方模型
+1. 打开侧栏「官网账户」，登录并连接本机。
+2. 进入「晴辰助手」，将模型通道切换为「官方模型」，选择可用模型后开始对话。
+3. 官方模型与可用积分以当前官网账户返回的状态为准；未连接账户时先完成连接。
 
-- **平台首页**：https://gpt.qt.cool/
-- **签到 / 获取密钥**：https://gpt.qt.cool/checkin
-- **用户门户**：https://gpt.qt.cool/user
-- **API 文档**：https://gpt.qt.cool/api-doc.html
-- **API 网关地址**：https://gpt.qt.cool/v1
-- **Provider 标识**：qtcool
-
-ClawPanel 不内置或自动读取晴辰云密钥。请用户自行注册 / 签到获取 API Key，再到助手设置或模型配置页选择「晴辰云」、手动粘贴密钥、获取模型列表并选择需要的模型。
-
-### 词元 API：第三方赞助推广
-词元 API 是 ClawPanel 的第三方赞助推广服务。ClawPanel 提供快捷配置入口，具体服务规则以词元 API 页面为准。
-
-### 核心信息
-- **API 网关地址**：https://ciyapi.79tian.com/v1
-- **接口类型**：OpenAI Compatible
-- **支持模型**：GPT、Claude 等主流前沿模型，具体以模型广场实时列表为准
-- **充值福利**：充值 ¥1 到账 $1 平台额度
-- **模型优惠**：部分线路按折扣计费，具体以模型广场为准
-
-### 服务入口
-- **词元 API**：https://ciyapi.79tian.com/
-- **注册账号**：https://ciyapi.79tian.com/sign-up
-- **API 密钥**：https://ciyapi.79tian.com/keys/
-- **模型与价格**：https://ciyapi.79tian.com/pricing/
-- **充值**：https://ciyapi.79tian.com/wallet/
-
-### 获取密钥
-1. 前往词元 API 注册账号
-2. 在 API 密钥页面创建并复制 Key
-3. 按需查看模型价格和充值
-
-### 接入方式
-已兼容 OpenAI API 的项目，只需替换：
-1. Base URL → https://ciyapi.79tian.com/v1
-2. API Key → 在词元 API 创建的密钥
-即可完成接入。
-
-### 在 ClawPanel 中配置
-- **助手设置**：打开 AI 助手设置 → 模型配置 → 输入密钥后点击「接入」
-- **模型配置页**：进入模型配置 → 输入密钥后点击「获取模型列表」添加模型
+### Web 与自有 API Key
+Web 模式通过自有 API Key 接入模型；桌面客户端也保留自有 Key 通道。
+- **模型渠道**：选择服务商预设或「自定义」，填写 Base URL、API 类型与 API Key，获取或填写模型列表，再按需同步到目标引擎或助手。
+- **助手设置**：填写接口地址、API 类型、API Key 与模型，可获取模型列表并测试连接；在助手中选择自有 Key 通道使用。
+- **已有配置**：继续使用、编辑或导入已有服务商配置，无需因为切换模型通道而删除原模型、Key 或对话历史。
 `.trim()

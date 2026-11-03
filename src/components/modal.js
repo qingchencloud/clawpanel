@@ -55,6 +55,7 @@ export function showConfirm(message, options = {}) {
     : ''
 
   return new Promise((resolve) => {
+    const trigger = document.activeElement
     const overlay = document.createElement('div')
     overlay.className = 'modal-overlay'
     overlay.innerHTML = `
@@ -70,8 +71,12 @@ export function showConfirm(message, options = {}) {
     `
     document.body.appendChild(overlay)
 
+    let closed = false
     const close = (result) => {
+      if (closed) return
+      closed = true
       overlay.remove()
+      if (trigger?.isConnected && typeof trigger.focus === 'function' && !trigger.disabled) trigger.focus({ preventScroll: true })
       resolve(result)
     }
 
@@ -81,8 +86,25 @@ export function showConfirm(message, options = {}) {
     overlay.querySelector('[data-action="cancel"]').onclick = () => close(false)
     overlay.querySelector('[data-action="confirm"]').onclick = () => close(true)
     overlay.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); close(true) }
-      else if (e.key === 'Escape') close(false)
+      const cancel = overlay.querySelector('[data-action="cancel"]')
+      const confirm = overlay.querySelector('[data-action="confirm"]')
+      if (e.key === 'Tab') {
+        const target = e.shiftKey ? confirm : cancel
+        const boundary = e.shiftKey ? cancel : confirm
+        if (document.activeElement === boundary || !overlay.contains(document.activeElement)) {
+          e.preventDefault()
+          target.focus()
+        }
+      } else if (e.key === 'Enter') {
+        // 回车遵循当前按钮，不把取消或其他位置解释成危险确认。
+        e.preventDefault()
+        if (document.activeElement === confirm) close(true)
+        else if (document.activeElement === cancel) close(false)
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        close(false)
+      }
     })
     // 聚焦取消按钮（致命操作默认不要默认聚焦确认）
     overlay.querySelector('[data-action="cancel"]').focus()

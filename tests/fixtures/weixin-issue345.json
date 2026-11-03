@@ -1,0 +1,17 @@
+[
+  { "host": "2026.9.8", "plugin": "2.4.9", "compatible": true, "recommendedVersion": "2.4.9", "installAllowed": true, "updateAvailable": false },
+  { "host": "2026.5.12", "plugin": "2.4.9", "compatible": true, "recommendedVersion": "2.4.9", "installAllowed": true, "updateAvailable": false },
+  { "host": "v2026.9.8-zh.1", "plugin": "2.4.8", "compatible": true, "recommendedVersion": "2.4.9", "installAllowed": true, "updateAvailable": true },
+  { "host": "2026.5.11", "plugin": "2.4.9", "compatible": false, "recommendedVersion": "2.4.4", "installAllowed": true, "updateAvailable": false },
+  { "host": "2026.9.8", "plugin": "2.4.10", "compatible": null, "recommendedVersion": null, "installAllowed": false, "updateAvailable": false },
+  { "host": "2026.9.8", "plugin": "3.0.0", "compatible": null, "recommendedVersion": null, "installAllowed": false, "updateAvailable": false },
+  { "host": "unknown", "plugin": "2.4.9", "compatible": null, "recommendedVersion": null, "installAllowed": false, "updateAvailable": false },
+  { "host": "2026.9.8-beta.1", "plugin": "2.4.9", "compatible": null, "recommendedVersion": null, "installAllowed": false, "updateAvailable": false },
+  { "host": "2026.9.8-zh.beta", "plugin": "2.4.9", "compatible": null, "recommendedVersion": null, "installAllowed": false, "updateAvailable": false },
+  { "host": "2026.9.8-zh.1-beta.1", "plugin": "2.4.9", "compatible": null, "recommendedVersion": null, "installAllowed": false, "updateAvailable": false },
+  { "host": "2026.9.8-zh.1-zh.2", "plugin": "2.4.9", "compatible": null, "recommendedVersion": null, "installAllowed": false, "updateAvailable": false },
+  { "host": "2026.9.8-zh.", "plugin": "2.4.9", "compatible": null, "recommendedVersion": null, "installAllowed": false, "updateAvailable": false },
+  { "host": "2026.9.8-zh.4294967296", "plugin": "2.4.9", "compatible": null, "recommendedVersion": null, "installAllowed": false, "updateAvailable": false },
+  { "host": "2026.9.8-4294967296-zh.1", "plugin": "2.4.9", "compatible": null, "recommendedVersion": null, "installAllowed": false, "updateAvailable": false },
+  { "host": "2026.9.8-zh.1+build", "plugin": "2.4.9", "compatible": null, "recommendedVersion": null, "installAllowed": false, "updateAvailable": false }
+]

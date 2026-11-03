@@ -47,7 +47,7 @@ test('OpenClaw 7.1 发布与容器基线不低于 Node.js 22.22.3', () => {
 
   assert.match(read('.github/workflows/ci.yml'), /node-version:\s*22\.22\.3/)
   assert.match(read('.github/workflows/release.yml'), /node-version:\s*22\.22\.3/)
-  assert.match(read('Dockerfile'), /FROM node:22\.22\.3-alpine AS production/)
+  assert.match(read('Dockerfile'), /FROM node:24\.16\.0-alpine AS production/)
 })
 
 test('macOS Gateway 服务操作保留 launchctl 所需的用户 UID helper', () => {
@@ -55,6 +55,19 @@ test('macOS Gateway 服务操作保留 launchctl 所需的用户 UID helper', ()
   assert.match(config, /fn get_uid\(\) -> Result<u32, String>/)
   assert.match(config, /Command::new\("id"\)[\s\S]*?\.arg\("-u"\)/)
   assert.match(config, /format!\("gui\/\{uid\}\/ai\.openclaw\.gateway"\)/)
+})
+
+test('Docker 保留所有引擎服务端模块和版本策略，排除本机运行时与依赖缓存', () => {
+  const dockerfile = read('Dockerfile')
+  const ignore = read('.dockerignore')
+  assert.match(dockerfile, /COPY openclaw-version-policy\.json/)
+  assert.match(dockerfile, /\/build\/openclaw-version-policy\.json/)
+  assert.match(dockerfile, /\/build\/src\/lib \.\/src\/lib/)
+  assert.doesNotMatch(ignore, /^scripts\/\*\.(?:js|sh)$/m)
+  assert.doesNotMatch(ignore, /^openclaw-version-policy\.json$/m)
+  for (const directory of ['node_modules', 'output', 'dist', '.playwright-cli']) {
+    assert.ok(ignore.split(/\r?\n/).includes(`${directory}/`))
+  }
 })
 
 test('Rust 锁文件包含 Tauri 与 tar 的安全修复版本', () => {

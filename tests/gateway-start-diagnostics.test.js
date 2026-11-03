@@ -61,14 +61,16 @@ C:\\Users\\Administrator\\AppData\\Roaming\\npm\\node_modules\\@qingchencloud\\o
 
 test('桌面与 Web 启动后端都保留 stderr 并把增量错误带回界面', () => {
   const rust = read('src-tauri/src/commands/service.rs')
-  assert.match(rust, /gateway\.log.*2>>\{\}/s)
+  assert.doesNotMatch(rust, /1>>\{/)
+  assert.match(rust, /Stdio::from\(stdout_log\)/)
+  assert.match(rust, /decode_text\(&bytes\)/)
   assert.match(rust, /gateway\.err\.log/)
   assert.match(rust, /append_gateway_error_excerpt\(err, error_log_offset\)/)
   assert.match(rust, /spawn_blocking\(move \|\| platform::check_service_status/)
 
   const web = read('scripts/dev-api.js')
   assert.match(web, /const errorLogOffset = gatewayErrorLogSize\(\)/)
-  assert.match(web, /waitForGatewayRunning\(label, 10000, errorLogOffset\)/)
+  assert.match(web, /waitForGatewayRunning\(label, 60000, errorLogOffset\)/)
   assert.match(web, /最近一次启动错误/)
   assert.match(web, /const listening = linuxPortListening\(port\)/)
 })

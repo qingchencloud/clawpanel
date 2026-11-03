@@ -1,0 +1,584 @@
+{
+  "provenance": {
+    "sourceSha": "1b6b061a40fb45fa84cfc33e34643839b625dbe9",
+    "runId": 38970520687,
+    "failedLogSha256": "c9b8eafc80aaf329ebc9e130bfc33b51367943e3ce441c750375f076cb055d76",
+    "cleanupLogLine": 1582,
+    "cleanupLineSha256": "c25a6f4f5709b5aee6f1aa16f334fb762f5efdd08bcc8e612ef558ed8fcd7e7b",
+    "boundsTestSha256": "91c86b4c661eabd178b4019943b774637092e5d68caf01f7f75b9bfdec70ba75",
+    "rawTiming": "not captured; lower bound only from exact source await(snapshot) before synchronous raw map",
+    "rawFalseErrorCodes": "not captured; not reconstructed as ESRCH",
+    "tapDecoding": "Unescape one node:inspect single-quoted-string backslash layer, then JSON.parse. Original full TAP line/hash preserved; no numeric/boolean/receipt changes."
+  },
+  "cleanup": [
+    {
+      "pid": 1856,
+      "status": "running",
+      "executablePath": "C:\\Windows\\WinSxS\\amd64_microsoft-windows-servicingstack_31bf3856ad364e35_10.0.26100.33434_none_555c2be06f033d53\\TiWorker.exe",
+      "creationTimeFileTimeHex": "01dd5db6c5eb6d05",
+      "createdAtMs": 1792186747695,
+      "exitAtMs": 0,
+      "sampledAtMs": 1792186748623,
+      "queryStartedAtMs": 1792186748623,
+      "queryCompletedAtMs": 1792186748623,
+      "nativeError": 0,
+      "imageQueryError": 0,
+      "waitResult": 258,
+      "receipt": {
+        "event": "start",
+        "name": "burst-1",
+        "pid": 1856,
+        "birthId": "8ecea68e-faae-4703-a451-f7ab442331b5",
+        "at": 1792186733283,
+        "monotonicMs": 340223
+      },
+      "belongsToFixture": false,
+      "newerThanRecordedStart": true,
+      "active": false,
+      "rawAlive": true,
+      "alive": true,
+      "nativeOwnedActive": false
+    },
+    {
+      "pid": 4712,
+      "status": "missing",
+      "executablePath": null,
+      "creationTimeFileTimeHex": null,
+      "createdAtMs": 0,
+      "exitAtMs": 0,
+      "sampledAtMs": 1792186748625,
+      "queryStartedAtMs": 1792186748625,
+      "queryCompletedAtMs": 1792186748625,
+      "nativeError": 87,
+      "imageQueryError": 0,
+      "waitResult": 4294967295,
+      "receipt": {
+        "event": "start",
+        "name": "burst-0",
+        "pid": 4712,
+        "birthId": "b40d403e-8532-43e5-bc9d-3054f8b8e585",
+        "at": 1792186733293,
+        "monotonicMs": 340234
+      },
+      "belongsToFixture": false,
+      "newerThanRecordedStart": false,
+      "active": false,
+      "rawAlive": false,
+      "alive": false,
+      "nativeOwnedActive": false
+    },
+    {
+      "pid": 6168,
+      "status": "missing",
+      "executablePath": null,
+      "creationTimeFileTimeHex": null,
+      "createdAtMs": 0,
+      "exitAtMs": 0,
+      "sampledAtMs": 1792186748625,
+      "queryStartedAtMs": 1792186748625,
+      "queryCompletedAtMs": 1792186748625,
+      "nativeError": 87,
+      "imageQueryError": 0,
+      "waitResult": 4294967295,
+      "receipt": {
+        "event": "start",
+        "name": "burst-2",
+        "pid": 6168,
+        "birthId": "a3cf6d78-d4d9-459e-a8fa-4887a6591834",
+        "at": 1792186739582,
+        "monotonicMs": 346523
+      },
+      "belongsToFixture": false,
+      "newerThanRecordedStart": false,
+      "active": false,
+      "rawAlive": false,
+      "alive": false,
+      "nativeOwnedActive": false
+    },
+    {
+      "pid": 7492,
+      "status": "missing",
+      "executablePath": null,
+      "creationTimeFileTimeHex": null,
+      "createdAtMs": 0,
+      "exitAtMs": 0,
+      "sampledAtMs": 1792186748625,
+      "queryStartedAtMs": 1792186748625,
+      "queryCompletedAtMs": 1792186748625,
+      "nativeError": 87,
+      "imageQueryError": 0,
+      "waitResult": 4294967295,
+      "receipt": {
+        "event": "start",
+        "name": "burst-3",
+        "pid": 7492,
+        "birthId": "788f778a-1ae9-4160-98fc-086e8304a851",
+        "at": 1792186739604,
+        "monotonicMs": 346544
+      },
+      "belongsToFixture": false,
+      "newerThanRecordedStart": false,
+      "active": false,
+      "rawAlive": false,
+      "alive": false,
+      "nativeOwnedActive": false
+    },
+    {
+      "pid": 6120,
+      "status": "missing",
+      "executablePath": null,
+      "creationTimeFileTimeHex": null,
+      "createdAtMs": 0,
+      "exitAtMs": 0,
+      "sampledAtMs": 1792186748625,
+      "queryStartedAtMs": 1792186748625,
+      "queryCompletedAtMs": 1792186748625,
+      "nativeError": 87,
+      "imageQueryError": 0,
+      "waitResult": 4294967295,
+      "receipt": {
+        "event": "start",
+        "name": "burst-4",
+        "pid": 6120,
+        "birthId": "cdf82d80-e9a7-438a-8196-20f2ec27a935",
+        "at": 1792186745874,
+        "monotonicMs": 352816
+      },
+      "belongsToFixture": false,
+      "newerThanRecordedStart": false,
+      "active": false,
+      "rawAlive": false,
+      "alive": false,
+      "nativeOwnedActive": false
+    },
+    {
+      "pid": 2760,
+      "status": "missing",
+      "executablePath": null,
+      "creationTimeFileTimeHex": null,
+      "createdAtMs": 0,
+      "exitAtMs": 0,
+      "sampledAtMs": 1792186748625,
+      "queryStartedAtMs": 1792186748625,
+      "queryCompletedAtMs": 1792186748625,
+      "nativeError": 87,
+      "imageQueryError": 0,
+      "waitResult": 4294967295,
+      "receipt": {
+        "event": "start",
+        "name": "burst-5",
+        "pid": 2760,
+        "birthId": "1164c365-c51e-4a85-810b-40aaaf7b3101",
+        "at": 1792186745898,
+        "monotonicMs": 352839
+      },
+      "belongsToFixture": false,
+      "newerThanRecordedStart": false,
+      "active": false,
+      "rawAlive": false,
+      "alive": false,
+      "nativeOwnedActive": false
+    },
+    {
+      "pid": 3976,
+      "status": "missing",
+      "executablePath": null,
+      "creationTimeFileTimeHex": null,
+      "createdAtMs": 0,
+      "exitAtMs": 0,
+      "sampledAtMs": 1792186748627,
+      "queryStartedAtMs": 1792186748627,
+      "queryCompletedAtMs": 1792186748627,
+      "nativeError": 87,
+      "imageQueryError": 0,
+      "waitResult": 4294967295,
+      "receipt": {
+        "event": "start",
+        "name": "fail",
+        "pid": 3976,
+        "birthId": "a8f8ab06-66e6-48d7-8d51-3273eff79f3f",
+        "at": 1792186748355,
+        "monotonicMs": 355296
+      },
+      "belongsToFixture": false,
+      "newerThanRecordedStart": false,
+      "active": false,
+      "rawAlive": false,
+      "alive": false,
+      "nativeOwnedActive": false
+    },
+    {
+      "pid": 732,
+      "status": "missing",
+      "executablePath": null,
+      "creationTimeFileTimeHex": null,
+      "createdAtMs": 0,
+      "exitAtMs": 0,
+      "sampledAtMs": 1792186748627,
+      "queryStartedAtMs": 1792186748627,
+      "queryCompletedAtMs": 1792186748627,
+      "nativeError": 87,
+      "imageQueryError": 0,
+      "waitResult": 4294967295,
+      "receipt": {
+        "event": "start",
+        "name": "recovery",
+        "pid": 732,
+        "birthId": "980e28a5-715e-4332-b555-f2252858dd9c",
+        "at": 1792186748469,
+        "monotonicMs": 355410
+      },
+      "belongsToFixture": false,
+      "newerThanRecordedStart": false,
+      "active": false,
+      "rawAlive": false,
+      "alive": false,
+      "nativeOwnedActive": false
+    }
+  ],
+  "peak": {
+    "event": "hermes-bounds-identity",
+    "schema": 1,
+    "samplingNotAtomic": true,
+    "nativeQualification": "creation-identity",
+    "ownedPeakSemantics": "conservative upper bound over original sequential raw probes",
+    "rawUnqualifiedPeak": 3,
+    "ownedPeak": 2,
+    "rawSweepCount": 552,
+    "rawProbeCount": 1880,
+    "starts": [
+      {
+        "id": 0,
+        "pid": 1856,
+        "name": "burst-1",
+        "at": 1792186733283,
+        "monotonicMs": 340223
+      },
+      {
+        "id": 1,
+        "pid": 4712,
+        "name": "burst-0",
+        "at": 1792186733293,
+        "monotonicMs": 340234
+      },
+      {
+        "id": 2,
+        "pid": 6168,
+        "name": "burst-2",
+        "at": 1792186739582,
+        "monotonicMs": 346523
+      },
+      {
+        "id": 3,
+        "pid": 7492,
+        "name": "burst-3",
+        "at": 1792186739604,
+        "monotonicMs": 346544
+      },
+      {
+        "id": 4,
+        "pid": 6120,
+        "name": "burst-4",
+        "at": 1792186745874,
+        "monotonicMs": 352816
+      },
+      {
+        "id": 5,
+        "pid": 2760,
+        "name": "burst-5",
+        "at": 1792186745898,
+        "monotonicMs": 352839
+      }
+    ],
+    "proofs": [
+      {
+        "id": 0,
+        "pid": 1856,
+        "startId": 0,
+        "kind": "replacement-born-before-probe",
+        "expectedCreation": "01dd5db6bd42bf08",
+        "baseline": {
+          "status": "running",
+          "sampledAtMs": 1792186733315,
+          "queryStartedAtMs": 1792186733314,
+          "queryCompletedAtMs": 1792186733315,
+          "creationTimeFileTimeHex": "01dd5db6bd42bf08",
+          "createdAtMs": 1792186733168,
+          "exitAtMs": 0,
+          "belongsToFixture": true,
+          "waitResult": 258,
+          "nativeError": 0,
+          "imageQueryError": 0
+        },
+        "witness": {
+          "status": "running",
+          "sampledAtMs": 1792186747709,
+          "queryStartedAtMs": 1792186747707,
+          "queryCompletedAtMs": 1792186747709,
+          "creationTimeFileTimeHex": "01dd5db6c5eb6d05",
+          "createdAtMs": 1792186747695,
+          "exitAtMs": 0,
+          "belongsToFixture": false,
+          "waitResult": 258,
+          "nativeError": 0,
+          "imageQueryError": 0
+        }
+      }
+    ],
+    "exclusions": [
+      [
+        531,
+        0,
+        0,
+        1792186747704,
+        1792186747704
+      ],
+      [
+        532,
+        0,
+        0,
+        1792186747731,
+        1792186747731
+      ],
+      [
+        533,
+        0,
+        0,
+        1792186747756,
+        1792186747756
+      ],
+      [
+        534,
+        0,
+        0,
+        1792186747783,
+        1792186747783
+      ],
+      [
+        535,
+        0,
+        0,
+        1792186747809,
+        1792186747809
+      ],
+      [
+        536,
+        0,
+        0,
+        1792186747835,
+        1792186747835
+      ],
+      [
+        537,
+        0,
+        0,
+        1792186747861,
+        1792186747861
+      ],
+      [
+        538,
+        0,
+        0,
+        1792186747887,
+        1792186747887
+      ],
+      [
+        539,
+        0,
+        0,
+        1792186747913,
+        1792186747913
+      ],
+      [
+        540,
+        0,
+        0,
+        1792186747940,
+        1792186747940
+      ],
+      [
+        541,
+        0,
+        0,
+        1792186747966,
+        1792186747966
+      ],
+      [
+        542,
+        0,
+        0,
+        1792186747992,
+        1792186747992
+      ],
+      [
+        543,
+        0,
+        0,
+        1792186748018,
+        1792186748018
+      ],
+      [
+        544,
+        0,
+        0,
+        1792186748044,
+        1792186748044
+      ],
+      [
+        545,
+        0,
+        0,
+        1792186748069,
+        1792186748069
+      ],
+      [
+        546,
+        0,
+        0,
+        1792186748095,
+        1792186748095
+      ],
+      [
+        547,
+        0,
+        0,
+        1792186748121,
+        1792186748121
+      ],
+      [
+        548,
+        0,
+        0,
+        1792186748148,
+        1792186748148
+      ],
+      [
+        549,
+        0,
+        0,
+        1792186748174,
+        1792186748174
+      ],
+      [
+        550,
+        0,
+        0,
+        1792186748200,
+        1792186748200
+      ],
+      [
+        551,
+        0,
+        0,
+        1792186748224,
+        1792186748224
+      ]
+    ],
+    "rawPeakWitness": {
+      "sweepIndex": 531,
+      "startedAtMs": 1792186747704,
+      "completedAtMs": 1792186747704,
+      "rawCount": 3,
+      "ownedCount": 2,
+      "probes": [
+        {
+          "pid": 1856,
+          "alive": true,
+          "errorCode": null,
+          "startedAtMs": 1792186747704,
+          "completedAtMs": 1792186747704,
+          "startedAtNs": "354645641100",
+          "completedAtNs": "354645653900",
+          "startId": 0,
+          "expectedCreation": "01dd5db6bd42bf08",
+          "classification": "proved-not-old-start",
+          "proofId": 0
+        },
+        {
+          "pid": 4712,
+          "alive": false,
+          "errorCode": "ESRCH",
+          "startedAtMs": 1792186747704,
+          "completedAtMs": 1792186747704,
+          "startedAtNs": "354645654700",
+          "completedAtNs": "354645747000"
+        },
+        {
+          "pid": 6168,
+          "alive": false,
+          "errorCode": "ESRCH",
+          "startedAtMs": 1792186747704,
+          "completedAtMs": 1792186747704,
+          "startedAtNs": "354645747900",
+          "completedAtNs": "354645785400"
+        },
+        {
+          "pid": 7492,
+          "alive": false,
+          "errorCode": "ESRCH",
+          "startedAtMs": 1792186747704,
+          "completedAtMs": 1792186747704,
+          "startedAtNs": "354645786200",
+          "completedAtNs": "354645818300"
+        },
+        {
+          "pid": 6120,
+          "alive": true,
+          "errorCode": null,
+          "startedAtMs": 1792186747704,
+          "completedAtMs": 1792186747704,
+          "startedAtNs": "354645819100",
+          "completedAtNs": "354645829100",
+          "startId": 4,
+          "expectedCreation": "01dd5db6c4c9fe1f",
+          "classification": "conservatively-owned"
+        },
+        {
+          "pid": 2760,
+          "alive": true,
+          "errorCode": null,
+          "startedAtMs": 1792186747704,
+          "completedAtMs": 1792186747704,
+          "startedAtNs": "354645829900",
+          "completedAtNs": "354645836600",
+          "startId": 5,
+          "expectedCreation": "01dd5db6c4cd4c8c",
+          "classification": "conservatively-owned"
+        }
+      ]
+    },
+    "ownedPeakWitness": {
+      "sweepIndex": 21,
+      "startedAtMs": 1792186733309,
+      "completedAtMs": 1792186733309,
+      "rawCount": 2,
+      "ownedCount": 2,
+      "probes": [
+        {
+          "pid": 1856,
+          "alive": true,
+          "errorCode": null,
+          "startedAtMs": 1792186733309,
+          "completedAtMs": 1792186733309,
+          "startedAtNs": "340250271100",
+          "completedAtNs": "340250346600",
+          "startId": 0,
+          "expectedCreation": "01dd5db6bd42bf08",
+          "classification": "conservatively-owned"
+        },
+        {
+          "pid": 4712,
+          "alive": true,
+          "errorCode": null,
+          "startedAtMs": 1792186733309,
+          "completedAtMs": 1792186733309,
+          "startedAtNs": "340250356800",
+          "completedAtNs": "340250372300",
+          "startId": 1,
+          "expectedCreation": "01dd5db6bd40f928",
+          "classification": "conservatively-owned"
+        }
+      ]
+    }
+  }
+}

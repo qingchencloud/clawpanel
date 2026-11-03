@@ -1,6 +1,6 @@
 {
   "name": "clawpanel",
-  "version": "0.21.6",
+  "version": "0.22.13",
   "private": true,
   "description": "ClawPanel - OpenClaw 可视化管理面板，基于 Tauri v2 的跨平台桌面应用",
   "type": "module",
@@ -30,6 +30,7 @@
     "icon:regen": "tauri icon docs/logo.png -o src-tauri/icons",
     "serve": "node scripts/serve.js",
     "web:bundle": "node scripts/prepare-web-bundle.mjs",
+    "maintenance:runtime": "node scripts/maintenance-runtime-smoke.mjs",
     "version:sync": "node scripts/sync-version.js",
     "version:set": "node scripts/sync-version.js"
   },

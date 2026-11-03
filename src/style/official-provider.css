@@ -1,0 +1,12 @@
+.official-provider-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.official-provider-heading h3 { margin: 0 0 4px; }
+.official-provider-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.official-provider-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--card-bg, transparent); }
+.official-provider-row-info { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; min-width: 0; }
+.official-provider-row-info .form-hint { flex-basis: 100%; margin: 2px 0 0; }
+.official-provider-state { font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-secondary); }
+.official-provider-state[data-tone="on"] { color: var(--success, #22c55e); border-color: currentColor; }
+.official-provider-state[data-tone="warn"] { color: var(--warning, #f59e0b); border-color: currentColor; }
+.official-provider-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.official-provider-tip { margin-top: 12px; }
+@media (max-width: 760px) { .official-provider-row { align-items: flex-start; flex-direction: column; } .official-provider-actions { width: 100%; } }

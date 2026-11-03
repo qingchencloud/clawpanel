@@ -1,11 +1,11 @@
 /**
  * Hermes 多 Gateway 看板（Batch 2 §G）
  *
- * 让用户同时跑多个 Hermes Gateway 实例（每个绑不同 profile）。
- * 端口完全由 profile 的 config.yaml 决定，ClawPanel 只负责 spawn + PID 跟踪。
+ * 旧版按 Profile 管理独立进程；新版识别原生共享宿主及其 served_profiles。
+ * 共享宿主通过服务管理统一操作，避免某个 Profile 的操作影响其他 Profile。
  *
  * 后端 Tauri 命令：
- *   - hermesMultiGatewayList() → [{name, profile, port, running, pid, owned}]
+ *   - hermesMultiGatewayList() → [{name, profile, port, running, pid, owned, shared?}]
  *   - hermesMultiGatewayAdd(name, profile)
  *   - hermesMultiGatewayRemove(name)
  *   - hermesMultiGatewayStart(name)
@@ -74,7 +74,7 @@ export function render() {
       ? `<span class="lazy-deps-badge ok">${escHtml(t('engine.hermesGatewayRunning'))}</span>`
       : `<span class="lazy-deps-badge">${escHtml(t('engine.hermesGatewayStopped'))}</span>`
     const ownedHint = isRunning && !isOwned
-      ? `<div class="lazy-deps-card-meta" style="color:var(--warning)">${escHtml(t('engine.hermesGatewayForeign'))}</div>`
+      ? `<div class="lazy-deps-card-meta" style="color:var(--warning)">${escHtml(t(g.shared ? 'engine.hermesGatewayShared' : 'engine.hermesGatewayForeign'))}</div>`
       : ''
     return `
       <div class="lazy-deps-card">
@@ -88,7 +88,7 @@ export function render() {
         ${ownedHint}
         <div class="lazy-deps-card-actions" style="gap:6px">
           ${isRunning
-            ? `<button class="btn btn-secondary btn-sm" data-action="stop" data-name="${escAttr(g.name)}" ${isBusy || !isOwned ? 'disabled' : ''} ${!isOwned ? 'title="' + escAttr(t('engine.hermesGatewayForeignTip')) + '"' : ''}>${escHtml(isBusy ? t('engine.dashStopping') : t('engine.dashStopGw'))}</button>`
+            ? `<button class="btn btn-secondary btn-sm" data-action="stop" data-name="${escAttr(g.name)}" ${isBusy || !isOwned ? 'disabled' : ''} ${!isOwned ? 'title="' + escAttr(t(g.shared ? 'engine.hermesGatewayShared' : 'engine.hermesGatewayForeignTip')) + '"' : ''}>${escHtml(isBusy ? t('engine.dashStopping') : t('engine.dashStopGw'))}</button>`
             : `<button class="btn btn-primary btn-sm" data-action="start" data-name="${escAttr(g.name)}" ${isBusy ? 'disabled' : ''}>${escHtml(isBusy ? t('engine.gatewayStarting') : t('engine.gatewayStartBtn'))}</button>`}
           <button class="btn btn-secondary btn-sm" data-action="remove" data-name="${escAttr(g.name)}" ${isBusy || isRunning ? 'disabled' : ''} style="color:var(--error)">${escHtml(t('engine.hermesGatewayRemove'))}</button>
         </div>

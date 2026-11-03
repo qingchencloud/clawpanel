@@ -51,14 +51,12 @@ export function splitModelReference(value) {
 
 // 服务商快捷预设
 export const PROVIDER_PRESETS = [
-  { key: 'qtcool', label: '晴辰云', badge: '免费测试', baseUrl: 'https://gpt.qt.cool/v1', api: 'openai-completions', site: 'https://gpt.qt.cool/', desc: 'ClawPanel 配套免费签到测试平台，适合体验和功能验证' },
   { key: 'atlascloud', label: 'Atlas Cloud', baseUrl: 'https://api.atlascloud.ai/v1', api: 'openai-completions', site: 'https://www.atlascloud.ai/', desc: 'OpenAI-compatible model API' },
-  { key: 'ciyapi', label: '词元 API', badge: '赞助', sponsored: true, baseUrl: 'https://ciyapi.79tian.com/v1', api: 'openai-completions', site: 'https://ciyapi.79tian.com/', desc: '支持 GPT、Claude 等主流前沿模型；充值 ¥1 到账 $1 平台额度，部分线路按折扣计费' },
-  { key: 'shengsuanyun', label: '胜算云', baseUrl: 'https://router.shengsuanyun.com/api/v1', api: 'openai-completions', site: 'https://www.shengsuanyun.com/?from=CH_4BVI0BM2', desc: '国内知名 AI 模型聚合平台，支持多种主流模型' },
-  { key: 'siliconflow', label: '硅基流动', baseUrl: 'https://api.siliconflow.cn/v1', api: 'openai-completions', site: 'https://cloud.siliconflow.cn/i/PFrw2an5', desc: '高性价比推理平台，支持 DeepSeek、Qwen 等开源模型' },
-  { key: 'volcengine', label: '火山引擎', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', api: 'openai-completions', site: 'https://volcengine.com/L/Ph1OP5I3_GY', desc: '字节跳动旗下云平台，支持豆包等模型' },
-  { key: 'aliyun', label: '阿里云百炼', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', api: 'openai-completions', site: 'https://www.aliyun.com/benefit/ai/aistar?userCode=keahn2zr&clubBiz=subTask..12435175..10263..', desc: '阿里云 AI 大模型平台，支持通义千问全系列' },
-  { key: 'zhipu', label: '智谱 AI', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', api: 'openai-completions', site: 'https://www.bigmodel.cn/glm-coding?ic=3F6F9XYKTS', desc: '国产大模型领军企业，支持 GLM-4 全系列' },
+  { key: 'shengsuanyun', label: '胜算云', baseUrl: 'https://router.shengsuanyun.com/api/v1', api: 'openai-completions', site: 'https://www.shengsuanyun.com/', desc: '国内知名 AI 模型聚合平台，支持多种主流模型' },
+  { key: 'siliconflow', label: '硅基流动', baseUrl: 'https://api.siliconflow.cn/v1', api: 'openai-completions', site: 'https://cloud.siliconflow.cn/', desc: '高性价比推理平台，支持 DeepSeek、Qwen 等开源模型' },
+  { key: 'volcengine', label: '火山引擎', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', api: 'openai-completions', site: 'https://www.volcengine.com/', desc: '字节跳动旗下云平台，支持豆包等模型' },
+  { key: 'aliyun', label: '阿里云百炼', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', api: 'openai-completions', site: 'https://www.aliyun.com/', desc: '阿里云 AI 大模型平台，支持通义千问全系列' },
+  { key: 'zhipu', label: '智谱 AI', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', api: 'openai-completions', site: 'https://www.bigmodel.cn/', desc: '国产大模型领军企业，支持 GLM-4 全系列' },
   { key: 'minimax', label: 'MiniMax', baseUrl: 'https://api.minimax.io/v1', api: 'openai-completions', site: 'https://platform.minimaxi.com/user-center/basic-information/interface-key', desc: '国产多模态大模型，支持 MiniMax-M3 / M2.7 系列' },
   { key: 'moonshot', label: 'Moonshot / Kimi', baseUrl: 'https://api.moonshot.ai/v1', api: 'openai-completions', site: 'https://platform.moonshot.ai/console/api-keys', desc: 'Kimi 大模型平台，支持超长上下文' },
   { key: 'openai', label: 'OpenAI 官方', baseUrl: 'https://api.openai.com/v1', api: 'openai-completions', site: 'https://platform.openai.com/api-keys' },
@@ -72,41 +70,10 @@ export const PROVIDER_PRESETS = [
   { key: 'ollama', label: 'Ollama (本地)', baseUrl: 'http://127.0.0.1:11434/v1', api: 'openai-completions', site: 'https://ollama.com/' },
 ]
 
-// 晴辰云免费签到测试平台配置
-export const QTCOOL = {
-  baseUrl: 'https://gpt.qt.cool/v1',
-  defaultKey: '',
-  site: 'https://gpt.qt.cool/',
-  checkinUrl: 'https://gpt.qt.cool/checkin',
-  keyUrl: 'https://gpt.qt.cool/user',
-  docsUrl: 'https://gpt.qt.cool/api-doc.html',
-  statusUrl: 'https://gpt.qt.cool/status.html',
-  providerKey: 'qtcool',
-  brandName: '晴辰云',
-  api: 'openai-completions',
-  models: []
-}
-
-// 词元 API 第三方赞助推广配置
-export const CIYAPI = {
-  baseUrl: 'https://ciyapi.79tian.com/v1',
-  defaultKey: '',
-  site: 'https://ciyapi.79tian.com/',
-  signupUrl: 'https://ciyapi.79tian.com/sign-up',
-  keyUrl: 'https://ciyapi.79tian.com/keys/',
-  pricingUrl: 'https://ciyapi.79tian.com/pricing/',
-  walletUrl: 'https://ciyapi.79tian.com/wallet/',
-  docsUrl: 'https://ciyapi.com/docs/',
-  providerKey: 'ciyapi',
-  brandName: '词元 API',
-  api: 'openai-completions',
-  models: []  // 始终从 API 动态获取最新模型列表
-}
-
-// 胜算云推广配置
+// 胜算云服务商配置
 export const SHENGSUANYUN = {
   baseUrl: 'https://router.shengsuanyun.com/api/v1',
-  site: 'https://www.shengsuanyun.com/?from=CH_4BVI0BM2',
+  site: 'https://www.shengsuanyun.com/',
   providerKey: 'shengsuanyun',
   brandName: '胜算云',
   api: 'openai-completions',
@@ -157,45 +124,4 @@ export const MODEL_PRESETS = {
     { id: 'llama3.3:70b', name: 'Llama 3.3 70B', contextWindow: 8192 },
     { id: 'deepseek-r1:32b', name: 'DeepSeek R1 32B', contextWindow: 32768, reasoning: true },
   ],
-}
-
-/**
- * 从 OpenAI Compatible 服务动态获取模型列表。
- * 密钥必须由当前操作显式传入，不从本地配置自动读取，避免旧密钥被静默复用。
- */
-async function fetchCompatibleModels(provider, apiKey) {
-  const key = (apiKey || provider.defaultKey || '').trim()
-  if (!key) return provider.models
-  try {
-    const resp = await fetch(provider.baseUrl + '/models', {
-      headers: { 'Authorization': 'Bearer ' + key },
-      signal: AbortSignal.timeout(8000)
-    })
-    if (resp.ok) {
-      const data = await resp.json()
-      if (data.data && data.data.length) {
-        return data.data.map(m => ({
-          id: m.id, name: m.id, contextWindow: 128000,
-          reasoning: /codex|thinking|reasoner|reasoning/i.test(m.id)
-        })).sort((a, b) => b.id.localeCompare(a.id))
-      }
-    }
-  } catch { /* use fallback */ }
-  return provider.models
-}
-
-/**
- * 动态获取晴辰云模型列表。
- * @param {string} [apiKey]
- */
-export function fetchQtcoolModels(apiKey) {
-  return fetchCompatibleModels(QTCOOL, apiKey)
-}
-
-/**
- * 动态获取词元 API 模型列表。
- * @param {string} [apiKey]
- */
-export function fetchCiyapiModels(apiKey) {
-  return fetchCompatibleModels(CIYAPI, apiKey)
 }

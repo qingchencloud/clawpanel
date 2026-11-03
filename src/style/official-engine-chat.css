@@ -1,0 +1,8 @@
+.official-engine-chat select { max-width: 100%; }
+.official-engine-chat [data-official-engine-panel]:not([hidden]) { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.official-engine-chat [hidden] { display: none !important; }
+.chat-page.has-official-channel .chat-sidebar,
+.chat-page.has-official-channel .chat-main > :not(.official-engine-chat),
+.hermes-chat-page.has-official-channel > .hm-chat-shell { display: none !important; }
+.chat-page.has-official-channel .official-engine-chat,
+.hermes-chat-page.has-official-channel .official-engine-chat { flex: 1; min-height: 0; overflow: auto; }

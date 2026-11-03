@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>account preview</title>
+<link rel="stylesheet" href="src/style/reset.css">
+<link rel="stylesheet" href="src/style/variables.css">
+<link rel="stylesheet" href="src/style/layout.css">
+<link rel="stylesheet" href="src/style/components.css">
+<link rel="stylesheet" href="src/style/pages.css">
+<link rel="stylesheet" href="src/style/platform-account.css">
+<style>
+body { margin:0; background:var(--bg-primary); color:var(--text-primary); font-family:var(--font-sans, system-ui, -apple-system, "Segoe UI", sans-serif); }
+.preview-wrap { max-width:1080px; margin:0 auto; padding:32px 24px 64px; }
+.preview-wrap .platform-engine-slot { margin-top:16px; padding:20px; }
+.preview-wrap .platform-engine-slot h3 { margin:0 0 8px; font-size:13px; }
+.preview-wrap .platform-engine-slot p { margin:0; color:var(--text-secondary); font-size:12px; }
+.preview-wrap footer { margin-top:28px; color:var(--text-tertiary); font-size:12px; }
+</style>
+</head>
+<body>
+<div class="preview-wrap page platform-account-page" data-platform-account-state="bound">
+  <div class="page-header"><h1 class="page-title">官网账户</h1><p class="page-desc">管理官方模型额度与官网账户。</p></div>
+  <section class="card platform-member" data-platform-member data-platform-bound>
+    <div class="platform-member-head">
+      <span class="platform-avatar" aria-hidden="true">K</span>
+      <div class="platform-member-meta"><h2>k***@vip.qq.com</h2><div class="platform-pills"><span class="platform-pill platform-pill-ok"><span class="platform-pill-dot"></span>已连接</span></div></div>
+      <div class="platform-member-actions"><a class="btn btn-primary" href="#/assistant">打开晴辰助手</a><button class="btn btn-secondary btn-sm" type="button">刷新额度</button><button class="btn btn-secondary btn-sm" type="button">邀请好友</button></div>
+    </div>
+    <div class="platform-metrics">
+      <div class="platform-metric"><span class="platform-metric-label">可用积分</span><strong class="platform-metric-value">10,003.3<small>积分</small></strong><span class="platform-metric-sub">100 积分抵扣 ¥1 服务费用。</span></div>
+      <div class="platform-metric"><span class="platform-metric-label">使用中预估</span><strong class="platform-metric-value">0<small>积分</small></strong></div>
+      <div class="platform-metric"><span class="platform-metric-label">服务分组</span><strong class="platform-metric-value platform-metric-plan">免费用户</strong><span class="platform-metric-sub">可申请使用</span></div>
+    </div>
+  </section>
+  <details class="card platform-note platform-section" data-platform-onboarding="member"><summary>下一步</summary><div class="platform-note-body"><p>已连接。在助手或内核中选择官方模型。</p><p>本次没有可确认的新注册体验；旧账号不会因重登或连接自动补发。</p><p class="form-hint">同一安装只需连接一次，无需为每个内核重复绑定。连接一次，在各内核选择官方模型。自有 Key、默认设置和原会话保持独立。</p></div></details>
+  <section class="card platform-engine-slot"><h3>在内核中使用官方模型</h3><p>选择官方模型，为已安装的内核配置官方通道。（此处为页面下方已有卡片）</p></section>
+  <footer>一次连接，各内核按账户权益使用。自有 Key 的模型和会话独立保留。</footer>
+</div>
+</body>
+</html>

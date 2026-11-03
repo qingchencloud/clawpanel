@@ -152,6 +152,8 @@ export async function activateEngine(id, persist = true) {
   // 引擎级样式切换（e.g. Hermes 激活时 sidebar 套 editorial luxury 主题）
   try { document.body.dataset.activeEngine = engine.id } catch {}
 
+  // 晴辰助手是全局工作区，进入时不切换当前引擎。
+  registerRoute('/assistant', () => import('../pages/assistant.js'))
   // 注册引擎路由 + 设置默认路由
   const routes = engine.getRoutes()
   for (const r of routes) {

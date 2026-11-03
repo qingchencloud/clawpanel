@@ -4,16 +4,21 @@
  * 使浏览器模式能真正管理 OpenClaw 实例
  */
 import fs from 'fs'
+import { sanitizeOpenCodeStorage } from './opencode-proxy.js'
 import path from 'path'
 import os from 'os'
 import { homedir, networkInterfaces } from 'os'
-import { execSync, spawn, spawnSync } from 'child_process'
+import { execSync, spawn, spawnSync, execFile } from 'child_process'
 import { fileURLToPath } from 'url'
 import net from 'net'
 import http from 'http'
 import crypto from 'crypto'
 import { once } from 'events'
 import * as YAML from 'yaml'
+import { PiRuntime } from './pi-runtime.js'
+import { createDshAuth, redactDshOutput } from './deepseek-harness-auth.js'
+import { channelPluginStatusAt, channelPluginStatusFromInventory, installChannelPluginAt, redactPluginOutput } from './channel-plugin-install.js'
+import { buildWeixinCompatibilityStatus, resolveWeixinInstallVersion } from './weixin-compat.js'
 import * as skillhubSdk from './lib/skillhub-sdk.js'
 import { createBackgroundJobQueue } from './media-background-queue.js'
 import { normalizeModelApiType } from '../src/lib/model-presets.js'
@@ -29,6 +34,7 @@ import {
   ensureMutableAgentConfig,
   findAgentConfig,
   listAgentConfigs,
+  normalizeCanonicalOwnership,
   removeAgentConfig,
   supportsAgentEntries,
 } from '../src/lib/openclaw-agent-roster.js'
@@ -36,7 +42,11 @@ import {
   DSH_DEFAULT_PORT,
   DSH_PACKAGE_NAME,
   DSH_PACKAGE_VERSION,
+  DSH_PREVIEW_VERSION,
+  DSH_RELEASE_CHANNELS,
   dshRpc,
+  dshHasUpdate,
+  dshReleaseChannel,
   normalizeDshPort,
   readDshSummary,
   syncDshProvider,
@@ -62,6 +72,7 @@ import {
 import {
   openCodeEmbedPrefix,
   openCodeUpstreamHeaders,
+  decodeOpenCodeProxyBody,
   parseOpenCodeEmbedUrl,
   rewriteOpenCodeProxyText,
   shouldRewriteOpenCodeResponse,
@@ -85,6 +96,21 @@ export function probeTcpPort(port, host = '127.0.0.1', timeoutMs = 3000) {
 }
 
 /** 从指定偏移读取文件末尾，限制返回大小，供启动失败日志增量诊断复用。 */
+// Windows 子进程日志可能来自 GBK 或 UTF-16；优先 UTF-8，失败再按 BOM/GBK 解码。
+function decodeTextBytes(buffer) {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buffer)
+  } catch {}
+  try {
+    if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xfe) {
+      return new TextDecoder('utf-16le').decode(buffer.subarray(2))
+    }
+    return new TextDecoder('gbk').decode(buffer)
+  } catch {
+    return buffer.toString('utf8')
+  }
+}
+
 export function readFileExcerptSince(filePath, offset = 0, maxBytes = 8192) {
   try {
     const size = fs.statSync(filePath).size
@@ -98,7 +124,7 @@ export function readFileExcerptSince(filePath, offset = 0, maxBytes = 8192) {
     try {
       const buffer = Buffer.alloc(length)
       const bytesRead = fs.readSync(fd, buffer, 0, length, start)
-      return buffer.subarray(0, bytesRead).toString('utf8').trim()
+      return decodeTextBytes(buffer.subarray(0, bytesRead)).trim()
     } finally {
       fs.closeSync(fd)
     }
@@ -112,15 +138,15 @@ export function readFileExcerptSince(filePath, offset = 0, maxBytes = 8192) {
 // ---------------------------------------------------------------------------
 const HERMES_HOME = path.join(homedir(), '.hermes')
 const HERMES_DEFAULT_PORT = 8642
-const HERMES_STABLE_VERSION = '0.20.5'
-const HERMES_STABLE_TAG = 'v2026.8.19'
-const HERMES_STABLE_COMMIT = 'fcbd1076a93841fa88855acce810e342a5b78101'
+const HERMES_STABLE_VERSION = '0.21.5'
+const HERMES_STABLE_TAG = 'v2026.9.24'
+const HERMES_STABLE_COMMIT = 'f97608f178d1ffeca59860195ab7da295f7c8e5f'
 const HERMES_REPO_URL = 'https://github.com/NousResearch/hermes-agent.git'
 const HERMES_GIT_URL = `git+${HERMES_REPO_URL}@${HERMES_STABLE_TAG}`
 const HERMES_INSTALLER_BASE_URL = `https://raw.githubusercontent.com/NousResearch/hermes-agent/${HERMES_STABLE_COMMIT}/scripts`
 const HERMES_INSTALLER_SHA256 = {
-  windows: '74225bf244253bfa5bc2b1d16fa3bb8618e199a53d1c0344b37ab9930696d3ba',
-  posix: '0582d9b1562efcb6e0ac62f4451021667830b830a72ce7d91eaea9fee8b6c09b',
+  windows: '0a80dfeb7434229933bac32e73140d10086dff81bd84b156e71be9abc87cddf2',
+  posix: '2017ddf0cc7bc6cfb70d40dc9fba1d916f47dbcccf5fe73bdee2cf93a11262af',
 }
 const HERMES_DASHBOARD_FALLBACK_INDEX_HTML = `<!doctype html>
 <html lang="en">
@@ -323,12 +349,24 @@ function uvBinDir() {
   return path.join(homedir(), '.local', 'share', 'clawpanel', 'bin')
 }
 
+// 独立引擎只补齐宿主工具路径，不读取 Hermes PM 或注入 Hermes 受管工具。
+export function independentRuntimePath() {
+  const home = homedir()
+  const extra = [path.dirname(process.execPath), uvBinDir()]
+  if (isWindows && process.env.APPDATA) extra.push(path.join(process.env.APPDATA, 'uv', 'tools', 'bin'))
+  extra.push(path.join(home, '.local', 'bin'), path.join(home, '.cargo', 'bin'))
+  if (!isWindows) extra.push('/usr/local/bin', '/usr/bin', '/bin')
+  return [...extra, process.env.PATH || ''].filter(Boolean).join(path.delimiter)
+}
+
 function hermesEnhancedPath() {
   const current = process.env.PATH || ''
   const home = homedir()
   // 0.20.5 起上游不再支持从 Git 构建 wheel/sdist，ClawPanel 改用官方
   // source installer。把源码 venv 放在旧 uv-tool 路径前，升级迁移后立刻生效。
   const extra = [hermesSourceVenvBinDir(), path.join(hermesHome(), 'bin'), uvBinDir()]
+  // 新安装器把 Node 放在 Hermes Home 内，运行工具时也优先使用受管版本。
+  extra.push(path.join(hermesHome(), 'node', ...(isWindows ? [] : ['bin'])))
   if (isWindows) {
     const appdata = process.env.APPDATA || ''
     if (appdata) extra.push(path.join(appdata, 'uv', 'tools', 'bin'))
@@ -351,16 +389,37 @@ export function buildHermesRuntimeEnv(baseEnv = process.env, home = hermesHome()
   }
 }
 
+function parseHermesGatewayPort(value) {
+  if (typeof value !== 'number' && typeof value !== 'string') return null
+  if (typeof value === 'string' && !/^\d+$/.test(value.trim())) return null
+  const port = Number(value)
+  return Number.isInteger(port) && port > 0 && port <= 65535 ? port : null
+}
+
+function legacyHermesGatewayPort(config) {
+  if (config?.platforms?.api_server?.port != null) return null
+  return parseHermesGatewayPort(config?.api_server_port)
+}
+
+export function resolveHermesGatewayPort(config = {}, envPort) {
+  // 与原生优先级一致：配置端口 > 环境端口；旧面板别名只作兼容回退。
+  for (const value of [config?.platforms?.api_server?.port, envPort, config?.api_server_port]) {
+    const port = parseHermesGatewayPort(value)
+    if (port !== null) return port
+  }
+  return HERMES_DEFAULT_PORT
+}
+
 function hermesGatewayPort() {
   const configPath = path.join(hermesHome(), 'config.yaml')
+  let config = {}
   try {
     const content = fs.readFileSync(configPath, 'utf8')
-    for (const line of content.split('\n')) {
-      const m = line.trim().match(/^api_server_port:\s*(\d+)/)
-      if (m) { const p = parseInt(m[1], 10); if (p > 0) return p }
-    }
+    config = YAML.parse(content) || {}
   } catch {}
-  return HERMES_DEFAULT_PORT
+  let envPort = process.env.API_SERVER_PORT
+  try { envPort = readHermesEnvValues().API_SERVER_PORT ?? envPort } catch {}
+  return resolveHermesGatewayPort(config, envPort)
 }
 
 function hermesGatewayUrl() {
@@ -390,25 +449,85 @@ function isLoopbackGatewayUrl(url) {
   }
 }
 
-function runHermesSilent(program, args) {
+const HERMES_CLI_CONCURRENCY = 2
+const HERMES_CLI_QUEUE_LIMIT = 8
+const HERMES_CLI_DEADLINE_MS = 15000
+let hermesCliActive = 0
+const hermesCliQueue = []
+
+function acquireHermesCliSlot(deadline) {
+  return new Promise((resolve, reject) => {
+    const entry = {
+      timer: null,
+      start() {
+        clearTimeout(entry.timer)
+        if (performance.now() >= deadline) { reject(new Error('Hermes CLI queue deadline exceeded (15000ms)')); return }
+        hermesCliActive++
+        let released = false
+        resolve(() => {
+          if (released) return
+          released = true
+          hermesCliActive--
+          while (hermesCliActive < HERMES_CLI_CONCURRENCY && hermesCliQueue.length) hermesCliQueue.shift().start()
+        })
+      },
+    }
+    if (hermesCliActive < HERMES_CLI_CONCURRENCY) entry.start()
+    else if (hermesCliQueue.length >= HERMES_CLI_QUEUE_LIMIT) reject(new Error('Hermes CLI queue full (2 running, 8 waiting)'))
+    else {
+      hermesCliQueue.push(entry)
+      entry.timer = setTimeout(() => {
+        const index = hermesCliQueue.indexOf(entry)
+        if (index !== -1) hermesCliQueue.splice(index, 1)
+        reject(new Error('Hermes CLI queue deadline exceeded (15000ms)'))
+      }, Math.max(1, Math.ceil(deadline - performance.now())))
+    }
+  })
+}
+
+async function runHermesSilent(program, args) {
+  // 整次调用共用原 15 秒预算；队满或过期的写命令不启动、不重放。
+  const deadline = performance.now() + HERMES_CLI_DEADLINE_MS
+  let release
   try {
-    const result = spawnSync(program, args, {
-      env: buildHermesRuntimeEnv(),
-      timeout: 15000,
-      windowsHide: true,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
+    release = await acquireHermesCliSlot(deadline)
+    const spec = { program, args }
+    const env = buildHermesRuntimeEnv()
+    // 只扣剩余预算（含环境准备）；health HTTP 不进入 CLI 队列。
+    const remaining = Math.ceil(deadline - performance.now())
+    if (remaining <= 0) return { ok: false, stderr: 'Hermes CLI deadline exceeded before launch (15000ms)' }
+    const result = await new Promise(resolve => {
+      const child = execFile(spec.program, spec.args, {
+        env, timeout: remaining, windowsHide: true,
+        encoding: 'utf8', maxBuffer: 1024 * 1024,
+      }, (error, stdout, stderr) => resolve({ error, stdout, stderr }))
+      // 保留旧 ignore stdin 的非交互 EOF 语义。
+      child.stdin?.end()
     })
-    if (result.status === 0) return { ok: true, stdout: (result.stdout || '').trim() }
-    return { ok: false, stderr: (result.stderr || '').trim() }
+    if (!result.error) return { ok: true, stdout: String(result.stdout || '').trim() }
+    return { ok: false, stderr: String(result.stderr || result.error.message || result.error).trim() }
   } catch (e) {
     return { ok: false, stderr: String(e) }
+  } finally {
+    release?.()
   }
 }
 
-function runHermesVersionSilent() {
-  const legacy = runHermesSilent('hermes', ['version'])
-  return legacy.ok ? legacy : runHermesSilent('hermes', ['--version'])
+async function runHermesVersionSilent() {
+  // 官方快速入口在完整 CLI 启动前返回；仅旧内核不支持时回退子命令。
+  const modern = await runHermesSilent('hermes', ['--version'])
+  return modern.ok ? modern : await runHermesSilent('hermes', ['version'])
+}
+
+function parseHermesDashboardStatus(output) {
+  const lower = String(output || '').trim().toLowerCase()
+  // 官方信息命令在无进程时仍 exit 0，且文案自身也包含 running。
+  if (/^no (?:hermes )?(?:dashboard|serve)\b/m.test(lower) || /\bnot running\b|\bstopped\b|\binactive\b/.test(lower)) return false
+  const count = lower.match(/^(\d+) hermes dashboard\/serve process\(es\) running:/m)
+  if (count) return Number(count[1]) > 0
+  if (/^dashboard (?:is )?running(?:$|[ :])/m.test(lower) || /^listening on https?:\/\//m.test(lower)) return true
+  // URL、默认端口或帮助文字不是运行证明；未知输出由实际 TCP 探测兜底。
+  return null
 }
 
 function sanitizeHermesInstallOutput(text = '') {
@@ -427,6 +546,11 @@ export function buildHermesInstallEnv(config = {}, baseEnv = process.env) {
   const env = {
     ...buildHermesRuntimeEnv(baseEnv),
     GIT_TERMINAL_PROMPT: '0',
+  }
+  if (isWindows) {
+    env.UV_NO_MODIFY_PATH = '1'
+    // PS7 的模块路径不能传给官方 Windows PowerShell 5.1 安装阶段。
+    for (const key of Object.keys(env)) if (key.toLowerCase() === 'psmodulepath') delete env[key]
   }
   const pypiMirror = String(config?.pypiMirror || '').trim()
   if (pypiMirror) {
@@ -451,7 +575,7 @@ export function buildHermesInstallEnv(config = {}, baseEnv = process.env) {
   return env
 }
 
-function hermesInstallerPlan(home = hermesHome()) {
+export function hermesInstallerPlan(home = hermesHome()) {
   const installDir = hermesSourceDir(home)
   const cacheDir = path.join(home, '.clawpanel-cache')
   if (isWindows) {
@@ -461,9 +585,11 @@ function hermesInstallerPlan(home = hermesHome()) {
       sourcePath: 'scripts/install.ps1',
       scriptPath: path.join(cacheDir, `install-${HERMES_STABLE_TAG}.ps1`),
       program: 'powershell.exe',
-      stages: ['uv', 'python', 'git', 'repository', 'venv', 'dependencies', 'config-templates', 'platform-sdks', 'bootstrap-marker'],
-      argsForStage: (scriptPath, stage) => [
-        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath,
+      // 0.21.5 的受管 Python 位于 checkout 内，repository 必须先于 python。
+      // 不运行全局 PATH 写入、系统软件安装或交互配置阶段。
+      stages: ['uv', 'git', 'node', 'repository', 'python', 'venv', 'dependencies', 'node-deps', 'config-templates', 'platform-sdks', 'bootstrap-marker'],
+      argsForStage: (scriptPath, stage, wrapperPath) => [
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', wrapperPath, '-InstallerPath', scriptPath,
         '-HermesHome', home, '-InstallDir', installDir,
         '-Branch', HERMES_STABLE_TAG,
         '-Commit', HERMES_STABLE_COMMIT, '-ForceCommit',
@@ -477,7 +603,7 @@ function hermesInstallerPlan(home = hermesHome()) {
     sourcePath: 'scripts/install.sh',
     scriptPath: path.join(cacheDir, `install-${HERMES_STABLE_TAG}.sh`),
     program: 'bash',
-    stages: ['repository', 'venv', 'python-deps', 'config', 'complete'],
+    stages: ['repository', 'venv', 'python-deps', 'node-deps', 'config', 'complete'],
     argsForStage: (scriptPath, stage) => [
       scriptPath,
       '--hermes-home', home, '--dir', installDir,
@@ -490,6 +616,14 @@ function hermesInstallerPlan(home = hermesHome()) {
 
 function hermesInstallerChecksum(buffer) {
   return crypto.createHash('sha256').update(buffer).digest('hex')
+}
+
+export function ensureHermesManagedWrapper(plan) {
+  // 与 Rust include_str 共用原始字节；vendor 缓存及其固定 hash 不变。
+  const bytes = fs.readFileSync(new URL('./hermes-managed-install.ps1', import.meta.url))
+  const wrapperPath = path.join(path.dirname(plan.scriptPath), `clawpanel-managed-${hermesInstallerChecksum(bytes)}.ps1`)
+  if (!fs.existsSync(wrapperPath) || !fs.readFileSync(wrapperPath).equals(bytes)) fs.writeFileSync(wrapperPath, bytes)
+  return wrapperPath
 }
 
 async function readHermesInstallerViaGit(plan, env) {
@@ -570,10 +704,11 @@ export async function installHermesManagedSource(config = readPanelConfig()) {
   const plan = hermesInstallerPlan()
   const env = buildHermesInstallEnv(config)
   const scriptPath = await ensureHermesInstallerScript(plan, env)
+  const wrapperPath = isWindows ? ensureHermesManagedWrapper(plan) : null
   const checkoutWasClean = await normalizeHermesLineEndingOnlyChanges(hermesSourceDir(), env)
 
   for (const stage of plan.stages) {
-    const result = await runHermesInstallCommand(plan.program, plan.argsForStage(scriptPath, stage), {
+    const result = await runHermesInstallCommand(plan.program, plan.argsForStage(scriptPath, stage, wrapperPath), {
       env,
       timeout: 20 * 60 * 1000,
       windowsHide: true,
@@ -627,6 +762,7 @@ export function runHermesInstallCommand(program, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(program, args, {
       ...options,
+      windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     let stdout = ''
@@ -707,6 +843,7 @@ const OPENCLAW_NODE_22_19_VERSION_FLOOR = '2026.6.5'
 const OPENCLAW_NODE_22_19_REQUIREMENT = '>=22.19.0'
 const OPENCLAW_NODE_7_1_VERSION_FLOOR = '2026.7.1'
 const OPENCLAW_NODE_7_1_REQUIREMENT = '>=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0'
+const OPENCLAW_NODE_9_4_REQUIREMENT = '>=24.16.0 <25 || >=26.1.0'
 
 function ensureArrayContains(value, required) {
   const current = Array.isArray(value)
@@ -891,9 +1028,10 @@ function addCliCandidate(candidates, seen, rawPath) {
   candidates.push(normalized)
 }
 
-function findCommandPath(command) {
+function findCommandPath(command, env = process.env) {
   try {
     const output = execSync(isWindows ? `where ${command}` : `which ${command} 2>/dev/null`, {
+      env,
       timeout: 3000,
       windowsHide: true,
       encoding: 'utf8',
@@ -1073,6 +1211,20 @@ function readVersionFromInstallation(cliPath) {
   return null
 }
 
+/** 微信状态复用已选 CLI 的真实 npm manifest；不执行 CLI、不猜全局最新版本。 */
+export function readWeixinHostVersion(cliPath = resolveOpenclawCliPath()) {
+  const installed = readVersionFromInstallation(cliPath)
+  if (installed) return installed
+  try {
+    const file = findOpenclawPackageJson(cliPath)
+    if (!file) return null
+    const pkg = JSON.parse(fs.readFileSync(file, 'utf8'))
+    if (!['openclaw', '@qingchencloud/openclaw-zh'].includes(pkg?.name)) return null
+    const version = pkg.version
+    return typeof version === 'string' && /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version) ? version : null
+  } catch { return null }
+}
+
 function findOpenclawPackageJson(cliPath) {
   const resolved = canonicalCliPath(cliPath)
   if (!resolved || !fs.existsSync(resolved)) return null
@@ -1123,9 +1275,10 @@ function openclawNodeRequirement() {
   return fallbackOpenclawNodeRequirement(installedVersion)
 }
 
-function fallbackOpenclawNodeRequirement(installedVersion) {
+export function fallbackOpenclawNodeRequirement(installedVersion) {
   if (!installedVersion) return null
   const version = baseVersion(installedVersion)
+  if (versionGe(version, '2026.9.4')) return OPENCLAW_NODE_9_4_REQUIREMENT
   if (versionGe(version, OPENCLAW_NODE_7_1_VERSION_FLOOR)) return OPENCLAW_NODE_7_1_REQUIREMENT
   if (versionGe(version, OPENCLAW_NODE_22_19_VERSION_FLOOR)) return OPENCLAW_NODE_22_19_REQUIREMENT
   return null
@@ -1552,6 +1705,7 @@ function spawnOpenclaw(args, options = {}) {
   const { env, ...rest } = options
   return spawn(spec.command, spec.args, {
     ...rest,
+    windowsHide: true,
     env: { ...process.env, ...(env || {}) },
   })
 }
@@ -1561,26 +1715,44 @@ function spawnOpenclawSync(args, options = {}) {
   const { env, ...rest } = options
   return spawnSync(spec.command, spec.args, {
     ...rest,
+    windowsHide: true,
     env: { ...process.env, ...(env || {}) },
   })
 }
 
-function runOpenclawCaptured(args, { timeoutMs = 120000 } = {}) {
+function runOpenclawCaptured(args, { timeoutMs = 120000, onOutput = () => {} } = {}) {
   const spec = openclawProcessSpec(args)
   return new Promise((resolve, reject) => {
     const child = spawn(spec.command, spec.args, {
       env: { ...process.env },
+      cwd: homedir(),
       windowsHide: true,
+      detached: !isWindows,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     let stdout = ''
     let stderr = ''
+    const pendingLines = { stdout: '', stderr: '' }
     const append = (current, chunk) => (current + String(chunk)).slice(-1024 * 1024)
-    child.stdout?.on('data', chunk => { stdout = append(stdout, chunk) })
-    child.stderr?.on('data', chunk => { stderr = append(stderr, chunk) })
+    const emitLines = (stream, chunk) => {
+      const lines = (pendingLines[stream] + chunk).split(/\r?\n/)
+      pendingLines[stream] = lines.pop() || ''
+      for (const line of lines) onOutput(line + '\n')
+    }
+    child.stdout?.setEncoding('utf8')
+    child.stderr?.setEncoding('utf8')
+    child.stdout?.on('data', chunk => { stdout = append(stdout, chunk); emitLines('stdout', chunk) })
+    child.stderr?.on('data', chunk => { stderr = append(stderr, chunk); emitLines('stderr', chunk) })
+    let timedOut = false
     const timer = setTimeout(() => {
-      try { child.kill('SIGTERM') } catch {}
-      reject(new Error(`OpenClaw 命令执行超时 (${Math.round(timeoutMs / 1000)}s)`))
+      timedOut = true
+      // Windows shim 会产生 npm/Node 子进程，一并停止才释放安装锁。
+      if (isWindows && child.pid) {
+        const killer = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })
+        killer.once('error', () => { try { child.kill('SIGKILL') } catch {} })
+      } else {
+        try { process.kill(-child.pid, 'SIGKILL') } catch { try { child.kill('SIGKILL') } catch {} }
+      }
     }, timeoutMs)
     child.once('error', error => {
       clearTimeout(timer)
@@ -1588,6 +1760,8 @@ function runOpenclawCaptured(args, { timeoutMs = 120000 } = {}) {
     })
     child.once('close', status => {
       clearTimeout(timer)
+      for (const line of Object.values(pendingLines)) if (line) onOutput(line + '\n')
+      if (timedOut) return reject(new Error(`OpenClaw 命令执行超时 (${Math.round(timeoutMs / 1000)}s)\n${redactPluginOutput(stderr).slice(-6000)}`))
       resolve({ status, stdout, stderr })
     })
   })
@@ -2166,7 +2340,7 @@ async function _tryR2Install(version, source, logs) {
         : '/usr/local/lib/node_modules'
     } else {
       try {
-        const prefix = execSync('npm config get prefix', { encoding: 'utf8', timeout: 5000 }).trim()
+        const prefix = execSync('npm config get prefix', { encoding: 'utf8', timeout: 5000, windowsHide: true }).trim()
         modulesDir = path.join(prefix, 'lib', 'node_modules')
       } catch {
         modulesDir = '/usr/local/lib/node_modules'
@@ -2195,7 +2369,7 @@ async function _tryR2Install(version, source, logs) {
       binDir = fs.existsSync('/opt/homebrew/bin') ? '/opt/homebrew/bin' : '/usr/local/bin'
     } else {
       try {
-        const prefix = execSync('npm config get prefix', { encoding: 'utf8', timeout: 5000 }).trim()
+        const prefix = execSync('npm config get prefix', { encoding: 'utf8', timeout: 5000, windowsHide: true }).trim()
         binDir = path.join(prefix, 'bin')
       } catch {
         binDir = '/usr/local/bin'
@@ -2611,6 +2785,36 @@ const _sessions = new Map() // token → { expires }
 const SESSION_TTL = 24 * 60 * 60 * 1000 // 24h
 const AUTH_EXEMPT = new Set(['auth_check', 'auth_login', 'auth_logout'])
 
+let _webEmbedAuthGeneration = 0
+
+// 能力独立于面板 Cookie；单管理员认证变化时统一撤销，但不额外注销其他面板会话。
+function revokeWebEmbedCapabilities() {
+  _webEmbedAuthGeneration++
+  clearDshEmbedSessions()
+  clearOpenCodeEmbedSessions()
+}
+
+function webEmbedAuthChanged(before, after) {
+  return (before.accessPassword || '') !== (after.accessPassword || '')
+    || Boolean(before.ignoreRisk) !== Boolean(after.ignoreRisk)
+}
+
+function closeWebEmbedSession(session) {
+  if (!session) return
+  session.revoked = true
+  for (const close of session.connections || []) {
+    try { close() } catch {}
+  }
+  session.connections?.clear()
+}
+
+function trackWebEmbedConnection(session, close) {
+  const connections = session.connections ||= new Set()
+  connections.add(close)
+  if (session.revoked) queueMicrotask(close)
+  return () => connections.delete(close)
+}
+
 // 登录限速：防暴力破解（IP 级别，5次失败后锁定60秒）
 const _loginAttempts = new Map() // ip → { count, lockedUntil }
 const MAX_LOGIN_ATTEMPTS = 5
@@ -2889,6 +3093,8 @@ export function stripUiFields(config) {
         delete agent.update_available
       }
     }
+    // 必须在递归 merge 之后处理，避免省略删除的退役标记被 existing 补回。
+    normalizeCanonicalOwnership(config.agents)
   }
   // 清理模型测试相关的临时字段
   const providers = config?.models?.providers
@@ -3314,7 +3520,12 @@ export function rawWsConnect(host, port, wsPath) {
       'Connection': 'Upgrade', 'Upgrade': 'websocket', 'Sec-WebSocket-Version': '13',
       'Sec-WebSocket-Key': key, 'Origin': 'http://localhost',
     } })
-    req.on('upgrade', (_, socket) => ok(socket))
+    req.on('upgrade', (_, socket, head) => {
+      // HTTP 101 与首个 WS 帧可能同包；等读取器挂好监听后再消费，避免丢失 challenge。
+      socket.pause()
+      if (head?.length) socket.unshift(head)
+      ok(socket)
+    })
     req.on('response', (res) => { let d = ''; res.on('data', c => d += c); res.on('end', () => no(new Error(`HTTP ${res.statusCode}`))) })
     req.on('error', no)
     req.setTimeout(5000, () => { req.destroy(); no(new Error('ws connect timeout')) })
@@ -3339,19 +3550,50 @@ export function wsReadFrame(socket, timeout = 8000) {
     }
     const t = setTimeout(finish(no), timeout, new Error('ws read timeout'))
     let buf = Buffer.alloc(0)
+    const fail = error => { finish(no)(error); socket.destroy() }
     const onData = (chunk) => {
-      buf = Buffer.concat([buf, chunk]); if (buf.length < 2) return
-      let len = buf[1] & 0x7f, off = 2
-      if (len === 126) { if (buf.length < 4) return; len = buf.readUInt16BE(2); off = 4 }
-      else if (len === 127) { if (buf.length < 10) return; len = Number(buf.readBigUInt64BE(2)); off = 10 }
-      if (buf.length < off + len) return
-      finish(ok)(buf.slice(off, off + len).toString('utf8'))
+      buf = Buffer.concat([buf, chunk])
+      while (buf.length >= 2) {
+        const opcode = buf[0] & 0x0f
+        let len = buf[1] & 0x7f, off = 2
+        if (buf[1] & 0x80) return fail(new Error('WebSocket 服务端首帧错误地使用掩码'))
+        if (len === 126) { if (buf.length < 4) return; len = buf.readUInt16BE(2); off = 4 }
+        else if (len === 127) { if (buf.length < 10) return; len = Number(buf.readBigUInt64BE(2)); off = 10 }
+        if (!Number.isSafeInteger(len)) return fail(new Error('WebSocket 首帧长度不合法'))
+        if (opcode >= 8 && (!(buf[0] & 0x80) || len > 125)) return fail(new Error('WebSocket 控制帧格式错误'))
+        if (buf.length < off + len) return
+        const payload = buf.subarray(off, off + len)
+        buf = buf.subarray(off + len)
+        if (opcode === 8) {
+          if (payload.length === 1) return fail(new Error('WebSocket 关闭帧格式错误'))
+          const closeCode = payload.length >= 2 ? payload.readUInt16BE(0) : null
+          const reason = payload.length > 2 ? payload.subarray(2).toString('utf8') : ''
+          const error = new Error(`ws closed${closeCode === null ? '' : ` (${closeCode})`}${reason ? ': ' + reason : ''}`)
+          error.closeCode = closeCode
+          return fail(error)
+        }
+        if (opcode === 9) {
+          const mask = crypto.randomBytes(4)
+          const body = Buffer.from(payload.map((byte, i) => byte ^ mask[i % 4]))
+          try { socket.write(Buffer.concat([Buffer.from([0x8a, 0x80 | payload.length]), mask, body])) } catch (error) { return fail(error) }
+          continue
+        }
+        if (opcode === 10) continue
+        if (opcode !== 1) return fail(new Error(`WebSocket 非文本首帧（opcode=${opcode}）`))
+        // 下一条消息留给后续读取器，避免同一 TCP 包中的后续帧被静默丢弃。
+        socket.pause()
+        if (buf.length) socket.unshift(buf)
+        finish(ok)(payload.toString('utf8'))
+        return
+      }
     }
     const onError = finish(no)
-    const onClose = finish(no)
+    const onClose = () => finish(no)(new Error('ws closed'))
     socket.on('data', onData)
     socket.on('error', onError)
-    socket.on('close', () => onClose(new Error('ws closed')))
+    socket.on('close', onClose)
+    if (socket.destroyed) onClose()
+    else socket.resume()
   })
 }
 
@@ -3392,6 +3634,7 @@ export function wsReadLoop(socket, onMessage, timeoutMs = DOCKER_TASK_TIMEOUT_MS
   })
   socket.on('error', () => { done = true; clearTimeout(timer) })
   socket.on('close', () => { done = true; clearTimeout(timer) })
+  socket.resume()
   return cancel
 }
 
@@ -3825,6 +4068,7 @@ function platformStorageKey(platform) {
     case 'dingtalk-connector':
       return 'dingtalk-connector'
     case 'weixin':
+    case 'wechat':
       return 'openclaw-weixin'
     default:
       return platform
@@ -3836,6 +4080,7 @@ function platformListId(platform) {
     case 'dingtalk-connector':
       return 'dingtalk'
     case 'openclaw-weixin':
+    case 'wechat':
       return 'weixin'
     default:
       return platform
@@ -9169,7 +9414,8 @@ function gatewayErrorLogSize() {
   }
 }
 
-async function waitForGatewayRunning(label = 'ai.openclaw.gateway', timeoutMs = 10000, errorLogOffset = 0) {
+// 首次加载插件可能超过 10 秒；异步等待真实监听，不重启或重复拉起进程。
+async function waitForGatewayRunning(label = 'ai.openclaw.gateway', timeoutMs = 60000, errorLogOffset = 0) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     const status = await getLocalGatewayRuntime(label)
@@ -9697,6 +9943,7 @@ async function instanceHealthCheck(instance) {
 
 // 始终在本机处理的命令（不代理到远程实例）
 const ALWAYS_LOCAL = new Set([
+  'pi_call',
   'instance_list', 'instance_add', 'instance_remove', 'instance_set_active',
   'instance_health_check', 'instance_health_all',
   'docker_info', 'docker_list_containers', 'docker_create_container',
@@ -9721,6 +9968,32 @@ const ALWAYS_LOCAL = new Set([
   // 便携模式是本进程属性，不能代理到远程实例
   'get_portable_status', 'migrate_to_portable', 'migrate_to_local',
 ])
+
+// Pi 管理操作只在本机执行；按配置根目录隔离，不读取浏览器传来的密钥。
+let _piRuntime = null
+export async function _disposePiRuntime() {
+  const previous = _piRuntime
+  _piRuntime = null
+  if (previous) await previous.dispose()
+}
+function getPiRuntime() {
+  const root = path.join(OPENCLAW_DIR, 'clawpanel', 'pi')
+  if (_piRuntime && _piRuntime.root !== path.resolve(root)) {
+    const previous = _piRuntime
+    _piRuntime = null
+    previous.dispose().catch(error => console.warn('[pi] dispose:', error.message))
+  }
+  if (!_piRuntime) _piRuntime = new PiRuntime({
+    root,
+    registry: getConfiguredNpmRegistry,
+    readChannel: id => {
+      const channel = readModelChannelsPrivate().channels.find(item => item.id === id)
+      if (!channel) return null
+      return { ...channel, apiKey: resolveModelApiKey(channel.apiKey) }
+    },
+  })
+  return _piRuntime
+}
 
 // === 工具函数 ===
 
@@ -11443,7 +11716,6 @@ function recoverMediaQueue() {
 
 // === DeepSeek Harness（只允许回环监听，由 ClawPanel 认证层代管） ===
 const DSH_NODE_REQUIREMENT = '^22.19.0 || >=24.0.0'
-const DSH_PNPM_VERSION = '11.7.0'
 const DSH_BUILD_PACKAGES = [
   '@deepseek-ai/dsh-subprocess-local',
   '@google/genai',
@@ -11460,6 +11732,13 @@ const DSH_EMBED_MAX_SESSIONS = 32
 const DSH_EMBED_STORAGE_MAX_BYTES = 2 * 1024 * 1024
 // DSH 首屏会并行加载数十个插件；限制并复用回环连接，避免低配机器出现瞬时断链。
 const _dshProxyAgent = new http.Agent({ keepAlive: true, maxSockets: 12, maxFreeSockets: 4 })
+
+let _dshAuthSession = null
+async function managedDshRpc(method, payload, { port = DSH_DEFAULT_PORT } = {}) {
+  const auth = _dshAuthSession?.port === port ? _dshAuthSession.auth : null
+  const headers = auth ? await auth.headers() : {}
+  return dshRpc(method, payload, { port, headers, modern: auth?.modern || versionGe(readDshManagedVersion(), '0.1.5') })
+}
 
 function dshRuntimeDir() {
   return path.join(OPENCLAW_DIR, 'clawpanel', 'deepseek-harness')
@@ -11528,16 +11807,22 @@ function isManagedDshProcess(record) {
 }
 
 function clearDshEmbedSessions() {
+  for (const session of _dshEmbedSessions.values()) closeWebEmbedSession(session)
   _dshEmbedSessions.clear()
+  _dshProxyAgent.destroy()
 }
 
 function pruneDshEmbedSessions(now = Date.now()) {
   for (const [token, session] of _dshEmbedSessions) {
-    if (now > session.expiresAt || now > session.maxExpiresAt) _dshEmbedSessions.delete(token)
+    if (now > session.expiresAt || now > session.maxExpiresAt) {
+      closeWebEmbedSession(session)
+      _dshEmbedSessions.delete(token)
+    }
   }
   while (_dshEmbedSessions.size > DSH_EMBED_MAX_SESSIONS) {
     const oldest = _dshEmbedSessions.keys().next().value
     if (!oldest) break
+    closeWebEmbedSession(_dshEmbedSessions.get(oldest))
     _dshEmbedSessions.delete(oldest)
   }
 }
@@ -11549,6 +11834,7 @@ function resolveDshEmbedSession(token) {
   if (!session) return null
   const record = readDshPidRecord()
   if (!record || record.pid !== session.pid || Number(record.port) !== session.port || !isManagedDshProcess(record)) {
+    closeWebEmbedSession(session)
     _dshEmbedSessions.delete(token)
     return null
   }
@@ -11572,6 +11858,7 @@ function normalizeDshEmbedStorage(input) {
 }
 
 async function createDshEmbedSession(portValue = DSH_DEFAULT_PORT, storageValue = {}) {
+  const authGeneration = _webEmbedAuthGeneration
   const port = normalizeDshPort(portValue)
   const status = await dshStatus(port)
   const record = readDshPidRecord()
@@ -11586,9 +11873,11 @@ async function createDshEmbedSession(portValue = DSH_DEFAULT_PORT, storageValue 
     port,
     storage: normalizeDshEmbedStorage(storageValue),
     createdAt: now,
+    upstreamHeaders: await _dshAuthSession?.auth.headers() || {},
     expiresAt: now + DSH_EMBED_IDLE_TTL,
     maxExpiresAt: now + DSH_EMBED_MAX_TTL,
   }
+  if (authGeneration !== _webEmbedAuthGeneration) throw Object.assign(new Error('面板认证状态已更新，请重新加载工作台'), { code: 'EMBED_AUTH_CHANGED' })
   _dshEmbedSessions.set(token, session)
   pruneDshEmbedSessions(now)
   return {
@@ -11641,6 +11930,9 @@ function copyDshProxyResponseHeaders(upstreamHeaders, res, { rewrite, prefix }) 
     res.setHeader('Content-Length', upstreamHeaders['content-length'])
   }
   setDshEmbedResponseHeaders(res)
+  if (String(upstreamHeaders['content-type'] || '').toLowerCase().includes('text/html')) {
+    res.setHeader('Content-Security-Policy', "frame-ancestors 'self'; sandbox allow-scripts allow-forms allow-downloads allow-modals allow-popups")
+  }
 }
 
 function proxyDshEmbedHttp(req, res, route, session) {
@@ -11652,19 +11944,37 @@ function proxyDshEmbedHttp(req, res, route, session) {
     let activeUpstream = null
     let clientAborted = false
     let completed = false
+    let untrack = () => {}
 
     const finish = () => {
       if (completed) return
       completed = true
       resolve()
     }
+    const release = () => {
+      untrack()
+      req.removeListener('aborted', close)
+      res.removeListener('close', close)
+      res.removeListener('finish', release)
+    }
+    const close = () => {
+      clientAborted = true
+      activeUpstream?.destroy()
+      if (!res.destroyed) res.destroy()
+      release()
+      finish()
+    }
+    untrack = trackWebEmbedConnection(session, close)
+    req.once('aborted', close)
+    res.once('close', close)
+    res.once('finish', release)
     const fail = error => {
       if (completed || clientAborted) return finish()
       writeDshProxyError(res, 502, `DeepSeek Harness 内嵌代理不可达: ${error?.message || error}`)
       finish()
     }
     const requestAttempt = attempt => {
-      if (completed || clientAborted) return finish()
+      if (completed || clientAborted || session.revoked) return finish()
       let retryHandled = false
       const retry = error => {
         if (retryHandled || completed) return
@@ -11681,8 +11991,9 @@ function proxyDshEmbedHttp(req, res, route, session) {
         path: route.upstreamPath,
         method,
         agent: _dshProxyAgent,
-        headers: dshUpstreamHeaders(req.headers, session.port),
+        headers: { ...dshUpstreamHeaders(req.headers, session.port), ...session.upstreamHeaders },
       }, upstreamRes => {
+        if (completed || clientAborted || session.revoked) { upstreamRes.destroy(); return finish() }
         const contentType = String(upstreamRes.headers['content-type'] || '')
         const rewrite = shouldRewriteDshResponse(contentType, route.upstreamPathname)
         const bufferStatic = retryableStatic && method === 'GET'
@@ -11739,11 +12050,6 @@ function proxyDshEmbedHttp(req, res, route, session) {
       else req.pipe(upstream)
     }
 
-    req.once('aborted', () => {
-      clientAborted = true
-      activeUpstream?.destroy()
-      finish()
-    })
     requestAttempt(1)
   })
 }
@@ -11793,7 +12099,8 @@ export function _handleDshUpgrade(req, socket, head) {
     return true
   }
   const target = net.createConnection(session.port, '127.0.0.1', () => {
-    const headers = dshUpstreamHeaders(req.headers, session.port, { websocket: true })
+    if (session.revoked) { target.destroy(); socket.destroy(); return }
+    const headers = { ...dshUpstreamHeaders(req.headers, session.port, { websocket: true }), ...session.upstreamHeaders }
     const requestLine = `${req.method || 'GET'} ${route.upstreamPath} HTTP/${req.httpVersion || '1.1'}\r\n`
     const headerLines = Object.entries(headers)
       .flatMap(([name, value]) => Array.isArray(value)
@@ -11805,6 +12112,9 @@ export function _handleDshUpgrade(req, socket, head) {
     socket.pipe(target)
     target.pipe(socket)
   })
+  const untrack = trackWebEmbedConnection(session, () => { target.destroy(); socket.destroy() })
+  socket.once('close', () => { untrack(); target.destroy() })
+  target.once('close', () => { if (!socket.destroyed) socket.end() })
   target.once('error', () => {
     if (!socket.destroyed) rejectDshEmbedUpgrade(socket, 502, 'DeepSeek Harness WebSocket 不可达')
   })
@@ -11831,6 +12141,7 @@ async function dshStatus(portValue = DSH_DEFAULT_PORT) {
   const globalCommand = managedInstalled ? '' : findGlobalDshCommand()
   const record = readDshPidRecord()
   const managed = isManagedDshProcess(record)
+  const version = managedInstalled ? readDshManagedVersion() : ''
   const nodeCompatible = nodeVersionSatisfiesRequirement(process.version, DSH_NODE_REQUIREMENT)
   const portOpen = await probeTcpPort(port, '127.0.0.1', 700)
   let running = false
@@ -11838,7 +12149,7 @@ async function dshStatus(portValue = DSH_DEFAULT_PORT) {
   let error = ''
   if (portOpen) {
     try {
-      summary = await readDshSummary({ port })
+      summary = await readDshSummary({ port, rpc: managedDshRpc })
       running = true
     } catch (cause) {
       error = cause?.message || String(cause)
@@ -11849,13 +12160,17 @@ async function dshStatus(portValue = DSH_DEFAULT_PORT) {
     managedInstalled,
     installRunning: _dshInstallRunning,
     running,
-    managed: running && managed,
+    managed: managed && Number(record?.port) === port,
     portOpen,
-    foreignPort: portOpen && !running,
+    foreignPort: portOpen && !running && !managed,
     port,
     url: `http://127.0.0.1:${port}`,
-    version: managedInstalled ? readDshManagedVersion() : '',
+    version,
     targetVersion: DSH_PACKAGE_VERSION,
+    previewVersion: DSH_PREVIEW_VERSION,
+    installedChannel: version === DSH_PREVIEW_VERSION ? 'preview' : version === DSH_PACKAGE_VERSION ? 'stable' : version ? 'custom' : '',
+    updateAvailable: dshHasUpdate(version, DSH_PACKAGE_VERSION),
+    previewAvailable: managedInstalled && dshHasUpdate(version, DSH_PREVIEW_VERSION),
     packageName: DSH_PACKAGE_NAME,
     path: managedInstalled ? entry : globalCommand,
     runtimeDir: dshRuntimeDir(),
@@ -11886,7 +12201,7 @@ function commandAvailable(command) {
       ? ['/D', '/S', '/C', command, '--version']
       : ['--version'], {
       encoding: 'utf8', windowsHide: true, timeout: 5000,
-      env: { ...process.env, PATH: hermesEnhancedPath() },
+      env: { ...process.env, PATH: independentRuntimePath() },
     })
     return probe.status === 0
   } catch {
@@ -11894,24 +12209,20 @@ function commandAvailable(command) {
   }
 }
 
-function dshInstallCommandSpec(runtimeDir) {
+function dshInstallCommandSpec(runtimeDir, channel = 'stable') {
+  const release = DSH_RELEASE_CHANNELS[dshReleaseChannel(channel)]
   const args = [
     'add', '--dir', runtimeDir, '--save-exact', '--prod',
     ...DSH_BUILD_PACKAGES.map(packageName => `--allow-build=${packageName}`),
-    `${DSH_PACKAGE_NAME}@${DSH_PACKAGE_VERSION}`,
+    `${DSH_PACKAGE_NAME}@${release.version}`,
   ]
-  if (commandAvailable('pnpm')) {
-    return isWindows
-      ? { command: 'cmd.exe', args: ['/D', '/S', '/C', 'pnpm', ...args] }
-      : { command: 'pnpm', args }
-  }
-  return npmCommandSpec(['exec', '--yes', `pnpm@${DSH_PNPM_VERSION}`, '--', ...args])
+  return npmCommandSpec(['exec', '--yes', `pnpm@${release.pnpmVersion}`, '--', ...args])
 }
 
 function runCaptured(command, args, { timeoutMs = 20 * 60 * 1000 } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
-      env: { ...process.env, PATH: hermesEnhancedPath() },
+      env: { ...process.env, PATH: independentRuntimePath() },
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -11932,19 +12243,22 @@ function runCaptured(command, args, { timeoutMs = 20 * 60 * 1000 } = {}) {
   })
 }
 
-async function installDsh() {
+async function installDsh(channel = 'stable') {
+  const releaseChannel = dshReleaseChannel(channel)
+  const release = DSH_RELEASE_CHANNELS[releaseChannel]
   if (_dshInstallRunning) throw new Error('DeepSeek Harness 安装任务正在运行')
   if (!nodeVersionSatisfiesRequirement(process.version, DSH_NODE_REQUIREMENT)) {
-    throw new Error(`DeepSeek Harness ${DSH_PACKAGE_VERSION} 要求 Node.js ${DSH_NODE_REQUIREMENT}，当前为 ${process.version}`)
+    throw new Error(`DeepSeek Harness ${release.version} 要求 Node.js ${DSH_NODE_REQUIREMENT}，当前为 ${process.version}`)
   }
+  if (isManagedDshProcess(readDshPidRecord())) throw new Error('请先停止 ClawPanel 管理的 DeepSeek Harness，再更新运行时')
   _dshInstallRunning = true
   try {
     fs.mkdirSync(dshRuntimeDir(), { recursive: true })
-    const spec = dshInstallCommandSpec(dshRuntimeDir())
+    const spec = dshInstallCommandSpec(dshRuntimeDir(), releaseChannel)
     await runCaptured(spec.command, spec.args)
     if (!fs.existsSync(dshManagedEntry())) throw new Error('pnpm 安装完成，但未找到 DeepSeek Harness 入口文件')
     const version = readDshManagedVersion()
-    if (version !== DSH_PACKAGE_VERSION) throw new Error(`DeepSeek Harness 安装版本回读不一致: ${version || '-'}`)
+    if (version !== release.version) throw new Error(`DeepSeek Harness 安装版本回读不一致: ${version || '-'}，期望 ${release.version}`)
     return dshStatus(DSH_DEFAULT_PORT)
   } finally {
     _dshInstallRunning = false
@@ -11985,22 +12299,38 @@ function spawnDshWeb(port) {
   if (fs.existsSync(entry)) {
     command = process.execPath
     args = [entry, 'web', '--host', '127.0.0.1', '--port', String(port), '--no-open']
+    if (versionGe(readDshManagedVersion(), '0.1.5')) {
+      const overlayPath = path.join(dshRuntimeDir(), 'clawpanel-web.yml')
+      fs.writeFileSync(overlayPath, fs.readFileSync(new URL('./deepseek-harness-web.yml', import.meta.url)))
+      args.splice(1, 1, '--profile', 'web', '--patch', overlayPath)
+    }
   } else {
     command = findGlobalDshCommand()
     if (!command) throw new Error('DeepSeek Harness 未安装')
     args = ['web', '--host', '127.0.0.1', '--port', String(port), '--no-open']
     shell = isWindows && /\.(cmd|bat)$/i.test(command)
   }
-  const logFd = fs.openSync(dshLogPath(), 'a')
+  const auth = createDshAuth(port)
+  _dshAuthSession = { port, auth }
   const child = spawn(command, args, {
     detached: true,
     shell,
     cwd: dshRuntimeDir(),
-    env: { ...process.env, PATH: hermesEnhancedPath(), CLAWPANEL_DSH_MANAGED: '1' },
+    env: { ...process.env, PATH: independentRuntimePath(), CLAWPANEL_DSH_MANAGED: '1' },
     windowsHide: true,
-    stdio: ['ignore', logFd, logFd],
+    stdio: ['ignore', 'pipe', 'pipe'],
   })
-  fs.closeSync(logFd)
+  for (const stream of [child.stdout, child.stderr]) {
+    let pending = ''
+    stream.setEncoding('utf8')
+    const write = line => { auth.observe(line); fs.appendFileSync(dshLogPath(), redactDshOutput(line) + '\n') }
+    stream.on('data', chunk => {
+      const lines = (pending + chunk).split(/\r?\n/); pending = lines.pop() || ''
+      for (const line of lines) write(line)
+    })
+    stream.on('end', () => { if (pending) write(pending) })
+  }
+  child.on('error', error => { fs.appendFileSync(dshLogPath(), redactDshOutput(error.message) + '\n') })
   child.unref()
   _dshManagedChild = child
   writeJsonAtomic(dshPidPath(), {
@@ -12036,7 +12366,7 @@ async function startDsh(portValue = DSH_DEFAULT_PORT) {
   }
   let tail = ''
   try { tail = fs.readFileSync(dshLogPath(), 'utf8').slice(-4000).trim() } catch {}
-  throw new Error(`DeepSeek Harness 启动失败${tail ? `: ${tail}` : ''}`)
+  throw new Error(`DeepSeek Harness 启动失败${tail ? `: ${redactDshOutput(tail)}` : ''}`)
 }
 
 async function stopDsh(portValue = DSH_DEFAULT_PORT) {
@@ -12062,6 +12392,7 @@ async function stopDsh(portValue = DSH_DEFAULT_PORT) {
   }
   try { fs.unlinkSync(dshPidPath()) } catch {}
   if (_dshManagedChild?.pid === record.pid) _dshManagedChild = null
+  _dshAuthSession = null
   const current = await dshStatus(port)
   if (current.running) throw new Error('DeepSeek Harness 进程停止后服务仍可达，请检查是否存在其他实例')
   return current
@@ -12152,7 +12483,7 @@ function findGlobalOpenCodeCommand() {
   try {
     const found = spawnSync(isWindows ? 'where.exe' : 'which', ['opencode'], {
       encoding: 'utf8', windowsHide: true, timeout: 3000,
-      env: { ...process.env, PATH: hermesEnhancedPath() },
+      env: { ...process.env, PATH: independentRuntimePath() },
     })
     if (found.status !== 0) return ''
     return String(found.stdout || '').split(/\r?\n/).map(value => value.trim()).find(Boolean) || ''
@@ -12225,7 +12556,7 @@ function openCodeRuntimeEnv(password = '') {
   ensureOpenCodeHome()
   return {
     ...process.env,
-    PATH: hermesEnhancedPath(),
+    PATH: independentRuntimePath(),
     OPENCODE_CONFIG: openCodeConfigPath(),
     OPENCODE_CONFIG_DIR: openCodeConfigDir(),
     OPENCODE_SERVER_USERNAME: 'opencode',
@@ -12615,16 +12946,22 @@ function syncOpenCodeProvider(channel, apiKey, setDefault = false) {
 }
 
 function clearOpenCodeEmbedSessions() {
+  for (const session of _openCodeEmbedSessions.values()) closeWebEmbedSession(session)
   _openCodeEmbedSessions.clear()
+  _openCodeProxyAgent.destroy()
 }
 
 function pruneOpenCodeEmbedSessions(now = Date.now()) {
   for (const [token, session] of _openCodeEmbedSessions) {
-    if (now > session.expiresAt || now > session.maxExpiresAt) _openCodeEmbedSessions.delete(token)
+    if (now > session.expiresAt || now > session.maxExpiresAt) {
+      closeWebEmbedSession(session)
+      _openCodeEmbedSessions.delete(token)
+    }
   }
   while (_openCodeEmbedSessions.size > OPENCODE_EMBED_MAX_SESSIONS) {
     const oldest = _openCodeEmbedSessions.keys().next().value
     if (!oldest) break
+    closeWebEmbedSession(_openCodeEmbedSessions.get(oldest))
     _openCodeEmbedSessions.delete(oldest)
   }
 }
@@ -12636,6 +12973,7 @@ function resolveOpenCodeEmbedSession(token) {
   if (!session) return null
   const record = readOpenCodePidRecord()
   if (!record || record.pid !== session.pid || record.port !== session.port || !isManagedOpenCodeProcess(record)) {
+    closeWebEmbedSession(session)
     _openCodeEmbedSessions.delete(token)
     return null
   }
@@ -12643,7 +12981,8 @@ function resolveOpenCodeEmbedSession(token) {
   return session
 }
 
-async function createOpenCodeEmbedSession(portValue = OPENCODE_DEFAULT_PORT) {
+async function createOpenCodeEmbedSession(portValue = OPENCODE_DEFAULT_PORT, storage = {}) {
+  const authGeneration = _webEmbedAuthGeneration
   const port = normalizeOpenCodePort(portValue)
   const status = await openCodeStatus(port)
   const record = readOpenCodePidRecord()
@@ -12657,18 +12996,21 @@ async function createOpenCodeEmbedSession(portValue = OPENCODE_DEFAULT_PORT) {
     pid: record.pid,
     port,
     password: String(record.password || ''),
+    storage: sanitizeOpenCodeStorage(storage),
     createdAt: now,
     expiresAt: now + OPENCODE_EMBED_IDLE_TTL,
     maxExpiresAt: now + OPENCODE_EMBED_MAX_TTL,
   }
+  if (authGeneration !== _webEmbedAuthGeneration) throw Object.assign(new Error('面板认证状态已更新，请重新加载工作台'), { code: 'EMBED_AUTH_CHANGED' })
   _openCodeEmbedSessions.set(token, session)
   pruneOpenCodeEmbedSessions(now)
-  return { src: `${openCodeEmbedPrefix(token)}/`, expiresAt: session.expiresAt, sandboxed: true }
+  return { src: `${openCodeEmbedPrefix(token)}/`, uiSrc: `/?__opencode_embed=${token}`, expiresAt: session.expiresAt, sandboxed: true }
 }
 
 function isOpenCodeEmbedRequest(rawUrl) {
   const pathname = String(rawUrl || '').split('?')[0]
-  return pathname === '/__opencode' || pathname.startsWith('/__opencode/')
+  if (pathname === '/__opencode' || pathname.startsWith('/__opencode/')) return true
+  try { return new URL(String(rawUrl || ''), 'http://clawpanel.local').searchParams.has('__opencode_embed') } catch { return false }
 }
 
 function setOpenCodeEmbedResponseHeaders(res) {
@@ -12702,16 +13044,39 @@ function copyOpenCodeProxyHeaders(upstreamHeaders, res, { rewrite, prefix }) {
     else res.setHeader(rawName, rawValue)
   }
   if (!rewrite && upstreamHeaders['content-length'] !== undefined) res.setHeader('Content-Length', upstreamHeaders['content-length'])
+  // JSON/二进制等不改写的响应按字节透传，必须保留对应编码头。
+  if (!rewrite && upstreamHeaders['content-encoding']) res.setHeader('Content-Encoding', upstreamHeaders['content-encoding'])
   setOpenCodeEmbedResponseHeaders(res)
+  // 能力文档被直接打开时也不能变成面板同源脚本；JSON/静态资产不施加文档 sandbox。
+  if (String(upstreamHeaders['content-type'] || '').toLowerCase().includes('text/html')) {
+    res.setHeader('Content-Security-Policy', "frame-ancestors 'self'; sandbox allow-scripts allow-forms allow-downloads allow-modals allow-popups")
+  }
 }
 
 function proxyOpenCodeEmbedHttp(req, res, route, session) {
   return new Promise(resolve => {
     const method = String(req.method || 'GET').toUpperCase()
     let completed = false
+    let upstream, untrack = () => {}
     const finish = () => { if (!completed) { completed = true; resolve() } }
+    const release = () => {
+      untrack()
+      req.removeListener('aborted', close)
+      res.removeListener('close', close)
+      res.removeListener('finish', release)
+    }
+    const close = () => {
+      upstream?.destroy()
+      if (!res.destroyed) res.destroy()
+      release()
+      finish()
+    }
+    untrack = trackWebEmbedConnection(session, close)
+    req.once('aborted', close)
+    res.once('close', close)
+    res.once('finish', release)
     const headers = openCodeUpstreamHeaders(req.headers, session.port, { password: session.password })
-    const upstream = http.request({
+    upstream = http.request({
       hostname: '127.0.0.1',
       port: session.port,
       path: route.upstreamPath,
@@ -12719,6 +13084,7 @@ function proxyOpenCodeEmbedHttp(req, res, route, session) {
       agent: _openCodeProxyAgent,
       headers,
     }, upstreamRes => {
+      if (completed || session.revoked) { upstreamRes.destroy(); return finish() }
       const contentType = String(upstreamRes.headers['content-type'] || '')
       const rewrite = shouldRewriteOpenCodeResponse(contentType)
       if (!rewrite || method === 'HEAD') {
@@ -12738,7 +13104,14 @@ function proxyOpenCodeEmbedHttp(req, res, route, session) {
       })
       upstreamRes.once('end', () => {
         if (completed || res.writableEnded) return finish()
-        const body = Buffer.from(rewriteOpenCodeProxyText(Buffer.concat(chunks).toString('utf8'), route.prefix, { contentType }), 'utf8')
+        let body
+        try {
+          const decoded = decodeOpenCodeProxyBody(Buffer.concat(chunks), upstreamRes.headers['content-encoding'])
+          body = Buffer.from(rewriteOpenCodeProxyText(decoded.toString('utf8'), route.prefix, { contentType, storage: session.storage }), 'utf8')
+        } catch {
+          writeOpenCodeProxyError(res, 502, 'OpenCode 内嵌响应解码失败')
+          return finish()
+        }
         res.statusCode = upstreamRes.statusCode || 502
         copyOpenCodeProxyHeaders(upstreamRes.headers, res, { rewrite, prefix: route.prefix })
         res.setHeader('Content-Length', String(body.length))
@@ -12751,8 +13124,7 @@ function proxyOpenCodeEmbedHttp(req, res, route, session) {
         finish()
       })
     })
-    upstream.once('error', error => { writeOpenCodeProxyError(res, 502, `OpenCode 内嵌代理不可达: ${error?.message || error}`); finish() })
-    req.once('aborted', () => { upstream.destroy(); finish() })
+    upstream.once('error', error => { if (!completed) writeOpenCodeProxyError(res, 502, `OpenCode 内嵌代理不可达: ${error?.message || error}`); finish() })
     if (method === 'GET' || method === 'HEAD') upstream.end()
     else req.pipe(upstream)
   })
@@ -12785,6 +13157,7 @@ export function _handleOpenCodeUpgrade(req, socket, head) {
   const session = resolveOpenCodeEmbedSession(route.token)
   if (!session) { rejectOpenCodeEmbedUpgrade(socket, 401, 'OpenCode 内嵌会话已失效'); return true }
   const target = net.createConnection(session.port, '127.0.0.1', () => {
+    if (session.revoked) { target.destroy(); socket.destroy(); return }
     const headers = openCodeUpstreamHeaders(req.headers, session.port, { password: session.password, websocket: true })
     const requestLine = `${req.method || 'GET'} ${route.upstreamPath} HTTP/${req.httpVersion || '1.1'}\r\n`
     const headerLines = Object.entries(headers).flatMap(([name, value]) => Array.isArray(value) ? value.map(item => `${name}: ${item}`) : [`${name}: ${value}`]).join('\r\n')
@@ -12793,6 +13166,9 @@ export function _handleOpenCodeUpgrade(req, socket, head) {
     socket.pipe(target)
     target.pipe(socket)
   })
+  const untrack = trackWebEmbedConnection(session, () => { target.destroy(); socket.destroy() })
+  socket.once('close', () => { untrack(); target.destroy() })
+  target.once('close', () => { if (!socket.destroyed) socket.end() })
   target.once('error', () => { if (!socket.destroyed) rejectOpenCodeEmbedUpgrade(socket, 502, 'OpenCode WebSocket 不可达') })
   socket.once('error', () => target.destroy())
   return true
@@ -12879,16 +13255,16 @@ const handlers = {
       const errorLogOffset = gatewayErrorLogSize()
       if (isMac) {
         macStartService(label)
-        await waitForGatewayRunning(label, 10000, errorLogOffset)
+        await waitForGatewayRunning(label, 60000, errorLogOffset)
         return true
       }
       if (isLinux) {
         linuxStartGateway()
-        await waitForGatewayRunning(label, 10000, errorLogOffset)
+        await waitForGatewayRunning(label, 60000, errorLogOffset)
         return true
       }
       winStartGateway()
-      await waitForGatewayRunning(label, 10000, errorLogOffset)
+      await waitForGatewayRunning(label, 60000, errorLogOffset)
       return true
     })
   },
@@ -13267,14 +13643,8 @@ const handlers = {
     return { valid: true, warnings: ['该平台暂不支持在线校验'] }
   },
 
-  install_qqbot_plugin({ version } = {}) {
-    const spec = version ? `@tencent-connect/openclaw-qqbot@${version}` : '@tencent-connect/openclaw-qqbot@latest'
-    try {
-      execOpenclawSync(['plugins', 'install', spec], { timeout: 600000, cwd: homedir(), windowsHide: true }, 'QQBot 插件安装失败')
-      return '安装成功'
-    } catch (e) {
-      throw new Error('QQBot 插件安装失败: ' + (e.message || e))
-    }
+  async install_qqbot_plugin({ version } = {}) {
+    return handlers.install_channel_plugin({ packageName: '@tencent-connect/openclaw-qqbot@latest', pluginId: 'qqbot', version })
   },
 
   list_all_plugins() {
@@ -13350,40 +13720,29 @@ const handlers = {
     }
   },
 
-  get_channel_plugin_status({ pluginId }) {
-    if (!pluginId || !pluginId.trim()) throw new Error('pluginId 不能为空')
-    const pid = pluginId.trim()
-    const pluginDir = path.join(OPENCLAW_DIR, 'plugins', 'node_modules', pid)
-    const installed = fs.existsSync(pluginDir) && fs.existsSync(path.join(pluginDir, 'package.json'))
-    // 检测是否为内置插件
-    let builtin = false
-    try {
-      const result = spawnOpenclawSync(['plugins', 'list'], { timeout: 10000, encoding: 'utf8', cwd: homedir(), windowsHide: true })
-      const output = (result.stdout || '') + (result.stderr || '')
-      if (result.status === 0 && output.includes(pid) && output.includes('built-in')) builtin = true
-    } catch {}
-    const cfg = readOpenclawConfigOptional()
-    const allowArr = cfg.plugins?.allow || []
-    const allowed = allowArr.includes(pid)
-    const enabled = !!cfg.plugins?.entries?.[pid]?.enabled
-    const backupDir = path.join(OPENCLAW_DIR, 'plugin-backups', pid)
-    const legacyBackup = path.join(OPENCLAW_DIR, 'plugins', 'node_modules', `${pid}.bak`)
-    return {
-      installed, builtin, path: pluginDir,
-      allowed, enabled,
-      legacyBackupDetected: fs.existsSync(backupDir) || fs.existsSync(legacyBackup),
+  async get_channel_plugin_status({ pluginId }) {
+    const cli = resolveOpenclawCliPath()
+    const pkg = cli && findOpenclawPackageJson(cli)
+    const status = channelPluginStatusAt(OPENCLAW_DIR, pluginId, pkg ? path.dirname(pkg) : null, readOpenclawConfigOptional())
+    // 新版的安装索引位于原生注册表；只在发现新布局时按需异步查询，旧版不反复唤起 CLI。
+    if (!status.installed && !status.builtin && fs.existsSync(path.join(OPENCLAW_DIR, 'npm', 'projects'))) {
+      const result = await runOpenclawCaptured(['plugins', 'list', '--json'], { timeoutMs: 30000 })
+      if (result.status !== 0) throw new Error(`读取插件注册表失败: ${redactPluginOutput(openclawResultOutput(result)).slice(-6000)}`)
+      return channelPluginStatusFromInventory(status, pluginId, result.stdout)
     }
+    return status
   },
 
-  install_channel_plugin({ packageName, pluginId, version }) {
-    if (!packageName || !pluginId) throw new Error('packageName 和 pluginId 不能为空')
-    const spec = version ? `${packageName.trim()}@${version}` : packageName.trim()
-    try {
-      execOpenclawSync(['plugins', 'install', spec], { timeout: 120000, cwd: homedir(), windowsHide: true }, `插件 ${pluginId} 安装失败`)
-      return '安装成功'
-    } catch (e) {
-      throw new Error(`插件 ${pluginId} 安装失败: ` + (e.message || e))
-    }
+  async install_channel_plugin({ packageName, pluginId, version }, onEvent = () => {}, updateExisting = false, replaceExisting = false) {
+    return installChannelPluginAt({
+      root: OPENCLAW_DIR, packageName, pluginId, version, updateExisting, replaceExisting,
+      expectedVersion: replaceExisting ? version : null,
+      hostVersion: readVersionFromInstallation(resolveOpenclawCliPath()),
+      run: (args, onOutput) => runOpenclawCaptured(args, { timeoutMs: 600000, onOutput }),
+      status: id => handlers.get_channel_plugin_status({ pluginId: id }),
+      enable: id => handlers.toggle_plugin({ pluginId: id, enabled: true }),
+      onEvent,
+    })
   },
 
   async pairing_list_channel({ channel }) {
@@ -14442,7 +14801,7 @@ const handlers = {
       if (!fs.existsSync(p) || seen.has(p)) continue
       seen.add(p)
       try {
-        const ver = cp.execSync(`"${p}" --version`, { timeout: 5000 }).toString().trim()
+        const ver = cp.execSync(`"${p}" --version`, { timeout: 5000, windowsHide: true }).toString().trim()
         found.push({ path: p, version: ver, source })
       } catch {}
     }
@@ -15760,7 +16119,7 @@ const handlers = {
     const cmd = cmds[kind]
     if (!cmd) throw new Error(`不支持的安装类型: ${kind}`)
     try {
-      const out = execSync(cmd, { encoding: 'utf8', timeout: 120000 })
+      const out = execSync(cmd, { encoding: 'utf8', timeout: 120000, windowsHide: true })
       return { success: true, output: out.trim() }
     } catch (e) {
       throw new Error(`安装失败: ${e.message || e}`)
@@ -15912,8 +16271,8 @@ const handlers = {
     return dshStatus(port)
   },
 
-  dsh_install() {
-    return installDsh()
+  dsh_install({ channel = 'stable' } = {}) {
+    return installDsh(channel)
   },
 
   dsh_uninstall() {
@@ -15938,10 +16297,16 @@ const handlers = {
     if (channel.apiKeyRef) throw new Error('该渠道使用 OpenClaw SecretRef，只能原样同步到 OpenClaw')
     return syncDshProvider({
       channel,
+      rpc: managedDshRpc,
       apiKey: resolveModelApiKey(String(channel.apiKey || '')),
       setDefault: Boolean(setDefault),
       port,
     })
+  },
+
+  // Pi：受管运行时、独立配置及原生 RPC 工作台
+  pi_call({ command, args = {} } = {}) {
+    return getPiRuntime().call(command, args)
   },
 
   // OpenCode：受管二进制、独立配置和安全内嵌工作台
@@ -15965,8 +16330,8 @@ const handlers = {
     return uninstallOpenCode()
   },
 
-  opencode_embed_session({ port = OPENCODE_DEFAULT_PORT } = {}) {
-    return createOpenCodeEmbedSession(port)
+  opencode_embed_session({ port = OPENCODE_DEFAULT_PORT, storage = {} } = {}) {
+    return createOpenCodeEmbedSession(port, storage)
   },
 
   opencode_start({ port = OPENCODE_DEFAULT_PORT } = {}) {
@@ -16461,7 +16826,9 @@ const handlers = {
   },
 
   write_panel_config({ config }) {
+    const previous = readPanelConfig()
     writePanelConfigFile(config)
+    if (webEmbedAuthChanged(previous, readPanelConfig())) revokeWebEmbedCapabilities()
     return true
   },
 
@@ -16557,7 +16924,7 @@ const handlers = {
     const name = `agent-${id}-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}.tar`
     const archivePath = path.join(BACKUPS_DIR, name)
     try {
-      execSync(`tar -cf "${archivePath}" -C "${sourceDir}" .`, { timeout: 30000 })
+      execSync(`tar -cf "${archivePath}" -C "${sourceDir}" .`, { timeout: 30000, windowsHide: true })
       return archivePath
     } catch (e) {
       throw new Error('备份失败: ' + (e.message || e))
@@ -16656,9 +17023,10 @@ const handlers = {
   auth_set_password({ password }) {
     const cfg = readPanelConfig()
     cfg.accessPassword = password || ''
-    fs.writeFileSync(PANEL_CONFIG_PATH, JSON.stringify(cfg, null, 2))
+    writePanelConfigFile(cfg)
     // 清除所有 session（密码变更后强制重新登录）
     _sessions.clear()
+    revokeWebEmbedCapabilities()
     return true
   },
 
@@ -16703,7 +17071,7 @@ const handlers = {
   // Hermes Agent 命令
   // =========================================================================
 
-  check_python() {
+  async check_python() {
     const enhanced = hermesEnhancedPath()
     const result = { platform: isWindows ? 'win-x64' : isMac ? 'mac-arm64' : 'linux-x64' }
     const candidates = isWindows
@@ -16711,7 +17079,7 @@ const handlers = {
       : [['python3', ['--version']], ['python', ['--version']]]
     let found = false
     for (const [cmd, args] of candidates) {
-      const r = runHermesSilent(cmd, args)
+      const r = await runHermesSilent(cmd, args)
       if (r.ok) {
         const m = r.stdout.match(/(\d+)\.(\d+)\.(\d+)/)
         if (m) {
@@ -16729,12 +17097,12 @@ const handlers = {
     if (!found) {
       result.installed = false; result.version = null; result.versionOk = false; result.path = null; result.pythonCmd = null
     }
-    result.hasPip = runHermesSilent('pip', ['--version']).ok || runHermesSilent('pip3', ['--version']).ok
-    result.hasPipx = runHermesSilent('pipx', ['--version']).ok
+    result.hasPip = (await runHermesSilent('pip', ['--version'])).ok || (await runHermesSilent('pip3', ['--version'])).ok
+    result.hasPipx = (await runHermesSilent('pipx', ['--version'])).ok
     const uvPath = path.join(uvBinDir(), isWindows ? 'uv.exe' : 'uv')
-    result.hasUv = fs.existsSync(uvPath) || runHermesSilent('uv', ['--version']).ok
-    result.hasGit = runHermesSilent('git', ['--version']).ok
-    result.hasBrew = !isWindows && runHermesSilent('brew', ['--version']).ok
+    result.hasUv = fs.existsSync(uvPath) || (await runHermesSilent('uv', ['--version'])).ok
+    result.hasGit = (await runHermesSilent('git', ['--version'])).ok
+    result.hasBrew = !isWindows && (await runHermesSilent('brew', ['--version'])).ok
     return result
   },
 
@@ -16742,12 +17110,12 @@ const handlers = {
     const home = hermesHome()
     const result = {}
     // 1. 检测 hermes CLI
-    const r = runHermesVersionSilent()
+    const r = await runHermesVersionSilent()
     if (r.ok) {
       const verMatch = r.stdout.split(/\s+/).find(s => /^v?\d/.test(s)) || r.stdout
       result.installed = true
       result.version = verMatch.replace(/^v/, '')
-      result.path = findCommandPath('hermes')
+      result.path = findCommandPath('hermes', buildHermesRuntimeEnv())
     } else {
       result.installed = false; result.version = null; result.path = null
     }
@@ -16811,7 +17179,7 @@ const handlers = {
     // 0.20.5 禁止从 Git 构建 wheel/sdist；extras 由上游锁定依赖统一管理。
     void extras
     await installHermesManagedSource(readPanelConfig())
-    const ver = runHermesVersionSilent()
+    const ver = await runHermesVersionSilent()
     if (ver.ok) return ver.stdout
     throw new Error('安装完成但验证失败: hermes version 不可用')
     } finally {
@@ -16929,14 +17297,13 @@ const handlers = {
     }
     if (action === 'stop') {
       if (_hermesGwProcess) { try { _hermesGwProcess.kill() } catch {} _hermesGwProcess = null }
-      const r = runHermesSilent('hermes', ['gateway', 'stop'])
-      if (isWindows) {
-        try { spawnSync('taskkill', ['/F', '/IM', 'hermes.exe'], { windowsHide: true, timeout: 5000 }) } catch {}
-      }
+      const r = await runHermesSilent('hermes', ['gateway', 'stop'])
+      // 原生 CLI 负责当前宿主的身份核验，不按进程名终止其他 Profile/安装目录。
+      if (!r.ok) throw new Error(`Gateway 停止失败: ${r.stderr || '请检查 Gateway 运行状态'}`)
       return 'Gateway 已停止'
     }
     if (action === 'status') {
-      const r = runHermesSilent('hermes', ['gateway', 'status'])
+      const r = await runHermesSilent('hermes', ['gateway', 'status'])
       return r.ok ? r.stdout : 'unknown'
     }
     throw new Error(`不支持的操作: ${action}`)
@@ -16971,10 +17338,8 @@ const handlers = {
   },
 
   async hermes_capabilities() {
-    const url = `${hermesGatewayUrl()}/v1/capabilities`
-    const resp = await globalThis.fetch(url, { signal: AbortSignal.timeout(5000), headers: { 'User-Agent': 'ClawPanel-Web' } })
-    if (!resp.ok) throw new Error(`Gateway 返回 HTTP ${resp.status}`)
-    return await resp.json()
+    // 新版将能力描述纳入认证，复用代理的本机密钥注入，不把密钥交给浏览器。
+    return handlers.hermes_api_proxy({ method: 'GET', path: '/v1/capabilities' })
   },
 
   async hermes_api_proxy({ method, path: reqPath, body, headers: customHeaders } = {}) {
@@ -17035,21 +17400,13 @@ const handlers = {
     let modelName = '', baseUrl = '', provider = '', apiKey = ''
     try {
       const content = fs.readFileSync(configPath, 'utf8')
-      let inModel = false
-      for (const line of content.split('\n')) {
-        const t = line.trim()
-        if (t.startsWith('model:')) {
-          inModel = true
-          const v = t.slice(6).trim().replace(/^["']|["']$/g, '')
-          if (v && !v.includes(':')) modelName = v
-          continue
-        }
-        if (inModel) {
-          if (t.startsWith('default:')) modelName = t.slice(8).trim().replace(/^["']|["']$/g, '')
-          else if (t.startsWith('base_url:')) baseUrl = t.slice(9).trim().replace(/^["']|["']$/g, '')
-          else if (t.startsWith('provider:')) provider = t.slice(9).trim().replace(/^["']|["']$/g, '')
-          else if (t && !t.startsWith('#') && !t.startsWith('-') && !/^\s/.test(line)) inModel = false
-        }
+      // 与桌面端一致只解析顶层 model，避免后面的 stt/auxiliary.model 污染仪表盘。
+      const model = YAML.parse(content)?.model
+      if (typeof model === 'string') modelName = model
+      else if (model && typeof model === 'object' && !Array.isArray(model)) {
+        modelName = typeof model.default === 'string' ? model.default : typeof model.model === 'string' ? model.model : ''
+        baseUrl = typeof model.base_url === 'string' ? model.base_url : ''
+        provider = typeof model.provider === 'string' ? model.provider : ''
       }
     } catch {}
     try {
@@ -18277,7 +18634,9 @@ const handlers = {
   },
 
   _hermesPatchYamlEnsureApiServer(raw) {
-    if (this._hermesConfigHasApiServerEnabled(raw)) return raw
+    let legacyPort = null
+    try { legacyPort = legacyHermesGatewayPort(YAML.parse(raw)) } catch {}
+    if (this._hermesConfigHasApiServerEnabled(raw) && legacyPort === null) return raw
     const lines = raw.split('\n')
     const out = []
     let platformsFound = false
@@ -18292,17 +18651,30 @@ const handlers = {
         i++
         const accumulated = []
         let skipping = false
+        let apiServerFound = false
         while (i < lines.length) {
           const l = lines[i]
           const t = l.replace(/\s+$/, '')
           const ind = t.length - t.trimStart().length
           if (ind === 0 && t !== '') break
-          if (ind <= 2) skipping = t.trimStart().startsWith('api_server:')
-          if (!skipping) accumulated.push(l)
+          if (ind <= 2 && t && !t.trimStart().startsWith('#')) {
+            skipping = t.trimStart().startsWith('api_server:')
+            if (skipping) {
+              apiServerFound = true
+              accumulated.push(l, '    enabled: true')
+              if (legacyPort !== null) accumulated.push(`    port: ${legacyPort}`)
+              i++
+              continue
+            }
+          }
+          // 只替换 enabled，保留新版原生 host/port、认证和其他未知字段。
+          if (!(skipping && ind === 4 && t.trimStart().startsWith('enabled:'))) accumulated.push(l)
           i++
         }
-        out.push('  api_server:')
-        out.push('    enabled: true')
+        if (!apiServerFound) {
+          out.push('  api_server:', '    enabled: true')
+          if (legacyPort !== null) out.push(`    port: ${legacyPort}`)
+        }
         out.push(...accumulated)
         continue
       }
@@ -18314,6 +18686,7 @@ const handlers = {
       out.push('platforms:')
       out.push('  api_server:')
       out.push('    enabled: true')
+      if (legacyPort !== null) out.push(`    port: ${legacyPort}`)
     }
     let content = out.join('\n')
     if (!content.endsWith('\n')) content += '\n'
@@ -18324,11 +18697,10 @@ const handlers = {
     const configPath = path.join(hermesHome(), 'config.yaml')
     if (!fs.existsSync(configPath)) return
     const raw = fs.readFileSync(configPath, 'utf8')
-    if (this._hermesConfigHasApiServerEnabled(raw)) return
-    const ts = Math.floor(Date.now() / 1000)
-    const backupPath = configPath + `.bak-${ts}`
-    try { fs.writeFileSync(backupPath, raw) } catch {}
     const patched = this._hermesPatchYamlEnsureApiServer(raw)
+    if (patched === raw) return
+    const backupPath = configPath + `.bak-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`
+    try { fs.writeFileSync(backupPath, raw) } catch {}
     fs.writeFileSync(configPath, patched)
     console.warn(`[hermes guardian] patched config.yaml (api_server.enabled). Backup: ${backupPath}`)
   },
@@ -18549,8 +18921,9 @@ const handlers = {
 
   async hermes_dashboard_probe() {
     const port = handlers._hermesDashboardPort()
-    const cli = handlers._hermesDashboardCliStatus(port)
-    const running = cli?.running || await _tcpProbe('127.0.0.1', port, 800)
+    const cli = await handlers._hermesDashboardCliStatus(port)
+    // 官方 CLI 会列出其他 HOME/端口，不能覆盖本实例配置端口的实际结果。
+    const running = await _tcpProbe('127.0.0.1', port, 800)
     return { running, port, status: cli?.output || null }
   },
 
@@ -18569,7 +18942,7 @@ const handlers = {
           if (indent === 0) { inDashboard = t === 'dashboard:' || t.startsWith('dashboard:'); continue }
           if (inDashboard && t.startsWith('port:')) {
             const p = parseInt(t.replace(/^port:/, '').trim(), 10)
-            if (Number.isFinite(p) && p > 0) { port = p; break }
+            if (Number.isFinite(p) && p > 0 && p <= 65535) { port = p; break }
           }
         }
       }
@@ -18577,35 +18950,26 @@ const handlers = {
     return port
   },
 
-  _hermesDashboardCliStatus(port) {
-    const attempts = [
-      runHermesSilent('hermes', ['dashboard', '--status']),
-      runHermesSilent('hermes', ['dashboard', 'status']),
-    ]
-    for (const result of attempts) {
+  async _hermesDashboardCliStatus(port) {
+    for (const args of [['dashboard', '--status'], ['dashboard', 'status']]) {
+      const result = await runHermesSilent('hermes', args)
       if (!result.ok) continue
       const output = result.stdout || ''
-      const lower = output.toLowerCase()
-      if (lower.includes('not running') || lower.includes('stopped') || lower.includes('inactive') || lower.includes('no dashboard')) {
-        return { running: false, output }
-      }
-      if (lower.includes('running') || lower.includes('listening') || lower.includes('http://') || lower.includes('https://') || lower.includes(String(port))) {
-        return { running: true, output }
-      }
+      const running = parseHermesDashboardStatus(output)
+      return running === null ? null : { running, output }
     }
     return null
   },
 
-  _hermesDashboardCliStop() {
-    return runHermesSilent('hermes', ['dashboard', '--stop']).ok
-      || runHermesSilent('hermes', ['dashboard', 'stop']).ok
+  async _hermesDashboardCliStop() {
+    return (await runHermesSilent('hermes', ['dashboard', '--stop'])).ok
+      || (await runHermesSilent('hermes', ['dashboard', 'stop'])).ok
   },
 
   async hermes_dashboard_start() {
     const port = handlers._hermesDashboardPort()
-    // 1. 已运行？
-    const cli = handlers._hermesDashboardCliStatus(port)
-    if (cli?.running || await _tcpProbe('127.0.0.1', port, 500)) {
+    // 1. 只认本实例配置端口；CLI 全局列表包含其他 HOME/端口。
+    if (await _tcpProbe('127.0.0.1', port, 500)) {
       return { started: true, already_running: true, port }
     }
     // 2. 清残留 PID
@@ -18634,7 +18998,7 @@ const handlers = {
         if (eq > 0) envVars[t.slice(0, eq).trim()] = t.slice(eq + 1).trim()
       }
     }
-    const child = spawn('hermes', ['dashboard', '--no-open'], {
+    const child = spawn('hermes', ['dashboard', '--no-open', '--port', String(port)], {
       cwd: home,
       env: envVars,
       stdio: ['ignore', out, err],
@@ -18682,7 +19046,7 @@ const handlers = {
 
   async hermes_dashboard_stop() {
     const port = handlers._hermesDashboardPort()
-    const cliStopped = handlers._hermesDashboardCliStop()
+    const cliStopped = await handlers._hermesDashboardCliStop()
     if (!handlers._dashPid) {
       if (cliStopped) {
         for (let i = 0; i < 20; i++) {
@@ -18711,8 +19075,8 @@ const handlers = {
     }
   },
 
-  hermes_toolsets_list() {
-    const r = runHermesSilent('hermes', ['tools', 'list', '--platform', 'cli'])
+  async hermes_toolsets_list() {
+    const r = await runHermesSilent('hermes', ['tools', 'list', '--platform', 'cli'])
     return { raw: r.ok ? r.stdout : '' }
   },
 
@@ -18822,7 +19186,7 @@ const handlers = {
   async hermes_detect_environments() {
     const result = { wsl2: { available: false }, docker: { available: false } }
     // Docker
-    const dockerR = runHermesSilent('docker', ['info', '--format', '{{.ServerVersion}}'])
+    const dockerR = await runHermesSilent('docker', ['info', '--format', '{{.ServerVersion}}'])
     if (dockerR.ok) {
       result.docker.available = true
       result.docker.version = dockerR.stdout
@@ -18847,12 +19211,12 @@ const handlers = {
   // Hermes Sessions / Logs / Skills / Memory
   // =========================================================================
 
-  hermes_sessions_list({ source, limit, profile } = {}) {
+  async hermes_sessions_list({ source, limit, profile } = {}) {
     const args = []
     if (profile) args.push('--profile', profile)
     args.push('sessions', 'export', '-')
     if (source) args.push('--source', source)
-    const r = runHermesSilent('hermes', args)
+    const r = await runHermesSilent('hermes', args)
     if (!r.ok) return []
     const sessions = []
     for (const line of r.stdout.split('\n')) {
@@ -18892,13 +19256,13 @@ const handlers = {
     return sessions
   },
 
-  hermes_sessions_summary_list({ source, limit, profile } = {}) {
+  async hermes_sessions_summary_list({ source, limit, profile } = {}) {
     const lim = Math.max(1, Math.min(Number(limit || 80), 500))
     const args = []
     if (profile) args.push('--profile', profile)
     args.push('sessions', 'list', '--limit', String(lim))
     if (source) args.push('--source', source)
-    const r = runHermesSilent('hermes', args)
+    const r = await runHermesSilent('hermes', args)
     if (!r.ok) return []
     const sessions = []
     let hasTitles = false
@@ -19007,12 +19371,12 @@ const handlers = {
     }
   },
 
-  hermes_session_detail({ sessionId, profile } = {}) {
+  async hermes_session_detail({ sessionId, profile } = {}) {
     if (!sessionId) throw new Error('sessionId is required')
     const args = []
     if (profile) args.push('--profile', profile)
     args.push('sessions', 'export', '-', '--session-id', sessionId)
-    const r = runHermesSilent('hermes', args)
+    const r = await runHermesSilent('hermes', args)
     if (!r.ok) throw new Error('Failed to read sessions')
     for (const line of r.stdout.split('\n')) {
       const t = line.trim()
@@ -19038,41 +19402,41 @@ const handlers = {
     throw new Error('Session not found')
   },
 
-  hermes_session_delete({ sessionId, profile } = {}) {
+  async hermes_session_delete({ sessionId, profile } = {}) {
     if (!sessionId) throw new Error('sessionId is required')
     const args = []
     if (profile) args.push('--profile', profile)
     args.push('sessions', 'delete', sessionId, '--yes')
-    const r = runHermesSilent('hermes', args)
+    const r = await runHermesSilent('hermes', args)
     if (!r.ok) throw new Error(`Failed to delete session: ${r.stderr || 'unknown error'}`)
     return 'ok'
   },
 
-  hermes_session_rename({ sessionId, title, profile } = {}) {
+  async hermes_session_rename({ sessionId, title, profile } = {}) {
     if (!sessionId || !title) throw new Error('sessionId and title are required')
     const args = []
     if (profile) args.push('--profile', profile)
     args.push('sessions', 'rename', sessionId, title)
-    const r = runHermesSilent('hermes', args)
+    const r = await runHermesSilent('hermes', args)
     if (!r.ok) throw new Error(`Failed to rename session: ${r.stderr || 'unknown error'}`)
     return 'ok'
   },
 
-  hermes_profiles_list() {
-    const r = runHermesSilent('hermes', ['profile', 'list'])
+  async hermes_profiles_list() {
+    const r = await runHermesSilent('hermes', ['profile', 'list'])
     if (!r.ok) return { active: 'default', profiles: [] }
     return parseHermesProfileListOutput(r.stdout)
   },
 
-  hermes_profile_use({ name } = {}) {
+  async hermes_profile_use({ name } = {}) {
     if (!name) throw new Error('name is required')
-    const r = runHermesSilent('hermes', ['profile', 'use', name])
+    const r = await runHermesSilent('hermes', ['profile', 'use', name])
     if (!r.ok) throw new Error(`Failed to switch profile: ${r.stderr || 'unknown error'}`)
     return 'ok'
   },
 
-  hermes_logs_list() {
-    const r = runHermesSilent('hermes', ['logs', 'list'])
+  async hermes_logs_list() {
+    const r = await runHermesSilent('hermes', ['logs', 'list'])
     if (!r.ok) {
       // Fallback: read log files from ~/.hermes/logs/
       const logsDir = path.join(hermesHome(), 'logs')
@@ -19098,11 +19462,11 @@ const handlers = {
     return files
   },
 
-  hermes_logs_read({ name, lines = 200, level } = {}) {
+  async hermes_logs_read({ name, lines = 200, level } = {}) {
     if (!name) throw new Error('log file name is required')
     const args = ['logs', name, '-n', String(lines)]
     if (level) args.push('--level', level)
-    const r = runHermesSilent('hermes', args)
+    const r = await runHermesSilent('hermes', args)
     if (!r.ok) {
       // Fallback: direct file read
       const logPath = path.join(hermesHome(), 'logs', name)
@@ -19367,7 +19731,7 @@ const handlers = {
     _hermesInstallRunning = true
     try {
       await installHermesManagedSource(readPanelConfig())
-      const ver = runHermesVersionSilent()
+      const ver = await runHermesVersionSilent()
       if (!ver.ok) throw new Error('升级完成但验证失败: hermes version 不可用')
       return `升级完成，当前稳定版: Hermes Agent ${HERMES_STABLE_VERSION} (${HERMES_STABLE_TAG})`
     } finally {
@@ -19419,10 +19783,19 @@ const handlers = {
   install_clawapp() { throw new Error('Web 模式不支持安装 ClawApp 移动端，请使用桌面客户端') },
   get_clawapp_status() { return { installed: false, mode: 'web' } },
 
-  // —— 渠道插件状态/操作（暂未在 Node 实现，先抛友好错误）——
-  check_weixin_plugin_status() {
-    // 静默返回未安装即可，UI 会显示"未安装"
-    return { installed: false, version: null, plugin: null }
+  // —— 渠道插件状态：旧 extensions 和新版原生注册表共用检测链路 ——
+  async check_weixin_plugin_status() {
+    const status = await handlers.get_channel_plugin_status({ pluginId: 'openclaw-weixin' })
+    let installedVersion = null, latestVersion = null
+    if (status.installed || status.builtin) {
+      try { installedVersion = JSON.parse(fs.readFileSync(path.join(status.path, 'package.json'), 'utf8')).version || null } catch {}
+    }
+    try {
+      const response = await fetch('https://registry.npmjs.org/@tencent-weixin/openclaw-weixin/latest', { signal: AbortSignal.timeout(8000) })
+      if (response.ok) latestVersion = (await response.json()).version || null
+    } catch {}
+    return { ...status, installedVersion, latestVersion, extensionDir: status.path,
+      ...buildWeixinCompatibilityStatus(readWeixinHostVersion(), installedVersion) }
   },
   async diagnose_channel({ platform, accountId } = {}) {
     if (!platform || !String(platform).trim()) throw new Error('platform 不能为空')
@@ -19465,8 +19838,39 @@ const handlers = {
     }
     return result
   },
-  run_channel_action() {
-    throw new Error('Web 模式暂未实现渠道操作，请使用桌面客户端')
+  async run_channel_action({ platform, action, version } = {}, onEvent = () => {}) {
+    const emit = (event, values) => onEvent({ event, payload: { platform, action, ...values } })
+    const channel = platformStorageKey(platform)
+    if (channel === 'openclaw-weixin' && action === 'install') {
+      const current = await handlers.check_weixin_plugin_status()
+      if (!current.installAllowed) throw new Error(current.installError)
+      const target = resolveWeixinInstallVersion(current.hostVersion, version)
+      return handlers.install_channel_plugin({ packageName: '@tencent-weixin/openclaw-weixin', pluginId: channel, version: target }, event => {
+        if (event.event === 'plugin-log') emit('channel-action-log', { message: event.payload, kind: 'info' })
+        if (event.event === 'plugin-progress') emit('channel-action-progress', { progress: event.payload })
+      }, true, true)
+    }
+    if (action !== 'login' || !['openclaw-weixin', 'zalouser', 'whatsapp'].includes(channel)) throw new Error('不支持的渠道操作')
+    let pendingLine = ''
+    const onOutput = chunk => {
+      pendingLine += chunk
+      const lines = pendingLine.split(/\r?\n/)
+      pendingLine = lines.pop() || ''
+      for (const line of lines) emit('channel-action-log', { message: redactPluginOutput(line), kind: 'info' })
+    }
+    const result = await runOpenclawCaptured(['channels', 'login', '--channel', channel], { timeoutMs: 300000, onOutput })
+    if (pendingLine) emit('channel-action-log', { message: redactPluginOutput(pendingLine), kind: 'info' })
+    const output = redactPluginOutput(openclawResultOutput(result))
+    if (result.status !== 0) throw new Error(`渠道登录失败（退出码 ${result.status}）\n${output}`)
+    if (channel === 'openclaw-weixin') {
+      const cfg = readOpenclawConfigOptional()
+      cfg.channels ||= {}
+      cfg.channels[channel] ||= {}
+      cfg.channels[channel].enabled = true
+      writeOpenclawConfigFile(cfg)
+    }
+    emit('channel-action-progress', { progress: 100 })
+    return output || '操作完成'
   },
   repair_qqbot_channel_setup() {
     throw new Error('Web 模式暂未实现 QQ Bot 自动修复，请使用桌面客户端')
@@ -19822,6 +20226,7 @@ function _initApi() {
   setInterval(() => {
     const now = Date.now()
     pruneDshEmbedSessions(now)
+    pruneOpenCodeEmbedSessions(now)
     for (const [token, session] of _sessions) {
       if (now > session.expires) _sessions.delete(token)
     }
@@ -20220,6 +20625,7 @@ async function _apiMiddleware(req, res, next) {
     fs.writeFileSync(PANEL_CONFIG_PATH, JSON.stringify(cfg, null, 2))
     invalidateConfigCache()
     _sessions.clear()
+    revokeWebEmbedCapabilities()
     const token = crypto.randomUUID()
     _sessions.set(token, { expires: Date.now() + SESSION_TTL })
     res.setHeader('Set-Cookie', `clawpanel_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_TTL / 1000}`)
@@ -20258,7 +20664,14 @@ async function _apiMiddleware(req, res, next) {
       return
     }
     const args = await readBody(req)
+    if (!isAuthenticated(req)) {
+      res.statusCode = 401
+      res.setHeader('Content-Type', 'application/json')
+      res.end(JSON.stringify({ error: '未登录' }))
+      return
+    }
     const cfg = readPanelConfig()
+    const previous = { ...cfg }
     if (args.enable) {
       delete cfg.accessPassword
       delete cfg.mustChangePassword
@@ -20269,6 +20682,7 @@ async function _apiMiddleware(req, res, next) {
     }
     fs.writeFileSync(PANEL_CONFIG_PATH, JSON.stringify(cfg, null, 2))
     invalidateConfigCache()
+    if (webEmbedAuthChanged(previous, cfg)) revokeWebEmbedCapabilities()
     res.setHeader('Content-Type', 'application/json')
     res.end(JSON.stringify({ success: true }))
     return
@@ -20276,7 +20690,10 @@ async function _apiMiddleware(req, res, next) {
 
   if (cmd === 'auth_logout') {
     const cookies = parseCookies(req)
+    const session = _sessions.get(cookies.clawpanel_session)
     if (cookies.clawpanel_session) _sessions.delete(cookies.clawpanel_session)
+    // 无密码模式的放行不等于已登录；无效/过期 Cookie 的 logout 不得撤销他人能力。
+    if (session && Date.now() <= session.expires) revokeWebEmbedCapabilities()
     res.setHeader('Set-Cookie', 'clawpanel_session=; Path=/; HttpOnly; Max-Age=0')
     res.setHeader('Content-Type', 'application/json')
     res.end(JSON.stringify({ success: true }))
@@ -20292,6 +20709,32 @@ async function _apiMiddleware(req, res, next) {
   }
 
   const activeInst = getActiveInstance()
+
+  if (cmd === 'channel_plugin_install_stream' || cmd === 'channel_action_stream') {
+    const args = await readBody(req)
+    if (activeInst.type !== 'local' && activeInst.endpoint && !ALWAYS_LOCAL.has(cmd)) {
+      await proxyStreamToInstance(activeInst, cmd, args, req, res)
+    } else {
+      res.setHeader('Content-Type', 'application/x-ndjson')
+      res.setHeader('Cache-Control', 'no-cache')
+      res.setHeader('X-Accel-Buffering', 'no')
+      res.flushHeaders?.()
+      const send = event => { if (!res.destroyed) res.write(JSON.stringify(event) + '\n') }
+      const heartbeat = setInterval(() => send({ event: 'heartbeat' }), 10000)
+      try {
+        const result = cmd === 'channel_action_stream'
+          ? await handlers.run_channel_action(args, send)
+          : await handlers.install_channel_plugin(args, send)
+        send({ event: 'result', result })
+      } catch (error) {
+        send({ event: 'error', error: redactPluginOutput(error.message) })
+      } finally {
+        clearInterval(heartbeat)
+        res.end()
+      }
+    }
+    return
+  }
 
   if (cmd === 'hermes_agent_run_stream') {
     const args = await readBody(req)
@@ -20328,12 +20771,22 @@ async function _apiMiddleware(req, res, next) {
   }
 
   try {
+    const authGeneration = _webEmbedAuthGeneration
     const args = await readBody(req)
-    const result = await handler(args)
+    const embedCommand = cmd === 'dsh_embed_session' || cmd === 'opencode_embed_session'
+    if ((embedCommand && authGeneration !== _webEmbedAuthGeneration)
+      || ((embedCommand || cmd === 'auth_set_password' || cmd === 'write_panel_config') && !isAuthenticated(req))) {
+      res.statusCode = 401
+      res.setHeader('Content-Type', 'application/json')
+      res.end(JSON.stringify({ error: '面板认证状态已更新，请重新登录或刷新工作台' }))
+      return
+    }
+    // Hermes 启动/聊天等 handler 会调用同表方法，保持对象方法的 this 绑定。
+    const result = await handler.call(handlers, args)
     res.setHeader('Content-Type', 'application/json')
     res.end(JSON.stringify(result))
   } catch (e) {
-    res.statusCode = 500
+    res.statusCode = e.code === 'EMBED_AUTH_CHANGED' ? 401 : 500
     res.setHeader('Content-Type', 'application/json')
     res.end(JSON.stringify({ error: e.message || String(e) }))
   }
@@ -20344,7 +20797,7 @@ export function _isWebSocketAuthorized(req) {
   return isAuthenticated(req)
 }
 
-export { _initApi, _apiMiddleware, nodeVersionSatisfiesRequirement }
+export { _initApi, _apiMiddleware, nodeVersionSatisfiesRequirement, isOpenCodeEmbedRequest, isDshEmbedRequest }
 
 export function devApiPlugin() {
   let _inited = false
@@ -20366,11 +20819,13 @@ export function devApiPlugin() {
     configureServer(server) {
       ensureInit()
       attachDshUpgrade(server)
+      server.httpServer?.once('close', () => { _disposePiRuntime().catch(error => console.warn('[pi]', error.message)) })
       server.middlewares.use(_apiMiddleware)
     },
     configurePreviewServer(server) {
       ensureInit()
       attachDshUpgrade(server)
+      server.httpServer?.once('close', () => { _disposePiRuntime().catch(error => console.warn('[pi]', error.message)) })
       server.middlewares.use(_apiMiddleware)
     },
   }

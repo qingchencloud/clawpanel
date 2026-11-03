@@ -1,0 +1,52 @@
+/* 邀请弹窗主界面；海报布局由独立样式保持。 */
+[data-invitation-dialog]{padding:16px;box-sizing:border-box}
+[data-invitation-dialog] .invitation-modal{box-sizing:border-box;width:680px;max-width:100%;max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);padding:26px 28px 18px;border:1px solid var(--border-primary,#e5e7eb);border-radius:16px;background:var(--bg-primary,#fff);color:var(--text-primary);overflow:auto;overscroll-behavior:contain;text-align:left;scrollbar-gutter:stable}
+.invitation-heading{padding-right:28px;margin-bottom:8px}
+.invitation-eyebrow{display:inline-block;margin:0 0 9px;padding:3px 8px;border-radius:5px;background:var(--bg-tertiary);color:var(--accent);font-size:11px;font-weight:550}
+.invitation-heading h2{margin:0;font-size:26px;line-height:1.3;font-weight:650;letter-spacing:-.3px}
+.invitation-account{margin:0 0 5px;font-size:11px;color:var(--text-tertiary);overflow-wrap:anywhere}
+.invitation-description{margin:0 0 16px;color:var(--text-secondary);font-size:15px;line-height:1.6}
+.invitation-rewards{margin:0 0 20px}
+.invitation-reward-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.invitation-reward-item{min-width:0;padding:16px 18px;border:1px solid var(--border-primary);border-radius:10px;background:var(--bg-secondary)}
+.invitation-reward-item>span{font-size:14px;color:var(--text-secondary)}
+.invitation-reward-amount{display:flex;align-items:baseline;gap:8px;min-width:0;margin-top:7px}
+.invitation-reward-amount strong{min-width:0;color:var(--accent);font-size:42px;font-weight:650;line-height:1.2;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.invitation-reward-amount>span{flex:none;color:var(--text-secondary);font-size:14px}
+.invitation-reward-item small{display:block;margin-top:6px;color:var(--text-tertiary);font-size:11px;line-height:1.5}
+.invitation-campaign-guidance{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-top:10px}
+.invitation-campaign-guidance p{flex:1;min-width:0;margin:0;color:var(--text-tertiary);font-size:12px;line-height:1.7}
+.invitation-rule-link{flex:none;border:0;background:transparent;color:var(--accent);font:inherit;font-size:12px;line-height:1.7;padding:0;cursor:pointer;text-decoration:none;text-underline-offset:3px}
+.invitation-rule-link:hover{text-decoration:underline}
+.invitation-personal label{display:block;margin:0 0 7px;font-size:13px;font-weight:600;color:var(--text-secondary)}
+.invitation-personal input{box-sizing:border-box;display:block;width:100%;min-width:0;height:44px;padding:9px 12px;border:1px solid var(--border-primary);border-radius:8px;background:var(--bg-secondary);color:var(--text-primary);font:inherit;font-size:14px;line-height:1.5;text-overflow:ellipsis}
+.invitation-primary-actions{display:flex;flex-wrap:wrap;gap:9px;margin:11px 0 0}
+.invitation-primary-actions .btn{flex:1 1 auto;min-width:0;min-height:40px;justify-content:center;text-decoration:none;font-size:14px}
+.invitation-copy-details{margin-top:14px;border:1px solid var(--border-primary);border-radius:8px;overflow:hidden}
+.invitation-copy-details summary,.invitation-community summary{cursor:pointer;padding:10px 12px;color:var(--text-secondary);font-size:13px;line-height:1.5}
+.invitation-copy-preview{padding:0 14px 13px;overflow-wrap:anywhere}
+.invitation-copy-preview strong{display:block;font-size:12px;font-weight:600;line-height:1.6}
+.invitation-copy-preview p{margin:5px 0 0;color:var(--text-secondary);font-size:12px;line-height:1.6}
+.invitation-offer{margin:0;padding:12px 14px;border:1px solid var(--border-primary);border-radius:10px;background:var(--bg-secondary);font-size:14px;line-height:1.65}
+.invitation-reward-note,.invitation-support-note{color:var(--text-tertiary);font-size:12px;line-height:1.65;margin:10px 0 0}
+.invitation-generic-share{display:grid;gap:8px;justify-items:start;margin-top:10px;padding:10px 12px;border:1px solid var(--border-primary);border-radius:8px;background:var(--bg-tertiary)}
+.invitation-generic-text{margin:0;color:var(--text-secondary);font-size:12px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}
+.invitation-feedback{min-height:17px;margin:6px 0;font-size:11px;line-height:1.5}
+.invitation-feedback[data-state=success]{color:var(--success,#16834e)}
+.invitation-feedback[data-state=error]{color:var(--error,#d04444)}
+.invitation-support-section{border-top:1px solid var(--border-primary);padding-top:14px}
+.invitation-support-section h3{margin:0 0 10px;font-size:13px;font-weight:550;color:var(--text-secondary)}
+.invitation-support{display:flex;align-items:center;flex-wrap:wrap;gap:10px}
+.invitation-support a{display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:6px 12px;border:1px solid var(--border-primary);border-radius:6px;color:var(--text-secondary);text-decoration:none;font-size:12px}
+.invitation-support .btn{min-height:32px;font-size:12px;padding:6px 12px}
+.invitation-support a:hover,.invitation-community a:hover{color:var(--accent);text-decoration:underline}
+.invitation-community{margin-top:12px;border:1px solid var(--border-primary);border-radius:8px;color:var(--text-secondary)}
+.invitation-community nav{display:flex;flex-wrap:wrap;gap:10px 20px;padding:2px 12px 12px}
+.invitation-community a{color:var(--text-secondary);text-decoration:none;font-size:12px}
+.invitation-footer{margin-top:12px;text-align:right}
+.invitation-footer button{border:0;background:transparent;color:var(--text-tertiary);font:inherit;font-size:11px;padding:5px 0;cursor:pointer}
+[data-invitation-dialog] :focus-visible{outline:2px solid var(--accent,#6366f1);outline-offset:3px}
+@media(max-width:600px){[data-invitation-dialog] .invitation-modal:not(.invitation-poster-host){padding:20px;border-radius:14px}.invitation-heading h2{font-size:23px}.invitation-campaign-guidance{flex-direction:column;gap:6px}.invitation-reward-item{padding:14px}.invitation-reward-amount strong{font-size:29px}.invitation-primary-actions{gap:8px}.invitation-primary-actions .btn{padding-inline:10px}.invitation-reward-amount{gap:6px}}
+@media(max-width:360px){[data-invitation-dialog]{padding:10px}[data-invitation-dialog] .invitation-modal:not(.invitation-poster-host){padding:18px;max-height:calc(100dvh - 20px)}.invitation-reward-grid{gap:8px}.invitation-reward-item{padding:12px 10px}.invitation-reward-item>span{font-size:11px}.invitation-reward-amount strong{font-size:26px}.invitation-reward-amount>span{font-size:11px}}
+@media(min-width:601px) and (max-height:600px){[data-invitation-dialog] .invitation-modal:not(.invitation-poster-host){padding:18px 24px}.invitation-heading h2{font-size:23px}.invitation-eyebrow{margin-bottom:5px}.invitation-description{margin-bottom:12px}.invitation-rewards{margin-bottom:14px}.invitation-reward-item{padding:12px 16px}.invitation-reward-amount strong{font-size:29px}.invitation-campaign-guidance{margin-top:8px}}
+@media(min-width:601px) and (max-height:600px){.invitation-description{font-size:13px}.invitation-reward-item>span,.invitation-reward-amount>span{font-size:13px}.invitation-campaign-guidance p,.invitation-rule-link{font-size:11px}.invitation-personal label{font-size:12px}.invitation-personal input{height:42px;font-size:13px}.invitation-primary-actions .btn{min-height:34px;font-size:12px}.invitation-copy-details summary,.invitation-community summary{font-size:12px}}

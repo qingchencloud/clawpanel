@@ -1,0 +1,9 @@
+.platform-onboarding{display:grid;gap:8px;min-width:0}
+.platform-onboarding h3,.platform-onboarding p{margin:0;overflow-wrap:anywhere}
+.platform-onboarding p{line-height:1.65}
+.platform-onboarding .form-hint{line-height:1.6}
+.platform-onboarding-notice{color:var(--warning);font-size:var(--font-size-sm)}
+.platform-guest-rewards>summary{cursor:pointer;padding:12px 0;color:var(--text-secondary);font-size:13px}
+.platform-guest-rewards>summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.platform-guest-rewards[open]>.platform-benefit-guide{margin-top:8px}
+@media(max-width:760px){.platform-onboarding{gap:7px}}
