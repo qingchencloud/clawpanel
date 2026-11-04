@@ -1,0 +1,14 @@
+model:
+  default: gpt-5.5
+  provider: custom:clawpanel
+  context_length: 131072
+  base_url: https://example.test/v1
+hooks:
+  enabled: true
+providers:
+  clawpanel:
+    name: ClawPanel Custom
+    base_url: https://example.test/v1
+    key_env: CUSTOM_API_KEY
+    default_model: gpt-5.5
+    api_mode: chat_completions

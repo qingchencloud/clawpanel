@@ -44,8 +44,14 @@ export function modelApiTypeOptions(value) {
   return [{ value: normalized, label: `${normalized} (OpenClaw)` }, ...API_TYPES]
 }
 
+export function splitModelReference(value) {
+  const [provider, ...modelParts] = String(value || '').split('/')
+  return [provider, modelParts.join('/')]
+}
+
 // 服务商快捷预设
 export const PROVIDER_PRESETS = [
+  { key: 'atlascloud', label: 'Atlas Cloud', baseUrl: 'https://api.atlascloud.ai/v1', api: 'openai-completions', site: 'https://www.atlascloud.ai/', desc: 'OpenAI-compatible model API' },
   { key: 'shengsuanyun', label: '胜算云', baseUrl: 'https://router.shengsuanyun.com/api/v1', api: 'openai-completions', site: 'https://www.shengsuanyun.com/', desc: '国内知名 AI 模型聚合平台，支持多种主流模型' },
   { key: 'siliconflow', label: '硅基流动', baseUrl: 'https://api.siliconflow.cn/v1', api: 'openai-completions', site: 'https://cloud.siliconflow.cn/', desc: '高性价比推理平台，支持 DeepSeek、Qwen 等开源模型' },
   { key: 'volcengine', label: '火山引擎', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', api: 'openai-completions', site: 'https://www.volcengine.com/', desc: '字节跳动旗下云平台，支持豆包等模型' },
@@ -75,6 +81,9 @@ export const SHENGSUANYUN = {
 
 // 常用模型预设（按服务商分组）
 export const MODEL_PRESETS = {
+  atlascloud: [
+    { id: 'deepseek-ai/deepseek-v4-pro', name: 'DeepSeek V4 Pro', reasoning: true },
+  ],
   openai: [
     { id: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000 },
     { id: 'gpt-4o-mini', name: 'GPT-4o Mini', contextWindow: 128000 },
