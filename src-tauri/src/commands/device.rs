@@ -5,7 +5,8 @@ use sha2::{Digest, Sha256};
 use std::fs;
 
 const DEVICE_KEY_FILE: &str = "clawpanel-device-key.json";
-const MIN_GATEWAY_PROTOCOL: u8 = 3;
+const PREFERRED_GATEWAY_PROTOCOL: u8 = 4;
+const FALLBACK_MIN_GATEWAY_PROTOCOL: u8 = 3;
 const MAX_GATEWAY_PROTOCOL: u8 = 4;
 const SCOPES: &[&str] = &[
     "operator.admin",
@@ -99,7 +100,17 @@ pub fn create_connect_frame(
     gateway_token: String,
     gateway_password: Option<String>,
     challenge_ts: Option<u64>,
+    min_protocol: Option<u8>,
+    max_protocol: Option<u8>,
 ) -> Result<Value, String> {
+    let min_protocol = min_protocol.unwrap_or(PREFERRED_GATEWAY_PROTOCOL);
+    let max_protocol = max_protocol.unwrap_or(MAX_GATEWAY_PROTOCOL);
+    if ![FALLBACK_MIN_GATEWAY_PROTOCOL, PREFERRED_GATEWAY_PROTOCOL].contains(&min_protocol)
+        || max_protocol != MAX_GATEWAY_PROTOCOL
+        || min_protocol > max_protocol
+    {
+        return Err("不支持的 Gateway 握手协议范围".into());
+    }
     let (device_id, pub_b64, signing_key) = get_or_create_key()?;
     let signed_at = challenge_ts.filter(|value| *value > 0).unwrap_or_else(|| {
         std::time::SystemTime::now()
@@ -146,9 +157,9 @@ pub fn create_connect_frame(
         "id": format!("connect-{:08x}-{:04x}", signed_at as u32, rand::random::<u16>()),
         "method": "connect",
         "params": {
-            // 协议握手范围声明：下限 3 用于继续兼容历史内核，上限 4 启用新版增量 delta 协议。
-            "minProtocol": MIN_GATEWAY_PROTOCOL,
-            "maxProtocol": MAX_GATEWAY_PROTOCOL,
+            // 新版 operator 要求 minProtocol=4；前端在协议错误时显式传入 3 回退。
+            "minProtocol": min_protocol,
+            "maxProtocol": max_protocol,
             "client": {
                 "id": "openclaw-control-ui",
                 "version": env!("CARGO_PKG_VERSION"),
@@ -181,7 +192,8 @@ mod tests {
 
     #[test]
     fn protocol_range_keeps_old_and_new_gateways_compatible() {
-        assert_eq!(MIN_GATEWAY_PROTOCOL, 3);
+        assert_eq!(PREFERRED_GATEWAY_PROTOCOL, 4);
+        assert_eq!(FALLBACK_MIN_GATEWAY_PROTOCOL, 3);
         assert_eq!(MAX_GATEWAY_PROTOCOL, 4);
     }
 

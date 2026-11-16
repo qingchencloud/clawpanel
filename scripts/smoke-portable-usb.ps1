@@ -1,4 +1,4 @@
-# 面板仓库内的便携布局冒烟测试（开发自测用）。
+﻿# 面板仓库内的便携布局冒烟测试（开发自测用）。
 # U 盘版的正式打包 / 写盘 / 验收工具在专用仓库 clawpanel-portable
 # （https://github.com/qingchencloud/clawpanel-portable，本地 D:\Data\PC\clawpanel-portable），
 # 正式验收请用其 scripts/verify-windows.ps1。

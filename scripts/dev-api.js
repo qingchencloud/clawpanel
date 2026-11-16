@@ -23,7 +23,7 @@ import * as skillhubSdk from './lib/skillhub-sdk.js'
 import { createBackgroundJobQueue } from './media-background-queue.js'
 import { normalizeModelApiType } from '../src/lib/model-presets.js'
 import {
-  OPENCLAW_PROTOCOL_RANGE,
+  OPENCLAW_PROTOCOL_PREFERRED_RANGE,
   buildDeviceAuthPayloadV3,
   resolveConnectSignedAt,
 } from '../src/lib/openclaw-gateway-compat.js'
@@ -3183,6 +3183,8 @@ export function buildOpenClawConnectFrame({
   gatewayPassword,
   challengeTs,
   keyData,
+  minProtocol = OPENCLAW_PROTOCOL_PREFERRED_RANGE.min,
+  maxProtocol = OPENCLAW_PROTOCOL_PREFERRED_RANGE.max,
   platform = process.platform === 'darwin' ? 'macos' : process.platform,
 }) {
   const { deviceId, publicKey, privateKey } = keyData
@@ -3207,8 +3209,8 @@ export function buildOpenClawConnectFrame({
     id: `connect-${idHex}-${rndHex}`,
     method: 'connect',
     params: {
-      minProtocol: OPENCLAW_PROTOCOL_RANGE.min,
-      maxProtocol: OPENCLAW_PROTOCOL_RANGE.max,
+      minProtocol,
+      maxProtocol,
       client: { id: 'openclaw-control-ui', version: '1.0.0', platform, deviceFamily: 'desktop', mode: 'ui' },
       role: 'operator', scopes: SCOPES, caps: [],
       auth: gatewayToken
@@ -11714,7 +11716,7 @@ function recoverMediaQueue() {
 // === API Handlers ===
 
 // === DeepSeek Harness（只允许回环监听，由 ClawPanel 认证层代管） ===
-const DSH_NODE_REQUIREMENT = '^22.19.0 || >=24.0.0'
+const DSH_NODE_REQUIREMENT = '>=24.9.0'
 const DSH_BUILD_PACKAGES = [
   '@deepseek-ai/dsh-subprocess-local',
   '@google/genai',
@@ -16193,12 +16195,14 @@ const handlers = {
     return { paired: !!paired[keyData.deviceId] }
   },
 
-  create_connect_frame({ nonce, gatewayToken, gatewayPassword, challengeTs }) {
+  create_connect_frame({ nonce, gatewayToken, gatewayPassword, challengeTs, minProtocol, maxProtocol }) {
     return buildOpenClawConnectFrame({
       nonce,
       gatewayToken,
       gatewayPassword,
       challengeTs,
+      minProtocol,
+      maxProtocol,
       keyData: getOrCreateDeviceKey(),
     })
   },

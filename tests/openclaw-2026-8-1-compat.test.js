@@ -13,6 +13,7 @@ import {
 } from '../src/lib/openclaw-agent-roster.js'
 import { syncExplicitModelPolicyAllow } from '../src/lib/openclaw-model-policy.js'
 import {
+  OPENCLAW_PROTOCOL_PREFERRED_RANGE,
   OPENCLAW_PROTOCOL_RANGE,
   buildDeviceAuthPayloadV3,
   isDeviceAuthDetailCode,
@@ -149,6 +150,7 @@ test('Web 与桌面后端均声明 8.1 注册表和 doctor 迁移支持', () => 
 test('8.1 握手复用 challenge.ts，7.1 challenge 缺少 ts 时仍回退本机时间', () => {
   assert.equal(resolveConnectSignedAt(1_800_000_000_123, 99), 1_800_000_000_123)
   assert.equal(resolveConnectSignedAt(undefined, 1_700_000_000_456), 1_700_000_000_456)
+  assert.deepEqual(OPENCLAW_PROTOCOL_PREFERRED_RANGE, { min: 4, max: 4 })
   assert.deepEqual(OPENCLAW_PROTOCOL_RANGE, { min: 3, max: 4 })
 
   assert.match(wsClient, /const challengeTs = msg\.payload\?\.ts/)
@@ -231,8 +233,8 @@ test('新安装和未知来源默认官方稳定版，同时保留汉化版切�
   assert.match(webBackend, /upgrade_openclaw\(\{ source = 'official'/)
   assert.match(servicesPage, /let detectedSource = 'official'/)
   assert.match(linuxDeploy, /OPENCLAW_SOURCE="\$\{OPENCLAW_SOURCE:-official\}"/)
-  assert.match(linuxDeploy, /OPENCLAW_OFFICIAL_RECOMMENDED_VERSION="2026\.10\.4"/)
-  assert.match(linuxDeploy, /OPENCLAW_CHINESE_RECOMMENDED_VERSION="2026\.7\.1-2-zh\.1"/)
+  assert.match(linuxDeploy, /OPENCLAW_OFFICIAL_RECOMMENDED_VERSION="2026\.11\.4"/)
+  assert.match(linuxDeploy, /OPENCLAW_CHINESE_RECOMMENDED_VERSION="2026\.11\.4-zh\.2"/)
   assert.match(dockerfile, /ARG OPENCLAW_PACKAGE=openclaw/)
-  assert.match(dockerfile, /ARG OPENCLAW_VERSION=2026\.10\.4/)
+  assert.match(dockerfile, /ARG OPENCLAW_VERSION=2026\.11\.4/)
 })

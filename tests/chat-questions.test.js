@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import { ChatQuestions, buildQuestionAnswers, normalizeQuestionRecord } from '../src/lib/chat-questions.js'
+import { OPENCLAW_PROTOCOL_PREFERRED_RANGE, OPENCLAW_PROTOCOL_RANGE } from '../src/lib/openclaw-gateway-compat.js'
 
 const record = (extra = {}) => ({
   id: 'request-1', sessionKey: 'agent:main:main', runId: 'run-1',
@@ -333,7 +334,7 @@ test('无关联 run 的独立提问结束后，不启动虚假的回复超时', 
 test('WsClient 的 question RPC 能力降级和写入参数精确匹配官方契约', async () => {
   const source = readFileSync(new URL('../src/lib/ws-client.js', import.meta.url), 'utf8')
     .replace(/^import[\s\S]*? from ['"][^'"\n]+['"]\r?\n/gm, '').replace(/^export /gm, '')
-  const context = vm.createContext({ console, crypto: { randomUUID: () => 'id' } })
+  const context = vm.createContext({ console, crypto: { randomUUID: () => 'id' }, OPENCLAW_PROTOCOL_PREFERRED_RANGE, OPENCLAW_PROTOCOL_RANGE })
   vm.runInContext(source + '\nglobalThis.Client = WsClient', context)
   const client = new context.Client()
   const calls = []

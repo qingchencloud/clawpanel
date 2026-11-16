@@ -11,16 +11,16 @@ const desktopConfig = readFileSync(new URL('../src-tauri/src/commands/config.rs'
 const desktopService = readFileSync(new URL('../src-tauri/src/commands/service.rs', import.meta.url), 'utf8')
 const chatPage = readFileSync(new URL('../src/pages/chat.js', import.meta.url), 'utf8')
 
-test('ClawPanel recommends official 2026.10.4 while preserving the Chinese correction baseline', () => {
-  assert.equal(policy.default.official.recommended, '2026.10.4')
-  assert.equal(policy.default.chinese.recommended, '2026.7.1-2-zh.1')
-  assert.match(featureCatalog, /official: '2026\.10\.4'/)
-  assert.match(featureCatalog, /chinese: '2026\.7\.1-2-zh\.1'/)
+test('ClawPanel recommends the current official and Chinese OpenClaw stable lines', () => {
+  assert.equal(policy.default.official.recommended, '2026.11.4')
+  assert.equal(policy.default.chinese.recommended, '2026.11.4-zh.2')
+  assert.match(featureCatalog, /official: '2026\.11\.4'/)
+  assert.match(featureCatalog, /chinese: '2026\.11\.4-zh\.2'/)
 })
 
 test('Linux deployment keeps the Chinese 2026.7.1 correction as an explicit option', () => {
   assert.match(linuxDeploy, /OPENCLAW_SOURCE="\$\{OPENCLAW_SOURCE:-official\}"/)
-  assert.match(linuxDeploy, /OPENCLAW_CHINESE_RECOMMENDED_VERSION="2026\.7\.1-2-zh\.1"/)
+  assert.match(linuxDeploy, /OPENCLAW_CHINESE_RECOMMENDED_VERSION="2026\.11\.4-zh\.2"/)
   assert.match(linuxDeploy, /OPENCLAW_SOURCE" = "chinese"/)
   assert.match(linuxDeploy, /@qingchencloud\/openclaw-zh@\$\{OPENCLAW_RECOMMENDED_VERSION\}/)
   assert.match(linuxDeploy, /\[ "\$major" -ge 25 \]/)
@@ -36,10 +36,11 @@ test('Linux deployment keeps the Chinese 2026.7.1 correction as an explicit opti
   assert.ok(npmInstall > runtimeGuard, 'Node runtime preflight must happen before npm installs OpenClaw')
 })
 
-test('Gateway connect frames retain a range that overlaps OpenClaw 2026.7.1 protocol v4', () => {
-  assert.match(webBackend, /minProtocol: OPENCLAW_PROTOCOL_RANGE\.min/)
-  assert.match(webBackend, /maxProtocol: OPENCLAW_PROTOCOL_RANGE\.max/)
-  assert.match(desktopDevice, /const MIN_GATEWAY_PROTOCOL: u8 = 3/)
+test('Gateway connect frames prefer protocol v4 and retain an explicit 3..4 fallback', () => {
+  assert.match(webBackend, /minProtocol = OPENCLAW_PROTOCOL_PREFERRED_RANGE\.min/)
+  assert.match(webBackend, /maxProtocol = OPENCLAW_PROTOCOL_PREFERRED_RANGE\.max/)
+  assert.match(desktopDevice, /const PREFERRED_GATEWAY_PROTOCOL: u8 = 4/)
+  assert.match(desktopDevice, /const FALLBACK_MIN_GATEWAY_PROTOCOL: u8 = 3/)
   assert.match(desktopDevice, /const MAX_GATEWAY_PROTOCOL: u8 = 4/)
 })
 

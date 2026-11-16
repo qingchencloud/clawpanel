@@ -5,7 +5,7 @@ Available from ClawPanel 0.22.0. Pi has an independent installation/configuratio
 ## First session
 
 1. Select **Pi** in the engine selector and open **Run & Configuration**.
-2. Install the managed runtime. This release pins `@earendil-works/pi-coding-agent@1.1.0`; complete Node.js >=22.19.0 and npm are required. For the current recommended OpenClaw version too, use Node.js 24.16.0+ within 24.x.
+2. Install the managed runtime. This release pins `@earendil-works/pi-coding-agent@1.5.2`; complete Node.js >=22.19.0 and npm are required. For the current recommended OpenClaw version too, use Node.js 24.16.0+ within 24.x.
 3. Open **General → Model Channels**, save the Base URL, API key and model IDs, then explicitly **sync to Pi**. Set the default model if desired.
 4. Configure a project directory, open **Workbench**, create a session and verify a complete response.
 
@@ -37,8 +37,8 @@ Management changes are blocked while a task is running. Uninstall removes only t
 
 ## Validation boundary
 
-The release includes three-platform CI with the actual Pi 1.1.0 CLI and a local simulated SSE provider, plus Node/Rust tests. Windows production-Web checks cover narrow layouts, switching models, denying/allowing file writes, stopping, drafts and history restoration. Simulated responses are not paid-provider validation.
+The release includes an isolated real-runtime check with the Pi 1.5.2 CLI and a local simulated SSE provider, plus Node/Rust tests. The check covers streaming chat, model switching, approval deny/allow, cancellation, history restoration and project isolation. Simulated responses are not paid-provider validation.
 
 Remaining acceptance includes the full Tauri GUI flow, Linux/macOS/ARM64 hardware, and real Responses/Anthropic/Google/Ollama calls. Attachments, arbitrary project extensions/MCP and full OpenClaw controls are not implemented or fully accepted here.
 
-See the detailed [Chinese guide](pi-integration.md), [parity review](pi-openclaw-parity-review.md), and [official fixed-version RPC documentation](https://github.com/earendil-works/pi/blob/v1.1.0/packages/coding-agent/docs/rpc.md).
+See the detailed [Chinese guide](pi-integration.md), [parity review](pi-openclaw-parity-review.md), and [official fixed-version RPC documentation](https://github.com/earendil-works/pi/blob/v1.5.2/packages/coding-agent/docs/rpc.md).

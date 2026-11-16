@@ -205,14 +205,15 @@ export const KERNEL_FLOOR = {
 export const KERNEL_TARGET = {
   openclaw: {
     // 内核协议在 5.12 升级到 v4（MIN_CLIENT_PROTOCOL_VERSION=4，新增增量 chat delta payloads），
-    // 面板通过 connect frame `[minProtocol=3, maxProtocol=4]` 同时兼容新旧内核。
+    // 面板优先发送 `[minProtocol=4, maxProtocol=4]`；新版 operator 要求下限为 4，
+    //   握手明确拒绝时再回退到 `[minProtocol=3, maxProtocol=4]` 兼容旧内核。
     //
     // ⚠️ 警告：这里的"协议 v3/v4"指 **Gateway WebSocket 握手帧协议版本**。
     //   不要与 dev-api.js 中设备签名 payload 字符串前缀 `v3|deviceId|...` 混淆——
     //   后者是 **device signature payload 字符串格式版本**，两者完全独立、互不相关。
     //   即使在 v4 握手协议下，签名 payload 字符串仍以 `v3|` 开头（这是 payload schema 版本）。
-    official: '2026.10.4',
-    chinese: '2026.7.1-2-zh.1',
+    official: '2026.11.4',
+    chinese: '2026.11.4-zh.2',
   },
   hermes: {
     default: '0.21.5',

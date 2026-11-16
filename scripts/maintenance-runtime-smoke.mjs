@@ -9,7 +9,7 @@ import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import { isManagedRenamedPiProcess } from './maintenance-pi-process.mjs'
-import { OPENCLAW_PROTOCOL_RANGE, buildDeviceAuthPayloadV3, resolveConnectSignedAt } from '../src/lib/openclaw-gateway-compat.js'
+import { OPENCLAW_PROTOCOL_PREFERRED_RANGE, buildDeviceAuthPayloadV3, resolveConnectSignedAt } from '../src/lib/openclaw-gateway-compat.js'
 const toolingRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 function collectCandidateSourceHashes(project) {
@@ -687,7 +687,7 @@ async function openclawConnect() {
   const scopes = ['operator.admin', 'operator.approvals', 'operator.pairing', 'operator.read', 'operator.write']
   const metadata = { deviceId, clientId: 'openclaw-control-ui', clientMode: 'ui', role: 'operator', scopes, signedAt, signatureToken: testKey, nonce: challenge.nonce, platform: 'linux', deviceFamily: 'desktop' }
   const signature = crypto.sign(null, Buffer.from(buildDeviceAuthPayloadV3(metadata)), keys.privateKey).toString('base64url')
-  const hello = await rpc('connect', { minProtocol: OPENCLAW_PROTOCOL_RANGE.min, maxProtocol: OPENCLAW_PROTOCOL_RANGE.max, client: { id: 'openclaw-control-ui', version: '1.0.0', platform: 'linux', deviceFamily: 'desktop', mode: 'ui' }, role: 'operator', scopes, caps: [], auth: { token: testKey }, device: { id: deviceId, publicKey: raw.toString('base64url'), signedAt, nonce: challenge.nonce, signature }, locale: 'zh-CN', userAgent: 'ClawPanel maintenance E2E' })
+  const hello = await rpc('connect', { minProtocol: OPENCLAW_PROTOCOL_PREFERRED_RANGE.min, maxProtocol: OPENCLAW_PROTOCOL_PREFERRED_RANGE.max, client: { id: 'openclaw-control-ui', version: '1.0.0', platform: 'linux', deviceFamily: 'desktop', mode: 'ui' }, role: 'operator', scopes, caps: [], auth: { token: testKey }, device: { id: deviceId, publicKey: raw.toString('base64url'), signedAt, nonce: challenge.nonce, signature }, locale: 'zh-CN', userAgent: 'ClawPanel maintenance E2E' })
   assert.ok([3, 4].includes(hello.protocol), 'Gateway 没有协商受支持协议')
   return { rpc, frames, hello }
 }

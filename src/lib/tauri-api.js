@@ -566,11 +566,13 @@ export const api = {
   deleteBackup: (name) => { invalidate('list_backups'); return invoke('delete_backup', { name }) },
 
   // 设备密钥 + Gateway 握手
-  createConnectFrame: (nonce, gatewayToken, gatewayPassword, challengeTs = null) => invoke('create_connect_frame', {
+  createConnectFrame: (nonce, gatewayToken, gatewayPassword, challengeTs = null, minProtocol = 4, maxProtocol = 4) => invoke('create_connect_frame', {
     nonce,
     gatewayToken,
     gatewayPassword: gatewayPassword || null,
     challengeTs,
+    minProtocol,
+    maxProtocol,
   }),
 
   // 设备配对

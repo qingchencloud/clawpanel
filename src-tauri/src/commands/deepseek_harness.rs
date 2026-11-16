@@ -381,11 +381,11 @@ pub async fn dsh_disconnect_official(epoch: u64) -> Result<Value, String> {
 }
 
 const DSH_PACKAGE_NAME: &str = "@deepseek-ai/dsh";
-const DSH_STABLE_VERSION: &str = "0.2.0-rc.2";
+const DSH_STABLE_VERSION: &str = "0.2.2-rc.1";
 const DSH_PREVIEW_VERSION: &str = "0.2.1-alpha.4";
 const DSH_PACKAGE_VERSION: &str = DSH_STABLE_VERSION;
 const DSH_DEFAULT_PORT: u16 = 3080;
-const DSH_NODE_REQUIREMENT: &str = "^22.19.0 || >=24.0.0";
+const DSH_NODE_REQUIREMENT: &str = ">=24.9.0";
 const DSH_STABLE_PNPM_VERSION: &str = "11.28.5";
 const DSH_PREVIEW_PNPM_VERSION: &str = "11.28.5";
 const DSH_BUILD_PACKAGES: &[&str] = &[
@@ -1705,7 +1705,7 @@ mod tests {
         ] {
             assert!(dsh_has_update(v, DSH_PACKAGE_VERSION), "{v}");
         }
-        for v in ["", "0.2.0-rc.2", "0.2.0-rc.3", "0.2.0", "0.2.1-alpha.1"] {
+        for v in ["", "0.2.2-rc.1", "0.2.2-rc.2", "0.2.2", "0.2.3-alpha.1"] {
             assert!(!dsh_has_update(v, DSH_PACKAGE_VERSION), "{v}");
         }
     }
@@ -1721,9 +1721,10 @@ mod tests {
             (DSH_PREVIEW_VERSION, DSH_PREVIEW_PNPM_VERSION)
         );
         assert!(dsh_release(Some("nightly")).is_err());
-        assert!(dsh_has_update(DSH_PACKAGE_VERSION, DSH_PREVIEW_VERSION));
+        // 当前 preview 版本低于稳定 RC，不能把它误报为可用升级。
+        assert!(!dsh_has_update(DSH_PACKAGE_VERSION, DSH_PREVIEW_VERSION));
         assert!(!dsh_has_update(DSH_PREVIEW_VERSION, DSH_PREVIEW_VERSION));
-        assert!(!dsh_has_update("0.2.1", DSH_PACKAGE_VERSION));
+        assert!(dsh_has_update("0.2.1", DSH_PACKAGE_VERSION));
     }
 
     #[test]

@@ -16,7 +16,7 @@
 
 - 推荐使用完整 Node.js **24.16.0+（24.x）** 和 npm，同时满足当前仓库 OpenClaw 官方推荐版本的运行要求。仅能启动面板的旧版 Node 不等于能启动所有引擎。
 - OpenClaw 的具体 Node 约束按安装版本检测；官方版/汉化版推荐版本以随包的 `openclaw-version-policy.json` 为准。新安装默认选择官方稳定版，汉化版仍可显式选择。
-- Pi 当前固定验收版本为 `@earendil-works/pi-coding-agent@1.1.0`，要求 Node.js >=22.19.0 和 npm。检查上游更新不代表自动升级到尚未验收的版本。
+- Pi 当前固定验收版本为 `@earendil-works/pi-coding-agent@1.5.2`，要求 Node.js >=22.19.0 和 npm。检查上游更新不代表自动升级到尚未验收的版本。
 - Hermes 还需要自身的 Python 环境及依赖，以它的设置向导为准。Docker 镜像预装 OpenClaw 不代表已安装 Hermes、DSH、OpenCode 和 Pi。
 
 ## 一处保存，按目标同步

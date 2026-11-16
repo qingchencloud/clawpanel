@@ -13,6 +13,8 @@ import { api, isTauriRuntime } from './tauri-api.js'
 import { t } from './i18n.js'
 import { KERNEL_TARGET } from './feature-catalog.js'
 import {
+  OPENCLAW_PROTOCOL_PREFERRED_RANGE,
+  OPENCLAW_PROTOCOL_RANGE,
   isDeviceAuthDetailCode,
   isDeviceAuthReason,
   isProtocolIncompatDetailCode,
@@ -101,6 +103,7 @@ export class WsClient {
     this._wsId = 0
     this._autoPairAttempts = 0
     this._authRetryCount = 0
+    this._protocolMin = OPENCLAW_PROTOCOL_PREFERRED_RANGE.min
     this._password = ''
     this._serverVersion = null
 
@@ -139,7 +142,7 @@ export class WsClient {
    * 取值优先级:
    *   1. hello payload 中显式回传的 protocol / protocolVersion / negotiatedProtocol 字段
    *   2. 按 serverVersion 推断:OpenClaw 内核 >= 2026.5.12 → v4,否则 v3
-   *      (ClawPanel 客户端永远声明 minProtocol=3, maxProtocol=4,所以协商只会是 3 或 4)
+   *      （优先声明 4..4；新版拒绝时回退到 3..4）
    *
    * 未握手时返回 null。
    */
@@ -195,6 +198,7 @@ export class WsClient {
     this._autoPairAttempts = 0
     this._token = token || ''
     this._password = opts.password || ''
+    this._protocolMin = OPENCLAW_PROTOCOL_PREFERRED_RANGE.min
     // 自动检测协议：如果页面通过 HTTPS 加载（反代场景），使用 wss://
     const proto = opts.secure ?? (typeof location !== 'undefined' && location.protocol === 'https:') ? 'wss' : 'ws'
     const nextUrl = `${proto}://${host}/ws?token=${encodeURIComponent(this._token)}`
@@ -228,6 +232,7 @@ export class WsClient {
     this._reconnectAttempts = 0
     this._autoPairAttempts = 0
     this._authRetryCount = 0
+    this._protocolMin = OPENCLAW_PROTOCOL_PREFERRED_RANGE.min
     this._missedHeartbeats = 0
     this._stopPing()
     this._stopHeartbeat()
@@ -362,6 +367,7 @@ export class WsClient {
         // 只有明确的协议协商错误才判定为内核协议不兼容。
         // `device signature invalid` 是签名参数/时间戳错误，不能再误报为“内核过旧”。
         if (isProtocolIncompatReason(reason)) {
+          if (this._retryWithLegacyProtocol(e.reason)) return
           console.warn('[ws] Gateway 协议不兼容（内核过旧）:', e.reason)
           this._intentionalClose = true
           this._flushPending()
@@ -503,6 +509,7 @@ export class WsClient {
 
         // 仅上游明确返回协议不兼容时才提示升级。
         if (!handled && isProtocolIncompatDetailCode(detailCode)) {
+          if (this._retryWithLegacyProtocol(detailCode)) return
           const friendly = kernelTooOldMessage()
           this._intentionalClose = true
           this._flushPending()
@@ -650,7 +657,14 @@ export class WsClient {
   async _sendConnectFrame(nonce, challengeTs = null) {
     this._handshaking = true
     try {
-      const frame = await api.createConnectFrame(nonce, this._token, this._password, challengeTs)
+      const frame = await api.createConnectFrame(
+        nonce,
+        this._token,
+        this._password,
+        challengeTs,
+        this._protocolMin,
+        OPENCLAW_PROTOCOL_PREFERRED_RANGE.max,
+      )
       if (this._ws && this._ws.readyState === WebSocket.OPEN) {
         console.log('[ws] 发送 connect frame')
         this._ws.send(JSON.stringify(frame))
@@ -659,6 +673,21 @@ export class WsClient {
       console.error('[ws] 生成 connect frame 失败:', e)
       this._handshaking = false
     }
+  }
+
+  _retryWithLegacyProtocol(reason = '') {
+    if (this._protocolMin <= OPENCLAW_PROTOCOL_RANGE.min) return false
+    this._protocolMin = OPENCLAW_PROTOCOL_RANGE.min
+    this._intentionalClose = false
+    this._clearChallengeTimer()
+    this._stopPing()
+    this._stopHeartbeat()
+    this._flushPending()
+    this._setConnected(false, 'reconnecting', '正在兼容旧版 Gateway 协议...')
+    console.warn('[ws] Gateway 拒绝 v4-only 握手，回退到 3..4:', reason)
+    this._closeWs()
+    this._doConnect()
+    return true
   }
 
   _handleConnectSuccess(payload) {
