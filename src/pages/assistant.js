@@ -2484,11 +2484,18 @@ function getSessionStatus(sessionId) {
 }
 
 // ── 带重试的 fetch ──
-async function fetchWithRetry(url, options, retries = 3) {
+// makeRequest 是 () => Promise<Response>（每次重试重新发起，代理/直连共用）
+async function fetchWithRetry(makeRequest, options, retries = 3) {
+  // 兼容旧签名：fetchWithRetry(url, options)
+  if (typeof makeRequest === 'string') {
+    const url = makeRequest
+    const opts = options || {}
+    return fetchWithRetry(() => fetch(url, opts), null, retries)
+  }
   const delays = [1000, 3000, 8000]
   for (let i = 0; i <= retries; i++) {
     try {
-      const resp = await fetch(url, options)
+      const resp = await makeRequest()
       if (resp.ok || resp.status < 500 || i >= retries) return resp
       // 5xx 服务端错误，静默重试
       await new Promise(r => setTimeout(r, delays[i]))
@@ -2498,6 +2505,63 @@ async function fetchWithRetry(url, options, retries = 3) {
       await new Promise(r => setTimeout(r, delays[i]))
     }
   }
+}
+
+// ── LLM API 请求通道 ──
+// 浏览器直连第三方 LLM API 会被 CORS 拦截（多数服务商不返回 Access-Control-Allow-Origin）。
+// 统一改走 ClawPanel 服务端授权代理：
+// - Tauri 模式：Rust reqwest 原生命令，无 CORS 问题，保持不变
+// - Web 模式：/__api/assistant_llm_proxy（同源请求，后端代为连接服务商并注入凭据）
+// 后端代理不是开放代理：目标 URL 必须是公网 http(s)，内网/环回地址一律拒绝（SSRF 防护）。
+function useProxyTransport(baseUrl) {
+  return !isTauriRuntime() && !isLocalBaseUrl(baseUrl)
+}
+
+function isLocalBaseUrl(baseUrl) {
+  try {
+    const u = new URL(String(baseUrl || ''))
+    const host = u.hostname.toLowerCase()
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host.endsWith('.localhost') || u.protocol === 'file:'
+  } catch { return false }
+}
+
+/**
+ * Web 模式下经由 ClawPanel 后端代理调用 LLM API（同源 /__api/assistant_llm_proxy）。
+ * - url: 服务商 API 端点（完整 URL 或相对端点路径 + baseUrl）
+ * - options: { method, headers, body, apiKey, apiType, baseUrl, signal }
+ * 返回原始 Response（同直接 fetch），后续 SSE/JSON 解析逻辑保持不变。
+ */
+async function proxyFetch(url, options = {}) {
+  const payload = {
+    url,
+    baseUrl: options.baseUrl || '',
+    method: options.method || 'POST',
+    headers: options.headers || {},
+    body: options.body !== undefined ? safeJsonParse(options.body) : undefined,
+    apiKey: options.apiKey || '',
+    apiType: options.apiType || '',
+  }
+  const resp = await fetch('/__api/assistant_llm_proxy', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: options.signal,
+  })
+  // 代理自身错误（400/401/502）：后端返回 JSON { error }
+  if (!resp.ok) {
+    const ct = resp.headers.get('content-type') || ''
+    if (ct.includes('application/json')) {
+      const data = await resp.json().catch(() => ({}))
+      if (data?.error) throw new Error(data.error)
+    }
+    throw new Error(`代理请求失败: HTTP ${resp.status}`)
+  }
+  return resp
+}
+
+function safeJsonParse(text) {
+  if (typeof text !== 'string') return text
+  try { return JSON.parse(text) } catch { return text }
 }
 
 // ── 配置读写 ──
@@ -2827,14 +2891,26 @@ async function callChatCompletions(base, messages, onChunk) {
     method: 'POST',
     requestBody: { ...body, messages: body.messages.map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content.slice(0, 200) + (m.content.length > 200 ? '...' : '') : '[multimodal]' })) },
     requestTime: new Date(reqTime).toLocaleString('zh-CN'),
+    transport: useProxyTransport(base) ? 'server-proxy' : 'direct',
   }
 
-  const resp = await fetchWithRetry(url, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(body),
-    signal: _abortController.signal,
-  })
+  const doFetch = () => useProxyTransport(base)
+    ? proxyFetch(url, {
+        baseUrl: base,
+        headers: authHeaders(),
+        body: JSON.stringify(body),
+        apiKey: _config.apiKey,
+        apiType: _config.apiType,
+        signal: _abortController.signal,
+      })
+    : fetch(url, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify(body),
+        signal: _abortController.signal,
+      })
+
+  const resp = await fetchWithRetry(doFetch)
 
   _lastDebugInfo.status = resp.status
   _lastDebugInfo.contentType = resp.headers.get('content-type') || ''
@@ -2930,12 +3006,21 @@ async function callResponsesAPI(base, messages, onChunk) {
     temperature: _config.temperature || 0.7,
   }
 
-  const resp = await fetchWithRetry(url, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(body),
-    signal: _abortController.signal,
-  })
+  const resp = await fetchWithRetry(() => useProxyTransport(base)
+    ? proxyFetch(url, {
+        baseUrl: base,
+        headers: authHeaders(),
+        body: JSON.stringify(body),
+        apiKey: _config.apiKey,
+        apiType: _config.apiType,
+        signal: _abortController.signal,
+      })
+    : fetch(url, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify(body),
+        signal: _abortController.signal,
+      }))
 
   if (!resp.ok) {
     const errText = await resp.text().catch(() => '')
@@ -2982,14 +3067,24 @@ async function callAnthropicMessages(base, messages, onChunk) {
     url, method: 'POST',
     requestBody: { ...body, messages: body.messages.map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content.slice(0, 200) + (m.content.length > 200 ? '...' : '') : '[multimodal]' })) },
     requestTime: new Date(reqTime).toLocaleString('zh-CN'),
+    transport: useProxyTransport(base) ? 'server-proxy' : 'direct',
   }
 
-  const resp = await fetchWithRetry(url, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(body),
-    signal: _abortController.signal,
-  })
+  const resp = await fetchWithRetry(() => useProxyTransport(base)
+    ? proxyFetch(url, {
+        baseUrl: base,
+        headers: authHeaders(),
+        body: JSON.stringify(body),
+        apiKey: _config.apiKey,
+        apiType: _config.apiType,
+        signal: _abortController.signal,
+      })
+    : fetch(url, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify(body),
+        signal: _abortController.signal,
+      }))
 
   _lastDebugInfo.status = resp.status
   _lastDebugInfo.contentType = resp.headers.get('content-type') || ''
@@ -3059,14 +3154,31 @@ async function callGeminiGenerate(base, messages, onChunk) {
   const url = `${base}/models/${_config.model}:streamGenerateContent?alt=sse&key=${_config.apiKey}`
 
   const reqTime = Date.now()
-  _lastDebugInfo = { url: url.replace(_config.apiKey, '***'), method: 'POST', requestTime: new Date(reqTime).toLocaleString('zh-CN') }
+  _lastDebugInfo = { url: url.replace(_config.apiKey, '***'), method: 'POST', requestTime: new Date(reqTime).toLocaleString('zh-CN'), transport: useProxyTransport(base) ? 'server-proxy' : 'direct' }
 
-  const resp = await fetchWithRetry(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    signal: _abortController.signal,
-  })
+  // Gemini：代理路径下不在 URL 上带 key（由代理用 x-goog-api-key 头注入，避免 URL 泄露日志）
+  const geminiUrl = useProxyTransport(base)
+    ? `${base}/models/${_config.model}:streamGenerateContent?alt=sse`
+    : url
+  const geminiHeaders = useProxyTransport(base)
+    ? { 'Content-Type': 'application/json', 'x-goog-api-key': _config.apiKey || '' }
+    : { 'Content-Type': 'application/json' }
+
+  const resp = await fetchWithRetry(() => useProxyTransport(base)
+    ? proxyFetch(geminiUrl, {
+        baseUrl: base,
+        headers: geminiHeaders,
+        body: JSON.stringify(body),
+        apiKey: _config.apiKey,
+        apiType: _config.apiType,
+        signal: _abortController.signal,
+      })
+    : fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: _abortController.signal,
+      }))
 
   _lastDebugInfo.status = resp.status
   _lastDebugInfo.latency = Date.now() - reqTime + 'ms'
@@ -3524,10 +3636,19 @@ async function callAIWithTools(messages, onStatus, onToolProgress, onChunk) {
       if (systemMsg) body.system = systemMsg
       if (tools.length > 0) body.tools = convertToolsForAnthropic(tools)
 
-      const resp = await fetchWithRetry(base + '/messages', {
-        method: 'POST', headers: authHeaders(), body: JSON.stringify(body),
-        signal: _abortController.signal,
-      })
+      const resp = await fetchWithRetry(() => useProxyTransport(base)
+        ? proxyFetch(base + '/messages', {
+            baseUrl: base,
+            headers: authHeaders(),
+            body: JSON.stringify(body),
+            apiKey: _config.apiKey,
+            apiType: _config.apiType,
+            signal: _abortController.signal,
+          })
+        : fetch(base + '/messages', {
+            method: 'POST', headers: authHeaders(), body: JSON.stringify(body),
+            signal: _abortController.signal,
+          }))
       if (!resp.ok) {
         const errText = await resp.text().catch(() => '')
         let errMsg = `API 错误 ${resp.status}`
@@ -3582,11 +3703,23 @@ async function callAIWithTools(messages, onStatus, onToolProgress, onChunk) {
       if (systemMsg) body.systemInstruction = { parts: [{ text: systemMsg }] }
       if (tools.length > 0) body.tools = convertToolsForGemini(tools)
 
-      const url = `${base}/models/${_config.model}:generateContent?key=${_config.apiKey}`
-      const resp = await fetchWithRetry(url, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body), signal: _abortController.signal,
-      })
+      const url = `${base}/models/${_config.model}:generateContent${useProxyTransport(base) ? '' : `?key=${_config.apiKey}`}`
+      const geminiHeaders = useProxyTransport(base)
+        ? { 'Content-Type': 'application/json', 'x-goog-api-key': _config.apiKey || '' }
+        : { 'Content-Type': 'application/json' }
+      const resp = await fetchWithRetry(() => useProxyTransport(base)
+        ? proxyFetch(url, {
+            baseUrl: base,
+            headers: geminiHeaders,
+            body: JSON.stringify(body),
+            apiKey: _config.apiKey,
+            apiType: _config.apiType,
+            signal: _abortController.signal,
+          })
+        : fetch(url, {
+            method: 'POST', headers: geminiHeaders,
+            body: JSON.stringify(body), signal: _abortController.signal,
+          }))
       if (!resp.ok) {
         const errText = await resp.text().catch(() => '')
         let errMsg = `API 错误 ${resp.status}`
@@ -3633,12 +3766,21 @@ async function callAIWithTools(messages, onStatus, onToolProgress, onChunk) {
     }
     if (tools.length > 0) body.tools = tools
 
-    const resp = await fetchWithRetry(base + '/chat/completions', {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify(body),
-      signal: _abortController.signal,
-    })
+    const resp = await fetchWithRetry(() => useProxyTransport(base)
+      ? proxyFetch(base + '/chat/completions', {
+          baseUrl: base,
+          headers: authHeaders(),
+          body: JSON.stringify(body),
+          apiKey: _config.apiKey,
+          apiType: _config.apiType,
+          signal: _abortController.signal,
+        })
+      : fetch(base + '/chat/completions', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify(body),
+          signal: _abortController.signal,
+        }))
 
     if (!resp.ok) {
       const errText = await resp.text().catch(() => '')

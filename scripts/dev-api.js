@@ -11,9 +11,12 @@ import { homedir, networkInterfaces } from 'os'
 import { execSync, spawn, spawnSync, execFile } from 'child_process'
 import { fileURLToPath } from 'url'
 import net from 'net'
+import dns from 'dns'
 import http from 'http'
+import https from 'https'
 import crypto from 'crypto'
 import { once } from 'events'
+import { pipeline } from 'stream/promises'
 import * as YAML from 'yaml'
 import { PiRuntime } from './pi-runtime.js'
 import { createDshAuth, redactDshOutput } from './deepseek-harness-auth.js'
@@ -9956,6 +9959,7 @@ const ALWAYS_LOCAL = new Set([
   'assistant_exec', 'assistant_read_file', 'assistant_write_file',
   'assistant_list_dir', 'assistant_system_info', 'assistant_list_processes',
   'assistant_check_port', 'assistant_web_search', 'assistant_fetch_url',
+  'assistant_llm_proxy',
   'assistant_ensure_data_dir', 'assistant_save_image', 'assistant_load_image', 'assistant_delete_image',
   'read_model_channels', 'write_model_channels', 'reveal_model_channel_key', 'hermes_sync_provider',
   'dsh_status', 'dsh_install', 'dsh_uninstall', 'dsh_start', 'dsh_stop', 'dsh_sync_provider', 'dsh_embed_session',
@@ -10020,6 +10024,278 @@ function _assertDirectModelTestSupported(apiType) {
     throw new Error(`该 API 类型需要由 OpenClaw 运行时验证: ${apiType}`)
   }
 }
+
+// === 助手 LLM 代理的 SSRF 防护 ===
+// 代理目标必须来自助手配置的 baseUrl（授权范围），并拒绝环回/私网/链路本地等内网地址，
+// 防止把面板后端当成开放代理去探测内网（防护 DNS rebinding：解析后逐 IP 校验）。
+function isPrivateIpv4(ip) {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip)
+  if (!m) return false
+  const [a, b] = [Number(m[1]), Number(m[2])]
+  if (a === 0 || a === 10 || a === 127) return true                       // 0.0.0.0/8, 10/8, 127/8
+  if (a === 169 && b === 254) return true                                 // 链路本地 169.254/16
+  if (a === 172 && b >= 16 && b <= 31) return true                        // 172.16/12
+  if (a === 192 && b === 168) return true                                 // 192.168/16
+  if (a === 100 && b >= 64 && b <= 127) return true                       // CGNAT 100.64/10
+  if (a === 192 && b === 0) return true                                   // 192.0.0/24, 192.0.2/24
+  if (a === 198 && (b === 18 || b === 19)) return true                    // 198.18/15
+  if (a >= 224) return true                                               // 组播/保留 224+
+  return false
+}
+
+function isPrivateIpv6(ip) {
+  const addr = ip.toLowerCase().replace(/^\[|\]$/g, '')
+  if (addr === '::' || addr === '::1') return true
+  if (/^f[cd]/.test(addr)) return true                                    // fc00::/7 唯一本地
+  if (/^fe[89ab]/.test(addr)) return true                                 // fe80::/10 链路本地
+  if (/^::ffff:(\d{1,3}\.){3}\d{1,3}$/.test(addr)) return isPrivateIpv4(addr.slice(7)) // IPv4-mapped
+  return false
+}
+
+function isPrivateIp(ip) {
+  return isPrivateIpv4(ip) || isPrivateIpv6(ip)
+}
+
+async function assertPublicHttpUrl(rawUrl) {
+  let url
+  try { url = new URL(rawUrl) }
+  catch { throw new Error('assistant_llm_proxy: 无法解析目标 URL') }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error(`assistant_llm_proxy: 不支持的协议 ${url.protocol}`)
+  }
+  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  if (hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.endsWith('.local') || hostname.endsWith('.internal')) {
+    throw new Error(`assistant_llm_proxy: 禁止访问内网主机 ${hostname}`)
+  }
+  // 字面量 IP 直接校验
+  if (net.isIP(hostname)) {
+    if (isPrivateIp(hostname)) throw new Error(`assistant_llm_proxy: 禁止访问内网地址 ${hostname}`)
+  } else {
+    // 域名：解析后逐 IP 校验，防 DNS rebinding
+    let addrs
+    try { addrs = await dns.promises.lookup(hostname, { all: true, verbatim: true }) }
+    catch (e) {
+      throw new Error(`assistant_llm_proxy: 域名解析失败 ${hostname}: ${e.message}`)
+    }
+    if (!addrs.length) throw new Error(`assistant_llm_proxy: 域名解析结果为空 ${hostname}`)
+    for (const { address } of addrs) {
+      if (isPrivateIp(address)) throw new Error(`assistant_llm_proxy: ${hostname} 解析到内网地址 ${address}，已拦截`)
+    }
+  }
+  return url.toString()
+}
+
+// === 助手 LLM 代理：检查后连接一致性（TOCTOU 防护）与目标 allowlist ===
+// assertPublicHttpUrl 只校验“当时的 DNS 解析结果”；校验与连接之间 DNS 可能被重新绑定。
+// 因此上游连接必须复用校验阶段解析出的地址（pinning），并通过自定义 lookup 交给 http/https：
+// - Host/SNI/证书校验仍按原始主机名进行（lookup 只接管地址选择，不改变 TLS 语义）；
+// - 连接建立阶段永不触发第二次 DNS 解析；
+// - 30s 内多次请求共享 TTL 缓存；RedirectStrategy.NONE：禁用自动重定向。
+const ASSISTANT_LLM_DNS_TTL_MS = 10 * 1000
+const _assistantLlmDnsCache = new Map() // hostname → { addrs, expires }
+
+function _assistantLlmCacheGet(hostname, now) {
+  const entry = _assistantLlmDnsCache.get(hostname)
+  if (entry && entry.expires > now) return entry.addrs
+  if (entry) _assistantLlmDnsCache.delete(hostname)
+  return null
+}
+
+async function _assistantLlmResolveAddresses(hostname) {
+  const now = Date.now()
+  const cached = _assistantLlmCacheGet(hostname, now)
+  if (cached) return cached
+  let addrs
+  try { addrs = await dns.promises.lookup(hostname, { all: true, verbatim: true }) }
+  catch (e) {
+    throw new Error(`assistant_llm_proxy: 域名解析失败 ${hostname}: ${e.message}`)
+  }
+  if (!addrs.length) throw new Error(`assistant_llm_proxy: 域名解析结果为空 ${hostname}`)
+  for (const { address } of addrs) {
+    if (isPrivateIp(address)) throw new Error(`assistant_llm_proxy: ${hostname} 解析到内网地址 ${address}，已拦截`)
+  }
+  _assistantLlmDnsCache.set(hostname, { addrs, expires: now + ASSISTANT_LLM_DNS_TTL_MS })
+  if (_assistantLlmDnsCache.size > 256) {
+    for (const key of _assistantLlmDnsCache.keys()) {
+      _assistantLlmDnsCache.delete(key)
+      if (_assistantLlmDnsCache.size <= 128) break
+    }
+  }
+  return addrs
+}
+
+/**
+ * 供 http/https 上游连接使用的自定义 lookup：只从“校验阶段解析并复核过的地址”中选择，
+ * 永不触发 DNS 解析。options.all=true 返回地址数组（Happy Eyeballs 兼容），
+ * 否则回调 (err, address, family)。
+ */
+function createPinnedLookup(addrs) {
+  const byFamily = { 4: addrs.filter(a => a.family === 4), 6: addrs.filter(a => a.family === 6) }
+  let roundRobin = 0
+  return function pinnedLookup(hostname, options, callback) {
+    const family = options?.family === 4 || options?.family === 6 ? options.family : 0
+    const pool = family === 4 ? byFamily[4] : family === 6 ? byFamily[6] : addrs
+    if (!pool.length) {
+      // 严格 pinning：请求的 family 无可用地址时直接报错，绝不回退到另一 family，更不解析 DNS
+      const err = new Error(`assistant_llm_proxy: 无可用地址 ${family ? 'IPv' + family + ' ' : ''}${hostname}`)
+      err.code = 'EAI_FAIL'
+      process.nextTick(callback, err)
+      return
+    }
+    return pickOne(pool)
+
+    function pickOne(list) {
+      const entry = list[roundRobin++ % list.length]
+      // 统一异步派发，避免同步回调引发的重入问题
+      process.nextTick(() => {
+        if (options?.all) {
+          callback(null, list.map(a => ({ address: a.address, family: a.family })))
+        } else {
+          callback(null, entry.address, entry.family)
+        }
+      })
+    }
+  }
+}
+
+/** 手写 http/https 上游请求：连接绑定到校验阶段的地址，禁止自动重定向。 */
+function _assistantLlmPinnedRequest(targetUrl, addrs, options) {
+  const { method, headers, body, signal } = options
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      const err = new Error(' aborted')
+      err.name = 'AbortError'
+      return reject(err)
+    }
+    const isHttps = targetUrl.protocol === 'https:'
+    const transport = isHttps ? https : http
+    const req = transport.request(targetUrl, {
+      method,
+      headers,
+      lookup: createPinnedLookup(addrs),
+      agent: false,
+      autoSelectFamily: false, // 本逻辑自行选地址；关闭 Happy Eyeballs 的自动地址切换
+      setHost: true,
+    }, resolve)
+    req.on('error', reject)
+    if (signal) {
+      const onAbort = () => {
+        const err = new Error('The operation was aborted')
+        err.name = 'AbortError'
+        req.destroy(err)
+      }
+      if (signal.aborted) return onAbort()
+      signal.addEventListener('abort', onAbort, { once: true })
+      req.on('close', () => signal.removeEventListener('abort', onAbort))
+    }
+    if (body) req.end(body)
+    else req.end()
+  })
+}
+// 供测试验证 TOCTOU/redirect 行为
+export { _assistantLlmPinnedRequest }
+
+// === 助手 LLM 代理：目标 allowlist 策略 ===
+// 默认 deny-by-default：只允许显式配置的公网主机（host 或 host:port，支持 * 前缀通配符如 *.example.com）。
+// 模式一：与内置 OpenAI/Anthropic/Gemini 端点兼容——这些主机名内置在 DEFAULT 中。
+// 模式二：通过面板配置 assistantLlmProxy.allowlist 覆盖/扩展。
+const ASSISTANT_LLM_BUILTIN_HOSTS = [
+  'api.openai.com',
+  'api.anthropic.com',
+  'generativelanguage.googleapis.com',
+]
+const ASSISTANT_LLM_WILDCARD_RE = /^\*(?:\.[^*\s]+)$/
+
+function normalizeAssistantLlmHost(entry) {
+  const raw = String(entry || '').trim().toLowerCase()
+  if (!raw) return null
+  // IPv6 字面量形如 [::1] 或 [::1]:8443
+  const bracketMatch = /^\[([0-9a-f:.]+)\](?::\d+)?$/.exec(raw)
+  if (bracketMatch) {
+    const ip = bracketMatch[1]
+    if (!net.isIP(ip) || isPrivateIp(ip)) return null
+    return ip
+  }
+  if (net.isIP(raw)) {
+    if (isPrivateIp(raw)) return null
+    return raw
+  }
+  if (ASSISTANT_LLM_WILDCARD_RE.test(raw)) return raw
+  // host:port 或裸 IPv4:port（192.168.1.1:8000 不是合法 IP 字面量）：剥端口；内网 IP 一律拒绝
+  if (/^\d{1,3}(\.\d{1,3}){3}:\d+$/.test(raw)) {
+    const ip = raw.slice(0, raw.indexOf(':'))
+    if (isPrivateIp(ip)) return null
+    return ip
+  }
+  // host 或 host:port（域名）：剥端口后校验标签合法性
+  const host = (raw.includes(':') ? raw.slice(0, raw.lastIndexOf(':')) : raw).replace(/\.+$/, '')
+  if (!/^[a-z0-9]([a-z0-9_-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9_-]{0,61}[a-z0-9])?)*$/.test(host)) return null
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal')) return null
+  return host || null
+}
+
+function readAssistantLlmProxyPolicy() {
+  let allowlist = null
+  try {
+    const cfg = readPanelConfig()
+    const configured = cfg?.assistantLlmProxy?.allowlist
+    if (Array.isArray(configured)) {
+      const entries = [...new Set(configured.map(normalizeAssistantLlmHost).filter(Boolean))]
+      allowlist = entries
+    }
+  } catch {}
+  const allowBuiltin = allowlist === null
+  return { allowlist, allowBuiltin }
+}
+
+/**
+ * 目标策略校验（host 级白名单，端口不参与匹配；内网拦截仍由 assertPublicHttpUrl 叠加）：
+ * - 未配置 allowlist → 默认只放行内置模式（OpenAI / Anthropic / Gemini），任意其他公网目标拒绝（默认 deny）。
+ * - 配置了 allowlist → 在内置服务商基础上增量放行（*.example.com 通配符匹配任意层级子域，不含裸域）；
+ *   内置三家（OpenAI/Anthropic/Gemini）永远可用，保证兼容模式不被配置破坏。
+ */
+function isAssistantLlmTargetAllowed(targetUrl, policy) {
+  // Node 的 URL.hostname 对 IPv6 保留方括号，统一剥掉
+  const hostname = targetUrl.hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  const candidates = policy.allowlist === null
+    ? ASSISTANT_LLM_BUILTIN_HOSTS
+    : [...ASSISTANT_LLM_BUILTIN_HOSTS, ...policy.allowlist] // allowlist 只是增量扩展，内置服务商始终可用
+  for (const rawEntry of candidates) {
+    // 容忍未预归一化的条目（含方括号 IPv6 / 大写 / 端口）
+    const entry = normalizeAssistantLlmHost(rawEntry) || String(rawEntry || '').toLowerCase().replace(/^\[|\]$/g, '')
+    if (ASSISTANT_LLM_WILDCARD_RE.test(entry)) {
+      const suffix = entry.slice(1) // “.example.com”
+      if (hostname.endsWith(suffix)) return true
+    } else if (entry === hostname) {
+      return true
+    }
+  }
+  return false
+}
+
+function _assistantLlmBuildUpstreamHeaders(args, apiKey, apiType) {
+  const headers = { 'Content-Type': 'application/json' }
+  if (apiType === 'anthropic-messages') {
+    headers['anthropic-version'] = '2023-06-01'
+    headers['Accept-Encoding'] = 'identity'
+    if (apiKey) headers['x-api-key'] = apiKey
+  } else if (apiType === 'google-generative-ai') {
+    headers['Accept-Encoding'] = 'identity'
+    if (apiKey) headers['x-goog-api-key'] = apiKey
+  } else {
+    headers['Accept-Encoding'] = 'identity'
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+  }
+  // 透传有限的非敏感自定义头（Gemini x-goog-api-key 走 apiKey 注入，其余敏感头一律不透传）
+  for (const [name, value] of Object.entries(args?.headers || {})) {
+    if (!/^[a-z0-9-]+$/i.test(name)) continue
+    const lower = name.toLowerCase()
+    if (['host', 'connection', 'content-length', 'cookie', 'authorization', 'x-api-key', 'x-goog-api-key', 'anthropic-version', 'accept-encoding', 'forwarded', 'via', 'x-forwarded-for'].includes(lower)) continue
+    headers[name] = String(value).slice(0, 256)
+  }
+  return headers
+}
+
 
 function _extractSingleModelReply(data) {
   if (typeof data?.output_text === 'string' && data.output_text) return data.output_text
@@ -15323,6 +15599,133 @@ const handlers = {
       clearTimeout(timeout)
       if (e.name === 'AbortError') throw new Error('请求超时 (15s)')
       throw e
+    }
+  },
+
+  // === 晴辰助手 LLM 授权代理（浏览器 CORS 修复）===
+  // 浏览器直连第三方 LLM API 会被 CORS 拦截（多数服务商不发 Access-Control-Allow-Origin）。
+  // 由 ClawPanel 后端代为转发：浏览器只连本面板（同源），后端用 Node fetch 连服务商。
+  // 不是开放代理：目标 URL 必须由面板前端传入且经 SSRF 校验（公网 http/https），
+  // 凭据由后端解析（支持 SecretRef/env 引用）后注入上游请求，浏览器不携带服务商密钥。
+  async assistant_llm_proxy(args, req, res) {
+    const sendError = (status, message, extra = {}) => {
+      if (res.headersSent) {
+        if (!res.writableEnded) { try { res.end() } catch {} }
+        return
+      }
+      res.statusCode = status
+      res.setHeader('Content-Type', 'application/json')
+      res.end(JSON.stringify({ error: message, ...extra }))
+    }
+
+    // 1) 目标校验：必须是合法的公网 http/https URL（SSRF 防护），
+    //    目标 URL 来自助手配置的 baseUrl（前端拼接端点路径）。
+    //    目标策略：默认仅放行内置 LLM 服务商（OpenAI/Anthropic/Gemini 兼容模式）；
+    //    面板配置 assistantLlmProxy.allowlist 后按配置放行其他公网 endpoint。
+    //    内网/环回/链路本地等地址在任何策略下都被拒绝（SSRF 防护不随 allowlist 放宽）。
+    const rawUrl = String(args?.url || '')
+    if (!rawUrl.startsWith('/') && !/^https?:\/\//i.test(rawUrl)) {
+      return sendError(400, 'assistant_llm_proxy: url 必须是 http(s) URL 或以 / 开头的端点路径')
+    }
+    if (rawUrl.includes('\r') || rawUrl.includes('\n')) {
+      return sendError(400, 'assistant_llm_proxy: url 含非法换行符')
+    }
+    // 支持前端只传端点路径（/chat/completions）：此时必须同时传 baseUrl
+    let targetInput = rawUrl
+    if (rawUrl.startsWith('/')) {
+      const base = String(args?.baseUrl || '').trim()
+      if (!base) return sendError(400, 'assistant_llm_proxy: 传入相对路径时必须同时提供 baseUrl')
+      targetInput = base.replace(/\/+$/, '') + rawUrl
+    }
+    if (!/^https?:\/\//i.test(targetInput)) {
+      return sendError(400, 'assistant_llm_proxy: 目标必须是 http/https URL')
+    }
+    if (args?.method && !['POST', 'GET'].includes(String(args.method).toUpperCase())) {
+      return sendError(400, 'assistant_llm_proxy: 仅支持 GET/POST 方法')
+    }
+    const policy = readAssistantLlmProxyPolicy()
+    let targetUrl
+    try {
+      targetUrl = new URL(await assertPublicHttpUrl(targetInput))
+    } catch (e) {
+      return sendError(400, e.message || String(e))
+    }
+    if (!isAssistantLlmTargetAllowed(targetUrl, policy)) {
+      return sendError(403, `assistant_llm_proxy: 目标不在允许列表内 ${targetUrl.host}（默认仅放行 OpenAI/Anthropic/Gemini 官方 endpoint；可在面板配置 assistantLlmProxy.allowlist 中添加允许的主机）`, { code: 'TARGET_NOT_ALLOWED' })
+    }
+
+    // 2) body 校验与序列化
+    let payload = null
+    if (args?.body !== undefined && args?.body !== null) {
+      try { payload = JSON.stringify(args.body) }
+      catch {
+        return sendError(400, 'assistant_llm_proxy: body 无法序列化为 JSON')
+      }
+    }
+
+    // 3) 凭据在后端解析补齐，浏览器请求不携带任何服务商密钥
+    let apiKey
+    try { apiKey = resolveModelApiKey(args?.apiKey) }
+    catch (e) { return sendError(400, e.message || String(e)) }
+    const apiType = normalizeModelApiType(args?.apiType)
+    const headers = _assistantLlmBuildUpstreamHeaders(args, apiKey, apiType)
+
+    const controller = new AbortController()
+    res.on('close', () => controller.abort())
+    const connectTimer = setTimeout(() => controller.abort(), 30000)
+
+    // 3.5) 校验与连接一致性（TOCTOU/DNS rebinding 防护）：
+    //      重新解析目标主机并复核每个 IP，再让 http/https 连接只从这批地址中选择
+    //      （自定义 lookup pinning）。Host 头与 TLS SNI/证书校验仍按原始主机名进行；
+    //      连接建立阶段不触发第二次 DNS 解析。禁止自动重定向：上游 3xx 原样透传，
+    //      每个跳转目标都由前端重新发起并再次通过完整校验。
+    let upstream
+    try {
+      let addrs
+      if (net.isIP(targetUrl.hostname)) {
+        addrs = [{ address: targetUrl.hostname, family: net.isIPv6(targetUrl.hostname) ? 6 : 4 }]
+      } else {
+        addrs = await _assistantLlmResolveAddresses(targetUrl.hostname)
+      }
+      upstream = await _assistantLlmPinnedRequest(targetUrl, addrs, {
+        method: String(args?.method || 'POST').toUpperCase(),
+        headers,
+        body: payload,
+        signal: controller.signal,
+      })
+    } catch (e) {
+      clearTimeout(connectTimer)
+      if (res.headersSent) { try { res.end() } catch {}; return }
+      // AbortError 只在两种情况发生：30s 连接超时，或浏览器端断开（res close）。
+      const message = res.writableEnded || res.destroyed
+        ? '已取消'
+        : (e.name === 'AbortError' ? '连接上游服务超时 (30s)' : (e.message || String(e)))
+      return sendError(502, `上游请求失败: ${message}`, { code: 'UPSTREAM_FAILED' })
+    }
+    clearTimeout(connectTimer)
+
+    if (res.writableEnded || res.destroyed) { try { upstream.destroy() } catch {}; return }
+    if (res.headersSent) return
+
+    // 4) 上游状态/头透传：非 2xx 保留原状态码，让前端按服务商错误正常处理；
+    //    禁止自动重定向：上游 3xx 原样透传（每个跳转目标都由前端重新发起并再次过完整校验）
+    res.statusCode = upstream.statusCode
+    res.setHeader('Content-Type', upstream.headers['content-type'] || 'application/json')
+    res.setHeader('Cache-Control', 'no-cache')
+    res.setHeader('X-Accel-Buffering', 'no')
+    res.flushHeaders?.()
+
+    // 5) 透传流式响应（SSE / NDJSON / 普通响应都按字节转发），浏览器断开即中止上游
+    if (upstream.readable) {
+      try {
+        await pipeline(upstream, res)
+      } catch (e) {
+        if (!res.writableEnded && !res.destroyed) {
+          try { res.end(JSON.stringify({ error: `流中断: ${e.message || String(e)}` })) } catch {}
+        }
+      }
+    } else {
+      res.end()
     }
   },
 
@@ -20769,6 +21172,21 @@ async function _apiMiddleware(req, res, next) {
     return
   }
 
+  // 流式命令：handler 自行写响应（SSE/NDJSON），不走统一 JSON 封装
+  if (cmd === 'assistant_llm_proxy') {
+    try {
+      const args = await readBody(req)
+      await handler.call(handlers, args, req, res)
+    } catch (e) {
+      if (!res.headersSent) {
+        res.statusCode = 500
+        res.setHeader('Content-Type', 'application/json')
+      }
+      if (!res.writableEnded) res.end(JSON.stringify({ error: e.message || String(e) }))
+    }
+    return
+  }
+
   try {
     const authGeneration = _webEmbedAuthGeneration
     const args = await readBody(req)
@@ -20794,6 +21212,18 @@ async function _apiMiddleware(req, res, next) {
 // 导出供 serve.js 独立部署使用
 export function _isWebSocketAuthorized(req) {
   return isAuthenticated(req)
+}
+
+// 导出供测试与安全审查使用
+export {
+  assertPublicHttpUrl,
+  isPrivateIp,
+  isPrivateIpv4,
+  isPrivateIpv6,
+  createPinnedLookup,
+  isAssistantLlmTargetAllowed,
+  normalizeAssistantLlmHost,
+  readAssistantLlmProxyPolicy,
 }
 
 export { _initApi, _apiMiddleware, nodeVersionSatisfiesRequirement, isOpenCodeEmbedRequest, isDshEmbedRequest }
