@@ -17,6 +17,7 @@ import '../style/chat-questions.css'
 import '../style/official-engine-chat.css'
 import { gatewayOfficialStatus, gatewayOfficialChatAccess, gatewayOfficialIdentity, sameGatewayOfficialIdentity, isGatewayOfficialAgent, isGatewayOfficialModel, GATEWAY_OFFICIAL_PROVIDER } from '../lib/openclaw-official-provider.js'
 import { initPlatformAccount, onPlatformAccountChange } from '../lib/platform-account.js'
+import { groupSessions, extractSessionRows, isInvalidParamsError, shortenSessionLabel, DEFAULT_SESSION_VIEW_MODE as DEFAULT_SESSION_VIEW_MODE_IMPORTED, SESSION_VIEW_MODES as SESSION_VIEW_MODES_IMPORTED } from '../lib/chat-session-groups.js'
 
 let _gatewayOfficialContext = null, _gatewayOfficialRequested = false, _gatewayOfficialInvalid = false, _gatewayOfficialOff = null
 
@@ -26,8 +27,19 @@ const STORAGE_MODEL_KEY = 'clawpanel-chat-selected-model'
 const STORAGE_SIDEBAR_KEY = 'clawpanel-chat-sidebar-open'
 const STORAGE_SESSION_NAMES_KEY = 'clawpanel-chat-session-names'
 const STORAGE_WORKSPACE_PANEL_KEY = 'clawpanel-chat-workspace-open'
+const STORAGE_SESSION_VIEW_KEY = 'clawpanel-chat-session-view'
+const STORAGE_SESSION_COLLAPSED_KEY = 'clawpanel-chat-session-collapsed'
 const OFFICIAL_TOOL_LIMIT_TEXT = 'Too many tools are enabled. Reduce tools in your dedicated Agent settings, then try again.'
 const OFFICIAL_ERROR_CODES = new Set(['official_tool_limit_exceeded', 'official_unsupported_content', 'official_request_recovery_required'])
+
+// 聊天页源码可能被测试沙箱（node:vm，import 行被剥离）单独加载，
+// 因此视图模式常量在模块级做兜底，避免缺少导入时抛 ReferenceError。
+const SESSION_VIEW_MODES = (typeof SESSION_VIEW_MODES_IMPORTED !== 'undefined' && Array.isArray(SESSION_VIEW_MODES_IMPORTED))
+  ? SESSION_VIEW_MODES_IMPORTED
+  : ['groups', 'all']
+const DEFAULT_SESSION_VIEW_MODE = (typeof DEFAULT_SESSION_VIEW_MODE_IMPORTED !== 'undefined')
+  ? DEFAULT_SESSION_VIEW_MODE_IMPORTED
+  : 'groups'
 
 const COMMANDS = [
   { title: 'chat.cmdSession', commands: [
@@ -95,6 +107,10 @@ let _availableModels = []
 let _primaryModel = ''
 let _selectedModel = ''
 let _isApplyingModel = false
+let _sessionViewMode = DEFAULT_SESSION_VIEW_MODE
+let _collapsedGroups = new Set()
+let _sessionArchivedSupported = true
+let _lastSessionRows = []
 
 // ── 托管 Agent ──
 const HOSTED_STATUS = { IDLE: 'idle', RUNNING: 'running', WAITING: 'waiting_reply', PAUSED: 'paused', ERROR: 'error' }
@@ -1391,52 +1407,116 @@ async function connectGateway() {
 async function refreshSessionList() {
   if (!_sessionListEl || !wsClient.gatewayReady) return
   try {
-    const result = await wsClient.sessionsList(50)
-    const sessions = result?.sessions || result || []
+    const raw = await fetchSessionsWithArchive()
+    const sessions = extractSessionRows(raw)
     renderSessionList(sessions)
   } catch (e) {
     console.error('[chat] refreshSessionList error:', e)
   }
 }
 
+/**
+ * 拉取会话列表，并尝试带上 archived 过滤。
+ *
+ * Gateway 的 sessions.list 参数是 closed object：旧内核不认 `archived` 会直接
+ * 返回 INVALID_REQUEST（实测："invalid sessions.list params: at root: unexpected
+ * property 'bogusParam'"）。因此这里用 requestCompat + 失败回退到普通调用，
+ * 保证旧内核仍能正常显示会话列表（只是没有归档分组）。
+ */
+async function fetchSessionsWithArchive() {
+  // 已经确认当前内核不支持 archived 参数时，直接走普通调用，避免每次刷新都吃一次 INVALID_REQUEST。
+  if (_sessionArchivedSupported === false) {
+    return wsClient.request('sessions.list', { limit: 100 })
+  }
+  try {
+    const raw = await wsClient.requestCompat('sessions.list', { limit: 100, archived: 'all' }, null)
+    if (raw) {
+      _sessionArchivedSupported = true
+      return raw
+    }
+    // requestCompat 返回 fallback：该 RPC 在当前内核整体不可用。
+    _sessionArchivedSupported = false
+  } catch (e) {
+    if (!isInvalidParamsError(e)) throw e
+    console.warn('[chat] sessions.list 不支持 archived 参数，回退到普通调用:', e.message)
+    _sessionArchivedSupported = false
+  }
+  return wsClient.request('sessions.list', { limit: 100 })
+}
+
+function getSessionViewMode() {
+  try {
+    const saved = localStorage.getItem(STORAGE_SESSION_VIEW_KEY)
+    if (saved && SESSION_VIEW_MODES.includes(saved)) {
+      _sessionViewMode = saved
+      return saved
+    }
+  } catch { /* localStorage 不可用时使用默认值 */ }
+  return _sessionViewMode || DEFAULT_SESSION_VIEW_MODE
+}
+
+function setSessionViewMode(mode) {
+  _sessionViewMode = SESSION_VIEW_MODES.includes(mode) ? mode : DEFAULT_SESSION_VIEW_MODE
+  try { localStorage.setItem(STORAGE_SESSION_VIEW_KEY, _sessionViewMode) } catch { /* ignore */ }
+}
+
+function getCollapsedGroups() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(STORAGE_SESSION_COLLAPSED_KEY) || '[]')
+    return new Set(Array.isArray(raw) ? raw.map(String) : [])
+  } catch { return new Set() }
+}
+
+function setCollapsedGroups(set) {
+  _collapsedGroups = set instanceof Set ? set : new Set(set)
+  try { localStorage.setItem(STORAGE_SESSION_COLLAPSED_KEY, JSON.stringify([..._collapsedGroups])) } catch { /* ignore */ }
+}
+
+function toggleGroupCollapsed(groupId) {
+  const next = getCollapsedGroups()
+  if (next.has(groupId)) next.delete(groupId)
+  else next.add(groupId)
+  setCollapsedGroups(next)
+  renderSessionList(_lastSessionRows)
+}
+
+/** 渲染会话列表（支持分组视图与全部视图） */
 function renderSessionList(sessions) {
-  sessions = sessions.filter(session => {
+  const rows = Array.isArray(sessions) ? sessions : []
+  _lastSessionRows = rows
+  const visible = rows.filter(session => {
     const key = session.sessionKey || session.key || ''
     return _gatewayOfficialRequested ? key === _sessionKey : !isGatewayOfficialAgent(parseSessionAgent(key))
   })
   if (!_sessionListEl) return
-  if (!sessions.length) {
+  if (!visible.length) {
     _sessionListEl.innerHTML = `<div class="chat-session-empty">${t('chat.noSessions')}</div>`
     return
   }
-  sessions.sort((a, b) => (b.updatedAt || b.lastActivity || 0) - (a.updatedAt || a.lastActivity || 0))
-  _sessionListEl.innerHTML = sessions.map(s => {
-    const key = s.sessionKey || s.key || ''
-    const active = key === _sessionKey ? ' active' : ''
-    const label = parseSessionLabel(key)
-    const ts = s.updatedAt || s.lastActivity || s.createdAt || 0
-    const timeStr = ts ? formatSessionTime(ts) : ''
-    const msgCount = s.messageCount || s.messages || 0
-    const agentId = parseSessionAgent(key)
-    const displayLabel = getDisplayLabel(key) || label
-    const cpCount = s.compactionCheckpointCount || 0
-    return `<div class="chat-session-card${active}" data-key="${escapeAttr(key)}">
-      <div class="chat-session-card-header">
-        <span class="chat-session-label" title="${t('chat.doubleClickRename')}">${escapeAttr(displayLabel)}</span>
-        <div style="display:flex;gap:2px;align-items:center">
-          ${cpCount > 0 ? `<button class="chat-session-del" data-compaction="${escapeAttr(key)}" title="${t('chat.compactionHistory')}" style="color:var(--text-tertiary);font-size:11px">⟳${cpCount}</button>` : ''}
-          <button class="chat-session-del" data-del="${escapeAttr(key)}" title="${t('common.delete')}">×</button>
-        </div>
-      </div>
-      <div class="chat-session-card-meta">
-        ${agentId && agentId !== 'main' ? `<span class="chat-session-agent">${escapeAttr(agentId)}</span>` : ''}
-        ${msgCount > 0 ? `<span>${msgCount} msgs</span>` : ''}
-        ${timeStr ? `<span>${timeStr}</span>` : ''}
-      </div>
-    </div>`
-  }).join('')
+
+  const mode = getSessionViewMode()
+  const grouped = groupSessions(visible)
+  const collapsed = getCollapsedGroups()
+  const html = mode === 'all'
+    ? renderFlatSessionList(grouped.flat)
+    : renderGroupedSessionList(grouped, collapsed)
+
+  _sessionListEl.innerHTML = renderSessionListToolbar(mode) + html
 
   _sessionListEl.onclick = (e) => {
+    const modeBtn = e.target.closest('[data-session-view]')
+    if (modeBtn) {
+      e.stopPropagation()
+      setSessionViewMode(modeBtn.dataset.sessionView)
+      renderSessionList(_lastSessionRows)
+      return
+    }
+    const groupBtn = e.target.closest('[data-group-toggle]')
+    if (groupBtn) {
+      e.stopPropagation()
+      toggleGroupCollapsed(groupBtn.dataset.groupToggle)
+      return
+    }
     const cpBtn = e.target.closest('[data-compaction]')
     if (cpBtn) { e.stopPropagation(); showCompactionHistory(cpBtn.dataset.compaction); return }
     const delBtn = e.target.closest('[data-del]')
@@ -1452,6 +1532,120 @@ function renderSessionList(sessions) {
     e.stopPropagation()
     renameSession(card.dataset.key, labelEl)
   }
+}
+
+/** 视图切换工具条（分组 / 全部） */
+function renderSessionListToolbar(mode) {
+  const groupsActive = mode === 'groups'
+  const archivedNote = _sessionArchivedSupported ? '' :
+    `<span class="chat-session-archived-hint" title="${escapeAttr(t('chat.sessionArchivedUnsupported'))}">${escapeAttr(t('chat.sessionArchivedUnsupported'))}</span>`
+  return `<div class="chat-session-toolbar">
+    <span class="chat-session-toolbar-label">${escapeAttr(t('chat.sessionViewMode'))}</span>
+    <div class="chat-session-view-switch" role="group" aria-label="${escapeAttr(t('chat.sessionViewToggle'))}">
+      <button type="button" class="chat-session-view-btn${groupsActive ? ' active' : ''}" data-session-view="groups" title="${escapeAttr(t('chat.sessionViewToggle'))}">${escapeAttr(t('chat.sessionViewGroups'))}</button>
+      <button type="button" class="chat-session-view-btn${groupsActive ? '' : ' active'}" data-session-view="all" title="${escapeAttr(t('chat.sessionViewToggle'))}">${escapeAttr(t('chat.sessionViewAll'))}</button>
+    </div>
+    ${archivedNote}
+  </div>`
+}
+
+/** 分组视图：主会话 + 按 owner 聚合的子会话分组 + 归档分组 */
+function renderGroupedSessionList(grouped, collapsed) {
+  const parts = []
+
+  if (grouped.mains.length) {
+    parts.push(`<div class="chat-session-group chat-session-group-main">
+      <div class="chat-session-group-header">
+        <span class="chat-session-group-title">${escapeAttr(t('chat.sessionList'))}</span>
+        <span class="chat-session-group-count">${escapeAttr(t('chat.sessionGroupCount', { n: grouped.mains.length }))}</span>
+      </div>
+      <div class="chat-session-group-body">${grouped.mains.map(renderSessionCard).join('')}</div>
+    </div>`)
+  }
+
+  for (const group of grouped.ownerGroups) {
+    const isCollapsed = collapsed.has(group.id)
+    const title = t('chat.sessionGroupOwnerOf', { agent: group.ownerAgent })
+    parts.push(`<div class="chat-session-group chat-session-group-owner" data-group-id="${escapeAttr(group.id)}">
+      <button type="button" class="chat-session-group-header" data-group-toggle="${escapeAttr(group.id)}" aria-expanded="${isCollapsed ? 'false' : 'true'}" title="${escapeAttr(t('chat.sessionGroupCollapse'))}">
+        <span class="chat-session-group-chevron${isCollapsed ? ' collapsed' : ''}">▾</span>
+        <span class="chat-session-group-title">${escapeAttr(title)}</span>
+        <span class="chat-session-group-count">${escapeAttr(String(group.sessions.length))}</span>
+      </button>
+      <div class="chat-session-group-body"${isCollapsed ? ' hidden' : ''}>${group.sessions.map(renderSessionCard).join('')}</div>
+    </div>`)
+  }
+
+  if (grouped.archivedGroup) {
+    const group = grouped.archivedGroup
+    const isCollapsed = collapsed.has(group.id)
+    parts.push(`<div class="chat-session-group chat-session-group-archived" data-group-id="${escapeAttr(group.id)}">
+      <button type="button" class="chat-session-group-header" data-group-toggle="${escapeAttr(group.id)}" aria-expanded="${isCollapsed ? 'false' : 'true'}" title="${escapeAttr(t('chat.sessionGroupCollapse'))}">
+        <span class="chat-session-group-chevron${isCollapsed ? ' collapsed' : ''}">▾</span>
+        <span class="chat-session-group-title">${escapeAttr(t('chat.sessionGroupArchived'))}</span>
+        <span class="chat-session-group-count">${escapeAttr(String(group.sessions.length))}</span>
+      </button>
+      <div class="chat-session-group-body"${isCollapsed ? ' hidden' : ''}>${group.sessions.map(renderSessionCard).join('')}</div>
+    </div>`)
+  }
+
+  if (!parts.length) {
+    return `<div class="chat-session-empty">${t('chat.sessionGroupEmpty')}</div>`
+  }
+  return parts.join('')
+}
+
+/** 全部视图：所有会话一个列表，按最后活跃时间倒序 */
+function renderFlatSessionList(rows) {
+  if (!rows.length) return `<div class="chat-session-empty">${t('chat.noSessions')}</div>`
+  return `<div class="chat-session-group chat-session-group-flat">
+    <div class="chat-session-group-body">${rows.map(renderSessionCard).join('')}</div>
+  </div>`
+}
+
+/** 单条会话卡片 */
+function renderSessionCard(row) {
+  const key = row.key
+  const active = key === _sessionKey ? ' active' : ''
+  const label = parseSessionLabel(key)
+  const timeStr = row.activityTs ? formatSessionTimeMs(row.activityTs) : ''
+  const msgCount = row.messageCount
+  const agentId = row.agentId
+  // 完整标签：自定义别名 > 子会话的 Gateway 标签 > 按 key 解析的标签
+  const customName = getSessionNames()[key]
+  const fullLabel = customName || (row.isChild && row.label ? row.label : label)
+  // 仅子会话（key 含 UUID）做文本截断，主会话名保持完整；省略由 CSS 负责，完整 key 放进 title
+  const displayLabel = customName ? customName : (row.isChild ? shortenSessionLabel(fullLabel) : fullLabel)
+  const cpCount = row.compactionCheckpointCount
+  const ownerBadge = row.isChild && row.ownerAgent
+    ? `<span class="chat-session-owner" title="${escapeAttr(t('chat.sessionGroupOwnerOf', { agent: row.ownerAgent }))}">${escapeAttr(row.ownerAgent)}</span>`
+    : ''
+  const roleBadge = row.subagentRole
+    ? `<span class="chat-session-role">${escapeAttr(row.subagentRole)}</span>`
+    : ''
+  return `<div class="chat-session-card${active}" data-key="${escapeAttr(key)}">
+    <div class="chat-session-card-header">
+      <span class="chat-session-label" title="${escapeAttr(`${t('chat.doubleClickRename')} — ${key}`)}">${escapeAttr(displayLabel)}</span>
+      <div style="display:flex;gap:2px;align-items:center">
+        ${cpCount > 0 ? `<button class="chat-session-del" data-compaction="${escapeAttr(key)}" title="${t('chat.compactionHistory')}" style="color:var(--text-tertiary);font-size:11px">⟳${cpCount}</button>` : ''}
+        <button class="chat-session-del" data-del="${escapeAttr(key)}" title="${t('common.delete')}">×</button>
+      </div>
+    </div>
+    <div class="chat-session-card-meta">
+      ${ownerBadge}
+      ${roleBadge}
+      ${agentId && agentId !== 'main' ? `<span class="chat-session-agent">${escapeAttr(agentId)}</span>` : ''}
+      ${msgCount > 0 ? `<span>${msgCount} msgs</span>` : ''}
+      ${timeStr ? `<span>${timeStr}</span>` : ''}
+    </div>
+  </div>`
+}
+
+/** 会话列表专用：activityTs 已是毫秒，不再做秒/毫秒猜测 */
+function formatSessionTimeMs(ts) {
+  const d = new Date(ts)
+  if (isNaN(d.getTime())) return ''
+  return formatSessionTime(d.getTime())
 }
 
 function formatSessionTime(ts) {
