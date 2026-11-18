@@ -171,3 +171,32 @@ test('Hermes MCP 服务配置保存会拒绝非法 JSON、名称、结构和超�
     /mcp_servers\.time\.sampling\.log_level/,
   )
 })
+
+test('Parallel MCP 示例可合并并回读，保留已有服务和原生搜索配置', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const example = JSON.parse(await readFile(new URL('../docs/examples/hermes-parallel-mcp.json', import.meta.url), 'utf8'))
+  const original = {
+    model: { provider: 'openrouter' },
+    web: { backend: 'auto' },
+    mcp_servers: {
+      existing: { url: 'https://example.com/mcp', headers: { 'X-Team': 'keep' }, timeout: 45 },
+    },
+  }
+  const next = mergeHermesMcpServersConfig(original, {
+    mcpServersJson: JSON.stringify({ ...original.mcp_servers, ...example }),
+  })
+  const mapping = JSON.parse(buildHermesMcpServersConfigValues(next).mcpServersJson)
+
+  assert.deepEqual(next.model, original.model)
+  assert.deepEqual(next.web, original.web)
+  assert.deepEqual(mapping.existing, original.mcp_servers.existing)
+  assert.equal(mapping.parallel.url, 'https://search.parallel.ai/mcp')
+  assert.equal(mapping.parallel.headers['User-Agent'], 'ClawPanel/0.22.1')
+  assert.equal(mapping.parallel.headers.Authorization, undefined)
+  assert.equal(mapping.parallel.command, undefined)
+  assert.equal(mapping.parallel.connect_timeout, 30)
+  assert.equal(mapping.parallel.timeout, 60)
+  assert.deepEqual(original.mcp_servers, {
+    existing: { url: 'https://example.com/mcp', headers: { 'X-Team': 'keep' }, timeout: 45 },
+  })
+})

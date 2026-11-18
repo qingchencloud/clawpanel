@@ -43,6 +43,35 @@ Agent 记忆页围绕三类长期上下文组织：笔记记录事实，用户�
 4. **接入消息渠道**：根据实际场景接入 QQ、Telegram、Discord 等外部渠道。
 5. **持续迭代记忆资产**：把真实使用中沉淀下来的事实、偏好和规则整理回长期记忆。
 
+## 可选：通过 MCP 接入 Parallel 搜索与网页提取
+
+Hermes 的「运行与配置 → MCP 服务」支持 HTTP 服务。可添加 [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp)，提供 `web_search` 搜索和 `web_fetch` 网页提取。匿名端点无需 Parallel 账号或 API Key，搜索使用 Fast 模式，适合轻量使用；免费服务有速率限制。
+
+1. 在 ClawPanel 左侧选择 **Hermes Agent**，先按「运行与配置」页面完成引擎安装。
+2. 打开该页面的 **MCP 服务**，在 `mcp_servers JSON 映射` 中合并下方 `parallel` 条目。如果已有其他服务，保留原条目，不要用示例覆盖整个映射。这里只填写服务映射，不要再包一层 `mcp_servers` 或 `mcpServers`。
+3. 点击 **保存 MCP 服务**，重启 Hermes Gateway，让新会话加载工具。该配置只增加 MCP 服务，不切换模型渠道或原生 Web 搜索后端。模型渠道仍需按原流程配置。
+
+可直接复制 [JSON 示例](examples/hermes-parallel-mcp.json)：
+
+```json
+{
+  "parallel": {
+    "url": "https://search.parallel.ai/mcp",
+    "headers": {
+      "User-Agent": "ClawPanel/0.22.1"
+    },
+    "connect_timeout": 30,
+    "timeout": 60
+  }
+}
+```
+
+配置会写入当前 Hermes 的 `config.yaml`（默认 `~/.hermes/config.yaml`），连接超时和工具调用超时单位均为秒。无需添加 `Authorization`、`PARALLEL_API_KEY` 或 stdio 的 `command` / `args`，也无需额外安装搜索插件。
+
+在安装 Hermes 的主机上运行 `hermes mcp test parallel` 可检查连接与工具发现；应能看到 `web_search` 和 `web_fetch`。这项检查只确认连接，不代表模型已完成一次工具调用。若工具未出现，检查 HTTP MCP 依赖是否已随引擎安装、服务是否启用，以及当前会话的工具集是否允许 `parallel`。收到限流响应时按服务返回的重试时间稍后再试，不要连续重启重试。
+
+要停用时，仅从映射中移除 `parallel` 条目，保存并重启 Gateway，保留其他 MCP 服务。
+
 ## 与 OpenClaw 的关系
 
 ClawPanel 采用多引擎架构：OpenClaw 适合已有 OpenClaw 生态用户的 Agent 管理和 Gateway 运维；Hermes Agent 则强化会话、记忆、人格和工具执行的长期运营体验。两者可以在同一个面板中统一管理。
