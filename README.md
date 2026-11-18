@@ -213,7 +213,7 @@ docker run -d --name clawpanel --restart unless-stopped \
   -p 1420:1420 -v clawpanel-data:/root/.openclaw \
   node:24.16.0-slim \
   sh -c "apt-get update && apt-get install -y git && \
-    npm install -g openclaw@2026.11.4 --registry https://registry.npmmirror.com && \
+    npm install -g openclaw@2026.11.5 --registry https://registry.npmmirror.com && \
     git clone https://github.com/qingchencloud/clawpanel.git /app && \
     cd /app && npm ci && npm run build && npm run serve"
 ```
@@ -279,9 +279,9 @@ sudo systemctl restart clawpanel
 
 > **升级 OpenClaw**：面板和 OpenClaw 版本需要匹配。可在「服务管理」页面一键升级，或手动执行：
 > ```bash
-> sudo npm install -g openclaw@2026.11.4 --registry https://registry.npmmirror.com
+> sudo npm install -g openclaw@2026.11.5 --registry https://registry.npmmirror.com
 > ```
-> 汉化版仍可显式安装：`sudo npm install -g @qingchencloud/openclaw-zh@2026.11.4-zh.2 --registry https://registry.npmmirror.com`。
+> 汉化版仍可显式安装：`sudo npm install -g @qingchencloud/openclaw-zh@2026.11.5-zh.1 --registry https://registry.npmmirror.com`。
 
 ### Docker 升级
 
@@ -305,7 +305,7 @@ docker run -d --name clawpanel --restart unless-stopped \
   -p 1420:1420 -v clawpanel-data:/root/.openclaw \
   node:24.16.0-slim \
   sh -c "apt-get update && apt-get install -y git && \
-    npm install -g openclaw@2026.11.4 --registry https://registry.npmmirror.com && \
+    npm install -g openclaw@2026.11.5 --registry https://registry.npmmirror.com && \
     git clone https://github.com/qingchencloud/clawpanel.git /app && \
     cd /app && npm ci && npm run build && npm run serve"
 ```
@@ -313,7 +313,7 @@ docker run -d --name clawpanel --restart unless-stopped \
 **仅升级容器内的 OpenClaw**
 
 ```bash
-docker exec -it clawpanel npm install -g openclaw@2026.11.4 --registry https://registry.npmmirror.com
+docker exec -it clawpanel npm install -g openclaw@2026.11.5 --registry https://registry.npmmirror.com
 ```
 
 ### macOS / Windows Web 版升级
@@ -772,7 +772,7 @@ Web 版适用于 Linux 服务器（无桌面环境），通过浏览器远程管
 
 ### 环境要求
 
-- **Node.js** 推荐 24.16.0+（24.x）；面板会按已安装 OpenClaw 的 `engines.node` 检测兼容性，当前官方稳定版 2026.11.4 要求 `>=24.16.0 <25 || >=26.1.0`
+- **Node.js** 推荐 24.16.0+（24.x）；面板会按已安装 OpenClaw 的 `engines.node` 检测兼容性，当前官方稳定版 2026.11.5 要求 `>=24.16.0 <25 || >=26.1.0`
 - **Git**（用于 OpenClaw 依赖安装）
 - **端口** 1420（ClawPanel）+ 18789（Gateway）
 
@@ -895,7 +895,7 @@ open /Applications/ClawPanel.app
 1. 以管理员身份运行 ClawPanel
 2. 或打开 PowerShell（管理员）手动安装：
    ```powershell
-   npm install -g openclaw@2026.11.4 --registry https://registry.npmmirror.com
+   npm install -g openclaw@2026.11.5 --registry https://registry.npmmirror.com
    ```
 3. 如果仍报错，清理 npm 缓存：`npm cache clean --force`
 
@@ -916,7 +916,7 @@ git config --global url."https://github.com/".insteadOf git@github.com:
 
 ```powershell
 npm cache clean --force
-npm install -g openclaw@2026.11.4 --registry https://registry.npmmirror.com
+npm install -g openclaw@2026.11.5 --registry https://registry.npmmirror.com
 ```
 
 ### 安装后 Node.js 检测不到（Windows）

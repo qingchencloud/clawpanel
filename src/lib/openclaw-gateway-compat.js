@@ -9,6 +9,23 @@
 export const OPENCLAW_PROTOCOL_PREFERRED_RANGE = Object.freeze({ min: 4, max: 4 })
 export const OPENCLAW_PROTOCOL_RANGE = Object.freeze({ min: 3, max: 4 })
 
+// Gateway 可在连接就绪后、聊天服务就绪前拒绝首条消息。仅重发明确未受理的同一请求。
+export async function sendChatAfterStartup(send, isCurrent) {
+  const deadline = Date.now() + 30000
+  for (;;) {
+    try {
+      return await send()
+    } catch (error) {
+      if (error?.code !== 'UNAVAILABLE' || error.retryable !== true ||
+          error.details?.reason !== 'startup-sidecars' || !isCurrent()) throw error
+      const delay = Math.max(100, Math.min(Number(error.retryAfterMs) || 500, 2000))
+      if (Date.now() + delay >= deadline) throw error
+      await new Promise(resolve => setTimeout(resolve, delay))
+      if (Date.now() >= deadline || !isCurrent()) throw error
+    }
+  }
+}
+
 export function resolveConnectSignedAt(challengeTs, fallbackNow = Date.now()) {
   const value = typeof challengeTs === 'string' && challengeTs.trim()
     ? Number(challengeTs)

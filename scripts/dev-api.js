@@ -1274,6 +1274,20 @@ function openclawNodeRequirement() {
   return fallbackOpenclawNodeRequirement(installedVersion)
 }
 
+// 汉化包采用作用域包名，部分内核只能从工作目录找到随包的首聊模板。
+function directGatewayWorkingDirectory() {
+  const manifest = findOpenclawPackageJson(resolveOpenclawCliPath())
+  if (manifest) {
+    try {
+      const root = path.dirname(manifest)
+      const pkg = JSON.parse(fs.readFileSync(manifest, 'utf8'))
+      if (pkg.name === '@qingchencloud/openclaw-zh' &&
+          fs.statSync(path.join(root, 'docs', 'reference', 'templates', 'AGENTS.md')).isFile()) return root
+    } catch {}
+  }
+  return homedir()
+}
+
 export function fallbackOpenclawNodeRequirement(installedVersion) {
   if (!installedVersion) return null
   const version = baseVersion(installedVersion)
@@ -9251,7 +9265,7 @@ function winStartGateway() {
     detached: true,
     stdio: ['ignore', out, err],
     windowsHide: true,
-    cwd: homedir(),
+    cwd: directGatewayWorkingDirectory(),
   })
   child.unref()
 }
@@ -9579,7 +9593,7 @@ function linuxStartGateway() {
     detached: true,
     stdio: ['ignore', out, err],
     shell: false,
-    cwd: homedir(),
+    cwd: directGatewayWorkingDirectory(),
   })
   child.unref()
 }

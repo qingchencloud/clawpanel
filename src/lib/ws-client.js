@@ -19,6 +19,7 @@ import {
   isDeviceAuthReason,
   isProtocolIncompatDetailCode,
   isProtocolIncompatReason,
+  sendChatAfterStartup,
 } from './openclaw-gateway-compat.js'
 
 export function uuid() {
@@ -85,6 +86,7 @@ export class WsClient {
     this._url = ''
     this._token = ''
     this._pending = new Map()
+    this._pendingChatSends = new Set()
     this._eventListeners = []
     this._statusListeners = []
     this._readyCallbacks = []
@@ -565,6 +567,8 @@ export class WsClient {
           const err = new Error(msg.error?.message || msg.error?.code || 'request failed')
           err.code = msg.error?.code || null
           err.details = msg.error?.details || null
+          err.retryable = msg.error?.retryable
+          err.retryAfterMs = msg.error?.retryAfterMs
           err.method = cb.method || null
           cb.reject(err)
         }
@@ -913,14 +917,22 @@ export class WsClient {
     this._unsupportedMethods.clear()
   }
 
-  chatSend(sessionKey, message, attachments) {
+  async chatSend(sessionKey, message, attachments) {
     const params = { sessionKey, message, deliver: false, idempotencyKey: uuid() }
     if (attachments && attachments.length > 0) {
       params.attachments = attachments
       console.log('[ws] 发送附件:', attachments.length, '个')
       console.log('[ws] 附件详情:', attachments.map(a => ({ type: a.type, mime: a.mimeType, name: a.fileName, size: a.content?.length })))
     }
-    return this.request('chat.send', params)
+    const connection = this._wsId
+    this._pendingChatSends.add(params)
+    try {
+      return await sendChatAfterStartup(() => this.request('chat.send', params), () =>
+        this._pendingChatSends.has(params) && this._wsId === connection &&
+        !this._intentionalClose && this._gatewayReady && this._ws?.readyState === WebSocket.OPEN)
+    } finally {
+      this._pendingChatSends.delete(params)
+    }
   }
 
   chatHistory(sessionKey, limit = 200) {
@@ -940,6 +952,9 @@ export class WsClient {
   }
 
   chatAbort(sessionKey, runId) {
+    for (const send of this._pendingChatSends) {
+      if (send.sessionKey === sessionKey && (!runId || send.idempotencyKey === runId)) this._pendingChatSends.delete(send)
+    }
     const params = { sessionKey }
     if (runId) params.runId = runId
     return this.request('chat.abort', params)

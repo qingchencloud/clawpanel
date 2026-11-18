@@ -12,15 +12,15 @@ const desktopService = readFileSync(new URL('../src-tauri/src/commands/service.r
 const chatPage = readFileSync(new URL('../src/pages/chat.js', import.meta.url), 'utf8')
 
 test('ClawPanel recommends the current official and Chinese OpenClaw stable lines', () => {
-  assert.equal(policy.default.official.recommended, '2026.11.4')
-  assert.equal(policy.default.chinese.recommended, '2026.11.4-zh.2')
-  assert.match(featureCatalog, /official: '2026\.11\.4'/)
-  assert.match(featureCatalog, /chinese: '2026\.11\.4-zh\.2'/)
+  assert.equal(policy.default.official.recommended, '2026.11.5')
+  assert.equal(policy.default.chinese.recommended, '2026.11.5-zh.1')
+  assert.match(featureCatalog, /official: '2026\.11\.5'/)
+  assert.match(featureCatalog, /chinese: '2026\.11\.5-zh\.1'/)
 })
 
 test('Linux deployment keeps the Chinese 2026.7.1 correction as an explicit option', () => {
   assert.match(linuxDeploy, /OPENCLAW_SOURCE="\$\{OPENCLAW_SOURCE:-official\}"/)
-  assert.match(linuxDeploy, /OPENCLAW_CHINESE_RECOMMENDED_VERSION="2026\.11\.4-zh\.2"/)
+  assert.match(linuxDeploy, /OPENCLAW_CHINESE_RECOMMENDED_VERSION="2026\.11\.5-zh\.1"/)
   assert.match(linuxDeploy, /OPENCLAW_SOURCE" = "chinese"/)
   assert.match(linuxDeploy, /@qingchencloud\/openclaw-zh@\$\{OPENCLAW_RECOMMENDED_VERSION\}/)
   assert.match(linuxDeploy, /\[ "\$major" -ge 25 \]/)
