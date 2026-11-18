@@ -12,7 +12,7 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 const OPENCODE_PACKAGE_NAME: &str = "opencode-ai";
-const OPENCODE_PACKAGE_VERSION: &str = "1.19.2";
+const OPENCODE_PACKAGE_VERSION: &str = "1.19.6";
 const OPENCODE_DEFAULT_PORT: u16 = 4096;
 const OPENCODE_CONFIG_SCHEMA: &str = "https://opencode.ai/config.json";
 

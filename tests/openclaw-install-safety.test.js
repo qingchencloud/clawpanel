@@ -11,7 +11,7 @@ const setup = readFileSync(new URL('../src/pages/setup.js', import.meta.url), 'u
 const tauriApi = readFileSync(new URL('../src/lib/tauri-api.js', import.meta.url), 'utf8')
 const wsClient = readFileSync(new URL('../src/lib/ws-client.js', import.meta.url), 'utf8')
 const devApi = readFileSync(new URL('../scripts/dev-api.js', import.meta.url), 'utf8')
-const rustConfig = readFileSync(new URL('../src-tauri/src/commands/config.rs', import.meta.url), 'utf8')
+const rustConfig = readFileSync(new URL('../src-tauri/src/commands/config.rs', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
 
 function sliceFunction(source, startMarker, endMarker) {
   const start = source.indexOf(startMarker)
