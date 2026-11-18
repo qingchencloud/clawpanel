@@ -13,7 +13,6 @@ const web = () => fs.readFileSync(path.join(root, 'scripts/dev-api.js'), 'utf8')
 const rust = () => fs.readFileSync(path.join(root, 'src-tauri/src/commands/hermes.rs'), 'utf8')
 const listen = s => new Promise((resolve, reject) => { s.once('error', reject); s.listen(0, '127.0.0.1', () => resolve(s.address().port)) })
 const close = s => new Promise(resolve => { s.closeAllConnections?.(); s.close(() => resolve()) })
-const alive = pid => { try { process.kill(pid, 0); return true } catch { return false } }
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
 
 test('Rust Dashboard start/probe只认配置端口TCP，显式port且保留no-open/90秒/本机边界', () => {
@@ -47,29 +46,43 @@ for (const mode of ['normal', 'foreign-positive', 'already-online', 'early-exit'
     const base = fs.realpathSync.native(os.tmpdir()), dir = fs.mkdtempSync(path.join(base, 'hermes-dashboard-port-'))
     const home = path.join(dir, 'h'), hermesHome = path.join(home, '.hermes'), bin = path.join(hermesHome, 'bin'), cliLog = path.join(dir, 'cli.jsonl')
     const nonce = path.basename(dir), observations = [], cleanup = []
+    const release = path.join(dir, 'close-dashboard')
+    let stoppedGeneration
     let panel, foreign, configured, stdout = '', stderr = ''
     const readCli = () => fs.existsSync(cliLog) ? fs.readFileSync(cliLog, 'utf8').trim().split('\n').filter(Boolean).map(s => JSON.parse(s)) : []
     t.after(async () => {
-      // 只清本fixture自己实际记录的PID，不调用会扫描其他HOME的全局dashboard --stop。
-      for (const record of readCli().filter(e => e.event === 'launch' && e.nonce === nonce)) {
-        if (alive(record.pid)) { try { process.kill(record.pid) } catch {} }
-        for (let n = 0; n < 40 && alive(record.pid); n++) await pause(50)
-        cleanup.push({ pid: record.pid, alive: alive(record.pid), nonce: record.nonce })
-      }
-      if (panel && panel.exitCode === null) { const closed = new Promise(resolve => panel.once('close', resolve)); panel.kill(); await closed }
-      if (configured) await close(configured)
       let foreignFinal
-      if (foreign) {
-        foreignFinal = await (await fetch(`http://127.0.0.1:${foreign.address().port}`, { signal: AbortSignal.timeout(2000) })).text()
-        observations.push({ phase: 'cleanup-before-close', foreignFinal })
-        await close(foreign)
+      try {
+        // 仅通知本次夹具退出，在关闭面板前读取其原始子进程句柄的退出回执。
+        fs.writeFileSync(release, nonce)
+        for (const record of readCli().filter(e => e.event === 'child-spawn' && e.nonce === nonce)) {
+          const exits = () => readCli().filter(e => e.event === 'child-exit' && e.nonce === nonce && e.generation === record.generation)
+          for (let n = 0; n < 40 && !exits().length; n++) await pause(50)
+          cleanup.push({ pid: record.pid, generation: record.generation, nonce, exits: exits().map(({ code, signal }) => ({ code, signal })) })
+        }
+        if (foreign) {
+          foreignFinal = await (await fetch(`http://127.0.0.1:${foreign.address().port}`, { signal: AbortSignal.timeout(2000) })).text()
+          observations.push({ phase: 'cleanup-before-close', foreignFinal })
+        }
+      } finally {
+        if (panel && panel.exitCode === null && panel.signalCode === null) {
+          const closed = new Promise(resolve => panel.once('close', resolve))
+          panel.kill()
+          await closed
+        }
+        if (configured) await close(configured)
+        if (foreign) await close(foreign)
       }
       if (evidence) { fs.mkdirSync(evidence, { recursive: true }); fs.writeFileSync(path.join(evidence, mode + '.json'), JSON.stringify({ scope: 'production HTTP / bounded CLI fixture not real Hermes or native UI', root, mode, nonce, observations, cli: readCli(), cleanup, stdout, stderr }, null, 2)) }
-      assert.ok(cleanup.every(p => !p.alive), JSON.stringify(cleanup))
+      assert.deepEqual(cleanup.map(entry => entry.pid), readCli().filter(e => e.event === 'launch').map(e => e.pid))
+      for (const entry of cleanup) {
+        const expected = entry.generation === stoppedGeneration ? { code: null, signal: 'SIGKILL' } : { code: mode === 'early-exit' ? 7 : 0, signal: null }
+        assert.deepEqual(entry.exits, [expected], JSON.stringify(entry))
+      }
       assert.equal(foreignFinal, 'foreign-' + nonce, '退出清理前foreign listener必须仍在线且响应未变')
       assert.equal(path.dirname(fs.realpathSync.native(dir)), base)
       // Windows 可能在进程关闭后短暂占用复制的 CLI；持续占用仍应报错。
-      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 6, retryDelay: 100 })
+      await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 6, retryDelay: 100 })
     })
     fs.mkdirSync(bin, { recursive: true }); fs.mkdirSync(path.join(home, '.openclaw'), { recursive: true })
     foreign = http.createServer((_q, r) => r.end('foreign-' + nonce)); const foreignPort = await listen(foreign)
@@ -78,7 +91,21 @@ for (const mode of ['normal', 'foreign-positive', 'already-online', 'early-exit'
     fs.writeFileSync(path.join(hermesHome, 'config.yaml'), `gateway:\n  port: ${foreignPort}\ndashboard:\n  port: ${configuredPort}\n`)
     fs.writeFileSync(path.join(home, '.openclaw/clawpanel.json'), JSON.stringify({ ignoreRisk: true, engineMode: 'hermes', enabledEngines: ['hermes'] }))
     const preload = path.join(dir, 'cli-preload.mjs')
-    fs.writeFileSync(preload, `import fs from 'node:fs';import path from 'node:path';import http from 'node:http';
+    fs.writeFileSync(preload, `import fs from 'node:fs';import path from 'node:path';import http from 'node:http';import { channel } from 'node:diagnostics_channel';
+if(path.basename(process.argv[1]||'')==='panel.mjs'){
+ let generation=0;
+ channel('child_process').subscribe(({process:child})=>{
+   child.once('spawn',()=>{
+     if(!/^hermes(?:[.]exe)?$/i.test(path.basename(child.spawnfile)))return;
+     const args=child.spawnargs.slice(1);
+     if(!args.includes('--no-open'))return;
+     const identity={args,pid:child.pid,nonce:${JSON.stringify(nonce)},generation:++generation};
+     const journal=row=>fs.appendFileSync(${JSON.stringify(cliLog)},JSON.stringify({...identity,...row})+String.fromCharCode(10));
+     journal({event:'child-spawn'});
+     child.once('exit',(code,signal)=>journal({event:'child-exit',code,signal}));
+   });
+ });
+}
 const copied=/^hermes(?:\\.exe)?$/i.test(path.basename(process.execPath));
 if(copied||path.basename(process.argv[1]||'')==='hermes'){
  const args=process.argv.slice(copied?1:2).map((v,i)=>copied&&i===0?path.basename(v):v);
@@ -91,6 +118,7 @@ if(copied||path.basename(process.argv[1]||'')==='hermes'){
  if(${JSON.stringify(mode)}==='early-exit'){console.error('fixture-original-dashboard-error');process.exit(7)}
  const s=http.createServer((_q,r)=>{r.setHeader('content-type','application/json');r.end(JSON.stringify({nonce:${JSON.stringify(nonce)},pid:process.pid,port:${configuredPort},home:process.env.HERMES_HOME}))});
  s.listen(${configuredPort},'127.0.0.1',()=>record('listening'));
+ setInterval(()=>{if(fs.existsSync(${JSON.stringify(release)})){s.closeAllConnections();s.close(()=>process.exit(0))}},50).unref();
  setTimeout(()=>{s.closeAllConnections();s.close(()=>process.exit(0))},15000).unref();
  await new Promise(()=>{});
 }`)
@@ -104,6 +132,11 @@ if(copied||path.basename(process.argv[1]||'')==='hermes'){
     const foreignUrl = `http://127.0.0.1:${foreignPort}`, before = await (await fetch(foreignUrl, { signal: AbortSignal.timeout(2000) })).text()
     const response = await fetch(`http://127.0.0.1:${panelPort}/__api/hermes_dashboard_start`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(12000) })
     const result = await response.json(); observations.push({ configuredPort, foreignPort, status: response.status, result })
+    const dashboard = async action => {
+      const response = await fetch(`http://127.0.0.1:${panelPort}/__api/hermes_dashboard_${action}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(12000) })
+      assert.equal(response.status, 200)
+      return response.json()
+    }
     assert.equal(response.status, 200, JSON.stringify(result)); assert.equal(result.port, configuredPort)
     if (mode === 'early-exit') { assert.equal(result.started, false); assert.equal(result.exit_code, 7); assert.match(result.log_tail, /fixture-original-dashboard-error/) }
     else {
@@ -114,6 +147,35 @@ if(copied||path.basename(process.argv[1]||'')==='hermes'){
         assert.equal(actual.nonce, nonce); assert.equal(actual.port, configuredPort); assert.equal(actual.home, hermesHome)
         const launches = readCli().filter(e => e.event === 'launch'); assert.equal(launches.length, 1); assert.deepEqual(launches[0].args, ['dashboard', '--no-open', '--port', String(configuredPort)])
       }
+    }
+    if (mode === 'normal') {
+      stoppedGeneration = readCli().find(e => e.event === 'child-spawn' && e.pid === result.pid).generation
+      assert.equal(await dashboard('stop'), true)
+      await assert.rejects(fetch(`http://127.0.0.1:${configuredPort}`))
+      const starts = await Promise.all([dashboard('start'), dashboard('start')])
+      assert.ok(starts.every(candidate => candidate.started))
+      const restarted = starts.find(candidate => !candidate.already_running)
+      assert.ok(restarted, '并发重启应实际创建 Dashboard')
+      assert.equal(restarted.started, true)
+      assert.equal(restarted.already_running, false)
+      const restored = await (await fetch(`http://127.0.0.1:${configuredPort}`)).json()
+      assert.equal(restored.pid, restarted.pid)
+      assert.equal(restored.nonce, nonce)
+      assert.equal(readCli().filter(e => e.event === 'launch').length, 2, '重启的并发请求共用一个子进程')
+      const activeGeneration = readCli().findLast(e => e.event === 'child-spawn').generation
+      fs.writeFileSync(release, nonce)
+      const exited = () => readCli().some(e => e.event === 'child-exit' && e.generation === activeGeneration && e.code === 0)
+      for (let n = 0; n < 40 && !exited(); n++) await pause(50)
+      assert.ok(exited(), '重启后的原始进程必须自然退出')
+      configured = http.createServer((_q, r) => r.end('replacement-' + nonce))
+      await new Promise((resolve, reject) => { configured.once('error', reject); configured.listen(configuredPort, '127.0.0.1', resolve) })
+      assert.equal(await dashboard('stop'), false)
+      assert.equal(await (await fetch(`http://127.0.0.1:${configuredPort}`)).text(), 'replacement-' + nonce)
+      observations.push({ manualStop: true, restartPid: restarted.pid, concurrentStarts: starts, naturalExit: true, replacementPreserved: true })
+    }
+    if (mode === 'already-online') {
+      assert.equal(await dashboard('stop'), false)
+      assert.equal(await (await fetch(`http://127.0.0.1:${configuredPort}`)).text(), 'existing-' + nonce)
     }
     const after = await (await fetch(foreignUrl, { signal: AbortSignal.timeout(2000) })).text()
     observations.push({ foreignBefore: before, foreignAfter: after }); assert.equal(after, before); assert.equal(before, 'foreign-' + nonce)

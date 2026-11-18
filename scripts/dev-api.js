@@ -736,9 +736,10 @@ export async function uninstallHermesManagedSourceAt(home = hermesHome(), cleanC
       try { _hermesGwProcess.kill() } catch {}
       _hermesGwProcess = null
     }
-    if (handlers?._dashPid) {
-      try { process.kill(handlers._dashPid, 'SIGKILL') } catch {}
-      handlers._dashPid = 0
+    for (const run of hermesDashboards.values()) {
+      if (run.home === path.resolve(home) && !await stopManagedHermesDashboard(run)) {
+        throw new Error('Hermes Dashboard 尚未退出，无法卸载')
+      }
     }
     fs.rmSync(sourceDir, { recursive: true, force: true })
   }
@@ -806,6 +807,22 @@ function diagnoseHermesInstallError(text = '') {
 }
 
 let _hermesGwProcess = null
+// 仅保存本 Web 进程实际创建的 Dashboard，同端口的后来者不能继承停止权限。
+const hermesDashboards = new Map()
+function hermesDashboardKey(home, port) { return JSON.stringify([path.resolve(home), port]) }
+
+async function stopManagedHermesDashboard(run) {
+  if (!run) return false
+  const { child, closed } = run
+  let timer
+  try {
+    if (!child.killed && child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+    const timeout = new Promise(resolve => { timer = setTimeout(() => resolve(false), 5000) })
+    return await Promise.race([closed, timeout])
+  } finally {
+    clearTimeout(timer)
+  }
+}
 let _hermesGwStarting = null
 
 const __dev_dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -18980,65 +18997,55 @@ const handlers = {
     return null
   },
 
-  async _hermesDashboardCliStop() {
-    return (await runHermesSilent('hermes', ['dashboard', '--stop'])).ok
-      || (await runHermesSilent('hermes', ['dashboard', 'stop'])).ok
-  },
-
   async hermes_dashboard_start() {
     const port = handlers._hermesDashboardPort()
-    // 1. 只认本实例配置端口；CLI 全局列表包含其他 HOME/端口。
-    if (await _tcpProbe('127.0.0.1', port, 500)) {
+    const home = hermesHome()
+    const key = hermesDashboardKey(home, port)
+    const online = await _tcpProbe('127.0.0.1', port, 500)
+    let run = hermesDashboards.get(key)
+    if (run?.child.killed) return { started: false, kind: 'stopping', port }
+    if (online) {
       return { started: true, already_running: true, port }
     }
-    // 2. 清残留 PID
-    if (handlers._dashPid) {
-      try { process.kill(handlers._dashPid, 'SIGKILL') } catch {}
-      handlers._dashPid = 0
-    }
-    const home = hermesHome()
     const logPath = path.join(home, 'dashboard-run.log')
-    let out, err
-    try {
-      out = fs.openSync(logPath, 'w')
-      err = fs.openSync(logPath, 'a')
-    } catch (e) {
-      throw new Error(`创建日志文件失败: ${e.message || e}`)
-    }
-    // 注入 .env
-    const envVars = { ...process.env, PATH: hermesEnhancedPath() }
-    envVars.HERMES_WEB_DIST = ensureHermesDashboardFallbackDist(home)
-    const envPath = path.join(home, '.env')
-    if (fs.existsSync(envPath)) {
-      for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
-        const t = line.trim()
-        if (!t || t.startsWith('#')) continue
-        const eq = t.indexOf('=')
-        if (eq > 0) envVars[t.slice(0, eq).trim()] = t.slice(eq + 1).trim()
+    if (!run) {
+      const envVars = { ...process.env, PATH: hermesEnhancedPath() }
+      envVars.HERMES_WEB_DIST = ensureHermesDashboardFallbackDist(home)
+      const envPath = path.join(home, '.env')
+      if (fs.existsSync(envPath)) {
+        for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+          const t = line.trim()
+          if (!t || t.startsWith('#')) continue
+          const eq = t.indexOf('=')
+          if (eq > 0) envVars[t.slice(0, eq).trim()] = t.slice(eq + 1).trim()
+        }
       }
+      const log = fs.openSync(logPath, 'w')
+      let child
+      try {
+        child = spawn('hermes', ['dashboard', '--no-open', '--port', String(port)], {
+          cwd: home, env: envVars, stdio: ['ignore', log, log], detached: true, windowsHide: true,
+        })
+      } finally {
+        fs.closeSync(log)
+      }
+      child.unref()
+      run = { home: path.resolve(home), child, finished: false, error: '' }
+      hermesDashboards.set(key, run)
+      child.once('error', error => { run.error = error.message })
+      run.closed = new Promise(resolve => child.once('close', () => {
+        run.finished = true
+        if (hermesDashboards.get(key) === run) hermesDashboards.delete(key)
+        resolve(true)
+      }))
     }
-    const child = spawn('hermes', ['dashboard', '--no-open', '--port', String(port)], {
-      cwd: home,
-      env: envVars,
-      stdio: ['ignore', out, err],
-      detached: true,
-      windowsHide: true,
-    })
-    child.unref()
-    const pid = child.pid
-    handlers._dashPid = pid
-
-    let earlyExitCode = null
-    let earlyExitFlag = false
-    child.once('exit', (code) => { earlyExitCode = code; earlyExitFlag = true })
-
-    // 3. 等待 - 端口起来 / 进程提前死 / 超时（90s 覆盖首次 npm build）
+    const pid = run.child.pid
+    // 同时启动的请求共用同一子进程，最长等待 90 秒覆盖首次 npm build。
     const deadline = Date.now() + 90000
     while (Date.now() < deadline) {
-      if (earlyExitFlag) {
-        handlers._dashPid = 0
+      if (run.finished) {
         const raw = fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8') : ''
-        const tail = raw.split('\n').slice(-40).join('\n')
+        const tail = raw.split('\n').slice(-40).join('\n') || run.error
         const lower = raw.toLowerCase()
         let kind = 'spawn_failed'
         if (lower.includes('web ui dependencies not installed')
@@ -19050,9 +19057,9 @@ const handlers = {
           || (lower.includes('port') && lower.includes('already in use'))) {
           kind = 'port_in_use'
         }
-        return { started: false, kind, exit_code: earlyExitCode, port, log_tail: tail }
+        return { started: false, kind, exit_code: run.child.exitCode, port, log_tail: tail }
       }
-      if (await _tcpProbe('127.0.0.1', port, 300)) {
+      if (await _tcpProbe('127.0.0.1', port, 300) && !run.finished && !run.child.killed) {
         return { started: true, already_running: false, port, pid }
       }
       await new Promise(r => setTimeout(r, 500))
@@ -19065,33 +19072,7 @@ const handlers = {
 
   async hermes_dashboard_stop() {
     const port = handlers._hermesDashboardPort()
-    const cliStopped = await handlers._hermesDashboardCliStop()
-    if (!handlers._dashPid) {
-      if (cliStopped) {
-        for (let i = 0; i < 20; i++) {
-          if (!await _tcpProbe('127.0.0.1', port, 200)) return true
-          await new Promise(r => setTimeout(r, 250))
-        }
-        return true
-      }
-      return false
-    }
-    try {
-      if (isWindows) {
-        spawnSync('taskkill', ['/F', '/PID', String(handlers._dashPid)], { windowsHide: true })
-      } else {
-        process.kill(handlers._dashPid, 'SIGKILL')
-      }
-      handlers._dashPid = 0
-      for (let i = 0; i < 20; i++) {
-        if (!await _tcpProbe('127.0.0.1', port, 200)) return true
-        await new Promise(r => setTimeout(r, 250))
-      }
-      return true
-    } catch {
-      handlers._dashPid = 0
-      return cliStopped
-    }
+    return stopManagedHermesDashboard(hermesDashboards.get(hermesDashboardKey(hermesHome(), port)))
   },
 
   async hermes_toolsets_list() {
