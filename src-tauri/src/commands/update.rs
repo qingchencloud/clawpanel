@@ -1,8 +1,7 @@
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// 前端热更新目录 (~/.openclaw/clawpanel/web-update/)
@@ -10,7 +9,7 @@ pub fn update_dir() -> PathBuf {
     super::openclaw_dir().join("clawpanel").join("web-update")
 }
 
-/// 更新清单 URL（GitHub Pages 托管）
+/// 官网提供的桌面前端热更新清单。
 const LATEST_JSON_URL: &str = "https://claw.qt.cool/update/latest.json";
 
 /// 检查前端是否有新版本可用
@@ -56,8 +55,11 @@ pub async fn check_frontend_update() -> Result<Value, String> {
     // 优先读取已热更新的版本，避免 macOS/Linux 用户安装旧包后永远提示有更新
     let frontend_current = {
         let version_file = update_dir().join(".version");
-        std::fs::read_to_string(&version_file)
-            .ok()
+        update_dir()
+            .join("index.html")
+            .is_file()
+            .then(|| fs::read_to_string(version_file).ok())
+            .flatten()
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string())
@@ -72,8 +74,11 @@ pub async fn check_frontend_update() -> Result<Value, String> {
     let app_version = env!("CARGO_PKG_VERSION");
     let compatible = version_ge(app_version, min_app);
     let remote_newer = !latest.is_empty() && compatible && version_gt(&latest, &frontend_current);
-    let update_ready = remote_newer && update_dir().join("index.html").exists();
-    let has_update = remote_newer && !update_ready;
+    let update_ready = compatible
+        && frontend_current == latest
+        && version_gt(&latest, app_version)
+        && update_dir().join("index.html").is_file();
+    let has_update = remote_newer;
 
     Ok(serde_json::json!({
         "currentVersion": frontend_current,
@@ -126,55 +131,125 @@ pub async fn download_frontend_update(
         }
     }
 
-    // 清理旧更新，解压新包
     let dir = update_dir();
-    if dir.exists() {
-        fs::remove_dir_all(&dir).map_err(|e| format!("清理旧更新失败: {e}"))?;
+    let files = install_frontend_archive(&dir, &bytes, &version)?;
+    Ok(serde_json::json!({"success": true, "files": files, "path": dir.to_string_lossy()}))
+}
+
+fn lock_updates(dir: &Path) -> Result<fs::File, String> {
+    let parent = dir.parent().ok_or("热更新目录无效")?;
+    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let lock = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(dir.with_file_name("web-update.lock"))
+        .map_err(|e| e.to_string())?;
+    lock.lock()
+        .map_err(|e| format!("锁定热更新目录失败: {e}"))?;
+    Ok(lock)
+}
+
+fn remove_dir_if_present(dir: &Path) -> std::io::Result<()> {
+    match fs::remove_dir_all(dir) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        result => result,
     }
-    fs::create_dir_all(&dir).map_err(|e| format!("创建更新目录失败: {e}"))?;
+}
 
-    let cursor = std::io::Cursor::new(bytes.as_ref());
-    let mut archive = zip::ZipArchive::new(cursor).map_err(|e| format!("解压失败: {e}"))?;
-
-    for i in 0..archive.len() {
-        let mut file = archive
-            .by_index(i)
-            .map_err(|e| format!("读取压缩条目失败: {e}"))?;
-
-        let name = file.name().to_string();
-        let target = dir.join(&name);
-
-        if name.ends_with('/') {
-            fs::create_dir_all(&target).map_err(|e| format!("创建子目录失败: {e}"))?;
+// 目录替换中断时，优先恢复上一次已验证的资源。
+fn recover_previous(dir: &Path) -> Result<(), String> {
+    let previous = dir.with_file_name("web-update.previous");
+    if previous.is_dir() {
+        if dir.join("index.html").is_file() {
+            remove_dir_if_present(&previous).map_err(|e| e.to_string())?;
         } else {
-            if let Some(parent) = target.parent() {
-                fs::create_dir_all(parent).map_err(|e| format!("创建父目录失败: {e}"))?;
-            }
-            let mut buf = Vec::new();
-            file.read_to_end(&mut buf)
-                .map_err(|e| format!("读取文件内容失败: {e}"))?;
-            fs::write(&target, &buf).map_err(|e| format!("写入文件失败: {e}"))?;
+            remove_dir_if_present(dir).map_err(|e| e.to_string())?;
+            fs::rename(previous, dir).map_err(|e| format!("恢复热更新目录失败: {e}"))?;
         }
     }
+    Ok(())
+}
 
-    // 写入版本号文件，供下次 check_frontend_update 读取
-    if !version.is_empty() {
-        let _ = std::fs::write(dir.join(".version"), &version);
+pub(crate) fn recover_frontend_update(dir: &Path) -> Result<(), String> {
+    if dir.with_file_name("web-update.previous").is_dir() {
+        let _lock = lock_updates(dir)?;
+        recover_previous(dir)?;
     }
+    Ok(())
+}
 
-    Ok(serde_json::json!({
-        "success": true,
-        "files": archive.len(),
-        "path": dir.to_string_lossy()
-    }))
+fn install_frontend_archive(dir: &Path, bytes: &[u8], version: &str) -> Result<usize, String> {
+    let mut archive =
+        zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|e| format!("解压失败: {e}"))?;
+    let index = archive
+        .by_name("index.html")
+        .map_err(|_| "桌面前端包缺少根目录 index.html")?;
+    if !index.is_file() || index.size() == 0 {
+        return Err("桌面入口为空".into());
+    }
+    drop(index);
+
+    let _lock = lock_updates(dir)?;
+    recover_previous(dir)?;
+    let next = dir.with_file_name("web-update.next");
+    let previous = dir.with_file_name("web-update.previous");
+    remove_dir_if_present(&next).map_err(|e| e.to_string())?;
+    fs::create_dir(&next).map_err(|e| e.to_string())?;
+    let staged = (|| -> Result<(), String> {
+        for i in 0..archive.len() {
+            let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
+            let name = file.enclosed_name().ok_or("桌面包内路径无效")?;
+            if name
+                .components()
+                .any(|p| matches!(p, std::path::Component::ParentDir))
+                || file.is_symlink()
+            {
+                return Err("桌面包包含无效路径".into());
+            }
+            let target = next.join(name);
+            if file.is_dir() {
+                fs::create_dir_all(&target).map_err(|e| e.to_string())?;
+            } else {
+                if let Some(parent) = target.parent() {
+                    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                }
+                let mut dest = fs::File::create_new(&target).map_err(|e| e.to_string())?;
+                std::io::copy(&mut file, &mut dest).map_err(|e| e.to_string())?;
+            }
+        }
+        if !version.is_empty() {
+            fs::write(next.join(".version"), version).map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    })();
+    if let Err(e) = staged {
+        let _ = remove_dir_if_present(&next);
+        return Err(e);
+    }
+    if dir.exists() {
+        fs::rename(dir, &previous).map_err(|e| format!("备份热更新目录失败: {e}"))?;
+    }
+    if let Err(e) = fs::rename(&next, dir) {
+        recover_previous(dir)?;
+        return Err(format!("切换热更新目录失败: {e}"));
+    }
+    // 当前资源已切换成功，旧目录占用时在下次启动重试清理。
+    let _ = remove_dir_if_present(&previous);
+    Ok(archive.len())
 }
 
 /// 回退前端更新（删除热更新目录，下次启动使用内嵌资源）
 #[tauri::command]
 pub fn rollback_frontend_update() -> Result<Value, String> {
     let dir = update_dir();
-    if dir.exists() {
-        fs::remove_dir_all(&dir).map_err(|e| format!("回退失败: {e}"))?;
+    let _lock = lock_updates(&dir)?;
+    for item in [
+        dir.with_file_name("web-update.previous"),
+        dir.with_file_name("web-update.next"),
+        dir,
+    ] {
+        remove_dir_if_present(&item).map_err(|e| format!("回退失败: {e}"))?;
     }
     Ok(serde_json::json!({ "success": true }))
 }
@@ -272,5 +347,50 @@ pub fn mime_from_path(path: &str) -> &'static str {
         "ttf" => "font/ttf",
         "wasm" => "application/wasm",
         _ => "application/octet-stream",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Cursor, Write};
+
+    fn archive(files: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        for &(name, bytes) in files {
+            writer
+                .start_file(name, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(bytes).unwrap();
+        }
+        writer.finish().unwrap().into_inner()
+    }
+
+    // 模拟旧客户端升级，校验服务端包、损坏下载和未完成切换都可回到可用前端。
+    #[test]
+    fn replaces_only_a_complete_desktop_archive() {
+        let root = std::env::temp_dir().join(format!(
+            "clawpanel-update-{}-{}",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+        let dir = root.join("web-update");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("index.html"), b"old").unwrap();
+        for bad in [
+            archive(&[("dist/index.html", b"server")]),
+            b"incomplete".to_vec(),
+        ] {
+            assert!(install_frontend_archive(&dir, &bad, "1.2.3").is_err());
+            assert_eq!(fs::read(dir.join("index.html")).unwrap(), b"old");
+        }
+        fs::rename(&dir, dir.with_file_name("web-update.previous")).unwrap();
+        recover_frontend_update(&dir).unwrap();
+        assert_eq!(fs::read(dir.join("index.html")).unwrap(), b"old");
+        let good = archive(&[("index.html", b"new"), ("assets/app.js", b"ready")]);
+        assert_eq!(install_frontend_archive(&dir, &good, "1.2.3").unwrap(), 2);
+        assert_eq!(fs::read(dir.join("index.html")).unwrap(), b"new");
+        assert_eq!(fs::read_to_string(dir.join(".version")).unwrap(), "1.2.3");
+        fs::remove_dir_all(root).unwrap();
     }
 }

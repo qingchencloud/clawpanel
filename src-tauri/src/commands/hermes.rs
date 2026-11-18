@@ -1039,11 +1039,12 @@ fn extract_zip_archive(data: &[u8], dest: &Path) -> Result<(), String> {
         let mut file = archive
             .by_index(i)
             .map_err(|e| format!("ZIP 条目读取失败: {e}"))?;
-        let Some(rel_path) = zip_entry_safe_path(file.name()) else {
+        let name = file.name().map_err(|e| format!("ZIP 条目名称无效: {e}"))?;
+        let Some(rel_path) = zip_entry_safe_path(name.trim_end_matches('/')) else {
             continue;
         };
         let out_path = dest.join(rel_path);
-        if file.is_dir() || file.name().ends_with('/') {
+        if file.is_dir() {
             std::fs::create_dir_all(&out_path)
                 .map_err(|e| format!("创建目录 {} 失败: {e}", out_path.display()))?;
             continue;

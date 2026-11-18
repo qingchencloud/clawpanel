@@ -190,9 +190,11 @@ fn extract_zip(zip_bytes: &[u8], target_dir: &Path) -> Result<(), String> {
     let mut archive = ZipArchive::new(reader).map_err(|e| format!("打开 zip 失败: {e}"))?;
 
     // 收集所有文件名，检测是否都在同一个顶层目录下（常见的 zip 打包方式）
-    let names: Vec<String> = (0..archive.len())
-        .filter_map(|i| archive.by_index_raw(i).ok().map(|f| f.name().to_string()))
-        .collect();
+    let names = archive
+        .file_names()
+        .map(|name| name.map(|name| name.into_owned()))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("zip 条目名称无效: {e}"))?;
     let strip_prefix = detect_single_root_dir(&names);
 
     for i in 0..archive.len() {
@@ -200,27 +202,34 @@ fn extract_zip(zip_bytes: &[u8], target_dir: &Path) -> Result<(), String> {
             .by_index(i)
             .map_err(|e| format!("读取 zip 条目失败: {e}"))?;
 
-        let raw_name = file.name().to_string();
+        let raw_name = file
+            .name()
+            .map_err(|e| format!("zip 条目名称无效: {e}"))?
+            .into_owned();
         // 安全检查：防止路径穿越
-        if raw_name.contains("..") {
+        if file.enclosed_name().is_none() || raw_name.contains("..") {
             continue;
         }
 
         // 如果 zip 内有单一根目录，剥掉它
         let relative = if let Some(ref prefix) = strip_prefix {
             match raw_name.strip_prefix(prefix.as_str()) {
-                Some(rest) if !rest.is_empty() => rest.to_string(),
+                Some(rest) if !rest.is_empty() => rest,
                 _ => continue, // 跳过根目录本身
             }
         } else {
-            raw_name.clone()
+            raw_name.as_str()
         };
 
-        if relative.is_empty() {
+        if relative.is_empty()
+            || !Path::new(relative)
+                .components()
+                .all(|part| matches!(part, std::path::Component::Normal(_)))
+        {
             continue;
         }
 
-        let out_path = target_dir.join(&relative);
+        let out_path = target_dir.join(relative);
         if file.is_dir() {
             std::fs::create_dir_all(&out_path).ok();
         } else {
@@ -238,20 +247,13 @@ fn extract_zip(zip_bytes: &[u8], target_dir: &Path) -> Result<(), String> {
 
 /// 检测 zip 是否有单一顶层目录（如 `skill-name/...`），返回要剥掉的前缀
 fn detect_single_root_dir(names: &[String]) -> Option<String> {
-    let mut root: Option<String> = None;
-    for name in names {
-        let first_segment = name.split('/').next().unwrap_or("");
-        if first_segment.is_empty() {
-            continue;
-        }
-        match &root {
-            None => root = Some(format!("{}/", first_segment)),
-            Some(existing) => {
-                if !name.starts_with(existing.as_str()) {
-                    return None; // 多个顶层目录
-                }
-            }
-        }
+    let (root, _) = names.first()?.split_once('/')?;
+    if root.is_empty() {
+        return None;
     }
-    root
+    let prefix = format!("{root}/");
+    names
+        .iter()
+        .all(|name| name.starts_with(&prefix))
+        .then_some(prefix)
 }

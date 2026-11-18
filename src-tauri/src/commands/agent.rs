@@ -1115,7 +1115,7 @@ fn collect_dir_to_zip(
             collect_dir_to_zip(base, &path, zip, options)?;
         } else {
             let content = fs::read(&path).map_err(|e| format!("读取 {rel} 失败: {e}"))?;
-            zip.start_file(&rel, options)
+            zip.start_file_from_path(&rel, options)
                 .map_err(|e| format!("写入 zip 失败: {e}"))?;
             zip.write_all(&content)
                 .map_err(|e| format!("写入内容失败: {e}"))?;

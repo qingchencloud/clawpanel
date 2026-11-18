@@ -72,10 +72,14 @@ test('Docker 保留所有引擎服务端模块和版本策略，排除本机运�
 
 test('Rust 锁文件包含 Tauri 与 tar 的安全修复版本', () => {
   const lock = read('src-tauri/Cargo.lock')
-  assert.match(lock, /name = "tauri"\r?\nversion = "2\.11\.1"/)
-  assert.match(lock, /name = "tar"\r?\nversion = "0\.4\.46"/)
-  assert.doesNotMatch(lock, /name = "tauri"\r?\nversion = "2\.10\./)
-  assert.doesNotMatch(lock, /name = "tar"\r?\nversion = "0\.4\.45"/)
+  for (const [name, floor] of Object.entries({ tauri: '2.11.1', tar: '0.4.46' })) {
+    const entries = [...lock.matchAll(new RegExp(`^name = "${name}"\\r?\\nversion = "([^"]+)"`, 'gm'))]
+    assert.ok(entries.length, `Cargo.lock 缺少 ${name}`)
+    for (const [, version] of entries) {
+      assert.match(version, /^\d+\.\d+\.\d+$/)
+      assert.ok(version.localeCompare(floor, 'en', { numeric: true }) >= 0, `${name} ${version} 低于安全下限 ${floor}`)
+    }
+  }
 })
 
 test('Rust Tauri 与前端 API 锁定在相同主次版本', () => {
@@ -88,7 +92,11 @@ test('Rust Tauri 与前端 API 锁定在相同主次版本', () => {
   assert.ok(rustVersion, 'Cargo.lock 缺少 tauri 版本')
   assert.ok(apiVersion, 'package-lock.json 缺少 @tauri-apps/api 版本')
   assert.equal(rustVersion.split('.').slice(0, 2).join('.'), apiVersion.split('.').slice(0, 2).join('.'))
-  assert.match(packageJson.dependencies?.['@tauri-apps/api'] || '', /^\^2\.11\./)
+  const requirement = packageJson.dependencies?.['@tauri-apps/api'] || ''
+  assert.match(requirement, /^\^\d+\.\d+\.\d+$/)
+  const apiFloor = requirement.slice(1)
+  assert.equal(apiFloor.split('.').slice(0, 2).join('.'), apiVersion.split('.').slice(0, 2).join('.'))
+  assert.ok(apiVersion.localeCompare(apiFloor, 'en', { numeric: true }) >= 0)
 })
 
 test('Hermes Rust 与 Web 关键 Provider 注册表保持一致', () => {
