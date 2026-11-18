@@ -95,7 +95,7 @@ ClawPanel 是支持多 AI Agent 框架的可视化管理面板，目前支持 [O
 
 ### 🌐 官网账号与官方模型
 
-[claw.qt.cool](https://claw.qt.cool) 是 ClawPanel 的官方网站。连接官网账号后，可在内置助手和各引擎中直接选择**官方模型**，无需自备 API Key；账户积分、使用记录与邀请奖励统一在官网管理。自有 Key 与本地配置保持独立，可随时切换，也可跳过登录直接使用自有 Key。
+[claw.qt.cool](https://claw.qt.cool) 是 ClawPanel 的官方网站。桌面客户端连接官网账号后，可在内置助手使用**官方模型**。在「官网账户」可将模型接入 OpenClaw 的普通模型列表，或为 Hermes、DeepSeek Harness、OpenCode 和 Pi 配置独立官方通道，无需自备 API Key；账户积分、使用记录与邀请奖励统一在官网管理。自有 Key 与本地配置保持独立，可随时切换，也可跳过登录直接使用自有 Key。
 
 ### 🔥 开发板 / 嵌入式设备支持
 

@@ -5851,8 +5851,8 @@
   },
   "platform": {
     "engineAccess": {
-      "title": "Use official models in your engines",
-      "intro": "Choose a model and configure official access for installed engines.",
+      "title": "Engine connections",
+      "intro": "Choose a model, configure Hermes, DeepSeek Harness, OpenCode or Pi, then open its workbench.",
       "desktopOnly": "Configure engines in the desktop app.",
       "bindFirst": "Connect your website account before choosing an engine.",
       "modelLabel": "Official model",
@@ -5904,13 +5904,17 @@
       "gatewayHint": "Set up messaging channels in Gateway. Existing channel bindings stay."
     },
     "officialProvider": {
-      "title": "Official models",
-      "intro": "One click installs official models as a regular model in the engine, and chats stay in the engine UI.",
+      "title": "OpenClaw official models",
+      "intro": "Add official models to OpenClaw and select them in chat.",
       "desktopOnly": "Install official models in the desktop app.",
       "bindFirst": "Connect your website account before installing official models.",
       "loading": "Checking access status…",
       "refresh": "Refresh",
       "install": "Install",
+      "conflict": "A provider with this name already exists or was edited. Review the model settings.",
+      "configMissing": "Finish OpenClaw setup first.",
+      "openSetup": "Open setup",
+      "openModels": "Open model settings",
       "refreshAccess": "Refresh access",
       "remove": "Remove",
       "installed": "Installed",

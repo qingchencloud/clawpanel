@@ -37,7 +37,7 @@ ClawPanel is a visual management panel for multiple AI Agent frameworks, current
 
 ### 🌐 Website account and official models
 
-[claw.qt.cool](https://claw.qt.cool) is the official ClawPanel website. Connect your website account to use **official models** in the built-in assistant and every engine without bringing your own API key. Credits, usage and referral rewards are managed on the website. Your own keys and local configuration stay independent and can be switched at any time; you can also skip sign-in and keep using your own key.
+[claw.qt.cool](https://claw.qt.cool) is the official ClawPanel website. Connect your website account in the desktop app to use **official models** in the built-in assistant. The account page adds them to the OpenClaw model list or configures a dedicated connection for Hermes, DeepSeek Harness, OpenCode and Pi. Credits, usage and referral rewards are managed on the website. Your own keys and local configuration stay independent and can be switched at any time; you can also skip sign-in and keep using your own key.
 
 ### 🔥 Dev Board / Embedded Device Support
 

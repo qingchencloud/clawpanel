@@ -115,7 +115,12 @@ pub fn isolated_origin() -> Option<String> {
 /// 供受管Gateway入口读取身份；不导出安装密钥、平台凭据或模型能力。
 /// 官方模型 provider 接入：只返回本机受管 baseUrl 与模型目录，不导出平台凭据。
 pub async fn official_provider_connection(engine: &str) -> Result<Value, String> {
-    gateway::engine_connection(engine).await
+    PLATFORM
+        .as_ref()
+        .map_err(Clone::clone)?
+        .clone()
+        .connection_for(engine, true)
+        .await
 }
 
 /// 校验 provider 记录对应的账户身份是否仍是当前账号。

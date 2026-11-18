@@ -1422,6 +1422,17 @@ pub async fn do_reload_gateway(app: &tauri::AppHandle) -> Result<String, String>
 
 #[tauri::command]
 pub fn write_openclaw_config(config: Value) -> Result<(), String> {
+    save_openclaw_json_if_unchanged(config, None, |_| Ok(()))
+}
+
+/// 带归属检查的局部配置修改；与普通配置保存共用读、合并和写入锁。
+pub(super) fn save_openclaw_json_if_unchanged(
+    config: Value,
+    expected: Option<(&str, Option<&Value>)>,
+    prepare_registries: impl FnOnce(&Value) -> Result<(), String>,
+) -> Result<(), String> {
+    static WRITES: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = WRITES.lock().map_err(|_| "OpenClaw 配置锁不可用")?;
     let path = super::openclaw_dir().join("openclaw.json");
 
     // Issue #127 修复：先读取现有配置，合并后写入
@@ -1430,6 +1441,17 @@ pub fn write_openclaw_config(config: Value) -> Result<(), String> {
     let existing_config = fs::read_to_string(&path)
         .ok()
         .and_then(|c| parse_json_relaxed(&c));
+
+    if let Some((pointer, expected)) = expected {
+        if (path.exists() && existing_config.is_none())
+            || existing_config
+                .as_ref()
+                .and_then(|config| config.pointer(pointer))
+                != expected
+        {
+            return Err("official_provider_conflict".into());
+        }
+    }
 
     // 合并配置：现有配置 + 新配置
     // 策略：遍历现有配置，保留所有非 UI 字段
@@ -1448,6 +1470,7 @@ pub fn write_openclaw_config(config: Value) -> Result<(), String> {
     validate_model_provider_env_refs(&cleaned, existing_config.as_ref())?;
     validate_openclaw_model_candidate(&cleaned)?;
 
+    prepare_registries(&cleaned)?;
     // 候选文件写入、备份、替换并回读验证。失败时保持或恢复最后有效配置。
     write_verified_json_with_backup(&path, &cleaned)?;
 
@@ -1455,7 +1478,9 @@ pub fn write_openclaw_config(config: Value) -> Result<(), String> {
     // 必须使用与磁盘一致的 merged+strip 结果，而非前端原始 payload：
     // 否则 partial 写入时 merge 保留了其它 provider，但 sync 按 payload 会把
     // agents/*/agent/models.json 里多出的 provider 整棵删掉，造成与 openclaw.json 不一致。
-    sync_providers_to_agent_models(&cleaned);
+    if expected.is_none() {
+        sync_providers_to_agent_models(&cleaned);
+    }
 
     Ok(())
 }
@@ -1507,7 +1532,8 @@ fn decode_json_bytes(raw: &[u8]) -> String {
     }
 }
 
-fn parse_json_relaxed(content: &str) -> Option<Value> {
+pub(super) fn parse_json_relaxed(content: &str) -> Option<Value> {
+    let content = content.trim_start_matches('\u{feff}');
     serde_json::from_str(content)
         .ok()
         .or_else(|| serde_json::from_str(&fix_common_json_errors(content)).ok())
