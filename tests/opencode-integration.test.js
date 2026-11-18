@@ -75,7 +75,8 @@ test('卸载可自动停止受管服务并保留配置、凭据和工作区', ()
 })
 
 test('安装链固定版本且隔离运行时、配置、凭据与工作区', () => {
-  for (const source of [adapter, rustModule]) assert.match(source, /1\.19\.2/)
+  assert.match(adapter, /OPENCODE_PACKAGE_VERSION = '1\.19\.6'/)
+  assert.match(rustModule, /OPENCODE_PACKAGE_VERSION: &str = "1\.19\.6"/)
   assert.match(devApi, /OPENCODE_PACKAGE_VERSION/)
   for (const source of [devApi, rustModule]) {
     assert.match(source, /--ignore-scripts/)
