@@ -964,6 +964,10 @@ export class WsClient {
     return this.request('sessions.list', { limit })
   }
 
+  sessionsSetModel(key, model) {
+    return this.request('sessions.patch', { key, model })
+  }
+
   sessionsDelete(key) {
     return this.request('sessions.delete', { key })
   }

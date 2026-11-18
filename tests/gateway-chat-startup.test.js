@@ -33,6 +33,18 @@ test('权限、普通不可用或未确认可重试的错误只发送一次', as
   }
 })
 
+test('切换模型只更新指定会话，权限拒绝或超时不会再触发聊天', async () => {
+  for (const error of [null, { code: 'FORBIDDEN' }, { code: 'TIMEOUT' }]) {
+    const { client, calls } = gateway([error])
+    const change = client.sessionsSetModel('agent:main:chosen', 'local/model')
+    if (error) await assert.rejects(change)
+    else await change
+    assert.deepEqual(calls.map(({ method, params }) => [method, params]), [
+      ['sessions.patch', { key: 'agent:main:chosen', model: 'local/model' }],
+    ])
+  }
+})
+
 test('启动等待期间取消会话或更换连接时丢弃重试', async () => {
   for (const action of ['abort', 'reconnect']) {
     const { client, calls } = gateway([startup, null])

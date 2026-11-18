@@ -73,6 +73,16 @@ test('9.4 首次 npm 安装确认来源，安全策略检查继续由上游执�
   assert.deepEqual(calls[0], ['plugins', 'install', '@openclaw/line@2026.9.4', '--force'])
 })
 
+test('11.5 渠道安装显式指定面板选择的 npm 包，并保留原生策略检查', async () => {
+  for (const hostVersion of ['2026.11.5', '2026.11.5-zh.1']) {
+    const { input, calls } = fixture({
+      hostVersion, packageName: '@tencent-weixin/openclaw-weixin', pluginId: 'openclaw-weixin', version: '2.4.9',
+    })
+    await installChannelPluginAt(input)
+    assert.deepEqual(calls[0], ['plugins', 'install', 'npm:@tencent-weixin/openclaw-weixin@2.4.9', '--force'])
+  }
+})
+
 test('通用插件升级仍执行原生 update，失败不宣称成功', async () => {
   const { input, calls } = fixture({
     pluginId: 'openclaw-weixin', packageName: '@tencent-weixin/openclaw-weixin@latest', version: null,

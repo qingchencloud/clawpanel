@@ -477,6 +477,9 @@ impl Platform {
             Ok(value) => value,
             Err(_) => return error(&mut socket, 400, "invalid_official_request").await,
         };
+        if ordinary && engine == "openclaw" {
+            normalize_openclaw_text_parts(&mut body);
+        }
         let catalog = self.state.lock().await.models.clone();
         let (stream, upstream_stream) = match prepare_engine_transport(&mut body, &catalog) {
             Ok(value) => value,
@@ -578,6 +581,36 @@ impl Platform {
         state.epoch == epoch
             && state.phase == "bound"
             && state.vault.as_ref().and_then(|v| v.member_id.as_deref()) == Some(member)
+    }
+}
+
+// OpenClaw 回传历史消息时会将连续文本分块。仅合并没有额外语义的纯文本，
+// 将图像、工具、未知字段及空数组原样交给既有的官网请求校验。
+fn normalize_openclaw_text_parts(body: &mut Value) {
+    let Some(messages) = body.get_mut("messages").and_then(Value::as_array_mut) else {
+        return;
+    };
+    for message in messages {
+        let Some(parts) = message["content"]
+            .as_array()
+            .filter(|parts| !parts.is_empty())
+        else {
+            continue;
+        };
+        let text: Option<String> = parts
+            .iter()
+            .map(|part| {
+                let fields = part.as_object()?;
+                if fields.len() == 2 && part["type"] == "text" {
+                    part["text"].as_str()
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if let Some(text) = text {
+            message["content"] = Value::String(text);
+        }
     }
 }
 
@@ -797,4 +830,33 @@ async fn write_sse(socket: &mut TcpStream, value: &Value) -> Result<(), String> 
         .await
         .map_err(|_| "official_gateway_slow_reader")?
         .map_err(|_| "official_gateway_disconnected".into())
+}
+
+#[cfg(test)]
+mod openclaw_text_tests {
+    use super::*;
+
+    #[test]
+    fn openclaw_history_joins_only_plain_text_parts() {
+        let mut request = json!({"messages":[
+            {"role":"user","content":[{"type":"text","text":"上轮："},{"type":"text","text":"保留\n空格 "}]},
+            {"role":"assistant","content":null,"tool_calls":[]},
+            {"role":"tool","content":"工具结果","tool_call_id":"t1"}
+        ]});
+        let original = request.clone();
+        normalize_openclaw_text_parts(&mut request);
+        assert_eq!(request["messages"][0]["content"], "上轮：保留\n空格 ");
+        assert_eq!(request["messages"][1], original["messages"][1]);
+        assert_eq!(request["messages"][2], original["messages"][2]);
+        for parts in [
+            json!([]),
+            json!([{"type":"text","text":"前缀"},{"type":"image_url","image_url":{}}]),
+            json!([{"type":"text","text":"内容","cache_control":{}}]),
+            json!([{"type":"text","text":null}]),
+        ] {
+            let mut body = json!({"messages":[{"role":"user","content":parts}]});
+            normalize_openclaw_text_parts(&mut body);
+            assert_eq!(body["messages"][0]["content"], parts);
+        }
+    }
 }

@@ -6337,7 +6337,13 @@ fn supports_native_config_reload(version: &str) -> bool {
 
 pub(crate) fn installed_openclaw_version_from_files() -> Option<String> {
     let cli_path = crate::utils::resolve_openclaw_cli_path()?;
-    read_version_from_installation(std::path::Path::new(&cli_path))
+    let cli = std::path::Path::new(&cli_path);
+    // Unix 上的 npm 全局命令通常是链接，版本清单位于实际入口所在的包目录。
+    std::fs::canonicalize(cli)
+        .ok()
+        .filter(|resolved| resolved != cli)
+        .and_then(|resolved| read_version_from_installation(&resolved))
+        .or_else(|| read_version_from_installation(cli))
 }
 
 /// OpenClaw 2026.8.1 起持久化 Agent 注册表改为 agents.entries。

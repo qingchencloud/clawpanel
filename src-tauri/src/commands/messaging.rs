@@ -3970,6 +3970,7 @@ pub async fn run_channel_action(
     // 安装复用统一检测/回读链路；更新交给 CLI，不预先删除插件或渠道配置。
     let mut _update_guard = None;
     let mut install_target = None;
+    let mut install_host = None;
     if platform == "weixin" && action == "install" {
         use tauri::Listener;
         let checked = check_weixin_plugin_status().await?;
@@ -3984,6 +3985,7 @@ pub async fn run_channel_action(
             version.as_deref(),
         )?;
         install_target = Some(target.clone());
+        install_host = checked["hostVersion"].as_str().map(str::to_owned);
         let status = get_channel_plugin_status("openclaw-weixin".into()).await?;
         if status["installed"].as_bool() != Some(true) {
             let log_app = app.clone();
@@ -4034,15 +4036,11 @@ pub async fn run_channel_action(
 
     let args: Vec<String> = match action.as_str() {
         "install" if platform == "weixin" => {
-            vec![
-                "plugins".into(),
-                "install".into(),
-                format!(
-                    "@tencent-weixin/openclaw-weixin@{}",
-                    install_target.as_deref().unwrap()
-                ),
-                "--force".into(),
-            ]
+            let spec = format!(
+                "@tencent-weixin/openclaw-weixin@{}",
+                install_target.as_deref().unwrap()
+            );
+            channel_npm_install_args(spec, install_host.as_deref(), true)
         }
         "login" => {
             vec![
@@ -5544,6 +5542,28 @@ fn validate_channel_plugin_id(id: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn channel_npm_install_args(spec: String, host: Option<&str>, replace: bool) -> Vec<String> {
+    let version = host.and_then(|host| {
+        let mut parts = host.trim_start_matches('v').split(['.', '-']);
+        Some([
+            parts.next()?.parse::<u32>().ok()?,
+            parts.next()?.parse().ok()?,
+            parts.next()?.parse().ok()?,
+        ])
+    });
+    // 11.5 默认从 ClawHub 解析裸包名；面板的渠道安装入口已经选定并校验 npm 规格。
+    let source = if version >= Some([2026, 11, 5]) {
+        format!("npm:{spec}")
+    } else {
+        spec
+    };
+    let mut args = vec!["plugins".into(), "install".into(), source];
+    if replace || version >= Some([2026, 9, 4]) {
+        args.push("--force".into());
+    }
+    args
+}
+
 fn generic_plugin_backup_dir(plugin_id: &str) -> PathBuf {
     plugin_backup_root().join(format!("{plugin_id}.__clawpanel_backup"))
 }
@@ -5649,17 +5669,11 @@ pub async fn install_channel_plugin(
 
     let _ = app.emit("plugin-log", format!("安装规格: {}", install_spec));
     let mut command = crate::utils::openclaw_command();
-    command.args(["plugins", "install", &install_spec]);
-    if super::config::installed_openclaw_version_from_files().is_some_and(|v| {
-        let parts: Vec<u32> = v
-            .split(['.', '-'])
-            .take(3)
-            .filter_map(|n| n.parse().ok())
-            .collect();
-        parts.as_slice() >= [2026, 9, 4].as_slice()
-    }) {
-        command.arg("--force");
-    }
+    command.args(channel_npm_install_args(
+        install_spec,
+        super::config::installed_openclaw_version_from_files().as_deref(),
+        false,
+    ));
     let spawn_result = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -5849,17 +5863,11 @@ pub async fn install_qqbot_plugin(
 
     let _ = app.emit("plugin-log", format!("安装规格: {}", install_spec));
     let mut command = crate::utils::openclaw_command();
-    command.args(["plugins", "install", &install_spec]);
-    if super::config::installed_openclaw_version_from_files().is_some_and(|v| {
-        let parts: Vec<u32> = v
-            .split(['.', '-'])
-            .take(3)
-            .filter_map(|n| n.parse().ok())
-            .collect();
-        parts.as_slice() >= [2026, 9, 4].as_slice()
-    }) {
-        command.arg("--force");
-    }
+    command.args(channel_npm_install_args(
+        install_spec,
+        super::config::installed_openclaw_version_from_files().as_deref(),
+        false,
+    ));
     let spawn_result = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

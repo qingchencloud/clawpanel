@@ -1210,8 +1210,8 @@ function readVersionFromInstallation(cliPath) {
   return null
 }
 
-/** 微信状态复用已选 CLI 的真实 npm manifest；不执行 CLI、不猜全局最新版本。 */
-export function readWeixinHostVersion(cliPath = resolveOpenclawCliPath()) {
+/** 渠道状态和安装使用同一份已选 CLI 的版本记录，兼容 npm 的物理入口。 */
+function readChannelHostVersion(cliPath = resolveOpenclawCliPath()) {
   const installed = readVersionFromInstallation(cliPath)
   if (installed) return installed
   try {
@@ -1223,6 +1223,8 @@ export function readWeixinHostVersion(cliPath = resolveOpenclawCliPath()) {
     return typeof version === 'string' && /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version) ? version : null
   } catch { return null }
 }
+
+export { readChannelHostVersion as readWeixinHostVersion }
 
 function findOpenclawPackageJson(cliPath) {
   const resolved = canonicalCliPath(cliPath)
@@ -13752,7 +13754,7 @@ const handlers = {
     return installChannelPluginAt({
       root: OPENCLAW_DIR, packageName, pluginId, version, updateExisting, replaceExisting,
       expectedVersion: replaceExisting ? version : null,
-      hostVersion: readVersionFromInstallation(resolveOpenclawCliPath()),
+      hostVersion: readChannelHostVersion(),
       run: (args, onOutput) => runOpenclawCaptured(args, { timeoutMs: 600000, onOutput }),
       status: id => handlers.get_channel_plugin_status({ pluginId: id }),
       enable: id => handlers.toggle_plugin({ pluginId: id, enabled: true }),
@@ -19812,7 +19814,7 @@ const handlers = {
       if (response.ok) latestVersion = (await response.json()).version || null
     } catch {}
     return { ...status, installedVersion, latestVersion, extensionDir: status.path,
-      ...buildWeixinCompatibilityStatus(readWeixinHostVersion(), installedVersion) }
+      ...buildWeixinCompatibilityStatus(readChannelHostVersion(), installedVersion) }
   },
   async diagnose_channel({ platform, accountId } = {}) {
     if (!platform || !String(platform).trim()) throw new Error('platform 不能为空')
