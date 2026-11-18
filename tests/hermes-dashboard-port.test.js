@@ -68,7 +68,8 @@ for (const mode of ['normal', 'foreign-positive', 'already-online', 'early-exit'
       assert.ok(cleanup.every(p => !p.alive), JSON.stringify(cleanup))
       assert.equal(foreignFinal, 'foreign-' + nonce, '退出清理前foreign listener必须仍在线且响应未变')
       assert.equal(path.dirname(fs.realpathSync.native(dir)), base)
-      fs.rmSync(dir, { recursive: true, force: true })
+      // Windows 可能在进程关闭后短暂占用复制的 CLI；持续占用仍应报错。
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 6, retryDelay: 100 })
     })
     fs.mkdirSync(bin, { recursive: true }); fs.mkdirSync(path.join(home, '.openclaw'), { recursive: true })
     foreign = http.createServer((_q, r) => r.end('foreign-' + nonce)); const foreignPort = await listen(foreign)

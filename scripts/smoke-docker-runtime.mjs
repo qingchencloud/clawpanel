@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 
 // 只创建并清理本脚本的临时容器，不接触现有容器或真实账号配置。
 const image = process.argv[2]
@@ -15,11 +17,19 @@ const run = args => {
   assert.equal(result.status, 0, result.error?.message || result.stderr)
   return result.stdout.trim()
 }
-const container = run(['run', '--detach', '--label', 'clawpanel.compatibility-fixture=true', '--publish', '127.0.0.1::1420', image])
+const container = run(['create', '--label', 'clawpanel.compatibility-fixture=true', '--publish', '127.0.0.1::1420', image])
 assert.match(container, /^[a-f0-9]{64}$/)
 const token = 'clawpanel-isolated-runtime-fixture-token'
 try {
-  run(['exec', container, 'node', '-e', "const fs=require('fs');fs.mkdirSync('/root/.openclaw',{recursive:true});fs.writeFileSync('/root/.openclaw/clawpanel.json',JSON.stringify({ignoreRisk:true}));"])
+  // 在服务首次读取配置前准备好隔离夹具，避免默认密码初始化与测试写入互相覆盖。
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'clawpanel-docker-smoke-'))
+  try {
+    fs.writeFileSync(path.join(fixture, 'clawpanel.json'), JSON.stringify({ ignoreRisk: true }))
+    run(['cp', fixture, container + ':/root/.openclaw'])
+  } finally {
+    fs.rmSync(fixture, { recursive: true, force: true })
+  }
+  run(['start', container])
   const port = Number(run(['port', container, '1420/tcp']).split(':').at(-1))
   assert.ok(port > 0 && port <= 65535)
   const base = `http://127.0.0.1:${port}`
