@@ -1,0 +1,6 @@
+model:
+  default: gpt-5.5
+  provider: custom
+  context_length: 131072
+hooks:
+  enabled: true
