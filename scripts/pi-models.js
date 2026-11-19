@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto'
 
 export const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent'
-export const PI_PACKAGE_VERSION = '1.3.0'
+export const PI_PACKAGE_VERSION = '1.5.2'
 export const PI_API_TYPES = ['openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai', 'ollama']
 
 export function piVersion(value) {

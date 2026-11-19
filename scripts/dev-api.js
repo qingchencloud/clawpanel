@@ -23,7 +23,7 @@ import * as skillhubSdk from './lib/skillhub-sdk.js'
 import { createBackgroundJobQueue } from './media-background-queue.js'
 import { normalizeModelApiType } from '../src/lib/model-presets.js'
 import {
-  OPENCLAW_PROTOCOL_RANGE,
+  OPENCLAW_PROTOCOL_PREFERRED_RANGE,
   buildDeviceAuthPayloadV3,
   resolveConnectSignedAt,
 } from '../src/lib/openclaw-gateway-compat.js'
@@ -736,9 +736,10 @@ export async function uninstallHermesManagedSourceAt(home = hermesHome(), cleanC
       try { _hermesGwProcess.kill() } catch {}
       _hermesGwProcess = null
     }
-    if (handlers?._dashPid) {
-      try { process.kill(handlers._dashPid, 'SIGKILL') } catch {}
-      handlers._dashPid = 0
+    for (const run of hermesDashboards.values()) {
+      if (run.home === path.resolve(home) && !await stopManagedHermesDashboard(run)) {
+        throw new Error('Hermes Dashboard 尚未退出，无法卸载')
+      }
     }
     fs.rmSync(sourceDir, { recursive: true, force: true })
   }
@@ -806,6 +807,22 @@ function diagnoseHermesInstallError(text = '') {
 }
 
 let _hermesGwProcess = null
+// 仅保存本 Web 进程实际创建的 Dashboard，同端口的后来者不能继承停止权限。
+const hermesDashboards = new Map()
+function hermesDashboardKey(home, port) { return JSON.stringify([path.resolve(home), port]) }
+
+async function stopManagedHermesDashboard(run) {
+  if (!run) return false
+  const { child, closed } = run
+  let timer
+  try {
+    if (!child.killed && child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+    const timeout = new Promise(resolve => { timer = setTimeout(() => resolve(false), 5000) })
+    return await Promise.race([closed, timeout])
+  } finally {
+    clearTimeout(timer)
+  }
+}
 let _hermesGwStarting = null
 
 const __dev_dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -1210,8 +1227,8 @@ function readVersionFromInstallation(cliPath) {
   return null
 }
 
-/** 微信状态复用已选 CLI 的真实 npm manifest；不执行 CLI、不猜全局最新版本。 */
-export function readWeixinHostVersion(cliPath = resolveOpenclawCliPath()) {
+/** 渠道状态和安装使用同一份已选 CLI 的版本记录，兼容 npm 的物理入口。 */
+function readChannelHostVersion(cliPath = resolveOpenclawCliPath()) {
   const installed = readVersionFromInstallation(cliPath)
   if (installed) return installed
   try {
@@ -1223,6 +1240,8 @@ export function readWeixinHostVersion(cliPath = resolveOpenclawCliPath()) {
     return typeof version === 'string' && /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version) ? version : null
   } catch { return null }
 }
+
+export { readChannelHostVersion as readWeixinHostVersion }
 
 function findOpenclawPackageJson(cliPath) {
   const resolved = canonicalCliPath(cliPath)
@@ -1272,6 +1291,20 @@ function openclawNodeRequirement() {
   }
   if (!installedVersion && cliPath) installedVersion = readVersionFromInstallation(cliPath)
   return fallbackOpenclawNodeRequirement(installedVersion)
+}
+
+// 汉化包采用作用域包名，部分内核只能从工作目录找到随包的首聊模板。
+function directGatewayWorkingDirectory() {
+  const manifest = findOpenclawPackageJson(resolveOpenclawCliPath())
+  if (manifest) {
+    try {
+      const root = path.dirname(manifest)
+      const pkg = JSON.parse(fs.readFileSync(manifest, 'utf8'))
+      if (pkg.name === '@qingchencloud/openclaw-zh' &&
+          fs.statSync(path.join(root, 'docs', 'reference', 'templates', 'AGENTS.md')).isFile()) return root
+    } catch {}
+  }
+  return homedir()
 }
 
 export function fallbackOpenclawNodeRequirement(installedVersion) {
@@ -3183,6 +3216,8 @@ export function buildOpenClawConnectFrame({
   gatewayPassword,
   challengeTs,
   keyData,
+  minProtocol = OPENCLAW_PROTOCOL_PREFERRED_RANGE.min,
+  maxProtocol = OPENCLAW_PROTOCOL_PREFERRED_RANGE.max,
   platform = process.platform === 'darwin' ? 'macos' : process.platform,
 }) {
   const { deviceId, publicKey, privateKey } = keyData
@@ -3207,8 +3242,8 @@ export function buildOpenClawConnectFrame({
     id: `connect-${idHex}-${rndHex}`,
     method: 'connect',
     params: {
-      minProtocol: OPENCLAW_PROTOCOL_RANGE.min,
-      maxProtocol: OPENCLAW_PROTOCOL_RANGE.max,
+      minProtocol,
+      maxProtocol,
       client: { id: 'openclaw-control-ui', version: '1.0.0', platform, deviceFamily: 'desktop', mode: 'ui' },
       role: 'operator', scopes: SCOPES, caps: [],
       auth: gatewayToken
@@ -9249,7 +9284,7 @@ function winStartGateway() {
     detached: true,
     stdio: ['ignore', out, err],
     windowsHide: true,
-    cwd: homedir(),
+    cwd: directGatewayWorkingDirectory(),
   })
   child.unref()
 }
@@ -9577,7 +9612,7 @@ function linuxStartGateway() {
     detached: true,
     stdio: ['ignore', out, err],
     shell: false,
-    cwd: homedir(),
+    cwd: directGatewayWorkingDirectory(),
   })
   child.unref()
 }
@@ -11714,7 +11749,7 @@ function recoverMediaQueue() {
 // === API Handlers ===
 
 // === DeepSeek Harness（只允许回环监听，由 ClawPanel 认证层代管） ===
-const DSH_NODE_REQUIREMENT = '^22.19.0 || >=24.0.0'
+const DSH_NODE_REQUIREMENT = '>=24.9.0'
 const DSH_BUILD_PACKAGES = [
   '@deepseek-ai/dsh-subprocess-local',
   '@google/genai',
@@ -13736,7 +13771,7 @@ const handlers = {
     return installChannelPluginAt({
       root: OPENCLAW_DIR, packageName, pluginId, version, updateExisting, replaceExisting,
       expectedVersion: replaceExisting ? version : null,
-      hostVersion: readVersionFromInstallation(resolveOpenclawCliPath()),
+      hostVersion: readChannelHostVersion(),
       run: (args, onOutput) => runOpenclawCaptured(args, { timeoutMs: 600000, onOutput }),
       status: id => handlers.get_channel_plugin_status({ pluginId: id }),
       enable: id => handlers.toggle_plugin({ pluginId: id, enabled: true }),
@@ -16193,12 +16228,14 @@ const handlers = {
     return { paired: !!paired[keyData.deviceId] }
   },
 
-  create_connect_frame({ nonce, gatewayToken, gatewayPassword, challengeTs }) {
+  create_connect_frame({ nonce, gatewayToken, gatewayPassword, challengeTs, minProtocol, maxProtocol }) {
     return buildOpenClawConnectFrame({
       nonce,
       gatewayToken,
       gatewayPassword,
       challengeTs,
+      minProtocol,
+      maxProtocol,
       keyData: getOrCreateDeviceKey(),
     })
   },
@@ -18960,65 +18997,55 @@ const handlers = {
     return null
   },
 
-  async _hermesDashboardCliStop() {
-    return (await runHermesSilent('hermes', ['dashboard', '--stop'])).ok
-      || (await runHermesSilent('hermes', ['dashboard', 'stop'])).ok
-  },
-
   async hermes_dashboard_start() {
     const port = handlers._hermesDashboardPort()
-    // 1. 只认本实例配置端口；CLI 全局列表包含其他 HOME/端口。
-    if (await _tcpProbe('127.0.0.1', port, 500)) {
+    const home = hermesHome()
+    const key = hermesDashboardKey(home, port)
+    const online = await _tcpProbe('127.0.0.1', port, 500)
+    let run = hermesDashboards.get(key)
+    if (run?.child.killed) return { started: false, kind: 'stopping', port }
+    if (online) {
       return { started: true, already_running: true, port }
     }
-    // 2. 清残留 PID
-    if (handlers._dashPid) {
-      try { process.kill(handlers._dashPid, 'SIGKILL') } catch {}
-      handlers._dashPid = 0
-    }
-    const home = hermesHome()
     const logPath = path.join(home, 'dashboard-run.log')
-    let out, err
-    try {
-      out = fs.openSync(logPath, 'w')
-      err = fs.openSync(logPath, 'a')
-    } catch (e) {
-      throw new Error(`创建日志文件失败: ${e.message || e}`)
-    }
-    // 注入 .env
-    const envVars = { ...process.env, PATH: hermesEnhancedPath() }
-    envVars.HERMES_WEB_DIST = ensureHermesDashboardFallbackDist(home)
-    const envPath = path.join(home, '.env')
-    if (fs.existsSync(envPath)) {
-      for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
-        const t = line.trim()
-        if (!t || t.startsWith('#')) continue
-        const eq = t.indexOf('=')
-        if (eq > 0) envVars[t.slice(0, eq).trim()] = t.slice(eq + 1).trim()
+    if (!run) {
+      const envVars = { ...process.env, PATH: hermesEnhancedPath() }
+      envVars.HERMES_WEB_DIST = ensureHermesDashboardFallbackDist(home)
+      const envPath = path.join(home, '.env')
+      if (fs.existsSync(envPath)) {
+        for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+          const t = line.trim()
+          if (!t || t.startsWith('#')) continue
+          const eq = t.indexOf('=')
+          if (eq > 0) envVars[t.slice(0, eq).trim()] = t.slice(eq + 1).trim()
+        }
       }
+      const log = fs.openSync(logPath, 'w')
+      let child
+      try {
+        child = spawn('hermes', ['dashboard', '--no-open', '--port', String(port)], {
+          cwd: home, env: envVars, stdio: ['ignore', log, log], detached: true, windowsHide: true,
+        })
+      } finally {
+        fs.closeSync(log)
+      }
+      child.unref()
+      run = { home: path.resolve(home), child, finished: false, error: '' }
+      hermesDashboards.set(key, run)
+      child.once('error', error => { run.error = error.message })
+      run.closed = new Promise(resolve => child.once('close', () => {
+        run.finished = true
+        if (hermesDashboards.get(key) === run) hermesDashboards.delete(key)
+        resolve(true)
+      }))
     }
-    const child = spawn('hermes', ['dashboard', '--no-open', '--port', String(port)], {
-      cwd: home,
-      env: envVars,
-      stdio: ['ignore', out, err],
-      detached: true,
-      windowsHide: true,
-    })
-    child.unref()
-    const pid = child.pid
-    handlers._dashPid = pid
-
-    let earlyExitCode = null
-    let earlyExitFlag = false
-    child.once('exit', (code) => { earlyExitCode = code; earlyExitFlag = true })
-
-    // 3. 等待 - 端口起来 / 进程提前死 / 超时（90s 覆盖首次 npm build）
+    const pid = run.child.pid
+    // 同时启动的请求共用同一子进程，最长等待 90 秒覆盖首次 npm build。
     const deadline = Date.now() + 90000
     while (Date.now() < deadline) {
-      if (earlyExitFlag) {
-        handlers._dashPid = 0
+      if (run.finished) {
         const raw = fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8') : ''
-        const tail = raw.split('\n').slice(-40).join('\n')
+        const tail = raw.split('\n').slice(-40).join('\n') || run.error
         const lower = raw.toLowerCase()
         let kind = 'spawn_failed'
         if (lower.includes('web ui dependencies not installed')
@@ -19030,9 +19057,9 @@ const handlers = {
           || (lower.includes('port') && lower.includes('already in use'))) {
           kind = 'port_in_use'
         }
-        return { started: false, kind, exit_code: earlyExitCode, port, log_tail: tail }
+        return { started: false, kind, exit_code: run.child.exitCode, port, log_tail: tail }
       }
-      if (await _tcpProbe('127.0.0.1', port, 300)) {
+      if (await _tcpProbe('127.0.0.1', port, 300) && !run.finished && !run.child.killed) {
         return { started: true, already_running: false, port, pid }
       }
       await new Promise(r => setTimeout(r, 500))
@@ -19045,33 +19072,7 @@ const handlers = {
 
   async hermes_dashboard_stop() {
     const port = handlers._hermesDashboardPort()
-    const cliStopped = await handlers._hermesDashboardCliStop()
-    if (!handlers._dashPid) {
-      if (cliStopped) {
-        for (let i = 0; i < 20; i++) {
-          if (!await _tcpProbe('127.0.0.1', port, 200)) return true
-          await new Promise(r => setTimeout(r, 250))
-        }
-        return true
-      }
-      return false
-    }
-    try {
-      if (isWindows) {
-        spawnSync('taskkill', ['/F', '/PID', String(handlers._dashPid)], { windowsHide: true })
-      } else {
-        process.kill(handlers._dashPid, 'SIGKILL')
-      }
-      handlers._dashPid = 0
-      for (let i = 0; i < 20; i++) {
-        if (!await _tcpProbe('127.0.0.1', port, 200)) return true
-        await new Promise(r => setTimeout(r, 250))
-      }
-      return true
-    } catch {
-      handlers._dashPid = 0
-      return cliStopped
-    }
+    return stopManagedHermesDashboard(hermesDashboards.get(hermesDashboardKey(hermesHome(), port)))
   },
 
   async hermes_toolsets_list() {
@@ -19794,7 +19795,7 @@ const handlers = {
       if (response.ok) latestVersion = (await response.json()).version || null
     } catch {}
     return { ...status, installedVersion, latestVersion, extensionDir: status.path,
-      ...buildWeixinCompatibilityStatus(readWeixinHostVersion(), installedVersion) }
+      ...buildWeixinCompatibilityStatus(readChannelHostVersion(), installedVersion) }
   },
   async diagnose_channel({ platform, accountId } = {}) {
     if (!platform || !String(platform).trim()) throw new Error('platform 不能为空')

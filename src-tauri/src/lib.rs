@@ -23,6 +23,9 @@ pub fn run() {
     // （或根本没 .version 标记），protocol handler 会优先读它，导致
     // 用户装了 v0.14.0 看到的还是 v0.9.8 的界面。
     // 启动时先比对版本，落后于当前 app 就直接清掉，让 protocol handler 回退到内嵌 bundle。
+    if let Err(err) = update::recover_frontend_update(&hot_update_dir) {
+        eprintln!("[clawpanel] {err}");
+    }
     cleanup_stale_hot_update(&hot_update_dir);
 
     tauri::Builder::default()
@@ -520,7 +523,10 @@ fn cleanup_stale_hot_update(dir: &std::path::Path) {
         .unwrap_or_default();
 
     // 有标记且 >= app 版本：保留
-    if !web_version.is_empty() && update::version_ge(&web_version, app_version) {
+    if dir.join("index.html").is_file()
+        && !web_version.is_empty()
+        && update::version_ge(&web_version, app_version)
+    {
         return;
     }
 

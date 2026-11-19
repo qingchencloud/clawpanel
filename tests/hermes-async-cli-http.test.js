@@ -11,13 +11,24 @@ const root = path.resolve(process.env.HERMES_ASYNC_TEST_ROOT || new URL('..', im
 const evidence = process.env.HERMES_ASYNC_TEST_EVIDENCE
 
 function cliFixtureSource(cliLog) {
-  return `import fs from 'node:fs';import path from 'node:path';
+  return `import fs from 'node:fs';import path from 'node:path';import { channel } from 'node:diagnostics_channel';
+const journal = row => fs.appendFileSync(${JSON.stringify(cliLog)}, JSON.stringify(row) + String.fromCharCode(10));
+// 中间件父进程从自己的 ChildProcess 句柄记录退出。历史 PID 可被其他进程复用。
+if (path.basename(process.argv[1] || '') === 'server.mjs') {
+  channel('child_process').subscribe(({ process: child }) => {
+    child.once('spawn', () => {
+      if (!/^hermes(?:\\.exe)?$/i.test(path.basename(child.spawnfile))) return;
+      const args = child.spawnargs.slice(1);
+      child.once('exit', (code, signal) => journal({ event: 'child-exit', pid: child.pid, args, code, signal }));
+    });
+  });
+}
 const copied=/^hermes(?:\\.exe)?$/i.test(path.basename(process.execPath));
 if(copied||path.basename(process.argv[1]||'')==='hermes'){
   const args=process.argv.slice(copied?1:2).map((v,i)=>copied&&i===0?path.basename(v):v);
   // 与复制的 Windows node.exe 内置 --version 一致；不把版本探针当第三个慢命令。
   if(args.length===1&&args[0]==='--version'){console.log(process.version);process.exit(0)}
-  const record=event=>fs.appendFileSync(${JSON.stringify(cliLog)},JSON.stringify({event,args,pid:process.pid,start:Date.now(),monotonicMs:Number(process.hrtime.bigint()/1000000n)})+String.fromCharCode(10));
+  const record=event=>journal({event,args,pid:process.pid,start:Date.now(),monotonicMs:Number(process.hrtime.bigint()/1000000n)});
   record('start');
   await new Promise(r=>setTimeout(r,6200));
   record('end');
@@ -66,9 +77,17 @@ test('真实并发 HTTP：慢 profiles/sessions 不阻塞独立快速 health，�
     if (child && child.exitCode === null) { const closed = new Promise(resolve => child.once('close', resolve)); child.kill(); await closed }
     if (gateway) { gateway.closeAllConnections(); await new Promise(resolve => gateway.close(resolve)) }
     const cli = fs.existsSync(cliLog) ? fs.readFileSync(cliLog, 'utf8').trim().split('\n').filter(Boolean).map(s => JSON.parse(s)) : []
-    const cleanup = [...new Set(cli.map(e => e.pid))].map(pid => { let alive = false; try { process.kill(pid, 0); alive = true } catch {} return { pid, alive } })
+    const cleanup = cli.filter(row => row.event === 'start').map(({ pid, args }) => {
+      let rawPidAlive = false
+      try { rawPidAlive = process.kill(pid, 0) } catch {}
+      const exits = cli.filter(row => row.event === 'child-exit' && row.pid === pid &&
+        row.args.length === args.length && row.args.every((arg, i) => arg === args[i]))
+      return { pid, args, rawPidAlive, exits }
+    })
     if (evidence) { fs.mkdirSync(evidence, { recursive: true }); fs.writeFileSync(path.join(evidence, 'http-report.json'), JSON.stringify({ scope: 'production middleware / isolated CLI and upstream HTTP', root, observations, cli, cleanup }, null, 2)) }
-    assert.ok(cleanup.every(p => !p.alive), JSON.stringify(cleanup))
+    for (const row of cleanup) {
+      assert.deepEqual(row.exits.map(({ code, signal }) => ({ code, signal })), [{ code: 0, signal: null }], JSON.stringify(row))
+    }
     const rel = path.relative(base, fs.realpathSync(dir)); assert.ok(rel && !rel.startsWith('..') && !path.isAbsolute(rel)); fs.rmSync(dir, { recursive: true, force: true })
   })
   fs.mkdirSync(path.join(home, '.openclaw'), { recursive: true }); const bin = path.join(home, '.hermes/bin'); fs.mkdirSync(bin, { recursive: true })

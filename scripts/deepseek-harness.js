@@ -6,7 +6,7 @@
  */
 
 export const DSH_PACKAGE_NAME = '@deepseek-ai/dsh'
-export const DSH_STABLE_VERSION = '0.2.0-rc.2'
+export const DSH_STABLE_VERSION = '0.2.2-rc.1'
 export const DSH_PREVIEW_VERSION = '0.2.1-alpha.4'
 export const DSH_PACKAGE_VERSION = DSH_STABLE_VERSION
 export const DSH_STABLE_PNPM_VERSION = '11.28.5'

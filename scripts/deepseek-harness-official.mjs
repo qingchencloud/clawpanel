@@ -103,8 +103,12 @@ async function run(input) {
     const modules = path.resolve(path.dirname(input.entry), '../../..')
     let llmEntry = path.join(modules, '@deepseek-ai/dsh-llm/lib/index.js')
     if (!fs.existsSync(llmEntry)) {
+      const packageFile = path.join(path.dirname(input.entry), '..', 'package.json')
+      let dshVersion = ''
+      try { dshVersion = String(JSON.parse(fs.readFileSync(packageFile, 'utf8')).version || '') } catch {}
+      if (!/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(dshVersion)) throw Error('official_runtime_version_unsupported')
       const store = path.join(modules, '.pnpm')
-      const candidates = fs.readdirSync(store).filter(name => name.startsWith('@deepseek-ai+dsh-llm@0.2.0-rc.2'))
+      const candidates = fs.readdirSync(store).filter(name => name.startsWith(`@deepseek-ai+dsh-llm@${dshVersion}`))
       if (candidates.length !== 1) throw Error('official_runtime_version_unsupported')
       llmEntry = path.join(store, candidates[0], 'node_modules/@deepseek-ai/dsh-llm/lib/index.js')
     }

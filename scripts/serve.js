@@ -80,37 +80,41 @@ const MIME_TYPES = {
 }
 
 // === 静态文件服务 ===
-function serveStatic(req, res) {
-  // URL 去掉 query string
-  const urlPath = req.url.split('?')[0]
-  let filePath = path.join(DIST_DIR, urlPath === '/' ? 'index.html' : urlPath)
-
-  // 安全检查：不允许目录遍历
-  if (!filePath.startsWith(DIST_DIR)) {
-    res.statusCode = 403
-    res.end('Forbidden')
-    return
-  }
-
-  // 尝试读取文件
-  fs.stat(filePath, (err, stats) => {
-    if (!err && stats.isFile()) {
-      sendFile(res, filePath)
-      return
-    }
-
-    // SPA fallback：非 API、非静态资源 → index.html
-    const ext = path.extname(urlPath)
-    if (!ext || ext === '.html') {
-      sendFile(res, path.join(DIST_DIR, 'index.html'))
-    } else {
-      res.statusCode = 404
-      res.end('Not Found')
-    }
-  })
+function isInsideDist(root, target) {
+  const relative = path.relative(root, target)
+  return relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative)
 }
 
-function sendFile(res, filePath) {
+async function serveStatic(req, res, root) {
+  const urlPath = req.url.split('?')[0]
+  const index = path.join(root, 'index.html')
+  const requested = urlPath === '/' ? index : path.join(root, urlPath)
+  if (!isInsideDist(root, requested)) return res.writeHead(403).end('Forbidden')
+
+  // SPA 回退入口与普通资源都要检查链接解析后的真实目录。
+  const ext = path.extname(urlPath)
+  const candidates = requested !== index && (!ext || ext === '.html') ? [requested, index] : [requested]
+  for (const filePath of candidates) {
+    let handle
+    try {
+      const realPath = await fs.promises.realpath(filePath)
+      if (!isInsideDist(root, realPath)) return res.writeHead(403).end('Forbidden')
+      if (!(await fs.promises.stat(realPath)).isFile()) continue
+      handle = await fs.promises.open(realPath, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0))
+      const stream = handle.createReadStream()
+      sendFile(res, filePath, stream)
+      return
+    } catch (error) {
+      if (handle) await handle.close()
+      if (error.code === 'ENOENT' || error.code === 'ENOTDIR') continue
+      const denied = ['EACCES', 'EPERM', 'ELOOP'].includes(error.code)
+      return res.writeHead(denied ? 403 : 500).end(denied ? 'Forbidden' : 'Internal Server Error')
+    }
+  }
+  res.writeHead(404).end('Not Found')
+}
+
+function sendFile(res, filePath, stream) {
   const ext = path.extname(filePath)
   const contentType = MIME_TYPES[ext] || 'application/octet-stream'
 
@@ -122,7 +126,9 @@ function sendFile(res, filePath) {
   }
 
   res.setHeader('Content-Type', contentType)
-  fs.createReadStream(filePath).pipe(res)
+  stream.on('error', () => res.destroy())
+  res.on('close', () => stream.destroy())
+  stream.pipe(res)
 }
 
 // === 启动服务器 ===
@@ -134,6 +140,7 @@ async function main() {
   }
 
   const { host, port } = parseArgs()
+  const distRoot = await fs.promises.realpath(DIST_DIR)
 
   // 初始化 API
   _initApi()
@@ -147,10 +154,7 @@ async function main() {
     if (req.method === 'OPTIONS' && !isOpenCodeEmbedRequest(req.url) && !isDshEmbedRequest(req.url)) { res.statusCode = 204; res.end(); return }
 
     // API 请求
-    await _apiMiddleware(req, res, () => {
-      // 非 API → 静态文件
-      serveStatic(req, res)
-    })
+    await _apiMiddleware(req, res, () => serveStatic(req, res, distRoot))
   })
 
   // WebSocket 代理

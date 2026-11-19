@@ -3,9 +3,28 @@
  *
  * - 2026.7.1 及更早的 challenge 只有 nonce，签名时间由客户端生成。
  * - 2026.8.1 起 challenge 同时提供 ts，设备签名必须复用该时间戳。
- * - operator 客户端继续声明 3..4 的协议范围，使旧 v3 与当前 v4 Gateway 都能协商。
+ * - 新版 operator Gateway 要求 minProtocol=4；连接失败时由客户端显式回退到 3..4，
+ *   保留旧 v3 Gateway 的兼容路径。
  */
+export const OPENCLAW_PROTOCOL_PREFERRED_RANGE = Object.freeze({ min: 4, max: 4 })
 export const OPENCLAW_PROTOCOL_RANGE = Object.freeze({ min: 3, max: 4 })
+
+// Gateway 可在连接就绪后、聊天服务就绪前拒绝首条消息。仅重发明确未受理的同一请求。
+export async function sendChatAfterStartup(send, isCurrent) {
+  const deadline = Date.now() + 30000
+  for (;;) {
+    try {
+      return await send()
+    } catch (error) {
+      if (error?.code !== 'UNAVAILABLE' || error.retryable !== true ||
+          error.details?.reason !== 'startup-sidecars' || !isCurrent()) throw error
+      const delay = Math.max(100, Math.min(Number(error.retryAfterMs) || 500, 2000))
+      if (Date.now() + delay >= deadline) throw error
+      await new Promise(resolve => setTimeout(resolve, delay))
+      if (Date.now() >= deadline || !isCurrent()) throw error
+    }
+  }
+}
 
 export function resolveConnectSignedAt(challengeTs, fallbackNow = Date.now()) {
   const value = typeof challengeTs === 'string' && challengeTs.trim()

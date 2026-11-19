@@ -10,7 +10,7 @@
  *   - subagentRole 有值（orchestrator / leaf）
  *   - createdVia === 'spawn'
  *
- * 活跃时间优先级：lastActivityAt → updatedAt → lastInteractionAt → createdAt
+ * 活跃时间优先级：lastActivityAt → updatedAt → lastInteractionAt → lastActivity → createdAt
  */
 
 /** 支持的会话列表视图模式 */
@@ -66,13 +66,13 @@ function normalizeEpoch(num) {
 }
 
 /**
- * 取会话活跃时间：lastActivityAt → updatedAt → lastInteractionAt → createdAt
+ * 取会话活跃时间：lastActivityAt → updatedAt → lastInteractionAt → lastActivity → createdAt
  * @param {object} row 原始记录或归一化记录
  * @returns {number} 毫秒时间戳；没有则 0
  */
 export function sessionActivityTs(row) {
   if (!row || typeof row !== 'object') return 0
-  const candidates = [row.lastActivityAt, row.updatedAt, row.lastInteractionAt, row.createdAt]
+  const candidates = [row.lastActivityAt, row.updatedAt, row.lastInteractionAt, row.lastActivity, row.createdAt]
   for (const candidate of candidates) {
     const ts = toTimestamp(candidate)
     if (ts) return ts

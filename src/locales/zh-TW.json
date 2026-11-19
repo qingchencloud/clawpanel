@@ -5862,8 +5862,8 @@
   },
   "platform": {
     "engineAccess": {
-      "title": "在内核中使用官方模型",
-      "intro": "选择官方模型，为已安装的内核配置官方通道。",
+      "title": "引擎官方通道",
+      "intro": "選擇模型並設定 Hermes、DeepSeek Harness、OpenCode 或 Pi，然後開啟對應工作台。",
       "desktopOnly": "请在桌面客户端配置内核。",
       "bindFirst": "先完成官网账户连接，再选择内核。",
       "modelLabel": "官方模型",
@@ -5915,13 +5915,17 @@
       "gatewayHint": "消息渠道在 Gateway 中设置，原渠道绑定保留。"
     },
     "officialProvider": {
-      "title": "官方模型",
-      "intro": "一鍵接入後，官方模型會作為一般模型出現在引擎的模型清單裡，對話使用引擎自己的介面。",
+      "title": "OpenClaw 官方模型",
+      "intro": "將官網模型加入 OpenClaw 模型清單，在即時聊天中選擇使用。",
       "desktopOnly": "請在桌面客戶端接入官方模型。",
       "bindFirst": "先完成官網帳戶連接，再一鍵接入官方模型。",
       "loading": "正在檢查接入狀態…",
       "refresh": "重新整理",
       "install": "一鍵接入",
+      "conflict": "同名服務商已存在或已手動修改，請檢查模型設定。",
+      "configMissing": "請先完成 OpenClaw 初始設定。",
+      "openSetup": "開啟安裝精靈",
+      "openModels": "開啟模型設定",
       "refreshAccess": "重新整理接入",
       "remove": "中斷",
       "installed": "已接入",

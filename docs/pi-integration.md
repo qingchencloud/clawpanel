@@ -5,7 +5,7 @@
 ## 使用入口
 
 1. 左侧引擎切换器选择 **Pi**，进入「运行与配置」。
-2. 安装受管运行时，要求完整的 Node.js **>=22.19.0** 和 npm；当前推荐安装 `@earendil-works/pi-coding-agent@1.3.0`。
+2. 安装受管运行时，要求完整的 Node.js **>=22.19.0** 和 npm；当前推荐安装 `@earendil-works/pi-coding-agent@1.5.2`。
 3. 在通用「模型渠道」维护地址、密钥、模型和上下文/输出上限，点击「同步到 Pi」，按需设为默认模型。
 4. 配置工作目录，在独立「工作台」新建会话、发送消息和切换模型。
 
@@ -53,7 +53,7 @@ clawpanel/pi/
 
 ## 安装、更新与卸载
 
-安装和更新仅接受面板验证过的固定 Pi 版本（本版本为 1.3.0）；检查上游更新由用户触发，未经兼容验收的新版仅提示、不自动切换。先在独立 staging 目录安装并执行版本核验，再切换受管运行时；切换后核验失败恢复旧版本。
+安装和更新仅接受面板验证过的固定 Pi 版本（本版本为 1.5.2）；检查上游更新由用户触发，未经兼容验收的新版仅提示、不自动切换。先在独立 staging 目录安装并执行版本核验，再切换受管运行时；切换后核验失败恢复旧版本。
 
 管理操作互斥；任务执行中拒绝安装、更新、卸载、模型同步和工作目录变更。卸载只删除受管运行时，保留配置、凭据、会话和工作目录。模型同步写入失败恢复旧配置，并做文件回读；**文件回读不是真实模型调用成功证明**。
 
@@ -67,7 +67,9 @@ clawpanel/pi/
 
 流式刷新保留草稿、焦点、滚动位置及工具/思考展开状态，中文输入法合成期间暂缓重绘。快捷提示只填入草稿，不自动发送。
 
-本次兼容复核使用真实 Pi 1.3.0 与旧版 1.1.0：非特权 Linux 容器完成实际安装、配置同步、聊天、Provider 回执和进程停止；真实 Chromium 分别完成模型切换、完整回复、刷新历史、390×844 布局及确认关闭进程，每个界面唯一提示词均核对独立 Provider 恰好一次请求。Windows 的真实 1.3.0 RPC 另验收审批拒绝/允许、取消和历史恢复。模拟模型不是收费 Provider 联调证明，Web 和容器结果也不替代 Tauri 原生 GUI。
+真实 Pi 1.5.2 在隔离运行时完成受管安装、配置同步、流式聊天、模型切换、审批拒绝与允许、取消、历史恢复和项目隔离。
+
+2026-11-18 在 Windows x64、Node.js 24.15.0、WebView2 157 上，用 ClawPanel 0.22.13 的 Tauri 调试构建和独立便携目录重复验证了工作台。每次从侧栏新建会话，在模型下拉框切换到第二个模型并发送消息。回环模拟服务收到一次发给所选模型的请求，界面分段显示回复。刷新后，界面恢复同一会话、模型和两条完整消息，受管 JSONL 中也能回读原文。
 
 此前 Pi 1.1.0 的完整界面历史记录：在 Web 生产服务器检查亮/暗主题、390×844 与 320×568 小屏布局、模型切换、审批拒绝/允许、停止与刷新恢复；这些历史结果不代替本次新版本实测。
 
@@ -79,7 +81,7 @@ clawpanel/pi/
 - Web 生产服务器登录、统一渠道同步、独立配置页/工作台、错误与草稿保留、模型切换、审批、刷新恢复，以及 390px 移动布局无横向溢出。
 - Node 回归、前端构建、Rust 单测、格式及 Clippy；桌面私有桥分别由 Node 测试和 Rust 实际启动测试验证认证与退出。
 
-尚未完成：Tauri GUI 整体操作验收，Linux/macOS/ARM64 真机验收，收费 Provider 的真实 Responses/Anthropic/Google/Ollama 调用，任意项目扩展/MCP 和文件附件体验。不要把这些未验收项表述为完整兼容。
+Windows 桌面仍待验证通过界面安装与升级、工具审批及取消。Linux、macOS、ARM64 真机客户端，真实第三方模型服务（包括 Responses、Anthropic、Google 和 Ollama）以及项目扩展、MCP、文件附件仍待验收。
 
 ### 本地测试
 
@@ -111,6 +113,6 @@ node scripts/test-pi-runtime.mjs
 ## 参考
 
 - [官方项目](https://github.com/earendil-works/pi)
-- [固定版本 RPC 文档](https://github.com/earendil-works/pi/blob/v1.3.0/packages/coding-agent/docs/rpc.md)
-- [固定版本 JSON 事件文档](https://github.com/earendil-works/pi/blob/v1.3.0/packages/coding-agent/docs/json.md)
-- [固定版本模型配置文档](https://github.com/earendil-works/pi/blob/v1.3.0/packages/coding-agent/docs/models.md)
+- [固定版本 RPC 文档](https://github.com/earendil-works/pi/blob/v1.5.2/packages/coding-agent/docs/rpc.md)
+- [固定版本 JSON 事件文档](https://github.com/earendil-works/pi/blob/v1.5.2/packages/coding-agent/docs/json.md)
+- [固定版本模型配置文档](https://github.com/earendil-works/pi/blob/v1.5.2/packages/coding-agent/docs/models.md)

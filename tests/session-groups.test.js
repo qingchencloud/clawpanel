@@ -56,10 +56,11 @@ test('toTimestamp: 归一化秒/毫秒/字符串', () => {
   assert.equal(toTimestamp('nonsense'), 0)
 })
 
-test('sessionActivityTs: 优先级 lastActivityAt → updatedAt → lastInteractionAt → createdAt', () => {
+test('sessionActivityTs: 优先级 lastActivityAt → updatedAt → lastInteractionAt → lastActivity → createdAt', () => {
   assert.equal(sessionActivityTs({ lastActivityAt: 4, updatedAt: 3, lastInteractionAt: 2, createdAt: 1 }), 4)
   assert.equal(sessionActivityTs({ updatedAt: 3, lastInteractionAt: 2, createdAt: 1 }), 3)
   assert.equal(sessionActivityTs({ lastInteractionAt: 2, createdAt: 1 }), 2)
+  assert.equal(sessionActivityTs({ lastActivity: 1700000000, createdAt: 1 }), 1700000000000)
   assert.equal(sessionActivityTs({ createdAt: 1 }), 1)
   assert.equal(sessionActivityTs({}), 0)
   assert.equal(sessionActivityTs(null), 0)

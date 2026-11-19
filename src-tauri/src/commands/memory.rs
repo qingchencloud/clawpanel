@@ -280,7 +280,7 @@ pub async fn export_memory_zip(
         let full_path = dir.join(rel_path);
         let content =
             fs::read_to_string(&full_path).map_err(|e| format!("读取 {rel_path} 失败: {e}"))?;
-        zip.start_file(rel_path, options)
+        zip.start_file_from_path(rel_path, options)
             .map_err(|e| format!("写入 zip 失败: {e}"))?;
         zip.write_all(content.as_bytes())
             .map_err(|e| format!("写入内容失败: {e}"))?;

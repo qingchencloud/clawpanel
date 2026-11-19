@@ -45,7 +45,8 @@ function runPs(body) {
   for (const k of ['HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'TEMP', 'TMP', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME']) env[k] = temp
   const source = path.join(temp, 'fixture.ps1'), entry = path.join(temp, 'test.ps1')
   fs.writeFileSync(source, fixture)
-  fs.writeFileSync(entry, `$ErrorActionPreference='Stop'\n$wrapperPath=${psQuote(wrapper)}\n. $wrapperPath\n$fixturePath=${psQuote(source)}\n$temp=${psQuote(temp)}\n${body}\n`)
+  // Windows PowerShell 5 按系统代码页读取无 BOM 文件；测试脚本中的中文需要显式 UTF-8。
+  fs.writeFileSync(entry, `\uFEFF$ErrorActionPreference='Stop'\n$wrapperPath=${psQuote(wrapper)}\n. $wrapperPath\n$fixturePath=${psQuote(source)}\n$temp=${psQuote(temp)}\n${body}\n`)
   try {
     const before = JSON.stringify(process.env), original = sha(fs.readFileSync(source))
     const r = spawnSync(path.join(process.env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe'), ['-NoProfile', '-File', entry], { env, encoding: 'utf8', timeout: 30000, windowsHide: true })
@@ -336,8 +337,10 @@ param([switch]$NoModifyPath)
 @{pid=$PID;argv=[Environment]::GetCommandLineArgs();noModify=[bool]$NoModifyPath;flag=$env:UV_NO_MODIFY_PATH;install=$env:UV_INSTALL_DIR;config=$env:XDG_CONFIG_HOME;download=$env:UV_DOWNLOAD_URL;unmanaged=$env:UV_UNMANAGED_INSTALL;ci=$env:GITHUB_PATH}|ConvertTo-Json -Compress
 exit 7
 '@)
-# 只替换本次测试进程的已校验下载边界；实际固定哈希函数另有坏字节及真实只读原字节验收。
+# 使用加载 wrapper 之后创建的子作用域，避免 PS5 提前绑定的替身被正式函数覆盖。
+& {
 function Get-ClawPanelPinnedUvInstaller {param($SourceId) return $sink}
+if (-not (Get-Command Get-ClawPanelPinnedUvInstaller -CommandType Function).Definition.Contains('return $sink')) { throw 'test resolver missing' }
 $env:UV_DOWNLOAD_URL='https://fixture.invalid/floating'
 $env:UV_UNMANAGED_INSTALL='outside-fixture'
 $env:GITHUB_PATH='outside-ci-file'
@@ -361,6 +364,7 @@ $blocked=@(Invoke-ClawPanelPinnedUvInstaller -HostExe "$PSHOME/powershell.exe" -
 if($LASTEXITCODE -ne 1 -or ($blocked -join '|') -notmatch 'reparse path' -or ($blocked -join '|') -match '"pid"'){throw 'private binary output junction reached child'}
 if($before -cne ([Environment]::GetEnvironmentVariables('Process')|ConvertTo-Json -Compress)){throw 'blocked env not restored'}
 @{pid=$PID;child=$child;exit=$code;envRestored=$true;outputJunctionBlocked=$true;kind='actual-PS5-harmless-child-not-install'}|ConvertTo-Json -Depth 5 -Compress
+}
 `)
   assert.equal(r.exit, 7)
   assert.equal(r.envRestored, true)

@@ -1,4 +1,4 @@
-# 仅自有TEMP组件协议，不发现KnownFolder、不接实际app/生产root。
+﻿# 仅自有TEMP组件协议，不发现KnownFolder、不接实际app/生产root。
 param([string]$Mode, [string]$FixtureRoot, [string]$Nonce)
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)

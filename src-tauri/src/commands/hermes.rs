@@ -5,6 +5,8 @@
 //!   2. 创建源码 checkout、受管 Python/Node 和锁定依赖的 venv
 //!   3. 写入 Hermes Home 下的 config.yaml + .env
 
+mod dashboard_children;
+
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::io::Write;
@@ -1039,11 +1041,12 @@ fn extract_zip_archive(data: &[u8], dest: &Path) -> Result<(), String> {
         let mut file = archive
             .by_index(i)
             .map_err(|e| format!("ZIP 条目读取失败: {e}"))?;
-        let Some(rel_path) = zip_entry_safe_path(file.name()) else {
+        let name = file.name().map_err(|e| format!("ZIP 条目名称无效: {e}"))?;
+        let Some(rel_path) = zip_entry_safe_path(name.trim_end_matches('/')) else {
             continue;
         };
         let out_path = dest.join(rel_path);
-        if file.is_dir() || file.name().ends_with('/') {
+        if file.is_dir() {
             std::fs::create_dir_all(&out_path)
                 .map_err(|e| format!("创建目录 {} 失败: {e}", out_path.display()))?;
             continue;
@@ -1888,12 +1891,6 @@ fn hermes_dashboard_tcp_running(port: u16, timeout_ms: u64) -> bool {
         .is_ok()
 }
 
-fn hermes_dashboard_cli_stop() -> bool {
-    run_silent("hermes", &["dashboard", "--stop"])
-        .or_else(|_| run_silent("hermes", &["dashboard", "stop"]))
-        .is_ok()
-}
-
 /// 探测 Hermes Dashboard 是否在运行（TCP 连接 127.0.0.1 上的 dashboard 端口）
 /// 返回 { running: bool, port: u16 }，前端据此决定是否打开浏览器或提示用户启动
 #[tauri::command]
@@ -1908,40 +1905,6 @@ pub async fn hermes_dashboard_probe() -> Result<Value, String> {
     .await
     .unwrap_or(false);
     Ok(serde_json::json!({ "running": running, "port": port, "status": cli_output }))
-}
-
-/// 我们 spawn 的 Dashboard 进程 PID（0 = 没有）
-static DASH_PID: AtomicU32 = AtomicU32::new(0);
-
-/// 精准杀掉我们 spawn 的 Dashboard 进程（taskkill /F /PID）
-fn kill_dashboard_pid() -> bool {
-    let pid = DASH_PID.load(Ordering::SeqCst);
-    if pid == 0 {
-        return false;
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let mut cmd = crate::utils::background_command("taskkill");
-        cmd.args(["/F", "/PID", &pid.to_string()]);
-        cmd.creation_flags(CREATE_NO_WINDOW);
-        let ok = cmd.output().map(|o| o.status.success()).unwrap_or(false);
-        if ok {
-            DASH_PID.store(0, Ordering::SeqCst);
-        }
-        ok
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let ok = std::process::Command::new("kill")
-            .args(["-9", &pid.to_string()])
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
-        if ok {
-            DASH_PID.store(0, Ordering::SeqCst);
-        }
-        ok
-    }
 }
 
 /// 启动 Hermes Dashboard 服务（`hermes dashboard`），idempotent
@@ -1962,62 +1925,59 @@ pub async fn hermes_dashboard_start(app: tauri::AppHandle) -> Result<Value, Stri
         }));
     }
 
-    // 2. 清掉残留 PID（来自上一次 spawn）
-    let _ = kill_dashboard_pid();
-
-    // 2b. 旧版安装缺失 dashboard_auth 时先幂等补齐；最新版源码标签不附带 SPA，
-    // ClawPanel 会另外通过 HERMES_WEB_DIST 提供仅用于 token bootstrap 的最小页面。
-    inject_hermes_dashboard_compat_stub(&app);
-
     let home = hermes_home();
-    let dashboard_dist = ensure_hermes_dashboard_fallback_dist(&home)?;
     let log_path = home.join("dashboard-run.log");
-    let log_file =
-        std::fs::File::create(&log_path).map_err(|e| format!("创建日志文件失败: {e}"))?;
-    let log_err = log_file
-        .try_clone()
-        .map_err(|e| format!("克隆日志句柄失败: {e}"))?;
+    let (child, spawned) = dashboard_children::get_or_spawn(&home, port, || {
+        inject_hermes_dashboard_compat_stub(&app);
+        let dashboard_dist = ensure_hermes_dashboard_fallback_dist(&home)?;
+        let log_file =
+            std::fs::File::create(&log_path).map_err(|e| format!("创建日志文件失败: {e}"))?;
+        let log_err = log_file
+            .try_clone()
+            .map_err(|e| format!("克隆日志句柄失败: {e}"))?;
 
-    let enhanced = hermes_enhanced_path();
-    let mut cmd = crate::utils::background_command(hermes_program_for_spawn()?);
-    cmd.args(["dashboard", "--no-open", "--port", &port.to_string()])
-        .current_dir(&home)
-        .stdin(std::process::Stdio::null())
-        .stdout(log_file)
-        .stderr(log_err);
-    cmd.env("HERMES_WEB_DIST", dashboard_dist);
-    apply_hermes_runtime_env(&mut cmd, &enhanced);
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(CREATE_NO_WINDOW);
+        let enhanced = hermes_enhanced_path();
+        let mut cmd = crate::utils::background_command(hermes_program_for_spawn()?);
+        cmd.args(["dashboard", "--no-open", "--port", &port.to_string()])
+            .current_dir(&home)
+            .stdin(std::process::Stdio::null())
+            .stdout(log_file)
+            .stderr(log_err);
+        cmd.env("HERMES_WEB_DIST", dashboard_dist);
+        apply_hermes_runtime_env(&mut cmd, &enhanced);
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(CREATE_NO_WINDOW);
 
-    // 注入 .env（与 gateway 启动一致）
-    let env_path = home.join(".env");
-    if let Ok(env_content) = std::fs::read_to_string(&env_path) {
-        for line in env_content.lines() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            if let Some((key, val)) = line.split_once('=') {
-                cmd.env(key.trim(), val.trim());
+        // 注入 .env（与 gateway 启动一致）
+        let env_path = home.join(".env");
+        if let Ok(env_content) = std::fs::read_to_string(&env_path) {
+            for line in env_content.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                if let Some((key, val)) = line.split_once('=') {
+                    cmd.env(key.trim(), val.trim());
+                }
             }
         }
-    }
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("spawn hermes dashboard failed: {e}"))?;
-    let pid = child.id();
-    DASH_PID.store(pid, Ordering::SeqCst);
+        dashboard_children::spawn(&mut cmd)
+    })?;
+    let pid = child.lock().unwrap_or_else(|e| e.into_inner()).id();
+    if spawned {
+        dashboard_children::watch_exit(home.clone(), port, child.clone());
+    }
 
     // 3. 等待 - 端口起来 / 进程提前死 / 超时
     // 90s 是为了覆盖首次启动的 npm build（dashboard 文档说前端没构建会 auto build on first launch）
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(90);
     while std::time::Instant::now() < deadline {
         // 进程提前退出？
-        match child.try_wait() {
+        let status = child.lock().unwrap_or_else(|e| e.into_inner()).try_wait();
+        match status {
             Ok(Some(status)) => {
-                DASH_PID.store(0, Ordering::SeqCst);
+                dashboard_children::forget_exited(&home, port, &child);
                 let log_raw = std::fs::read_to_string(&log_path).unwrap_or_default();
                 let tail = log_raw
                     .lines()
@@ -2053,10 +2013,10 @@ pub async fn hermes_dashboard_start(app: tauri::AppHandle) -> Result<Value, Stri
             Ok(None) => {
                 // 还活着，探端口
                 if hermes_dashboard_tcp_running(port, 300) {
-                    // PID 仍记录在 DASH_PID，供后续 stop 使用
+                    // 达到就绪后继续持有句柄，供手动停止或卸载。
                     return Ok(serde_json::json!({
                         "started": true,
-                        "already_running": false,
+                        "already_running": !spawned,
                         "port": port,
                         "pid": pid,
                     }));
@@ -2109,21 +2069,11 @@ pub async fn hermes_dashboard_start(app: tauri::AppHandle) -> Result<Value, Stri
 /// 停止我们 spawn 的 Dashboard 进程
 #[tauri::command]
 pub async fn hermes_dashboard_stop() -> Result<bool, String> {
+    let home = hermes_home();
     let port = hermes_dashboard_port();
-    let cli_stopped = tokio::task::spawn_blocking(hermes_dashboard_cli_stop)
+    tokio::task::spawn_blocking(move || dashboard_children::stop(&home, port))
         .await
-        .unwrap_or(false);
-    let pid_stopped = kill_dashboard_pid();
-    if cli_stopped || pid_stopped {
-        for _ in 0..20 {
-            if !hermes_dashboard_tcp_running(port, 200) {
-                return Ok(true);
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-        }
-        return Ok(true);
-    }
-    Ok(false)
+        .map_err(|e| e.to_string())?
 }
 
 // ---------------------------------------------------------------------------
@@ -15055,12 +15005,13 @@ pub async fn uninstall_hermes(app: tauri::AppHandle, clean_config: bool) -> Resu
     let _ = app.emit("hermes-install-progress", 10u32);
     let portable_mode = crate::commands::portable::portable_context().is_some();
 
+    let _dashboard_guard = dashboard_children::begin_uninstall(&hermes_home())?;
     let source_dir = hermes_source_dir();
     let source_installed = source_dir.exists();
     if source_installed {
         stop_guardian();
         let _ = kill_gateway_pid();
-        let _ = kill_dashboard_pid();
+
         std::fs::remove_dir_all(&source_dir)
             .map_err(|e| format!("清理 Hermes 源码目录失败: {e}"))?;
     }

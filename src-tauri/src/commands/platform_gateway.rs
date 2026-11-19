@@ -16,6 +16,7 @@ pub(super) struct Gateway {
     leases: Vec<Lease>,
 }
 pub(super) struct Lease {
+    ordinary: bool,
     cap: String,
     engine: String,
     member: String,
@@ -45,28 +46,34 @@ struct ProxyState {
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct LeaseState {
+    #[serde(default)]
+    ordinary: Option<bool>,
     cap: String,
     engine: String,
     member: String,
     epoch: u64,
 }
 
-fn load_proxy_state() -> ProxyState {
-    std::fs::read(proxy_state_path())
-        .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default()
+fn load_proxy_state() -> Result<ProxyState, String> {
+    match std::fs::read(proxy_state_path()) {
+        Ok(bytes) => {
+            serde_json::from_slice(&bytes).map_err(|_| "official_gateway_state_invalid".into())
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(ProxyState::default()),
+        Err(_) => Err("official_gateway_storage_failed".into()),
+    }
 }
 
 /// 端口与能力令牌落盘：客户端重启后引擎配置里的 provider baseUrl 仍然有效。
-fn save_proxy_state(gateway: &Gateway) {
-    let Some(port) = gateway.port else { return };
+fn save_proxy_state(gateway: &Gateway) -> Result<(), String> {
+    let port = gateway.port.ok_or("official_gateway_unavailable")?;
     let state = ProxyState {
         port: Some(port),
         leases: gateway
             .leases
             .iter()
             .map(|lease| LeaseState {
+                ordinary: Some(lease.ordinary),
                 cap: lease.cap.clone(),
                 engine: lease.engine.clone(),
                 member: lease.member.clone(),
@@ -74,14 +81,9 @@ fn save_proxy_state(gateway: &Gateway) {
             })
             .collect(),
     };
-    let Ok(bytes) = serde_json::to_vec_pretty(&state) else {
-        return;
-    };
-    let path = proxy_state_path();
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let _ = std::fs::write(path, bytes);
+    let value = serde_json::to_value(state).map_err(|_| "official_gateway_state_invalid")?;
+    super::super::media::write_json_atomic(&proxy_state_path(), &value)
+        .map_err(|_| "official_gateway_storage_failed".into())
 }
 
 /// 启动时若已有接入记录，则按持久化端口恢复本机代理监听。
@@ -231,7 +233,7 @@ impl Platform {
         if let Some(port) = gateway.port {
             return Ok(port);
         }
-        let saved = load_proxy_state();
+        let saved = load_proxy_state()?;
         let mut bound = None;
         if let Some(saved_port) = saved.port {
             if let Ok(listener) =
@@ -255,6 +257,16 @@ impl Platform {
             .leases
             .into_iter()
             .map(|lease| Lease {
+                ordinary: lease.ordinary.unwrap_or_else(|| {
+                    lease.engine == "openclaw"
+                        && saved.port.is_some_and(|old_port| {
+                            super::super::official_provider::recorded_endpoint(
+                                lease.epoch,
+                                &lease.member,
+                                &format!("http://127.0.0.1:{old_port}/engine/{}/v1", lease.cap),
+                            )
+                        })
+                }),
                 cap: lease.cap,
                 engine: lease.engine,
                 member: lease.member,
@@ -283,11 +295,19 @@ impl Platform {
                 });
             }
         });
-        save_proxy_state(&gateway);
+        save_proxy_state(&gateway)?;
         Ok(port)
     }
 
     pub(super) async fn engine_connection(self: &Arc<Self>, engine: &str) -> Result<Value, String> {
+        self.connection_for(engine, false).await
+    }
+
+    pub(super) async fn connection_for(
+        self: &Arc<Self>,
+        engine: &str,
+        ordinary: bool,
+    ) -> Result<Value, String> {
         if !ENGINES.contains(&engine) {
             return Err("unsupported_official_engine".into());
         }
@@ -310,22 +330,36 @@ impl Platform {
         self.current(epoch).await?;
         let port = self.ensure_gateway_listener().await?;
         let mut gateway = self.gateway.lock().await;
-        gateway
+        gateway.leases.retain(|lease| {
+            lease.epoch == epoch
+                && lease.member == member
+                && (!ordinary
+                    || !lease.ordinary
+                    || lease.engine != engine
+                    || super::super::official_provider::active_endpoint(
+                        epoch,
+                        &member,
+                        &format!("http://127.0.0.1:{port}/engine/{}/v1", lease.cap),
+                    ))
+        });
+        if !gateway
             .leases
-            .retain(|lease| lease.epoch == epoch && lease.member == member);
-        if !gateway.leases.iter().any(|lease| lease.engine == engine) {
+            .iter()
+            .any(|lease| lease.engine == engine && lease.ordinary == ordinary)
+        {
             gateway.leases.push(Lease {
+                ordinary,
                 cap: identity::random_id(),
                 engine: engine.into(),
                 member: member.clone(),
                 epoch,
             });
         }
-        save_proxy_state(&gateway);
+        save_proxy_state(&gateway)?;
         let lease = gateway
             .leases
             .iter()
-            .find(|lease| lease.engine == engine)
+            .find(|lease| lease.engine == engine && lease.ordinary == ordinary)
             .unwrap();
         Ok(
             json!({"engine":engine,"providerId":"clawpanel-official","baseUrl":format!("http://127.0.0.1:{}/engine/{}/v1",port,lease.cap),"apiKey":"clawpanel-local","models":catalog["data"],"memberId":member,"epoch":epoch}),
@@ -376,12 +410,29 @@ impl Platform {
                 .leases
                 .iter()
                 .find(|lease| lease.cap == capability)
-                .map(|lease| (lease.epoch, lease.member.clone(), lease.engine.clone()))
+                .map(|lease| {
+                    (
+                        lease.epoch,
+                        lease.member.clone(),
+                        lease.engine.clone(),
+                        lease.ordinary,
+                    )
+                })
         };
-        let Some((epoch, member, engine)) = identity else {
+        let Some((epoch, member, engine, ordinary)) = identity else {
             return error(&mut socket, 401, "official_gateway_expired").await;
         };
-        if gateway_alias && engine != "openclaw" {
+        // 普通接入关闭、切换身份或用户替换服务商后，旧运行进程不能再借用缓存端点发起请求。
+        if ordinary
+            && !super::super::official_provider::active_endpoint(
+                epoch,
+                &member,
+                &format!("http://127.0.0.1:{port}/engine/{capability}/v1"),
+            )
+        {
+            return error(&mut socket, 401, "official_gateway_expired").await;
+        }
+        if gateway_alias && (engine != "openclaw" || ordinary) {
             return error(&mut socket, 403, "official_gateway_engine_denied").await;
         }
         if !self.engine_current(epoch, &member).await {
@@ -426,6 +477,9 @@ impl Platform {
             Ok(value) => value,
             Err(_) => return error(&mut socket, 400, "invalid_official_request").await,
         };
+        if ordinary && engine == "openclaw" {
+            normalize_openclaw_text_parts(&mut body);
+        }
         let catalog = self.state.lock().await.models.clone();
         let (stream, upstream_stream) = match prepare_engine_transport(&mut body, &catalog) {
             Ok(value) => value,
@@ -527,6 +581,36 @@ impl Platform {
         state.epoch == epoch
             && state.phase == "bound"
             && state.vault.as_ref().and_then(|v| v.member_id.as_deref()) == Some(member)
+    }
+}
+
+// OpenClaw 回传历史消息时会将连续文本分块。仅合并没有额外语义的纯文本，
+// 将图像、工具、未知字段及空数组原样交给既有的官网请求校验。
+fn normalize_openclaw_text_parts(body: &mut Value) {
+    let Some(messages) = body.get_mut("messages").and_then(Value::as_array_mut) else {
+        return;
+    };
+    for message in messages {
+        let Some(parts) = message["content"]
+            .as_array()
+            .filter(|parts| !parts.is_empty())
+        else {
+            continue;
+        };
+        let text: Option<String> = parts
+            .iter()
+            .map(|part| {
+                let fields = part.as_object()?;
+                if fields.len() == 2 && part["type"] == "text" {
+                    part["text"].as_str()
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if let Some(text) = text {
+            message["content"] = Value::String(text);
+        }
     }
 }
 
@@ -746,4 +830,33 @@ async fn write_sse(socket: &mut TcpStream, value: &Value) -> Result<(), String> 
         .await
         .map_err(|_| "official_gateway_slow_reader")?
         .map_err(|_| "official_gateway_disconnected".into())
+}
+
+#[cfg(test)]
+mod openclaw_text_tests {
+    use super::*;
+
+    #[test]
+    fn openclaw_history_joins_only_plain_text_parts() {
+        let mut request = json!({"messages":[
+            {"role":"user","content":[{"type":"text","text":"上轮："},{"type":"text","text":"保留\n空格 "}]},
+            {"role":"assistant","content":null,"tool_calls":[]},
+            {"role":"tool","content":"工具结果","tool_call_id":"t1"}
+        ]});
+        let original = request.clone();
+        normalize_openclaw_text_parts(&mut request);
+        assert_eq!(request["messages"][0]["content"], "上轮：保留\n空格 ");
+        assert_eq!(request["messages"][1], original["messages"][1]);
+        assert_eq!(request["messages"][2], original["messages"][2]);
+        for parts in [
+            json!([]),
+            json!([{"type":"text","text":"前缀"},{"type":"image_url","image_url":{}}]),
+            json!([{"type":"text","text":"内容","cache_control":{}}]),
+            json!([{"type":"text","text":null}]),
+        ] {
+            let mut body = json!({"messages":[{"role":"user","content":parts}]});
+            normalize_openclaw_text_parts(&mut body);
+            assert_eq!(body["messages"][0]["content"], parts);
+        }
+    }
 }

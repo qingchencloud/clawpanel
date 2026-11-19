@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$InstallerPath, [string]$HermesHome, [string]$InstallDir,
     [string]$Branch, [string]$Commit, [switch]$ForceCommit,
     [switch]$SkipSetup, [switch]$SkipComputerUse, [switch]$NonInteractive,

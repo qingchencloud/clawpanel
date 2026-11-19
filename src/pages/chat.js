@@ -106,7 +106,7 @@ let _streamTimerRevision = 0
 let _availableModels = []
 let _primaryModel = ''
 let _selectedModel = ''
-let _isApplyingModel = false
+let _pendingModelChange = null
 let _sessionViewMode = DEFAULT_SESSION_VIEW_MODE
 let _collapsedGroups = new Set()
 let _sessionArchivedSupported = true
@@ -479,10 +479,7 @@ function bindEvents(page) {
       if (_gatewayOfficialRequested || isGatewayOfficialModel(_modelSelectEl.value)) {
         renderModelSelect(); toast(t('platform.gatewayOfficial.newSessionRequired'), 'info'); return
       }
-      _selectedModel = _modelSelectEl.value
-      if (_selectedModel) localStorage.setItem(STORAGE_MODEL_KEY, _selectedModel)
-      else localStorage.removeItem(STORAGE_MODEL_KEY)
-      applySelectedModel()
+      void applySelectedModel(_modelSelectEl.value)
     })
   }
 
@@ -720,7 +717,7 @@ function renderModelSelect(errorText = '') {
     _modelSelectEl.title = errorText || ''
     return
   }
-  _modelSelectEl.disabled = _isApplyingModel || _gatewayOfficialRequested
+  _modelSelectEl.disabled = !!_pendingModelChange || _gatewayOfficialRequested
   _modelSelectEl.innerHTML = _availableModels.map(full => {
     const suffix = full === _primaryModel ? ` ${t('chat.defaultSuffix')}` : ''
     return `<option value="${escapeAttr(full)}" ${full === _selectedModel ? 'selected' : ''}>${full}${suffix}</option>`
@@ -1132,26 +1129,37 @@ async function saveWorkspaceCurrentFile() {
   }
 }
 
-async function applySelectedModel() {
-  if (_gatewayOfficialRequested || isGatewayOfficialModel(_selectedModel)) return
-  if (!_selectedModel) {
+async function applySelectedModel(model) {
+  if (_pendingModelChange || _gatewayOfficialRequested || isGatewayOfficialModel(model)) return
+  if (!model) {
+    renderModelSelect()
     toast(t('chat.loadingModels'), 'warning')
     return
   }
   if (!wsClient.gatewayReady || !_sessionKey) {
+    renderModelSelect()
     toast(t('chat.gatewayNotReadySend'), 'warning')
     return
   }
-  _isApplyingModel = true
-  renderModelSelect()
+  // sessions.patch 在会话覆盖已保存后才确认。普通消息等待确认，避免发送到上一个模型。
+  const change = { session: _sessionKey }
+  _pendingModelChange = change
+  _modelSelectEl.disabled = true
+  updateSendState()
   try {
-    await wsClient.chatSend(_sessionKey, `/model ${_selectedModel}`)
-    toast(`${_selectedModel}`, 'success')
+    await wsClient.sessionsSetModel(change.session, model)
+    if (_pendingModelChange !== change || _sessionKey !== change.session) return
+    _selectedModel = model
+    localStorage.setItem(STORAGE_MODEL_KEY, model)
+    toast(model, 'success')
   } catch (e) {
-    toast(`${t('chat.sendFailed')}${e.message || e}`, 'error')
+    if (_pendingModelChange === change) toast(`${t('chat.sendFailed')}${e.message || e}`, 'error')
   } finally {
-    _isApplyingModel = false
-    renderModelSelect()
+    if (_pendingModelChange === change) {
+      _pendingModelChange = null
+      renderModelSelect()
+      updateSendState()
+    }
   }
 }
 
@@ -1645,12 +1653,6 @@ function renderSessionCard(row) {
 function formatSessionTimeMs(ts) {
   const d = new Date(ts)
   if (isNaN(d.getTime())) return ''
-  return formatSessionTime(d.getTime())
-}
-
-function formatSessionTime(ts) {
-  const d = new Date(typeof ts === 'number' && ts < 1e12 ? ts * 1000 : ts)
-  if (isNaN(d.getTime())) return ''
   const now = new Date()
   const diffMs = now - d
   if (diffMs < 60000) return t('chat.justNow')
@@ -1687,7 +1689,10 @@ async function switchSession(newKey, options = {}) {
     if (!yes) return false
     discardWorkspaceChanges()
   }
+  _pendingModelChange = null
   _sessionKey = newKey
+  renderModelSelect()
+  updateSendState()
   _waitingQuestionSession = null
   _cancelResponseWatchdog()
   localStorage.setItem(STORAGE_SESSION_KEY, newKey)
@@ -1979,6 +1984,7 @@ function toggleCmdPanel() {
 // ── 消息发送 ──
 
 function sendMessage() {
+  if (_pendingModelChange) return
   if (hasPendingQuestion()) { toast(t('chat.questionAnswerFirst'), 'info'); return }
   const text = _textarea.value.trim()
   if (!text && !_attachments.length) return
@@ -3379,15 +3385,16 @@ function isAtBottom() {
 function updateSendState() {
   if (!_sendBtn || !_textarea) return
   if (_gatewayOfficialRequested && !officialGatewayChatValid()) { _sendBtn.disabled = true; return }
-  if (_isStreaming || _isAwaitingResponse) {
-    _sendBtn.disabled = false
-    _sendBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>'
-    _sendBtn.title = t('chat.cmdStopGen')
-  } else {
-    _sendBtn.disabled = !_textarea.value.trim() && !_attachments.length
-    _sendBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>'
-    _sendBtn.title = t('chat.send')
-  }
+  const stopping = _isStreaming || _isAwaitingResponse
+  const action = stopping ? 'stop' : 'send'
+  _sendBtn.disabled = !stopping && (!!_pendingModelChange || !_textarea.value.trim() && !_attachments.length)
+  _sendBtn.title = t(stopping ? 'chat.cmdStopGen' : 'chat.send')
+  // 点击图标时输入框会先触发 change；同一动作下替换按下的 SVG 会让浏览器取消 click。
+  if (_sendBtn.dataset.action === action) return
+  _sendBtn.dataset.action = action
+  _sendBtn.innerHTML = stopping
+    ? '<svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>'
+    : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>'
 }
 
 function updateStatusDot(status) {
@@ -3874,6 +3881,7 @@ export function cleanup() {
   clearTimeout(_postFinalCheck)
   _postFinalCheck = null
   if (_hostedAbort) { _hostedAbort.abort(); _hostedAbort = null }
+  _pendingModelChange = null
   _sessionKey = null
   _page = null
   _messagesEl = null

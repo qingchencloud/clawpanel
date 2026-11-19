@@ -7,7 +7,7 @@ test('DSH 私有安装器避开受影响 pnpm，稳定默认与精确通道保�
   assert.equal(DSH_STABLE_PNPM_VERSION, '11.28.5')
   assert.equal(DSH_PREVIEW_PNPM_VERSION, '11.28.5')
   assert.equal(dshReleaseChannel(), 'stable')
-  assert.deepEqual(DSH_RELEASE_CHANNELS.stable, { channel: 'stable', version: '0.2.0-rc.2', pnpmVersion: '11.28.5' })
+  assert.deepEqual(DSH_RELEASE_CHANNELS.stable, { channel: 'stable', version: '0.2.2-rc.1', pnpmVersion: '11.28.5' })
   assert.throws(() => dshReleaseChannel('latest'), /发行通道无效/)
   const rust = fs.readFileSync(new URL('../src-tauri/src/commands/deepseek_harness.rs', import.meta.url), 'utf8')
   assert.match(rust, /DSH_STABLE_PNPM_VERSION: &str = "11\.28\.5"/)
@@ -16,10 +16,14 @@ test('DSH 私有安装器避开受影响 pnpm，稳定默认与精确通道保�
 })
 
 test('DSH 默认 RC 与新 Alpha 分离，Web/Rust 精确版本一致', () => {
-  assert.equal(DSH_STABLE_VERSION, '0.2.0-rc.2')
+  assert.equal(DSH_STABLE_VERSION, '0.2.2-rc.1')
   assert.equal(DSH_PREVIEW_VERSION, '0.2.1-alpha.4')
   const rust = fs.readFileSync(new URL('../src-tauri/src/commands/deepseek_harness.rs', import.meta.url), 'utf8')
-  assert.match(rust, /DSH_STABLE_VERSION: &str = "0\.2\.0-rc\.2"/)
+  assert.match(rust, /DSH_STABLE_VERSION: &str = "0\.2\.2-rc\.1"/)
+  assert.match(rust, /DSH_NODE_REQUIREMENT: &str = ">=24\.9\.0"/)
+  const official = fs.readFileSync(new URL('../scripts/deepseek-harness-official.mjs', import.meta.url), 'utf8')
+  assert.match(official, /JSON\.parse\(fs\.readFileSync\(packageFile, 'utf8'\)\)\.version/)
+  assert.match(official, /dsh-llm@\$\{dshVersion\}/)
   assert.match(rust, /DSH_PREVIEW_VERSION: &str = "0\.2\.1-alpha\.4"/)
 })
 

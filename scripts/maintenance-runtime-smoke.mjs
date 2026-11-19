@@ -9,12 +9,14 @@ import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import { isManagedRenamedPiProcess } from './maintenance-pi-process.mjs'
-import { OPENCLAW_PROTOCOL_RANGE, buildDeviceAuthPayloadV3, resolveConnectSignedAt } from '../src/lib/openclaw-gateway-compat.js'
+import { OPENCLAW_PROTOCOL_PREFERRED_RANGE, buildDeviceAuthPayloadV3, resolveConnectSignedAt, sendChatAfterStartup } from '../src/lib/openclaw-gateway-compat.js'
 const toolingRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 function collectCandidateSourceHashes(project) {
-  const files = ['scripts/serve.js', 'scripts/dev-api.js', 'scripts/pi-models.js', 'scripts/opencode.js', 'scripts/opencode-proxy.js', 'scripts/deepseek-harness.js', 'scripts/deepseek-harness-auth.js', 'scripts/deepseek-harness-proxy.js', 'src/lib/opencode-storage-bridge.js', 'src/lib/openclaw-gateway-compat.js', 'src/lib/tauri-api.js', 'src/engines/opencode/pages/workspace.js', 'src/engines/opencode/pages/dashboard.js', 'src/engines/hermes/pages/chat.js', 'package.json', 'package-lock.json', 'openclaw-version-policy.json', 'Dockerfile', '.github/maintenance/Runtime.Dockerfile']
-  // 新 PM 是运行依赖，存在时必须进入快照；旧分支没有该文件时仍保留原19项。
+  const files = ['scripts/serve.js', 'scripts/dev-api.js', 'scripts/pi-models.js', 'scripts/opencode.js', 'scripts/opencode-proxy.js', 'scripts/deepseek-harness.js', 'scripts/deepseek-harness-auth.js', 'scripts/deepseek-harness-proxy.js', 'src/lib/opencode-storage-bridge.js', 'src/lib/openclaw-gateway-compat.js', 'src/lib/tauri-api.js', 'src/engines/opencode/pages/workspace.js', 'src/engines/opencode/pages/dashboard.js', 'src/engines/hermes/pages/chat.js', 'package.json', 'package-lock.json', 'openclaw-version-policy.json', 'Dockerfile']
+  // 老候选可能仍含历史验收镜像；只对候选实际随附的文件取指纹。
+  const legacyImage = '.github/maintenance/Runtime.Dockerfile'
+  if (fs.existsSync(path.join(project, legacyImage))) files.push(legacyImage)
   for (const optional of ['scripts/hermes-pm-runtime.js', 'scripts/hermes-managed-install.ps1']) {
     try { fs.lstatSync(path.join(project, optional)); files.push(optional) } catch (error) { if (error.code !== 'ENOENT') throw error }
   }
@@ -36,6 +38,7 @@ for (let i = 0; i < argv.length; i += 2) {
   options[argv[i]] = argv[i + 1]
 }
 const engine = options['--engine']
+const openclawEngine = engine === 'openclaw' || engine === 'openclaw-zh'
 const project = path.resolve(options['--root'] || toolingRoot)
 assert.ok(engines.includes(engine), '必须指定有效 --engine；用 --help 查看')
 const fault = options['--fault'] || ''
@@ -104,7 +107,7 @@ function safe(value) {
   if (value == null) return value ?? null
   if (typeof value === 'string') return redact(value)
   if (Array.isArray(value)) return value.map(safe)
-  if (typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, /^(?:apiKey|password|authorization|cookie|token|upstreamHeaders)$/i.test(key) ? '[REDACTED]' : safe(item)]))
+  if (typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, /^(?:apiKey|password|authorization|cookie|token|deviceToken|accessToken|refreshToken|upstreamHeaders)$/i.test(key) ? '[REDACTED]' : safe(item)]))
   return value
 }
 function write(name, value) { fs.writeFileSync(path.join(output, name), typeof value === 'string' ? redact(value) : JSON.stringify(safe(value), null, 2) + '\n', { mode: 0o600 }) }
@@ -372,7 +375,7 @@ async function setupWeb() {
   port = await unusedPort(); runtimePort = await unusedPort()
   fs.writeFileSync(path.join(configDir, 'clawpanel.json'), JSON.stringify({ ignoreRisk: true, openclawDir: configDir }))
   fs.writeFileSync(path.join(configDir, 'npm-registry.txt'), 'https://registry.npmjs.org')
-  if (engine === 'openclaw') fs.writeFileSync(path.join(configDir, 'openclaw.json'), JSON.stringify({ gateway: { port: runtimePort } }))
+  if (openclawEngine) fs.writeFileSync(path.join(configDir, 'openclaw.json'), JSON.stringify({ gateway: { port: runtimePort } }))
   env.HOST = '127.0.0.1'; env.PORT = String(port)
   web = await command(process.execPath, [path.join(project, 'scripts', 'serve.js'), '--host', '127.0.0.1', '--port', String(port)], { background: true, log: 'web' })
   base = `http://127.0.0.1:${port}`
@@ -593,20 +596,24 @@ async function hermesRun() {
 }
 async function openclawRun() {
   const prefix = path.join(home, '.npm-global')
+  const packageName = engine === 'openclaw-zh' ? '@qingchencloud/openclaw-zh' : 'openclaw'
+  const version = report.versions[engine]
   let cli
-  await stage('install', '隔离 Linux 容器内独立 npm-prefix 精确安装 candidate 官方版本；不访问 Docker socket', async () => {
+  await stage('install', `隔离 Linux 容器内独立 npm-prefix 精确安装 ${packageName}@${version}`, async () => {
     const proof = requireInstallContainer()
-    assert.equal(report.versions.openclaw, report.cases.find(item => item.name === 'candidate-schema').actual.versions.openclaw)
-    await command('npm', ['install', '--global', '--prefix', prefix, '--save-exact', '--audit=false', '--fund=false', '--registry', 'https://registry.npmjs.org', `openclaw@${report.versions.openclaw}`], { timeout: 600000, log: 'openclaw-install' })
-    const pkgDir = within(path.join(prefix, 'lib', 'node_modules', 'openclaw'))
+    await command('npm', ['install', '--global', '--prefix', prefix, '--save-exact', '--audit=false', '--fund=false', '--registry', 'https://registry.npmjs.org', `${packageName}@${version}`], { timeout: timeoutMs, log: 'openclaw-install' })
+    const pkgDir = within(path.join(prefix, 'lib', 'node_modules', packageName))
     const pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8'))
-    assert.equal(pkg.name, 'openclaw'); assert.equal(pkg.version, report.versions.openclaw)
+    assert.equal(pkg.name, packageName); assert.equal(pkg.version, version)
     const bin = typeof pkg.bin === 'string' ? pkg.bin : pkg.bin?.openclaw
     assert.equal(typeof bin, 'string'); cli = within(path.resolve(pkgDir, bin)); assert.ok(fs.existsSync(cli))
-    return { proof, prefix, cli, version: pkg.version }
+    return { proof, prefix, cli, packageName, version: pkg.version }
   })
-  await stage('version', '独立执行已安装官方 CLI，版本必须精确匹配候选', async () => {
-    const actual = await command(process.execPath, [cli, '--version']); assert.ok(actual.includes(report.versions.openclaw)); return { actual }
+  await stage('version', '独立执行已安装 CLI，核对上游内核版本', async () => {
+    const actual = await command(process.execPath, [cli, '--version'])
+    const coreVersion = version.replace(/-zh\.\d+$/, '')
+    assert.ok(actual.trim().split(/[^\w.-]+/).some(word => word === version || word === coreVersion), 'CLI 版本不匹配: ' + actual)
+    return { packageVersion: version, actual }
   })
   await stage('config-sync', '面板生产 HTTP 写入模型、Agent、Gateway 配置并交由真实 CLI validate', async () => {
     const panel = await api('read_panel_config'); await api('write_panel_config', { config: { ...panel, openclawCliPath: cli } })
@@ -632,7 +639,8 @@ async function openclawRun() {
   })
   await stage('chat', '真实 Gateway chat.send、终态事件与 chat.history 完整本次回执', async () => {
     const sessionKey = `agent:main:${id}`
-    const sent = await rpc('chat.send', { sessionKey, message: nonce, deliver: false, idempotencyKey: crypto.randomUUID() })
+    const params = { sessionKey, message: nonce, deliver: false, idempotencyKey: crypto.randomUUID() }
+    const sent = await sendChatAfterStartup(() => rpc('chat.send', params), () => !abort.signal.aborted && gatewaySocket.readyState === WebSocket.OPEN)
     const history = await until(async () => {
       const value = await rpc('chat.history', { sessionKey, limit: 100 })
       const final = frames.some(frame => frame.type === 'event' && frame.event === 'chat' && frame.payload?.state === 'final' && (!sent.runId || frame.payload.runId === sent.runId))
@@ -671,7 +679,7 @@ async function openclawConnect() {
       if (frame.type === 'res' && request) {
         pending.delete(frame.id)
         if (frame.ok) request.resolve(frame.payload)
-        else request.reject(Object.assign(new Error(JSON.stringify(frame.error)), { code: frame.error?.code, retryable: frame.error?.retryable, retryAfterMs: frame.error?.retryAfterMs }))
+        else request.reject(Object.assign(new Error(JSON.stringify(frame.error)), frame.error))
       }
     } catch (error) { rejectChallenge(error) }
   })
@@ -687,7 +695,7 @@ async function openclawConnect() {
   const scopes = ['operator.admin', 'operator.approvals', 'operator.pairing', 'operator.read', 'operator.write']
   const metadata = { deviceId, clientId: 'openclaw-control-ui', clientMode: 'ui', role: 'operator', scopes, signedAt, signatureToken: testKey, nonce: challenge.nonce, platform: 'linux', deviceFamily: 'desktop' }
   const signature = crypto.sign(null, Buffer.from(buildDeviceAuthPayloadV3(metadata)), keys.privateKey).toString('base64url')
-  const hello = await rpc('connect', { minProtocol: OPENCLAW_PROTOCOL_RANGE.min, maxProtocol: OPENCLAW_PROTOCOL_RANGE.max, client: { id: 'openclaw-control-ui', version: '1.0.0', platform: 'linux', deviceFamily: 'desktop', mode: 'ui' }, role: 'operator', scopes, caps: [], auth: { token: testKey }, device: { id: deviceId, publicKey: raw.toString('base64url'), signedAt, nonce: challenge.nonce, signature }, locale: 'zh-CN', userAgent: 'ClawPanel maintenance E2E' })
+  const hello = await rpc('connect', { minProtocol: OPENCLAW_PROTOCOL_PREFERRED_RANGE.min, maxProtocol: OPENCLAW_PROTOCOL_PREFERRED_RANGE.max, client: { id: 'openclaw-control-ui', version: '1.0.0', platform: 'linux', deviceFamily: 'desktop', mode: 'ui' }, role: 'operator', scopes, caps: [], auth: { token: testKey }, device: { id: deviceId, publicKey: raw.toString('base64url'), signedAt, nonce: challenge.nonce, signature }, locale: 'zh-CN', userAgent: 'ClawPanel maintenance E2E' })
   assert.ok([3, 4].includes(hello.protocol), 'Gateway 没有协商受支持协议')
   return { rpc, frames, hello }
 }
@@ -702,7 +710,7 @@ async function stopRuntime() {
     gatewaySocket?.close()
     let result
     if (engine === 'hermes') result = await api('hermes_gateway_action', { action: 'stop' }, 30000)
-    else if (engine === 'openclaw') result = await api('stop_service', { label: 'ai.openclaw.gateway' }, 30000)
+    else if (openclawEngine) result = await api('stop_service', { label: 'ai.openclaw.gateway' }, 30000)
     else result = await api(`${engine === 'opencode' ? 'opencode' : 'dsh'}_stop`, { port: runtimePort }, 30000)
     await until(async () => !await reachable(runtimePort), 10000)
     await until(() => [...runtimePids].every(pid => !alive(pid)), 10000)
@@ -764,7 +772,7 @@ try {
     const revision = await command('git', ['-c', `safe.directory=${project}`, '-C', project, 'rev-parse', 'HEAD']); report.environment.commit = revision.trim()
     return result
   })
-  if (['openclaw-zh', 'weixin'].includes(engine)) {
+  if (engine === 'weixin') {
     await stage('install', '独立 source id 只允许针对该发行物的实测；高风险项不自动选择', async () => { throw missing(`${engine} 尚无独立安装/真实渠道或预览版聊天验收；保持高风险人工确认，不降级为 official/stable 验收`) })
   }
   await stage('web', '真实 serve.js 绑定随机回环端口，配置根目录回读与健康一致', setupWeb)

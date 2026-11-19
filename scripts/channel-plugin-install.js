@@ -76,13 +76,14 @@ export async function installChannelPluginAt({ root, packageName, pluginId, vers
       await enable(id)
       return '插件已就绪'
     }
-    onEvent({ event: 'plugin-log', payload: updating ? `更新已安装插件: ${id}` : `安装规格: ${spec}` })
-    const args = updating && !replaceExisting ? ['plugins', 'update', id] : ['plugins', 'install', spec]
-    // 9.4 对显式 npm 源要求确认；仅在首次安装时确认来源，不覆盖已有插件，保留安全策略检查。
-    const v = String(hostVersion || '').match(/^(\d+)\.(\d+)\.(\d+)/)
-    if (!updating && v && (Number(v[1]) > 2026 || (Number(v[1]) === 2026 && (Number(v[2]) > 9 || (Number(v[2]) === 9 && Number(v[3]) >= 4))))) args.push('--force')
-    // 明确的微信兼容版本替换不能沿用历史 latest 安装记录；由 CLI 完成事务，不预删目录。
-    if (updating && replaceExisting) args.push('--force')
+    const v = /^v?(\d+)\.(\d+)\.(\d+)/.exec(hostVersion || '')?.slice(1).map(Number)
+    const atLeast = (month, day) => v && (v[0] > 2026 || (v[0] === 2026 && (v[1] > month || (v[1] === month && v[2] >= day))))
+    // 11.5 的裸包名默认走 ClawHub，渠道目录中的包名均为经过格式验证的 npm 规格。
+    const source = atLeast(11, 5) ? `npm:${spec}` : spec
+    onEvent({ event: 'plugin-log', payload: updating ? `更新已安装插件: ${id}` : `安装规格: ${source}` })
+    const args = updating && !replaceExisting ? ['plugins', 'update', id] : ['plugins', 'install', source]
+    // 保留 9.4 起的来源确认和显式版本替换；能力声明及策略警告仍由 CLI 判定。
+    if (updating ? replaceExisting : atLeast(9, 4)) args.push('--force')
     const result = await run(args, text => onEvent({ event: 'plugin-log', payload: redactPluginOutput(text) }))
     const output = redactPluginOutput([result.stdout, result.stderr].filter(Boolean).join('\n')).slice(-12000)
     if (result.status !== 0) throw new Error(`插件 ${id} 安装失败（退出码 ${result.status ?? 'unknown'}）\n${output}`)

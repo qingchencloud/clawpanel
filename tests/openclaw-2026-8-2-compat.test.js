@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 import { supportsAgentEntries } from '../src/lib/openclaw-agent-roster.js'
-import { OPENCLAW_PROTOCOL_RANGE } from '../src/lib/openclaw-gateway-compat.js'
+import { OPENCLAW_PROTOCOL_PREFERRED_RANGE, OPENCLAW_PROTOCOL_RANGE } from '../src/lib/openclaw-gateway-compat.js'
 
 const policy = JSON.parse(readFileSync(new URL('../openclaw-version-policy.json', import.meta.url), 'utf8'))
 const featureCatalog = readFileSync(new URL('../src/lib/feature-catalog.js', import.meta.url), 'utf8')
@@ -13,18 +13,19 @@ const dockerCompose = readFileSync(new URL('../docker-compose.yml', import.meta.
 const dashboard = readFileSync(new URL('../src/pages/dashboard.js', import.meta.url), 'utf8')
 const webBackend = readFileSync(new URL('../scripts/dev-api.js', import.meta.url), 'utf8')
 
-test('OpenClaw 2026.10.4 is the official stable baseline across install paths', () => {
-  assert.equal(policy.default.official.recommended, '2026.10.4')
-  assert.match(featureCatalog, /official: '2026\.10\.4'/)
-  assert.match(linuxDeploy, /OPENCLAW_OFFICIAL_RECOMMENDED_VERSION="2026\.10\.4"/)
+test('OpenClaw 2026.11.5 is the official stable baseline across install paths', () => {
+  assert.equal(policy.default.official.recommended, '2026.11.5')
+  assert.match(featureCatalog, /official: '2026\.11\.5'/)
+  assert.match(linuxDeploy, /OPENCLAW_OFFICIAL_RECOMMENDED_VERSION="2026\.11\.5"/)
   assert.match(dockerfile, /ARG OPENCLAW_PACKAGE=openclaw/)
-  assert.match(dockerfile, /ARG OPENCLAW_VERSION=2026\.10\.4/)
+  assert.match(dockerfile, /ARG OPENCLAW_VERSION=2026\.11\.5/)
   assert.match(dockerfile, /FROM node:24\.16\.0-alpine AS production/)
-  assert.match(dockerCompose, /openclaw@2026\.10\.4/)
+  assert.match(dockerCompose, /openclaw@2026\.11\.5/)
 })
 
 test('OpenClaw 2026.8.2 keeps the 8.1 agent shape and protocol-4 handshake contract', () => {
   assert.equal(supportsAgentEntries('2026.8.2'), true)
+  assert.deepEqual(OPENCLAW_PROTOCOL_PREFERRED_RANGE, { min: 4, max: 4 })
   assert.deepEqual(OPENCLAW_PROTOCOL_RANGE, { min: 3, max: 4 })
   assert.match(featureCatalog, /minVersion: '2026\.8\.1'/)
 })
